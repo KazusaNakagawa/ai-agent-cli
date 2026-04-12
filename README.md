@@ -17,10 +17,10 @@ NewsPicks・Bloombergは情報を出すだけ。このエージェントは保�
 ```bash
 main.py
   └── src/handler.py
-        ├── src/stocks.py       ── yfinance（株価取得）
-        ├── src/briefing.py     ── Claude Code CLI（WebSearch）
-        │     └── src/prompt.py ── prompts/briefing.md（テンプレート）
-        └── src/discord.py      ── Discord Bot API（通知配信）
+        ├── src/fetcher/stocks.py       ── yfinance（株価取得）
+        ├── src/generator/briefing.py   ── Claude Code CLI（WebSearch）
+        │     └── src/generator/prompt.py ── prompts/briefing.md（テンプレート）
+        └── src/notifier/discord.py     ── Discord Bot API（通知配信）
 
 設定
   config/briefing.json          ── 銘柄・テーマ・地政学リスク
@@ -38,25 +38,28 @@ main.py
 
 ```bash
 ai-agent/
-  main.py                 # エントリーポイント
+  main.py                      # エントリーポイント
   src/
-    handler.py            # オーケストレーション
-    briefing.py           # ブリーフィング生成（Claude CLI呼び出し）
-    stocks.py             # 株価取得（yfinance）
-    discord.py            # Discord送信
-    config.py             # 設定スキーマ（dataclass）
-    prompt.py             # プロンプトテンプレートレンダラー
-    logger.py             # ロガー設定
+    handler.py                 # オーケストレーション
+    fetcher/
+      stocks.py                # 株価取得（yfinance）
+    generator/
+      briefing.py              # ブリーフィング生成（Claude CLI）
+      prompt.py                # プロンプトテンプレートレンダラー
+    notifier/
+      discord.py               # Discord送信
+    config.py                  # 設定スキーマ（dataclass）
+    logger.py                  # ロガー設定
   config/
-    briefing.json         # ユーザー設定（銘柄・テーマ・地政学）
+    briefing.json              # ユーザー設定（銘柄・テーマ・地政学）
   prompts/
-    briefing.md           # プロンプトテンプレート
+    briefing.md                # プロンプトテンプレート
   log/
-    YYYYMMDD-app.log      # 実行ログ（自動生成）
-  requirements.in         # 直接依存（手動管理）
-  requirements.txt        # 全依存バージョン固定（自動生成）
-  .env                    # シークレット（Git管理外）
-  .env.example            # キー名テンプレート
+    YYYYMMDD-app.log           # 実行ログ（自動生成）
+  requirements.in              # 直接依存（手動管理）
+  requirements.txt             # 全依存バージョン固定（自動生成）
+  .env                         # シークレット（Git管理外）
+  .env.example                 # キー名テンプレート
 ```
 
 ---
