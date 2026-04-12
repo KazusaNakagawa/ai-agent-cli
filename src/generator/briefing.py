@@ -1,6 +1,6 @@
 import subprocess
 from src.config import BriefingConfig
-from src.prompt import render
+from src.generator.prompt import render
 from src.logger import get_logger
 
 logger = get_logger(__name__)

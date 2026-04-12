@@ -1,7 +1,7 @@
 from src.config import CONFIG
-from src.stocks import fetch_stock_moves
-from src.briefing import generate_briefing
-from src.discord import send_to_discord
+from src.fetcher.stocks import fetch_stock_moves
+from src.generator.briefing import generate_briefing
+from src.notifier.discord import send_to_discord
 from src.logger import get_logger
 
 logger = get_logger(__name__)

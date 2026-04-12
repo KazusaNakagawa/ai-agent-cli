@@ -1,6 +1,6 @@
 from pathlib import Path
 
-PROMPTS_DIR = Path(__file__).parents[1] / "prompts"
+PROMPTS_DIR = Path(__file__).parents[2] / "prompts"
 
 
 def render(template_name: str, **kwargs: str) -> str:
