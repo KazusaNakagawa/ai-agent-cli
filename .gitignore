@@ -1,0 +1,21 @@
+# 環境変数・シークレット
+.env
+
+# Claude Code
+.claude/
+
+# 仮想環境
+.venv/
+
+# ログ
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
