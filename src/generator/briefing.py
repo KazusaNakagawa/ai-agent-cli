@@ -11,12 +11,12 @@ def _build_geopolitical_context(config: BriefingConfig) -> str:
     for c in config.geopolitical.conflicts:
         sectors = "、".join(c.affected_sectors)
         tickers = "、".join(c.related_tickers)
-        lines.append(
-            f"### {c.name}\n"
-            f"- 影響セクター: {sectors}\n"
-            f"- 関連銘柄: {tickers}\n"
-            f"- 背景: {c.notes}"
-        )
+        entry = f"### {c.name}\n- 影響セクター: {sectors}"
+        if tickers:
+            entry += f"\n- 関連銘柄: {tickers}"
+        if c.notes:
+            entry += f"\n- 背景: {c.notes}"
+        lines.append(entry)
     return "\n\n".join(lines)
 
 

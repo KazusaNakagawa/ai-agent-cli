@@ -1,7 +1,8 @@
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,13 +14,13 @@ CONFIG_PATH = Path(__file__).parents[1] / "config" / "briefing.json"
 class Conflict:
     name: str
     affected_sectors: list[str]
-    related_tickers: list[str]
-    notes: str
+    related_tickers: list[str] = field(default_factory=list)
+    notes: Optional[str] = None
 
 
 @dataclass
 class GeopoliticalConfig:
-    conflicts: list[Conflict]
+    conflicts: list[Conflict] = field(default_factory=list)
 
 
 @dataclass
@@ -31,9 +32,9 @@ class PortfolioConfig:
 @dataclass
 class BriefingConfig:
     portfolio: PortfolioConfig
-    geopolitical: GeopoliticalConfig
-    discord_token: str
-    discord_channel_id: str
+    geopolitical: GeopoliticalConfig = field(default_factory=GeopoliticalConfig)
+    discord_token: str = ""
+    discord_channel_id: str = ""
 
 
 def load_config() -> BriefingConfig:
