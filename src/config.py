@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CONFIG_PATH = Path(__file__).parents[1] / "config" / "briefing.json"
+XSS_INTEL_CONFIG_PATH = Path(__file__).parents[1] / "config" / "xss_intel.json"
 
 
 @dataclass
@@ -54,3 +55,30 @@ def load_config() -> BriefingConfig:
 
 
 CONFIG = load_config()
+
+
+@dataclass
+class XssTargetsConfig:
+    frameworks: list[str] = field(default_factory=list)
+    libraries: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+
+
+@dataclass
+class XssIntelConfig:
+    targets: XssTargetsConfig = field(default_factory=XssTargetsConfig)
+    discord_token: str = ""
+    discord_channel_id: str = ""
+
+
+def load_xss_config() -> XssIntelConfig:
+    raw = json.loads(XSS_INTEL_CONFIG_PATH.read_text(encoding="utf-8"))
+    targets = XssTargetsConfig(**raw["targets"])
+    return XssIntelConfig(
+        targets=targets,
+        discord_token=os.getenv("DISCORD_TOKEN", ""),
+        discord_channel_id=os.getenv("CHANNEL_ID", ""),
+    )
+
+
+XSS_CONFIG = load_xss_config()
