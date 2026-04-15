@@ -1,3 +1,4 @@
 requests
 yfinance
 python-dotenv
+notion-client

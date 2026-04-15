@@ -69,6 +69,8 @@ class XssIntelConfig:
     targets: XssTargetsConfig = field(default_factory=XssTargetsConfig)
     discord_token: str = ""
     discord_channel_id: str = ""
+    notion_api_key: str = ""
+    notion_database_id: str = ""
 
 
 def load_xss_config() -> XssIntelConfig:
@@ -78,6 +80,8 @@ def load_xss_config() -> XssIntelConfig:
         targets=targets,
         discord_token=os.getenv("DISCORD_TOKEN", ""),
         discord_channel_id=os.getenv("CHANNEL_ID", ""),
+        notion_api_key=os.getenv("NOTION_API_KEY", ""),
+        notion_database_id=os.getenv("NOTION_DATABASE_ID", ""),
     )
 
 
