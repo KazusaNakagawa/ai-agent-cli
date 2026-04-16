@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 from datetime import date
 from src.config import XssIntelConfig
@@ -24,11 +25,20 @@ def generate_xss_report(config: XssIntelConfig) -> str:
     logger.info("claude CLI (WebSearch) 呼び出し開始 [XSS Intel]")
     logger.debug("対象フレームワーク: %s / ライブラリ: %s", frameworks, libraries)
 
-    result = subprocess.run(
-        ["claude", "-p", prompt, "--allowedTools", "WebSearch"],
-        capture_output=True,
-        text=True,
-    )
+    claude_path = shutil.which("claude")
+    if claude_path is None:
+        raise RuntimeError("claude CLI が見つかりません。PATH を確認してください。")
+
+    try:
+        result = subprocess.run(
+            [claude_path, "-p", prompt, "--allowedTools", "WebSearch"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("claude CLI がタイムアウトしました [XSS Intel]")
+        raise RuntimeError("claude CLI の実行がタイムアウトしました")
 
     if result.returncode != 0:
         logger.error("claude CLI エラー: %s", result.stderr)

@@ -45,7 +45,7 @@ def _parse_inline(text: str) -> list[dict]:
 
 
 def _plain_chunks(text: str, bold: bool = False) -> list[dict]:
-    """2000文字ごとに分割したプレーンテキスト rich_text を返す"""
+    """2000文字ごとに分割したプレーンテキスト rich_text を返す。bold=True の場合は太字アノテーションを付与する。"""
     result = []
     for i in range(0, max(len(text), 1), _CHAR_LIMIT):
         chunk = text[i:i + _CHAR_LIMIT]
@@ -57,7 +57,7 @@ def _plain_chunks(text: str, bold: bool = False) -> list[dict]:
 
 
 def _link_chunks(label: str, url: str) -> list[dict]:
-    """リンク付き rich_text（2000文字分割込み）"""
+    """リンク付き rich_text を返す。ラベルが 2000文字を超える場合はチャンク分割する。"""
     result = []
     for i in range(0, max(len(label), 1), _CHAR_LIMIT):
         chunk = label[i:i + _CHAR_LIMIT]
@@ -128,6 +128,7 @@ def _line_to_block(line: str) -> dict | None:
 
 
 def _paragraph_block(text: str) -> dict:
+    """テキストを Notion paragraph ブロック辞書に変換して返す。"""
     return {
         "object": "block",
         "type": "paragraph",
@@ -136,6 +137,7 @@ def _paragraph_block(text: str) -> dict:
 
 
 def _markdown_to_blocks(markdown: str) -> list[dict]:
+    """Markdown 文字列を Notion ブロック辞書のリストに変換して返す。"""
     blocks = []
     for line in markdown.splitlines():
         block = _line_to_block(line)
@@ -158,27 +160,47 @@ def send_to_notion(text: str, api_key: str, database_id: str, title: str | None 
     page_title = title or f"XSS Intel — {date.today().strftime('%Y-%m-%d')}"
     blocks = _markdown_to_blocks(text)
 
+    # データベーススキーマからタイトルプロパティのキーを取得
+    try:
+        db = notion.databases.retrieve(database_id)
+        title_prop_name = next(
+            (k for k, v in db["properties"].items() if v["type"] == "title"),
+            None,
+        )
+        if title_prop_name is None:
+            raise ValueError(f"データベース {database_id} にタイトル型プロパティが見つかりません")
+    except Exception:
+        logger.exception("Notion データベーススキーマの取得に失敗しました (database_id=%s)", database_id)
+        return ""
+
     # Notion API は children を 100 ブロックずつしか受け付けない
     first_batch = blocks[:100]
     remaining = blocks[100:]
 
-    response = notion.pages.create(
-        parent={"database_id": database_id},
-        properties={
-            "title": {
-                "title": [{"type": "text", "text": {"content": page_title}}]
-            }
-        },
-        children=first_batch,
-    )
+    try:
+        response = notion.pages.create(
+            parent={"database_id": database_id},
+            properties={
+                title_prop_name: {
+                    "title": [{"type": "text", "text": {"content": page_title}}]
+                }
+            },
+            children=first_batch,
+        )
+    except Exception:
+        logger.exception("Notion ページ作成に失敗しました (database_id=%s, title=%s)", database_id, page_title)
+        return ""
 
     page_id = response["id"]
 
     for i in range(0, len(remaining), 100):
-        notion.blocks.children.append(
-            block_id=page_id,
-            children=remaining[i:i + 100],
-        )
+        try:
+            notion.blocks.children.append(
+                block_id=page_id,
+                children=remaining[i:i + 100],
+            )
+        except Exception:
+            logger.exception("Notion ブロック追加に失敗しました (page_id=%s, index=%d)", page_id, i)
 
     page_url = response.get("url", "")
     logger.info("Notion ページ作成完了: %s", page_url)

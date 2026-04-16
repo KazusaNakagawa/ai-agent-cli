@@ -12,11 +12,11 @@ WebSearchを使って今日公開・話題になったXSS脆弱性情報を収�
 
 ## 検索クエリ（以下を参考に複数回 WebSearch を実行してください）
 - "XSS vulnerability {frameworks} site:x.com OR site:github.com"
-- "XSS PoC bypass 2025"
+- "XSS PoC bypass"
 - "stored XSS disclosed bug bounty"
 - "DOM XSS new technique site:x.com"
 - "CSP bypass XSS writeup"
-- "XSS CVE 2025"
+- "XSS CVE"
 - "{libraries} XSS vulnerability"
 
 ## 出力フォーマット

@@ -39,6 +39,7 @@ class BriefingConfig:
 
 
 def load_config() -> BriefingConfig:
+    """briefing.json と環境変数から BriefingConfig を構築して返す。"""
     raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
     portfolio = PortfolioConfig(**raw["portfolio"])
@@ -74,15 +75,35 @@ class XssIntelConfig:
 
 
 def load_xss_config() -> XssIntelConfig:
+    """xss_intel.json と環境変数から XssIntelConfig を構築して返す。必須変数が未設定の場合は ValueError を送出する。"""
     raw = json.loads(XSS_INTEL_CONFIG_PATH.read_text(encoding="utf-8"))
     targets = XssTargetsConfig(**raw["targets"])
+
+    required = {
+        "DISCORD_TOKEN": os.getenv("DISCORD_TOKEN", ""),
+        "CHANNEL_ID": os.getenv("CHANNEL_ID", ""),
+        "NOTION_API_KEY": os.getenv("NOTION_API_KEY", ""),
+        "NOTION_DATABASE_ID": os.getenv("NOTION_DATABASE_ID", ""),
+    }
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        raise ValueError(f"必須環境変数が未設定です: {', '.join(missing)}")
+
     return XssIntelConfig(
         targets=targets,
-        discord_token=os.getenv("DISCORD_TOKEN", ""),
-        discord_channel_id=os.getenv("CHANNEL_ID", ""),
-        notion_api_key=os.getenv("NOTION_API_KEY", ""),
-        notion_database_id=os.getenv("NOTION_DATABASE_ID", ""),
+        discord_token=required["DISCORD_TOKEN"],
+        discord_channel_id=required["CHANNEL_ID"],
+        notion_api_key=required["NOTION_API_KEY"],
+        notion_database_id=required["NOTION_DATABASE_ID"],
     )
 
 
-XSS_CONFIG = load_xss_config()
+_XSS_CONFIG: Optional[XssIntelConfig] = None
+
+
+def get_xss_config() -> XssIntelConfig:
+    """XssIntelConfig をシングルトンとして返す（初回アクセス時にのみ読み込む）。"""
+    global _XSS_CONFIG
+    if _XSS_CONFIG is None:
+        _XSS_CONFIG = load_xss_config()
+    return _XSS_CONFIG

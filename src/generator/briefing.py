@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 from src.config import BriefingConfig
 from src.generator.prompt import render
@@ -7,6 +8,7 @@ logger = get_logger(__name__)
 
 
 def _build_geopolitical_context(config: BriefingConfig) -> str:
+    """BriefingConfig の地政学リスク情報をプロンプト用のテキストブロックに整形して返す。"""
     lines = []
     for c in config.geopolitical.conflicts:
         sectors = "、".join(c.affected_sectors)
@@ -36,11 +38,20 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
     logger.info("claude CLI (WebSearch) 呼び出し開始")
     logger.debug("対象銘柄: %s / テーマ: %s", tickers, themes)
 
-    result = subprocess.run(
-        ["claude", "-p", prompt, "--allowedTools", "WebSearch"],
-        capture_output=True,
-        text=True,
-    )
+    claude_path = shutil.which("claude")
+    if claude_path is None:
+        raise RuntimeError("claude CLI が見つかりません。PATH を確認してください。")
+
+    try:
+        result = subprocess.run(
+            [claude_path, "-p", prompt, "--allowedTools", "WebSearch"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("claude CLI がタイムアウトしました")
+        raise RuntimeError("claude CLI の実行がタイムアウトしました")
 
     if result.returncode != 0:
         logger.error("claude CLI エラー: %s", result.stderr)
