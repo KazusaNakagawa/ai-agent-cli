@@ -36,6 +36,8 @@ class BriefingConfig:
     geopolitical: GeopoliticalConfig = field(default_factory=GeopoliticalConfig)
     discord_token: str = ""
     discord_channel_id: str = ""
+    notion_api_key: str = ""
+    notion_database_id: str = ""
 
 
 def load_config() -> BriefingConfig:
@@ -52,6 +54,8 @@ def load_config() -> BriefingConfig:
         geopolitical=geopolitical,
         discord_token=os.getenv("DISCORD_TOKEN", ""),
         discord_channel_id=os.getenv("CHANNEL_ID", ""),
+        notion_api_key=os.getenv("NOTION_API_KEY", ""),
+        notion_database_id=os.getenv("NOTION_DATABASE_ID", ""),
     )
 
 
