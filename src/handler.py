@@ -24,10 +24,12 @@ def lambda_handler(event=None, context=None):
     send_to_discord(briefing, CONFIG.discord_token, CONFIG.discord_channel_id)
 
     logger.info("Notion にページ作成中...")
+    from datetime import date
     page_url = send_to_notion(
         briefing,
         CONFIG.notion_api_key,
         CONFIG.notion_database_id,
+        title=f"マーケットブリーフィング — {date.today().strftime('%Y-%m-%d')}",
     )
     if page_url:
         logger.info("Notion ページ: %s", page_url)

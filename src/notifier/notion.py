@@ -177,7 +177,7 @@ def send_to_notion(text: str, api_key: str, database_id: str, title: str | None 
         return ""
 
     notion = Client(auth=api_key)
-    page_title = title or f"XSS Intel — {date.today().strftime('%Y-%m-%d')}"
+    page_title = title or f"Report — {date.today().strftime('%Y-%m-%d')}"
     blocks = _markdown_to_blocks(text)
 
     # データベーススキーマからタイトルプロパティのキーを取得。

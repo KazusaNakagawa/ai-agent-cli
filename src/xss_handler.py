@@ -1,3 +1,4 @@
+from datetime import date
 from src.config import get_xss_config
 from src.generator.xss_report import generate_xss_report
 from src.notifier.discord import send_to_discord
@@ -37,6 +38,7 @@ def lambda_handler(event=None, context=None):
             report,
             config.notion_api_key,
             config.notion_database_id,
+            title=f"XSS 脆弱性インテリジェンス — {date.today().strftime('%Y-%m-%d')}",
         )
         if page_url:
             logger.info("Notion ページ: %s", page_url)
@@ -52,5 +54,3 @@ def lambda_handler(event=None, context=None):
     return {"statusCode": status_code, "body": result}
 
 
-if __name__ == "__main__":
-    lambda_handler()
