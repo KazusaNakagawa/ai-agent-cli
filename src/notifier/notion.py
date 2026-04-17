@@ -147,6 +147,26 @@ def _markdown_to_blocks(markdown: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# ヘルパー
+# ---------------------------------------------------------------------------
+
+def _resolve_title_prop(notion: Client, database_id: str, sample_title: str) -> str | None:
+    """タイトルプロパティのキー名を試行して特定する。成功したキー名を返し、全て失敗した場合は None を返す。"""
+    for candidate in ("Name", "title"):
+        try:
+            page = notion.pages.create(
+                parent={"database_id": database_id},
+                properties={candidate: {"title": [{"type": "text", "text": {"content": sample_title}}]}},
+            )
+            notion.pages.update(page["id"], archived=True)
+            logger.debug("タイトルプロパティキー確定: %r", candidate)
+            return candidate
+        except Exception:
+            continue
+    return None
+
+
+# ---------------------------------------------------------------------------
 # 公開 API
 # ---------------------------------------------------------------------------
 
@@ -160,17 +180,24 @@ def send_to_notion(text: str, api_key: str, database_id: str, title: str | None 
     page_title = title or f"XSS Intel — {date.today().strftime('%Y-%m-%d')}"
     blocks = _markdown_to_blocks(text)
 
-    # データベーススキーマからタイトルプロパティのキーを取得
+    # データベーススキーマからタイトルプロパティのキーを取得。
+    # properties が返らない場合は一般的なキー名にフォールバックする。
+    title_prop_name: str | None = None
     try:
         db = notion.databases.retrieve(database_id)
+        properties = db.get("properties") or {}
         title_prop_name = next(
-            (k for k, v in db["properties"].items() if v["type"] == "title"),
+            (k for k, v in properties.items() if v.get("type") == "title"),
             None,
         )
-        if title_prop_name is None:
-            raise ValueError(f"データベース {database_id} にタイトル型プロパティが見つかりません")
     except Exception:
         logger.exception("Notion データベーススキーマの取得に失敗しました (database_id=%s)", database_id)
+
+    if title_prop_name is None:
+        # スキーマ取得不可の場合は一般的なキー名を順に試す
+        title_prop_name = _resolve_title_prop(notion, database_id, page_title)
+    if title_prop_name is None:
+        logger.error("Notion タイトルプロパティの特定に失敗しました (database_id=%s)", database_id)
         return ""
 
     # Notion API は children を 100 ブロックずつしか受け付けない
