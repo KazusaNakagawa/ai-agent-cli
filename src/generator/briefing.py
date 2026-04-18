@@ -86,9 +86,18 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
             executor.submit(_run_claude, main_prompt, "メイン分析"): "main",
             executor.submit(_run_claude, sectors_prompt, "セクタースイープ"): "sectors",
         }
-        results = {}
+        results: dict[str, str] = {}
+        errors: dict[str, str] = {}
         for future in as_completed(futures):
             key = futures[future]
-            results[key] = future.result()
+            try:
+                results[key] = future.result()
+            except Exception as e:
+                logger.error("claude CLI 失敗 [%s]: %s", key, e)
+                errors[key] = str(e)
+
+    if errors:
+        failed = ", ".join(errors.keys())
+        raise RuntimeError(f"ブリーフィング生成に失敗しました: {failed}\n" + "\n".join(errors.values()))
 
     return results["main"] + "\n\n" + results["sectors"]
