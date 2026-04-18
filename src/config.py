@@ -57,7 +57,17 @@ def load_config() -> BriefingConfig:
     conflicts = [Conflict(**c) for c in raw["geopolitical"]["conflicts"]]
     geopolitical = GeopoliticalConfig(conflicts=conflicts)
 
-    watch_sectors = [WatchSector(**s) for s in raw.get("watch_sectors", [])]
+    raw_watch_sectors = raw.get("watch_sectors")
+    if not raw_watch_sectors:
+        raise ValueError("briefing.json の watch_sectors が未設定です")
+
+    watch_sectors = [WatchSector(**s) for s in raw_watch_sectors]
+    empty_ticker_sectors = [s.sector for s in watch_sectors if not s.tickers]
+    if empty_ticker_sectors:
+        raise ValueError(
+            "watch_sectors に tickers が空のセクターがあります: "
+            + ", ".join(empty_ticker_sectors)
+        )
 
     return BriefingConfig(
         portfolio=portfolio,
