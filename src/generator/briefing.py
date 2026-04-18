@@ -22,6 +22,18 @@ def _build_geopolitical_context(config: BriefingConfig) -> str:
     return "\n\n".join(lines)
 
 
+def _build_watch_sectors_context(config: BriefingConfig) -> str:
+    """watch_sectors をプロンプト用のテキストブロックに整形して返す。"""
+    lines = []
+    for s in config.watch_sectors:
+        tickers = "、".join(s.tickers)
+        entry = f"### {s.sector}\n- 銘柄: {tickers}"
+        if s.notes:
+            entry += f"\n- 注目点: {s.notes}"
+        lines.append(entry)
+    return "\n\n".join(lines)
+
+
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
     """claude CLI + WebSearch でブリーフィングを生成"""
     tickers = ", ".join(config.portfolio.tickers)
@@ -32,6 +44,7 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
         tickers=tickers,
         themes=themes,
         geopolitical=_build_geopolitical_context(config),
+        watch_sectors=_build_watch_sectors_context(config),
         stocks=stocks,
     )
 

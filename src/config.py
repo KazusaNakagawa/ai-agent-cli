@@ -31,9 +31,17 @@ class PortfolioConfig:
 
 
 @dataclass
+class WatchSector:
+    sector: str
+    tickers: list[str]
+    notes: Optional[str] = None
+
+
+@dataclass
 class BriefingConfig:
     portfolio: PortfolioConfig
     geopolitical: GeopoliticalConfig = field(default_factory=GeopoliticalConfig)
+    watch_sectors: list[WatchSector] = field(default_factory=list)
     discord_token: str = ""
     discord_channel_id: str = ""
     notion_api_key: str = ""
@@ -49,9 +57,22 @@ def load_config() -> BriefingConfig:
     conflicts = [Conflict(**c) for c in raw["geopolitical"]["conflicts"]]
     geopolitical = GeopoliticalConfig(conflicts=conflicts)
 
+    raw_watch_sectors = raw.get("watch_sectors")
+    if not raw_watch_sectors:
+        raise ValueError("briefing.json の watch_sectors が未設定です")
+
+    watch_sectors = [WatchSector(**s) for s in raw_watch_sectors]
+    empty_ticker_sectors = [s.sector for s in watch_sectors if not s.tickers]
+    if empty_ticker_sectors:
+        raise ValueError(
+            "watch_sectors に tickers が空のセクターがあります: "
+            + ", ".join(empty_ticker_sectors)
+        )
+
     return BriefingConfig(
         portfolio=portfolio,
         geopolitical=geopolitical,
+        watch_sectors=watch_sectors,
         discord_token=os.getenv("DISCORD_TOKEN", ""),
         discord_channel_id=os.getenv("CHANNEL_ID", ""),
         notion_api_key=os.getenv("NOTION_API_KEY", ""),
