@@ -1,127 +1,118 @@
-# My World Briefing — パーソナル世界情勢エージェント
+# My World Briefing — Personal Market Intelligence Agent
 
-毎朝、地政学・株式市場・注目テーマを自動収集し、**自分のポートフォリオへの影響**と**なぜそれが起きたか（ストーリー）**を3分で読める形にまとめてDiscordに届けるエージェント。
-
----
-
-## コンセプト
-
-> 「情報を出すツール」ではなく「自分の文脈に引き寄せて解釈するエージェント」
-
-NewsPicks・Bloombergは情報を出すだけ。このエージェントは保有銘柄・関心テーマ・地政学リスクに紐づけて「自分への示唆」まで生成する点が異なる。
+Automatically collects geopolitical events, stock market moves, and key themes every morning, then delivers a 3-minute brief to Discord and Notion — contextualized to your own portfolio.
 
 ---
 
-## アーキテクチャ
+## Concept
 
-```bash
-main.py
-  └── src/handler.py
-        ├── src/fetcher/stocks.py       ── yfinance（株価取得）
-        ├── src/generator/briefing.py   ── Claude Code CLI（WebSearch）
-        │     └── src/generator/prompt.py ── prompts/briefing.md（テンプレート）
-        └── src/notifier/discord.py     ── Discord Bot API（通知配信）
+> Not a tool that *outputs* information — an agent that *interprets* it through your own lens.
 
-設定
-  config/briefing.json          ── 銘柄・テーマ・地政学リスク
-  src/config.py                 ── JSON読み込み + dataclassスキーマ
+Bloomberg and NewsPicks surface raw data. This agent ties every event to your holdings, themes, and geopolitical risks, and generates "what this means for you" every day.
+
+---
+
+## Architecture
+
+```
+bin/run.sh
+  ├── bin/briefing.py
+  │     └── src/handler.py
+  │           ├── src/fetcher/stocks.py        # Previous-day % change via yfinance
+  │           ├── src/generator/briefing.py    # Invokes claude CLI (WebSearch)
+  │           │     └── prompts/briefing.md    # Prompt template
+  │           ├── src/notifier/discord.py
+  │           └── src/notifier/notion.py
+  └── bin/xss_intel.py
+        └── src/xss_handler.py
+              ├── src/generator/xss_report.py  # Invokes claude CLI (WebSearch)
+              │     └── prompts/xss_intel.md
+              ├── src/notifier/discord.py
+              └── src/notifier/notion.py
+
+config/
+  briefing.json   # Portfolio, watch sectors (14 sectors), geopolitical risks
+  xss_intel.json  # XSS target frameworks / libraries / keywords
+src/config.py     # JSON → dataclass schema
 ```
 
-### 特徴
-- **NewsAPI不要** — Claude Code CLI の WebSearch ツールがリアルタイム検索
-- **Anthropic APIキー不要（ローカル実行時）** — Claude Code CLIの認証を利用
-- **地政学リスクと株式の因果関係**を毎日の出力に織り込み
+### Key Design Decisions
+
+- **No NewsAPI** — Claude Code CLI's WebSearch handles real-time search
+- **No Anthropic API key needed (local)** — reuses Claude Code CLI authentication
+- **Geopolitical → stock causality** is baked into every daily output
+- **watch_sectors** (14 sectors, ~90 tickers) give Claude full market coverage to surface sector moves
 
 ---
 
-## ディレクトリ構成
+## Setup
 
-```bash
-ai-agent/
-  main.py                      # エントリーポイント
-  src/
-    handler.py                 # オーケストレーション
-    fetcher/
-      stocks.py                # 株価取得（yfinance）
-    generator/
-      briefing.py              # ブリーフィング生成（Claude CLI）
-      prompt.py                # プロンプトテンプレートレンダラー
-    notifier/
-      discord.py               # Discord送信
-    config.py                  # 設定スキーマ（dataclass）
-    logger.py                  # ロガー設定
-  config/
-    briefing.json              # ユーザー設定（銘柄・テーマ・地政学）
-  prompts/
-    briefing.md                # プロンプトテンプレート
-  log/
-    YYYYMMDD-app.log           # 実行ログ（自動生成）
-  requirements.in              # 直接依存（手動管理）
-  requirements.txt             # 全依存バージョン固定（自動生成）
-  .env                         # シークレット（Git管理外）
-  .env.example                 # キー名テンプレート
-```
-
----
-
-## セットアップ
-
-### 前提条件
+### Prerequisites
 
 - Python 3.11+
-- [uv](https://github.com/astral-sh/uv) インストール済み
-- [Claude Code CLI](https://claude.ai/code) インストール・認証済み
-- Discord Bot 作成済み（Send Messagesパーミッション付与）
+- [uv](https://github.com/astral-sh/uv) installed
+- [Claude Code CLI](https://claude.ai/code) installed and authenticated
+- Discord Bot created (Send Messages permission granted)
+- Notion integration created with database access
 
-### インストール
+### Install
 
 ```bash
-git clone https://github.com/KazusaNakagawa/my-world-briefing.git
-cd my-world-briefing
+git clone https://github.com/KazusaNakagawa/ai-agent-cli.git
+cd ai-agent-cli
 
 uv venv .venv
 uv pip sync requirements.txt
 ```
 
-### 環境変数
+### Environment Variables
 
 ```bash
 cp .env.example .env
-# .env を編集
+# Edit .env
 ```
 
-| 変数名 | 取得先 | 用途 |
+| Variable | Source | Purpose |
 |---|---|---|
-| `DISCORD_TOKEN` | Discord Developer Portal | Bot認証 |
-| `CHANNEL_ID` | Discordチャンネル右クリック → IDをコピー | 送信先チャンネル |
+| `DISCORD_TOKEN` | Discord Developer Portal | Bot authentication |
+| `CHANNEL_ID` | Right-click channel → Copy ID | Target channel |
+| `NOTION_API_KEY` | Notion integrations page | API authentication |
+| `NOTION_DATABASE_ID` | Database URL | Target database |
 
-### 実行
+### Run
 
 ```bash
-uv run python main.py
+bin/run.sh
 ```
 
 ---
 
-## 設定ファイル
+## Configuration
 
 ### `config/briefing.json`
 
-銘柄・テーマ・地政学リスクをすべてここで管理。コードを触らずに設定変更できる。
+All monitoring targets are managed here — no code changes needed.
 
 ```json
 {
   "portfolio": {
-    "tickers": ["TICKER1", "TICKER2"],
-    "themes": ["テーマ1", "テーマ2", "テーマ3"]
+    "tickers": ["PLTR", "NVDA"],
+    "themes": ["AI regulation", "US-China relations", "semiconductors"]
   },
+  "watch_sectors": [
+    {
+      "sector": "AI & Cloud",
+      "tickers": ["NVDA", "MSFT", "GOOGL", "META", "AMZN"],
+      "notes": "AI capex cycle, model competition, and regulation are the main drivers"
+    }
+  ],
   "geopolitical": {
     "conflicts": [
       {
-        "name": "紛争・地政学リスク名",
-        "affected_sectors": ["影響セクター1", "影響セクター2"],
-        "related_tickers": ["関連銘柄1", "関連銘柄2"],
-        "notes": "背景・補足メモ"
+        "name": "Russia-Ukraine War",
+        "affected_sectors": ["Energy", "Defense", "Grains"],
+        "related_tickers": ["LMT", "RTX", "XOM"],
+        "notes": "NATO defense spending increase is a tailwind for LMT/RTX"
       }
     ]
   }
@@ -130,65 +121,58 @@ uv run python main.py
 
 ### `prompts/briefing.md`
 
-プロンプトテンプレート。変数は `{tickers}` `{themes}` `{geopolitical}` `{stocks}` の4つ。
-Claudeへの指示を変えたいときはこのファイルだけ編集する。
+Prompt template for the briefing agent. Variables: `{tickers}` `{themes}` `{geopolitical}` `{watch_sectors}` `{stocks}`. Edit this file to change Claude's output behavior.
 
 ---
 
-## 出力サンプル（Discord）
+## Sample Output
 
-```txt
-**今日のサマリー（1文）**
-〜
+```
+## Today's Summary (1 sentence)
+...
 
-**なぜ動いたか（ストーリー）**
-〜地政学・感情・需給の観点から3〜4行で〜
+## Why It Moved (Story)
+...geopolitics, sentiment, supply/demand in 3–4 lines...
 
-**地政学と株式の因果関係**
-〜地政学リスクが今日の市場に与えた影響、関連銘柄・セクターとの紐づけ〜
+## Geopolitical → Market Causality
+...how each risk translated to sector/ticker moves today...
 
-**自分への示唆**
-〜保有者として今日意識すべきこと〜
+## Sector Movements (All Sectors)
+- AI & Cloud: NVDA 10-day winning streak (+18%)...
+- Energy (Oil & Gas): Brent $128 on Hormuz closure...
+...
 
-**参考記事**
-・記事タイトル — 媒体名
-  https://...
+## What This Means for You
+...1–2 lines for portfolio holders...
+
+## Sources
+- Article title — outlet (URL)
 ```
 
 ---
 
-## 依存パッケージ管理（uv）
+## Dependency Management
 
 ```bash
-# パッケージ追加時
-# 1. requirements.in に追記
-# 2. ロックファイル再生成
+# After adding a package to requirements.in
 uv pip compile requirements.in -o requirements.txt
-# 3. 仮想環境に反映
 uv pip sync requirements.txt
 ```
 
 ---
 
-## MVPロードマップ
+## Roadmap
 
-| フェーズ | 内容 | ステータス |
+| Phase | Description | Status |
 |---|---|---|
-| 1 | ローカルで手動実行・出力確認 | ✅ 完了 |
-| 2 | Discord に飛ばして毎朝自分で受け取る | ✅ 完了 |
-| 3 | AWS Lambda + EventBridge で自動化 | 🔜 次フェーズ |
-| 4 | DynamoDB で銘柄・テーマを設定から切り離す | 📋 予定 |
+| 1 | Local manual run | ✅ Done |
+| 2 | Discord delivery | ✅ Done |
+| 3 | Notion delivery | ✅ Done |
+| 4 | AWS Lambda + EventBridge automation | 🔜 Next |
+| 5 | DynamoDB for dynamic config | 📋 Planned |
 
 ---
 
-## 差別化ポイント
-
-- **既存サービスとの違い**: 情報を「出す」だけでなく、自分の銘柄・テーマ・地政学文脈で「解釈」する
-- **競合空白**: 「株価変動の理由を地政学ストーリーで語る」ツールはほぼ存在しない
-- **自分がユーザー零号**: 実保有株があるため、ユーザーヒアリング不要でMVPを磨ける
-
----
-
-## ライセンス
+## License
 
 MIT
