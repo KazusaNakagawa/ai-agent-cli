@@ -85,10 +85,6 @@ def _line_to_block(line: str) -> dict | None:
     if re.fullmatch(r"-{3,}", stripped):
         return {"object": "block", "type": "divider", "divider": {}}
 
-    # テーブル区切り行 |---|---| → スキップ
-    if re.fullmatch(r"[\|\s\-:]+", stripped) and "|" in stripped:
-        return None
-
     # 見出し ##
     m = re.match(r"^(#{1,3})\s+(.*)", stripped)
     if m:
@@ -99,12 +95,6 @@ def _line_to_block(line: str) -> dict | None:
             "type": block_type,
             block_type: {"rich_text": _parse_inline(m.group(2))},
         }
-
-    # テーブル行 | col | col | → 簡易的に段落として処理
-    if stripped.startswith("|"):
-        cells = [c.strip() for c in stripped.strip("|").split("|")]
-        plain = "  |  ".join(cells)
-        return _paragraph_block(plain)
 
     # 箇条書き - item
     m = re.match(r"^[-*]\s+(.*)", stripped)
@@ -136,13 +126,71 @@ def _paragraph_block(text: str) -> dict:
     }
 
 
+def _is_table_row(line: str) -> bool:
+    """Markdown テーブル行（`| ... |` 形式）かどうかを判定する。"""
+    stripped = line.rstrip()
+    return stripped.startswith("|") and stripped.endswith("|")
+
+
+def _is_table_separator(line: str) -> bool:
+    """Markdown テーブル区切り行（`|---|---|` 形式）かどうかを判定する。"""
+    stripped = line.rstrip()
+    return bool(re.fullmatch(r"[\|\s\-:]+", stripped) and "|" in stripped)
+
+
+def _table_rows_to_block(rows: list[str]) -> dict:
+    """連続する Markdown テーブル行を Notion table ブロックに変換する。
+    2行目が区切り行の場合は has_column_header=True とする。"""
+    data_rows = [r for r in rows if not _is_table_separator(r)]
+    has_header = len(rows) >= 2 and _is_table_separator(rows[1])
+
+    def parse_cells(row: str) -> list[list[dict]]:
+        cells = [c.strip() for c in row.strip().strip("|").split("|")]
+        return [_parse_inline(c) for c in cells]
+
+    table_width = max((len(parse_cells(r)) for r in data_rows), default=1)
+
+    children = []
+    for row in data_rows:
+        cells = parse_cells(row)
+        while len(cells) < table_width:
+            cells.append([{"type": "text", "text": {"content": ""}}])
+        children.append({
+            "type": "table_row",
+            "table_row": {"cells": cells},
+        })
+
+    return {
+        "object": "block",
+        "type": "table",
+        "table": {
+            "table_width": table_width,
+            "has_column_header": has_header,
+            "has_row_header": False,
+            "children": children,
+        },
+    }
+
+
 def _markdown_to_blocks(markdown: str) -> list[dict]:
-    """Markdown 文字列を Notion ブロック辞書のリストに変換して返す。"""
+    """Markdown 文字列を Notion ブロック辞書のリストに変換して返す。
+    Markdown テーブルは Notion table ブロックに変換する。"""
     blocks = []
-    for line in markdown.splitlines():
+    lines = markdown.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _is_table_row(line):
+            table_lines = []
+            while i < len(lines) and (_is_table_row(lines[i]) or _is_table_separator(lines[i])):
+                table_lines.append(lines[i])
+                i += 1
+            blocks.append(_table_rows_to_block(table_lines))
+            continue
         block = _line_to_block(line)
         if block is not None:
             blocks.append(block)
+        i += 1
     return blocks
 
 
