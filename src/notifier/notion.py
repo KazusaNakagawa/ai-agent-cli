@@ -172,7 +172,7 @@ def _table_rows_to_block(rows: list[str]) -> dict:
     }
 
 
-_LABEL_COLON_RE = re.compile(r"^([-*]\s+)?([^：\n]{1,30}：)(.{5,})")
+_LABEL_COLON_RE = re.compile(r"^([-*]\s+)?([^：\n]{1,30}：)(.+)")
 
 
 def _split_label_colon(line: str) -> list[str]:
@@ -194,27 +194,25 @@ def _split_label_colon(line: str) -> list[str]:
 def _markdown_to_blocks(markdown: str) -> list[dict]:
     """Markdown 文字列を Notion ブロック辞書のリストに変換して返す。
     Markdown テーブルは Notion table ブロックに変換する。
-    「ラベル：内容」行はラベルと内容を別ブロックに分割する。"""
+    「ラベル：内容」行はラベルと内容を別ブロックに分割する（テーブル行は除く）。"""
     blocks = []
     raw_lines = markdown.splitlines()
-    # ラベル：内容 行を展開してから処理
-    lines: list[str] = []
-    for raw in raw_lines:
-        lines.extend(_split_label_colon(raw))
-
     i = 0
-    while i < len(lines):
-        line = lines[i]
-        if _is_table_row(line):
+    while i < len(raw_lines):
+        line = raw_lines[i]
+        # テーブル検出を先に行い、テーブル行はラベル分割しない
+        if _is_table_row(line) or _is_table_separator(line):
             table_lines = []
-            while i < len(lines) and (_is_table_row(lines[i]) or _is_table_separator(lines[i])):
-                table_lines.append(lines[i])
+            while i < len(raw_lines) and (_is_table_row(raw_lines[i]) or _is_table_separator(raw_lines[i])):
+                table_lines.append(raw_lines[i])
                 i += 1
             blocks.append(_table_rows_to_block(table_lines))
             continue
-        block = _line_to_block(line)
-        if block is not None:
-            blocks.append(block)
+        # テーブル以外の行にのみラベル分割を適用
+        for expanded in _split_label_colon(line):
+            block = _line_to_block(expanded)
+            if block is not None:
+                blocks.append(block)
         i += 1
     return blocks
 

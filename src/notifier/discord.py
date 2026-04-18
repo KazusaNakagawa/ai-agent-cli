@@ -31,6 +31,38 @@ def _wrap_tables_in_codeblock(text: str) -> str:
     return "".join(result)
 
 
+def _chunk_preserving_fences(text: str, chunk_size: int = 1900) -> list[str]:
+    """テキストを chunk_size 以内に分割する。コードフェンス（```）をまたぐ場合は
+    チャンク末尾でフェンスを閉じ、次チャンク先頭で再開することでバランスを保つ。"""
+    chunks: list[str] = []
+    current_lines: list[str] = []
+    current_len = 0
+    in_fence = False
+
+    for line in text.splitlines(keepends=True):
+        if line.rstrip() == "```":
+            in_fence = not in_fence
+
+        # 追加するとチャンクサイズを超える場合は flush
+        if current_len + len(line) > chunk_size and current_lines:
+            chunk = "".join(current_lines)
+            if in_fence:
+                chunk += "```\n"   # 開いているフェンスを閉じる
+            chunks.append(chunk)
+            current_lines = []
+            current_len = 0
+            if in_fence:
+                current_lines = ["```\n"]  # 次チャンクでフェンスを再開
+                current_len = 4
+
+        current_lines.append(line)
+        current_len += len(line)
+
+    if current_lines:
+        chunks.append("".join(current_lines))
+    return chunks or [""]
+
+
 def send_to_discord(text: str, token: str, channel_id: str):
     """Discord Bot API でチャンネルにメッセージ送信（2000文字制限を考慮して分割）"""
     if not token or not channel_id:
@@ -39,8 +71,7 @@ def send_to_discord(text: str, token: str, channel_id: str):
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
     headers = {"Authorization": f"Bot {token}"}
     text = _wrap_tables_in_codeblock(text)
-    chunk_size = 1900
-    chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+    chunks = _chunk_preserving_fences(text)
     for i, chunk in enumerate(chunks, 1):
         res = requests.post(url, headers=headers, json={"content": chunk})
         res.raise_for_status()
