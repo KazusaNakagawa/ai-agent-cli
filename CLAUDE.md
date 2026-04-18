@@ -2,88 +2,133 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## セットアップ・実行
+## Setup & Running
 
 ```bash
-# 仮想環境作成・依存インストール
+# Create venv and install dependencies
 uv venv .venv
 uv pip sync requirements.txt
 
-# 実行（ブリーフィング + XSS Intel を連続実行）
+# Run both agents sequentially
 bin/run.sh
 
-# 単体実行
+# Run individually
 source .venv/bin/activate
 python bin/briefing.py
 python bin/xss_intel.py
 ```
 
-## 依存パッケージ管理
+## Dependency Management
 
-`requirements.in` が直接依存の手動管理ファイル。`requirements.txt` は自動生成なので直接編集しない。
+`requirements.in` is the manually managed direct-dependency file. Never edit `requirements.txt` directly — it is auto-generated.
 
 ```bash
-# パッケージ追加後
+# After adding a package to requirements.in
 uv pip compile requirements.in -o requirements.txt
 uv pip sync requirements.txt
 ```
 
-## アーキテクチャ
+## Architecture
 
-2つのエージェントが独立して動作する。共通の Discord/Notion notifier を共有。
+Two independent agents share the same Discord/Notion notifiers.
 
-### ブリーフィングエージェント
+### Briefing Agent
 
 ```
 bin/briefing.py
   └── src/handler.py
-        ├── src/fetcher/stocks.py        # yfinance で portfolio.tickers の前日比を取得
-        ├── src/generator/briefing.py    # claude CLI を subprocess で呼び出し
-        │     └── prompts/briefing.md    # {tickers}{themes}{geopolitical}{watch_sectors}{stocks} を埋め込む
+        ├── src/fetcher/stocks.py        # Fetches previous-day % change via yfinance
+        ├── src/generator/briefing.py    # Invokes claude CLI via subprocess
+        │     └── prompts/briefing.md    # Template vars: {tickers} {themes} {geopolitical} {watch_sectors} {stocks}
         ├── src/notifier/discord.py
         └── src/notifier/notion.py
 ```
 
-### XSS Intel エージェント
+### XSS Intel Agent
 
 ```
 bin/xss_intel.py
   └── src/xss_handler.py
-        ├── src/generator/xss_report.py  # claude CLI を subprocess で呼び出し
+        ├── src/generator/xss_report.py  # Invokes claude CLI via subprocess
         │     └── prompts/xss_intel.md
         ├── src/notifier/discord.py
         └── src/notifier/notion.py
 ```
 
-### 設定スキーマ（`src/config.py`）
+### Config Schema (`src/config.py`)
 
-- `BriefingConfig` — `PortfolioConfig` + `GeopoliticalConfig` + `list[WatchSector]` を保持
-- `XssIntelConfig` — `XssTargetsConfig`（frameworks/libraries/keywords）を保持
-- `CONFIG = load_config()` はモジュールロード時に実行される（モジュールレベルシングルトン）
-- `get_xss_config()` は初回アクセス時のみ読み込むレイジーシングルトン
+- `BriefingConfig` holds `PortfolioConfig` + `GeopoliticalConfig` + `list[WatchSector]`
+- `XssIntelConfig` holds `XssTargetsConfig` (frameworks / libraries / keywords)
+- `CONFIG = load_config()` runs at module import time (module-level singleton)
+- `get_xss_config()` is a lazy singleton — loaded only on first access
 
-### 設定ファイル（`config/`）
+### Config Files (`config/`)
 
-- `briefing.json` — `portfolio`（tickers/themes）・`watch_sectors`（14セクター）・`geopolitical.conflicts` を管理。コードを触らずに監視対象を変更できる
-- `xss_intel.json` — `targets`（frameworks/libraries/keywords）を管理
+- `briefing.json` — manages `portfolio` (tickers/themes), `watch_sectors` (14 sectors), and `geopolitical.conflicts`. Change monitoring targets here without touching code.
+- `xss_intel.json` — manages `targets` (frameworks/libraries/keywords)
 
-### プロンプトテンプレート（`prompts/`）
+### Prompt Templates (`prompts/`)
 
-`src/generator/prompt.py` の `render()` が `prompts/{name}.md` を `str.format(**kwargs)` で展開する。プロンプトを変更する場合は `.md` ファイルのみ編集する。
+`render()` in `src/generator/prompt.py` loads `prompts/{name}.md` and expands it via `str.format(**kwargs)`. To modify prompt behavior, edit only the `.md` file.
 
-### Claude CLI の呼び出し方
+### Claude CLI Invocation
 
-`subprocess.run(["claude", "-p", prompt, "--allowedTools", "WebSearch"])` でWebSearch付きで呼び出す。タイムアウトは300秒。
+```python
+subprocess.run(["claude", "-p", prompt, "--allowedTools", "WebSearch"], timeout=300)
+```
 
-## 環境変数（`.env`）
+## Environment Variables (`.env`)
 
-| 変数名 | 用途 |
+| Variable | Purpose |
 |---|---|
-| `DISCORD_TOKEN` | Discord Bot 認証 |
-| `CHANNEL_ID` | Discord 送信先チャンネル |
-| `NOTION_API_KEY` | Notion API 認証 |
-| `NOTION_DATABASE_ID` | Notion 送信先データベース |
+| `DISCORD_TOKEN` | Discord Bot authentication |
+| `CHANNEL_ID` | Target Discord channel |
+| `NOTION_API_KEY` | Notion API authentication |
+| `NOTION_DATABASE_ID` | Target Notion database |
 
-## ログ
+## Logging
 
-`log/{YYYYMMDD}-app.log` に DEBUG レベルで出力。コンソールは INFO レベル。`src/logger.py` の `get_logger()` で取得する。
+`log/{YYYYMMDD}-app.log` — DEBUG level. Console output is INFO level. Obtain loggers via `get_logger()` in `src/logger.py`.
+
+## Git Conventions
+
+### Branch Naming
+
+```
+feature/<short-description>   # New features
+fix/<short-description>       # Bug fixes
+refactor/<short-description>  # Refactoring with no behavior change
+docs/<short-description>      # Documentation only
+```
+
+### Commit Message Format
+
+Use [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>: <short summary in English>
+
+[optional body]
+```
+
+| Type | When to use |
+|---|---|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `refactor` | Code change with no behavior change |
+| `docs` | Documentation only |
+| `chore` | Tooling, deps, config (no production code) |
+
+Examples:
+```
+feat: add watch_sectors to briefing prompt
+fix: resolve dynamic Notion title property lookup
+refactor: replace hardcoded path in bin/run.sh with SCRIPT_DIR
+docs: add CLAUDE.md
+```
+
+### Pull Request
+
+- **Title**: `<type>: <short summary>` — same format as commit (under 70 chars)
+- **Body**: bullet-point summary + test plan checklist
+- One logical change per PR; squash unrelated fixups before opening
