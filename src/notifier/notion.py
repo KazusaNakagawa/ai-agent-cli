@@ -178,16 +178,17 @@ _LABEL_COLON_RE = re.compile(r"^([-*]\s+)?([^：\n]{1,30}：)(.{5,})")
 def _split_label_colon(line: str) -> list[str]:
     """「ラベル：内容」形式の行を2行に分割して返す。該当しない場合はそのまま返す。
 
-    例: "AI・クラウド：強い。..." → ["**AI・クラウド：**", "強い。..."]
-    箇条書き行 "- AI・クラウド：..." も同様に処理する。
+    例: "- **AI・クラウド：**強い。..." → ["**AI・クラウド：**", "強い。..."]
+    - ラベルは paragraph（太字）に、内容は別 paragraph に分割する
+    - 箇条書きプレフィックス（- / *）は除去する
+    - 既存の ** マーカーは除去してから付け直す（二重 ** 防止）
     """
     m = _LABEL_COLON_RE.match(line.rstrip())
     if not m:
         return [line]
-    prefix = m.group(1) or ""   # "- " or ""
-    label = m.group(2)          # "AI・クラウド："
-    content = m.group(3).strip()
-    return [f"{prefix}**{label}**", content]
+    label = m.group(2).strip("* ")              # 既存 ** を除去: "AI・クラウド："
+    content = re.sub(r"^\*+\s*", "", m.group(3).strip())  # 先頭の閉じ ** を除去
+    return [f"**{label}**", content]
 
 
 def _markdown_to_blocks(markdown: str) -> list[dict]:
