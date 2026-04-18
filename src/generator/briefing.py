@@ -9,6 +9,7 @@ logger = get_logger(__name__)
 
 _TIMEOUT_MAIN = 300     # メイン分析（portfolio + geopolitical）
 _TIMEOUT_SECTORS = 480  # セクタースイープ（14セクター × WebSearch）
+# 並列実行のため実際の待機時間は max(MAIN, SECTORS) = 480s（合計ではない）
 
 
 def _build_geopolitical_context(config: BriefingConfig) -> str:
@@ -97,8 +98,19 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
                 logger.error("claude CLI 失敗 [%s]: %s", key, e)
                 errors[key] = str(e)
 
-    if errors:
-        failed = ", ".join(errors.keys())
-        raise RuntimeError(f"ブリーフィング生成に失敗しました: {failed}\n" + "\n".join(errors.values()))
+    if "main" in errors:
+        # メイン分析が失敗した場合は続行不可
+        raise RuntimeError(f"ブリーフィング生成に失敗しました: メイン分析\n{errors['main']}")
 
-    return results["main"] + "\n\n" + results["sectors"]
+    assert "main" in results, "main result missing despite no error recorded"
+
+    main_text = results["main"]
+
+    if "sectors" in errors:
+        # セクタースイープのみ失敗した場合は degraded モードで返す
+        logger.warning("セクタースイープ失敗（メイン分析は成功）: %s", errors["sectors"])
+        return main_text + "\n\n---\n\n⚠️ セクター動向の取得に失敗しました。\n" + errors["sectors"]
+
+    assert "sectors" in results, "sectors result missing despite no error recorded"
+
+    return main_text + "\n\n---\n\n## セクター動向\n\n" + results["sectors"]
