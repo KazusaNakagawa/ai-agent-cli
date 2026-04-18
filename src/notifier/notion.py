@@ -187,7 +187,7 @@ def _split_label_colon(line: str) -> list[str]:
     if not m:
         return [line]
     label = m.group(2).strip("* ")              # 既存 ** を除去: "AI・クラウド："
-    content = re.sub(r"^\*+\s*", "", m.group(3).strip())  # 先頭の閉じ ** を除去
+    content = re.sub(r"^\*+\s*|\s*\*+$", "", m.group(3).strip())  # 先頭・末尾の ** を除去
     return [f"**{label}**", content]
 
 
