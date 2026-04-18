@@ -172,11 +172,35 @@ def _table_rows_to_block(rows: list[str]) -> dict:
     }
 
 
+_LABEL_COLON_RE = re.compile(r"^([-*]\s+)?([^：\n]{1,30}：)(.{5,})")
+
+
+def _split_label_colon(line: str) -> list[str]:
+    """「ラベル：内容」形式の行を2行に分割して返す。該当しない場合はそのまま返す。
+
+    例: "AI・クラウド：強い。..." → ["**AI・クラウド：**", "強い。..."]
+    箇条書き行 "- AI・クラウド：..." も同様に処理する。
+    """
+    m = _LABEL_COLON_RE.match(line.rstrip())
+    if not m:
+        return [line]
+    prefix = m.group(1) or ""   # "- " or ""
+    label = m.group(2)          # "AI・クラウド："
+    content = m.group(3).strip()
+    return [f"{prefix}**{label}**", content]
+
+
 def _markdown_to_blocks(markdown: str) -> list[dict]:
     """Markdown 文字列を Notion ブロック辞書のリストに変換して返す。
-    Markdown テーブルは Notion table ブロックに変換する。"""
+    Markdown テーブルは Notion table ブロックに変換する。
+    「ラベル：内容」行はラベルと内容を別ブロックに分割する。"""
     blocks = []
-    lines = markdown.splitlines()
+    raw_lines = markdown.splitlines()
+    # ラベル：内容 行を展開してから処理
+    lines: list[str] = []
+    for raw in raw_lines:
+        lines.extend(_split_label_colon(raw))
+
     i = 0
     while i < len(lines):
         line = lines[i]
