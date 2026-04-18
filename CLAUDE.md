@@ -34,7 +34,7 @@ Two independent agents share the same Discord/Notion notifiers.
 
 ### Briefing Agent
 
-```
+```bash
 bin/briefing.py
   └── src/handler.py
         ├── src/fetcher/stocks.py        # Fetches previous-day % change via yfinance
@@ -46,7 +46,7 @@ bin/briefing.py
 
 ### XSS Intel Agent
 
-```
+```bash
 bin/xss_intel.py
   └── src/xss_handler.py
         ├── src/generator/xss_report.py  # Invokes claude CLI via subprocess
