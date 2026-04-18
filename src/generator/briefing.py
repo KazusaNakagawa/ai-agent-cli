@@ -7,7 +7,8 @@ from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-_TIMEOUT = 300
+_TIMEOUT_MAIN = 300     # メイン分析（portfolio + geopolitical）
+_TIMEOUT_SECTORS = 480  # セクタースイープ（14セクター × WebSearch）
 
 
 def _build_geopolitical_context(config: BriefingConfig) -> str:
@@ -37,22 +38,22 @@ def _build_watch_sectors_context(config: BriefingConfig) -> str:
     return "\n\n".join(lines)
 
 
-def _run_claude(prompt: str, label: str) -> str:
+def _run_claude(prompt: str, label: str, timeout: int = _TIMEOUT_MAIN) -> str:
     """claude CLI を subprocess で呼び出し、結果を返す。"""
     claude_path = shutil.which("claude")
     if claude_path is None:
         raise RuntimeError("claude CLI が見つかりません。PATH を確認してください。")
 
-    logger.info("claude CLI 呼び出し開始: %s", label)
+    logger.info("claude CLI 呼び出し開始: %s (timeout=%ds)", label, timeout)
     try:
         result = subprocess.run(
             [claude_path, "-p", prompt, "--allowedTools", "WebSearch"],
             capture_output=True,
             text=True,
-            timeout=_TIMEOUT,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        logger.error("claude CLI タイムアウト: %s (%ds)", label, _TIMEOUT)
+        logger.error("claude CLI タイムアウト: %s (%ds)", label, timeout)
         raise RuntimeError(f"claude CLI がタイムアウトしました ({label})")
 
     if result.returncode != 0:
@@ -83,8 +84,8 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
-            executor.submit(_run_claude, main_prompt, "メイン分析"): "main",
-            executor.submit(_run_claude, sectors_prompt, "セクタースイープ"): "sectors",
+            executor.submit(_run_claude, main_prompt, "メイン分析", _TIMEOUT_MAIN): "main",
+            executor.submit(_run_claude, sectors_prompt, "セクタースイープ", _TIMEOUT_SECTORS): "sectors",
         }
         results: dict[str, str] = {}
         errors: dict[str, str] = {}
