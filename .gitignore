@@ -10,6 +10,9 @@
 # ログ
 log/
 
+# 出力
+output/
+
 # Python
 __pycache__/
 *.py[cod]
