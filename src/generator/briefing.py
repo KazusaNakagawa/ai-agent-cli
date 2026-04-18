@@ -1,10 +1,15 @@
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.config import BriefingConfig
 from src.generator.prompt import render
 from src.logger import get_logger
 
 logger = get_logger(__name__)
+
+_TIMEOUT_MAIN = 300     # メイン分析（portfolio + geopolitical）
+_TIMEOUT_SECTORS = 480  # セクタースイープ（14セクター × WebSearch）
+# 並列実行のため実際の待機時間は max(MAIN, SECTORS) = 480s（合計ではない）
 
 
 def _build_geopolitical_context(config: BriefingConfig) -> str:
@@ -34,41 +39,78 @@ def _build_watch_sectors_context(config: BriefingConfig) -> str:
     return "\n\n".join(lines)
 
 
-def generate_briefing(stocks: str, config: BriefingConfig) -> str:
-    """claude CLI + WebSearch でブリーフィングを生成"""
-    tickers = ", ".join(config.portfolio.tickers)
-    themes = ", ".join(config.portfolio.themes)
-
-    prompt = render(
-        "briefing",
-        tickers=tickers,
-        themes=themes,
-        geopolitical=_build_geopolitical_context(config),
-        watch_sectors=_build_watch_sectors_context(config),
-        stocks=stocks,
-    )
-
-    logger.info("claude CLI (WebSearch) 呼び出し開始")
-    logger.debug("対象銘柄: %s / テーマ: %s", tickers, themes)
-
+def _run_claude(prompt: str, label: str, timeout: int = _TIMEOUT_MAIN) -> str:
+    """claude CLI を subprocess で呼び出し、結果を返す。"""
     claude_path = shutil.which("claude")
     if claude_path is None:
         raise RuntimeError("claude CLI が見つかりません。PATH を確認してください。")
 
+    logger.info("claude CLI 呼び出し開始: %s (timeout=%ds)", label, timeout)
     try:
         result = subprocess.run(
             [claude_path, "-p", prompt, "--allowedTools", "WebSearch"],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        logger.error("claude CLI がタイムアウトしました")
-        raise RuntimeError("claude CLI の実行がタイムアウトしました")
+        logger.error("claude CLI タイムアウト: %s (%ds)", label, timeout)
+        raise RuntimeError(f"claude CLI がタイムアウトしました ({label})")
 
     if result.returncode != 0:
-        logger.error("claude CLI エラー: %s", result.stderr)
-        raise RuntimeError(f"claude CLI エラー: {result.stderr}")
+        logger.error("claude CLI エラー [%s]: %s", label, result.stderr)
+        raise RuntimeError(f"claude CLI エラー [{label}]: {result.stderr}")
 
-    logger.info("ブリーフィング生成完了 (%d文字)", len(result.stdout))
+    logger.info("claude CLI 完了: %s (%d文字)", label, len(result.stdout))
     return result.stdout.strip()
+
+
+def generate_briefing(stocks: str, config: BriefingConfig) -> str:
+    """メイン分析とセクタースイープを並列実行してブリーフィングを生成する。"""
+    tickers = ", ".join(config.portfolio.tickers)
+    themes = ", ".join(config.portfolio.themes)
+
+    main_prompt = render(
+        "briefing",
+        tickers=tickers,
+        themes=themes,
+        geopolitical=_build_geopolitical_context(config),
+        stocks=stocks,
+    )
+    sectors_prompt = render(
+        "briefing_sectors",
+        watch_sectors=_build_watch_sectors_context(config),
+        stocks=stocks,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(_run_claude, main_prompt, "メイン分析", _TIMEOUT_MAIN): "main",
+            executor.submit(_run_claude, sectors_prompt, "セクタースイープ", _TIMEOUT_SECTORS): "sectors",
+        }
+        results: dict[str, str] = {}
+        errors: dict[str, str] = {}
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                results[key] = future.result()
+            except Exception as e:
+                logger.error("claude CLI 失敗 [%s]: %s", key, e)
+                errors[key] = str(e)
+
+    if "main" in errors:
+        # メイン分析が失敗した場合は続行不可
+        raise RuntimeError(f"ブリーフィング生成に失敗しました: メイン分析\n{errors['main']}")
+
+    assert "main" in results, "main result missing despite no error recorded"
+
+    main_text = results["main"]
+
+    if "sectors" in errors:
+        # セクタースイープのみ失敗した場合は degraded モードで返す
+        logger.warning("セクタースイープ失敗（メイン分析は成功）: %s", errors["sectors"])
+        return main_text + "\n\n---\n\n⚠️ セクター動向の取得に失敗しました。\n" + errors["sectors"]
+
+    assert "sectors" in results, "sectors result missing despite no error recorded"
+
+    return main_text + "\n\n---\n\n## セクター動向\n\n" + results["sectors"]
