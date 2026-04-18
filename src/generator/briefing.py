@@ -1,6 +1,5 @@
-import shutil
-import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from src.claude_client import run_with_web_search
 from src.config import BriefingConfig
 from src.generator.prompt import render
 from src.logger import get_logger
@@ -40,29 +39,8 @@ def _build_watch_sectors_context(config: BriefingConfig) -> str:
 
 
 def _run_claude(prompt: str, label: str, timeout: int = _TIMEOUT_MAIN) -> str:
-    """claude CLI を subprocess で呼び出し、結果を返す。"""
-    claude_path = shutil.which("claude")
-    if claude_path is None:
-        raise RuntimeError("claude CLI が見つかりません。PATH を確認してください。")
-
-    logger.info("claude CLI 呼び出し開始: %s (timeout=%ds)", label, timeout)
-    try:
-        result = subprocess.run(
-            [claude_path, "-p", prompt, "--allowedTools", "WebSearch"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        logger.error("claude CLI タイムアウト: %s (%ds)", label, timeout)
-        raise RuntimeError(f"claude CLI がタイムアウトしました ({label})")
-
-    if result.returncode != 0:
-        logger.error("claude CLI エラー [%s]: %s", label, result.stderr)
-        raise RuntimeError(f"claude CLI エラー [{label}]: {result.stderr}")
-
-    logger.info("claude CLI 完了: %s (%d文字)", label, len(result.stdout))
-    return result.stdout.strip()
+    """Anthropic SDK で claude を呼び出し、結果を返す。"""
+    return run_with_web_search(prompt, label, timeout)
 
 
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
