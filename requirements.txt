@@ -14,6 +14,8 @@ cffi==2.0.0
     # via curl-cffi
 charset-normalizer==3.4.7
     # via requests
+coverage==7.13.5
+    # via pytest-cov
 curl-cffi==0.15.0
     # via yfinance
 frozendict==2.4.7
@@ -52,7 +54,9 @@ peewee==4.0.4
 platformdirs==4.9.6
     # via yfinance
 pluggy==1.6.0
-    # via pytest
+    # via
+    #   pytest
+    #   pytest-cov
 protobuf==7.34.1
     # via yfinance
 pycparser==3.0
@@ -62,6 +66,10 @@ pygments==2.20.0
     #   pytest
     #   rich
 pytest==9.0.3
+    # via
+    #   -r requirements.in
+    #   pytest-cov
+pytest-cov==7.1.0
     # via -r requirements.in
 python-dateutil==2.9.0.post0
     # via pandas
