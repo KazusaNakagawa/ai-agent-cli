@@ -11,6 +11,11 @@ class TestExtractBriefingMetrics:
         result = extract_briefing_metrics("PLTR は上昇、nvda は横ばい", tickers=["PLTR", "NVDA"])
         assert result["TickerCount"] == {"number": 2}
 
+    def test_ticker_adjacent_to_japanese_particle(self):
+        # スペースなしで日本語助詞が続くケース（\b では検出できない）
+        result = extract_briefing_metrics("PLTRは上昇中", tickers=["PLTR"])
+        assert result["TickerCount"] == {"number": 1}
+
     def test_ticker_not_mentioned(self):
         result = extract_briefing_metrics("市場は安定", tickers=["PLTR", "NVDA"])
         assert result["TickerCount"] == {"number": 0}
