@@ -247,6 +247,7 @@ def send_to_notion(
     database_id: str,
     title: str | None = None,
     tags: list[str] | None = None,
+    extra_properties: dict | None = None,
 ) -> str:
     """Notion データベースに新規ページとしてレポートを投稿する。作成したページの URL を返す。"""
     if not api_key or not database_id:
@@ -288,6 +289,8 @@ def send_to_notion(
     }
     if tags:
         properties["Tags"] = {"multi_select": [{"name": t} for t in tags]}
+    if extra_properties:
+        properties.update(extra_properties)
 
     try:
         response = notion.pages.create(

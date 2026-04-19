@@ -59,3 +59,33 @@ class TestSendToNotionTags:
     def test_returns_page_url(self, mock_notion):
         url = send_to_notion("hello", api_key="key", database_id="db-id", tags=["agent"])
         assert url == "https://notion.so/page-1"
+
+
+class TestSendToNotionExtraProperties:
+    def test_extra_properties_merged(self, mock_notion):
+        send_to_notion(
+            "hello",
+            api_key="key",
+            database_id="db-id",
+            extra_properties={"CharCount": {"number": 5}},
+        )
+        _, kwargs = mock_notion.pages.create.call_args
+        assert kwargs["properties"]["CharCount"] == {"number": 5}
+
+    def test_extra_properties_and_tags_both_set(self, mock_notion):
+        send_to_notion(
+            "hello",
+            api_key="key",
+            database_id="db-id",
+            tags=["agent"],
+            extra_properties={"HighCount": {"number": 3}},
+        )
+        _, kwargs = mock_notion.pages.create.call_args
+        props = kwargs["properties"]
+        assert props["Tags"] == {"multi_select": [{"name": "agent"}]}
+        assert props["HighCount"] == {"number": 3}
+
+    def test_none_extra_properties_no_effect(self, mock_notion):
+        send_to_notion("hello", api_key="key", database_id="db-id", extra_properties=None)
+        _, kwargs = mock_notion.pages.create.call_args
+        assert "CharCount" not in kwargs["properties"]
