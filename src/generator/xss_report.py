@@ -21,7 +21,6 @@ def generate_xss_report(config: XssIntelConfig) -> str:
         date=date.today().strftime("%Y-%m-%d"),
     )
 
-    logger.info("claude CLI (WebSearch) 呼び出し開始 [XSS Intel]")
     logger.debug("対象フレームワーク: %s / ライブラリ: %s", frameworks, libraries)
 
     text = run_claude(prompt, "XSS Intel", timeout=300)
