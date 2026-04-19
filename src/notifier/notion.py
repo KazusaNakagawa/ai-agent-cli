@@ -241,7 +241,13 @@ def _resolve_title_prop(notion: Client, database_id: str, sample_title: str) -> 
 # 公開 API
 # ---------------------------------------------------------------------------
 
-def send_to_notion(text: str, api_key: str, database_id: str, title: str | None = None) -> str:
+def send_to_notion(
+    text: str,
+    api_key: str,
+    database_id: str,
+    title: str | None = None,
+    tags: list[str] | None = None,
+) -> str:
     """Notion データベースに新規ページとしてレポートを投稿する。作成したページの URL を返す。"""
     if not api_key or not database_id:
         logger.error("NOTION_API_KEY または NOTION_DATABASE_ID が未設定")
@@ -275,14 +281,18 @@ def send_to_notion(text: str, api_key: str, database_id: str, title: str | None 
     first_batch = blocks[:100]
     remaining = blocks[100:]
 
+    properties: dict = {
+        title_prop_name: {
+            "title": [{"type": "text", "text": {"content": page_title}}]
+        }
+    }
+    if tags:
+        properties["Tags"] = {"multi_select": [{"name": t} for t in tags]}
+
     try:
         response = notion.pages.create(
             parent={"database_id": database_id},
-            properties={
-                title_prop_name: {
-                    "title": [{"type": "text", "text": {"content": page_title}}]
-                }
-            },
+            properties=properties,
             children=first_batch,
         )
     except Exception:
