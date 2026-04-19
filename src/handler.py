@@ -30,6 +30,7 @@ def lambda_handler(event=None, context=None):
         CONFIG.notion_api_key,
         CONFIG.notion_database_id,
         title=f"マーケットブリーフィング — {date.today().strftime('%Y-%m-%d')}",
+        tags=["agent"],
     )
     if page_url:
         logger.info("Notion ページ: %s", page_url)

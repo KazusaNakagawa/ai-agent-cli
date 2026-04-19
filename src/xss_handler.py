@@ -39,6 +39,7 @@ def lambda_handler(event=None, context=None):
             config.notion_api_key,
             config.notion_database_id,
             title=f"XSS 脆弱性インテリジェンス — {date.today().strftime('%Y-%m-%d')}",
+            tags=["agent"],
         )
         if page_url:
             logger.info("Notion ページ: %s", page_url)
