@@ -19,29 +19,31 @@ bin/run.sh
   ├── bin/briefing.py
   │     └── src/handler.py
   │           ├── src/fetcher/stocks.py        # Previous-day % change via yfinance
-  │           ├── src/generator/briefing.py    # Invokes claude CLI (WebSearch)
+  │           ├── src/generator/briefing.py    # Builds prompts, calls run_claude() in parallel
   │           │     └── prompts/briefing.md    # Prompt template
   │           ├── src/notifier/discord.py
   │           └── src/notifier/notion.py
   └── bin/xss_intel.py
         └── src/xss_handler.py
-              ├── src/generator/xss_report.py  # Invokes claude CLI (WebSearch)
+              ├── src/generator/xss_report.py  # Builds prompt, calls run_claude()
               │     └── prompts/xss_intel.md
               ├── src/notifier/discord.py
               └── src/notifier/notion.py
 
+src/claude_runner.py   # Shared claude CLI helper (subprocess + WebSearch)
 config/
-  briefing.json   # Portfolio, watch sectors (14 sectors), geopolitical risks
-  xss_intel.json  # XSS target frameworks / libraries / keywords
-src/config.py     # JSON → dataclass schema
+  briefing.json        # Portfolio, watch sectors (14 sectors), geopolitical risks
+  xss_intel.json       # XSS target frameworks / libraries / keywords
+src/config.py          # JSON → dataclass schema
 ```
 
 ### Key Design Decisions
 
-- **No NewsAPI** — Claude Code CLI's WebSearch handles real-time search
-- **No Anthropic API key needed (local)** — reuses Claude Code CLI authentication
+- **No NewsAPI** — Claude Code CLI's built-in WebSearch handles real-time search
+- **No Anthropic API billing** — reuses Claude Code CLI's OAuth authentication; `ANTHROPIC_API_KEY` is explicitly excluded from the subprocess environment to prevent accidental API charges
 - **Geopolitical → stock causality** is baked into every daily output
 - **watch_sectors** (14 sectors, ~90 tickers) give Claude full market coverage to surface sector moves
+- **Degraded mode** — if the sector sweep fails, the main analysis is still delivered
 
 ---
 
@@ -51,7 +53,7 @@ src/config.py     # JSON → dataclass schema
 
 - Python 3.11+
 - [uv](https://github.com/astral-sh/uv) installed
-- [Claude Code CLI](https://claude.ai/code) installed and authenticated
+- [Claude Code CLI](https://claude.ai/code) installed and authenticated (`claude` in PATH)
 - Discord Bot created (Send Messages permission granted)
 - Notion integration created with database access
 
@@ -84,6 +86,34 @@ cp .env.example .env
 ```bash
 bin/run.sh
 ```
+
+---
+
+## Scheduling (macOS launchd)
+
+The agents can be scheduled to run automatically every morning using macOS launchd.
+
+```bash
+# Install and register the launchd job (runs at 08:00 daily)
+bash launchd/install.sh
+
+# Verify registration
+launchctl list | grep aiagent
+
+# Run immediately (for testing)
+launchctl kickstart -k gui/$(id -u)/com.aiagent.run
+
+# Uninstall
+bash launchd/uninstall.sh
+```
+
+To ensure the Mac wakes from sleep before the 08:00 trigger:
+
+```bash
+sudo pmset repeat wake MTWRFSU 07:55:00
+```
+
+Logs are written to `log/launchd.stdout.log` and `log/launchd.stderr.log`.
 
 ---
 
@@ -122,6 +152,24 @@ All monitoring targets are managed here — no code changes needed.
 ### `prompts/briefing.md`
 
 Prompt template for the briefing agent. Variables: `{tickers}` `{themes}` `{geopolitical}` `{watch_sectors}` `{stocks}`. Edit this file to change Claude's output behavior.
+
+---
+
+## Testing
+
+```bash
+# Run all tests
+.venv/bin/pytest -v
+
+# Run a specific module
+.venv/bin/pytest tests/test_claude_runner.py -v
+```
+
+| Test file | Coverage |
+|---|---|
+| `test_claude_runner.py` | `run_claude()` — CLI discovery, timeout, error handling, env masking |
+| `test_generator_briefing.py` | Context builders, parallel execution, degraded mode |
+| `test_config.py` | `load_config()` validation (watch_sectors, tickers) |
 
 ---
 
@@ -168,8 +216,10 @@ uv pip sync requirements.txt
 | 1 | Local manual run | ✅ Done |
 | 2 | Discord delivery | ✅ Done |
 | 3 | Notion delivery | ✅ Done |
-| 4 | AWS Lambda + EventBridge automation | 🔜 Next |
-| 5 | DynamoDB for dynamic config | 📋 Planned |
+| 4 | macOS launchd daily scheduler | ✅ Done |
+| 5 | Unit tests (pytest) | ✅ Done |
+| 6 | AWS Lambda + EventBridge automation | 📋 Planned |
+| 7 | DynamoDB for dynamic config | 📋 Planned |
 
 ---
 
