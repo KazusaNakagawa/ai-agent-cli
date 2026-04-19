@@ -118,19 +118,6 @@ bin/xss_intel.py
 | `tests/test_generator_briefing.py` | Context builders, parallel execution, degraded mode |
 | `tests/test_config.py` | `load_config()` validation |
 
-## Scheduling (macOS launchd)
-
-```bash
-bash launchd/install.sh    # Register 08:00 daily job
-bash launchd/uninstall.sh  # Remove job
-launchctl kickstart -k gui/$(id -u)/com.aiagent.run  # Run immediately
-```
-
-Wake the Mac before the trigger:
-```bash
-sudo pmset repeat wake MTWRFSU 07:55:00
-```
-
 ## Git Conventions
 
 ### Branch Naming

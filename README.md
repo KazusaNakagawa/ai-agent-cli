@@ -89,34 +89,6 @@ bin/run.sh
 
 ---
 
-## Scheduling (macOS launchd)
-
-The agents can be scheduled to run automatically every morning using macOS launchd.
-
-```bash
-# Install and register the launchd job (runs at 08:00 daily)
-bash launchd/install.sh
-
-# Verify registration
-launchctl list | grep aiagent
-
-# Run immediately (for testing)
-launchctl kickstart -k gui/$(id -u)/com.aiagent.run
-
-# Uninstall
-bash launchd/uninstall.sh
-```
-
-To ensure the Mac wakes from sleep before the 08:00 trigger:
-
-```bash
-sudo pmset repeat wake MTWRFSU 07:55:00
-```
-
-Logs are written to `log/launchd.stdout.log` and `log/launchd.stderr.log`.
-
----
-
 ## Configuration
 
 ### `config/briefing.json`
@@ -216,10 +188,9 @@ uv pip sync requirements.txt
 | 1 | Local manual run | ✅ Done |
 | 2 | Discord delivery | ✅ Done |
 | 3 | Notion delivery | ✅ Done |
-| 4 | macOS launchd daily scheduler | ✅ Done |
-| 5 | Unit tests (pytest) | ✅ Done |
-| 6 | AWS Lambda + EventBridge automation | 📋 Planned |
-| 7 | DynamoDB for dynamic config | 📋 Planned |
+| 4 | Unit tests (pytest) | ✅ Done |
+| 5 | AWS Lambda + EventBridge automation | 📋 Planned |
+| 6 | DynamoDB for dynamic config | 📋 Planned |
 
 ---
 
