@@ -1,3 +1,5 @@
+from datetime import date
+
 from src.config import CONFIG
 from src.fetcher.stocks import fetch_stock_moves
 from src.generator.briefing import generate_briefing
@@ -25,7 +27,6 @@ def lambda_handler(event=None, context=None):
     send_to_discord(briefing, CONFIG.discord_token, CONFIG.discord_channel_id)
 
     logger.info("Notion にページ作成中...")
-    from datetime import date
     metrics = extract_briefing_metrics(briefing, CONFIG.portfolio.tickers)
     page_url = send_to_notion(
         briefing,
