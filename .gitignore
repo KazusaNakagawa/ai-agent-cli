@@ -19,6 +19,11 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.coverage
+htmlcov/
+
+# Editor
+.vscode/
 
 # OS
 .DS_Store
