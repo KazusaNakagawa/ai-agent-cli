@@ -1,6 +1,7 @@
 from datetime import date
 from src.config import get_xss_config
 from src.generator.xss_report import generate_xss_report
+from src.metrics.xss import extract_xss_metrics
 from src.notifier.discord import send_to_discord
 from src.notifier.notion import send_to_notion
 from src.logger import get_logger
@@ -34,12 +35,14 @@ def lambda_handler(event=None, context=None):
 
     logger.info("Notion にページ作成中...")
     try:
+        metrics = extract_xss_metrics(report)
         page_url = send_to_notion(
             report,
             config.notion_api_key,
             config.notion_database_id,
             title=f"XSS 脆弱性インテリジェンス — {date.today().strftime('%Y-%m-%d')}",
             tags=["agent"],
+            extra_properties=metrics,
         )
         if page_url:
             logger.info("Notion ページ: %s", page_url)
