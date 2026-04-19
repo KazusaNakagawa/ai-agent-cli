@@ -1,6 +1,5 @@
-import shutil
-import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from src.claude_runner import run_claude
 from src.config import BriefingConfig
 from src.generator.prompt import render
 from src.logger import get_logger
@@ -13,7 +12,6 @@ _TIMEOUT_SECTORS = 480  # セクタースイープ（14セクター × WebSearch
 
 
 def _build_geopolitical_context(config: BriefingConfig) -> str:
-    """BriefingConfig の地政学リスク情報をプロンプト用のテキストブロックに整形して返す。"""
     lines = []
     for c in config.geopolitical.conflicts:
         sectors = "、".join(c.affected_sectors)
@@ -28,7 +26,6 @@ def _build_geopolitical_context(config: BriefingConfig) -> str:
 
 
 def _build_watch_sectors_context(config: BriefingConfig) -> str:
-    """watch_sectors をプロンプト用のテキストブロックに整形して返す。"""
     lines = []
     for s in config.watch_sectors:
         tickers = "、".join(s.tickers)
@@ -37,32 +34,6 @@ def _build_watch_sectors_context(config: BriefingConfig) -> str:
             entry += f"\n- 注目点: {s.notes}"
         lines.append(entry)
     return "\n\n".join(lines)
-
-
-def _run_claude(prompt: str, label: str, timeout: int = _TIMEOUT_MAIN) -> str:
-    """claude CLI を subprocess で呼び出し、結果を返す。"""
-    claude_path = shutil.which("claude")
-    if claude_path is None:
-        raise RuntimeError("claude CLI が見つかりません。PATH を確認してください。")
-
-    logger.info("claude CLI 呼び出し開始: %s (timeout=%ds)", label, timeout)
-    try:
-        result = subprocess.run(
-            [claude_path, "-p", prompt, "--allowedTools", "WebSearch"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        logger.error("claude CLI タイムアウト: %s (%ds)", label, timeout)
-        raise RuntimeError(f"claude CLI がタイムアウトしました ({label})")
-
-    if result.returncode != 0:
-        logger.error("claude CLI エラー [%s]: %s", label, result.stderr)
-        raise RuntimeError(f"claude CLI エラー [{label}]: {result.stderr}")
-
-    logger.info("claude CLI 完了: %s (%d文字)", label, len(result.stdout))
-    return result.stdout.strip()
 
 
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
@@ -85,8 +56,8 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
-            executor.submit(_run_claude, main_prompt, "メイン分析", _TIMEOUT_MAIN): "main",
-            executor.submit(_run_claude, sectors_prompt, "セクタースイープ", _TIMEOUT_SECTORS): "sectors",
+            executor.submit(run_claude, main_prompt, "メイン分析", _TIMEOUT_MAIN): "main",
+            executor.submit(run_claude, sectors_prompt, "セクタースイープ", _TIMEOUT_SECTORS): "sectors",
         }
         results: dict[str, str] = {}
         errors: dict[str, str] = {}
@@ -99,7 +70,6 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
                 errors[key] = str(e)
 
     if "main" in errors:
-        # メイン分析が失敗した場合は続行不可
         raise RuntimeError(f"ブリーフィング生成に失敗しました: メイン分析\n{errors['main']}")
 
     assert "main" in results, "main result missing despite no error recorded"
@@ -107,7 +77,6 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
     main_text = results["main"]
 
     if "sectors" in errors:
-        # セクタースイープのみ失敗した場合は degraded モードで返す
         logger.warning("セクタースイープ失敗（メイン分析は成功）: %s", errors["sectors"])
         return main_text + "\n\n---\n\n⚠️ セクター動向の取得に失敗しました。\n" + errors["sectors"]
 
