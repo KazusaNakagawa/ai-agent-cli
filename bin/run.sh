@@ -7,4 +7,4 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 source "$PROJECT_ROOT/.venv/bin/activate"
 
 python "$SCRIPT_DIR/briefing.py"
-python "$SCRIPT_DIR/xss_intel.py"
+# python "$SCRIPT_DIR/xss_intel.py"

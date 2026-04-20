@@ -21,7 +21,8 @@ def run_claude(prompt: str, label: str, timeout: int = 300) -> str:
     logger.info("claude CLI 呼び出し開始: %s (timeout=%ds)", label, timeout)
     try:
         result = subprocess.run(
-            [claude_path, "-p", prompt, "--allowedTools", "WebSearch"],
+            [claude_path, "-p", prompt, "--allowedTools", "WebSearch",
+             "--model", "claude-haiku-4-5-20251001"],
             capture_output=True,
             text=True,
             timeout=timeout,
