@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.notifier.notion import send_to_notion, _markdown_to_blocks
+from src.notifier.notion import send_to_notion, _markdown_to_blocks, _block_to_text
 
 
 def _make_notion_mock(title_prop="Name", page_url="https://notion.so/page-1"):
@@ -161,3 +161,15 @@ class TestLabelColonSplit:
         label_block = blocks[0]
         texts = [rt["text"]["content"] for rt in label_block[label_block["type"]]["rich_text"]]
         assert "：" not in "".join(texts)
+
+
+class TestBlockToTextTableRow:
+    def test_table_row_renders_pipe_format(self):
+        block = {
+            "type": "table_row",
+            "table_row": {"cells": [
+                [{"text": {"content": "週初"}}],
+                [{"text": {"content": "週末"}}],
+            ]},
+        }
+        assert _block_to_text(block) == "| 週初 | 週末 |"

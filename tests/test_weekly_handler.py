@@ -193,6 +193,22 @@ class TestFetchWeeklyPages:
             result = fetch_weekly_pages("key", "db-id")
         assert result == []
 
+    def test_z_suffix_timestamp_included(self):
+        """Notion の Z サフィックス付き created_time が正しく比較されること。"""
+        page = self._make_page("new", "2026-04-25T00:00:00.000Z")
+        notion_mock = _make_notion_client_mock(pages_data=[page], blocks_data=[])
+        with patch("src.notifier.notion.Client", return_value=notion_mock):
+            result = fetch_weekly_pages("key", "db-id", days=7)
+        assert len(result) == 1
+
+    def test_old_page_excluded_by_datetime(self):
+        """days 範囲外のページは除外されること。"""
+        page = self._make_page("old", "2020-01-01T00:00:00.000Z")
+        notion_mock = _make_notion_client_mock(pages_data=[page], blocks_data=[])
+        with patch("src.notifier.notion.Client", return_value=notion_mock):
+            result = fetch_weekly_pages("key", "db-id", days=7)
+        assert result == []
+
 
 # ---------------------------------------------------------------------------
 # 統合テスト: weekly_handler

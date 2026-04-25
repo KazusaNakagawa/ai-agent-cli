@@ -11,6 +11,7 @@ _INLINE_RE = re.compile(r"\*\*(.+?)\*\*|\[([^\]]+)\]\((https?://[^\)]+)\)")
 _LABEL_COLON_RE = re.compile(r"^([-*]\s+)?([^：\n]{1,30}：)(.+)")
 _LIST_TYPES = {"numbered_list_item", "bulleted_list_item"}
 _INDENT_RE = re.compile(r"^( {2,}|\t)([-*]|\d+\.)\s+(.*)")
+_HEADING_RE = re.compile(r"^#{1,3}\s")
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +213,7 @@ def _markdown_to_blocks(markdown: str) -> list[dict]:
             i += 1
             continue
 
-        is_heading = re.match(r"^#{1,3}\s", line)
+        is_heading = _HEADING_RE.match(line)
         expanded_lines = [line] if is_heading else _split_label_colon(line)
         for expanded in expanded_lines:
             block = _line_to_block(expanded)
@@ -350,34 +351,46 @@ def _block_to_text(block: dict) -> str:
     return text
 
 
-def _fetch_page_text(notion: Client, page_id: str) -> str:
-    """ページ全ブロックをテキストに変換して返す（ページネーション対応）。"""
-    lines: list[str] = []
+def _fetch_blocks(notion: Client, block_id: str) -> list[dict]:
+    """指定ブロックの全子ブロックをページネーションして返す。"""
+    results: list[dict] = []
     cursor: str | None = None
     while True:
-        kwargs: dict = {"block_id": page_id, "page_size": 100}
+        kwargs: dict = {"block_id": block_id, "page_size": 100}
         if cursor:
             kwargs["start_cursor"] = cursor
         resp = notion.blocks.children.list(**kwargs)
-        for block in resp.get("results", []):
+        results.extend(resp.get("results", []))
+        if not resp.get("has_more"):
+            break
+        cursor = resp.get("next_cursor")
+    return results
+
+
+def _fetch_page_text(notion: Client, page_id: str) -> str:
+    """ページ全ブロックをテキストに変換して返す（ページネーション・ネスト対応）。"""
+    def _collect(block_id: str) -> list[str]:
+        lines: list[str] = []
+        for block in _fetch_blocks(notion, block_id):
             block_type = block.get("type", "")
             if block_type == "table":
                 # テーブル行は子ブロックとして格納されているため個別に取得する
-                rows_resp = notion.blocks.children.list(block_id=block["id"])
+                has_header = block.get("table", {}).get("has_column_header", False)
                 col_count = block.get("table", {}).get("table_width", 0)
-                for i, row in enumerate(rows_resp.get("results", [])):
-                    row_text = _block_to_text(row)
-                    lines.append(row_text)
-                    if i == 0 and col_count:
+                for i, row in enumerate(_fetch_blocks(notion, block["id"])):
+                    lines.append(_block_to_text(row))
+                    if i == 0 and has_header and col_count:
                         lines.append("| " + " | ".join(["---"] * col_count) + " |")
             else:
                 line = _block_to_text(block)
                 if line:
                     lines.append(line)
-        if not resp.get("has_more"):
-            break
-        cursor = resp.get("next_cursor")
-    return "\n".join(lines)
+                # ネストした子ブロック（インデントリストなど）を再帰取得
+                if block.get("has_children") and block_type not in ("table",):
+                    lines.extend(_collect(block["id"]))
+        return lines
+
+    return "\n".join(_collect(page_id))
 
 
 def _extract_page_title(page: dict) -> str:
@@ -412,7 +425,7 @@ def fetch_weekly_pages(
     notion = Client(auth=api_key)
     # Notion API 2025-09-03 では databases.query が廃止されたため search を使用。
     # parent.database_id・created_time・tag は Python 側でフィルタリングする。
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    since_dt = datetime.now(timezone.utc) - timedelta(days=days)
     normalized_db_id = database_id.replace("-", "")
 
     all_results: list[dict] = []
@@ -440,7 +453,14 @@ def fetch_weekly_pages(
         parent = page.get("parent", {})
         if (parent.get("database_id") or "").replace("-", "") != normalized_db_id:
             continue
-        if page.get("created_time", "") < since:
+        created_iso = page.get("created_time", "")
+        if created_iso.endswith("Z"):
+            created_iso = created_iso[:-1] + "+00:00"
+        try:
+            created_dt = datetime.fromisoformat(created_iso)
+        except ValueError:
+            continue
+        if created_dt < since_dt:
             continue
         if tag and tag not in _get_page_tags(page):
             continue
