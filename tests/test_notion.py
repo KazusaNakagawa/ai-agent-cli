@@ -122,6 +122,29 @@ class TestMarkdownToBlocksNesting:
         assert blocks[1]["type"] == "bulleted_list_item"
 
 
+class TestHeadingBlocks:
+    def test_bold_markers_stripped_from_heading(self):
+        """見出しの ** が除去されること。"""
+        blocks = _markdown_to_blocks("### **テーマ3**")
+        assert blocks[0]["type"] == "heading_3"
+        text = blocks[0]["heading_3"]["rich_text"][0]["text"]["content"]
+        assert "**" not in text
+        assert "テーマ3" in text
+
+    def test_heading_with_colon_not_split(self):
+        """見出し行は _split_label_colon の対象外であること。"""
+        blocks = _markdown_to_blocks("### テーマ3：詳細")
+        assert len(blocks) == 1
+        assert blocks[0]["type"] == "heading_3"
+
+    def test_trailing_asterisks_stripped(self):
+        """末尾だけ ** が残るパターンも除去されること。"""
+        blocks = _markdown_to_blocks("### テーマ3**")
+        assert blocks[0]["type"] == "heading_3"
+        text = blocks[0]["heading_3"]["rich_text"][0]["text"]["content"]
+        assert "**" not in text
+
+
 class TestLabelColonSplit:
     def test_colon_stripped_from_label(self):
         """ラベル部分から末尾の「：」が除去されること。"""

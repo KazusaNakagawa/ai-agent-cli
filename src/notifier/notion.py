@@ -94,10 +94,11 @@ def _line_to_block(line: str) -> dict | None:
     if m:
         level = len(m.group(1))
         block_type = f"heading_{min(level, 3)}"
+        heading_text = re.sub(r"\*+", "", m.group(2)).strip()
         return {
             "object": "block",
             "type": block_type,
-            block_type: {"rich_text": _parse_inline(m.group(2))},
+            block_type: {"rich_text": _parse_inline(heading_text)},
         }
 
     m = re.match(r"^[-*]\s+(.*)", stripped)
@@ -211,7 +212,9 @@ def _markdown_to_blocks(markdown: str) -> list[dict]:
             i += 1
             continue
 
-        for expanded in _split_label_colon(line):
+        is_heading = re.match(r"^#{1,3}\s", line)
+        expanded_lines = [line] if is_heading else _split_label_colon(line)
+        for expanded in expanded_lines:
             block = _line_to_block(expanded)
             if block is not None:
                 blocks.append(block)
