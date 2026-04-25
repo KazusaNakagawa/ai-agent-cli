@@ -35,8 +35,10 @@ def weekly_handler(event=None, context=None):
         tags=["weekly-summary"],
     )
 
-    if page_url:
-        logger.info("Notion ページ: %s", page_url)
+    if not page_url:
+        logger.error("Notion へのページ作成に失敗しました")
+        return {"statusCode": 500, "body": "Failed to post weekly summary to Notion."}
 
+    logger.info("Notion ページ: %s", page_url)
     logger.info("=== 完了 ===")
     return {"statusCode": 200, "body": f"Weekly summary posted: {page_url}"}

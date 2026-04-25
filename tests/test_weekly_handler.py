@@ -59,6 +59,16 @@ class TestBlockToText:
     def test_paragraph(self):
         assert _block_to_text(self._make_block("paragraph", "text")) == "text"
 
+    def test_table_row(self):
+        block = {
+            "type": "table_row",
+            "table_row": {"cells": [
+                [{"text": {"content": "A"}}],
+                [{"text": {"content": "B"}}],
+            ]},
+        }
+        assert _block_to_text(block) == "| A | B |"
+
 
 class TestExtractPageTitle:
     def test_title_property(self):
@@ -129,7 +139,7 @@ class TestFetchWeeklyPages:
         return {
             "id": "page-id",
             "created_time": created,
-            "parent": {"type": "data_source_id", "database_id": db_id},
+            "parent": {"type": "database_id", "database_id": db_id},
             "properties": {
                 "Name": {
                     "type": "title",
@@ -219,6 +229,16 @@ class TestWeeklyHandler:
         ):
             with pytest.raises(RuntimeError, match="fail"):
                 weekly_handler()
+
+    def test_notion_post_failure_returns_500(self):
+        pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
+        with (
+            patch("src.weekly_handler.fetch_weekly_pages", return_value=pages),
+            patch("src.weekly_handler.generate_weekly_summary", return_value="サマリー"),
+            patch("src.weekly_handler.send_to_notion", return_value=""),
+        ):
+            result = weekly_handler()
+        assert result["statusCode"] == 500
 
     def test_notion_post_includes_weekly_tag(self):
         pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]

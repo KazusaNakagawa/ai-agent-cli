@@ -341,6 +341,9 @@ def _block_to_text(block: dict) -> str:
         return f"1. {text}"
     if block_type == "divider":
         return "---"
+    if block_type == "table_row":
+        cells = content.get("cells", [])
+        return "| " + " | ".join(_rich_text_to_str(cell) for cell in cells) + " |"
     return text
 
 
@@ -354,9 +357,20 @@ def _fetch_page_text(notion: Client, page_id: str) -> str:
             kwargs["start_cursor"] = cursor
         resp = notion.blocks.children.list(**kwargs)
         for block in resp.get("results", []):
-            line = _block_to_text(block)
-            if line:
-                lines.append(line)
+            block_type = block.get("type", "")
+            if block_type == "table":
+                # テーブル行は子ブロックとして格納されているため個別に取得する
+                rows_resp = notion.blocks.children.list(block_id=block["id"])
+                col_count = block.get("table", {}).get("table_width", 0)
+                for i, row in enumerate(rows_resp.get("results", [])):
+                    row_text = _block_to_text(row)
+                    lines.append(row_text)
+                    if i == 0 and col_count:
+                        lines.append("| " + " | ".join(["---"] * col_count) + " |")
+            else:
+                line = _block_to_text(block)
+                if line:
+                    lines.append(line)
         if not resp.get("has_more"):
             break
         cursor = resp.get("next_cursor")
@@ -371,9 +385,9 @@ def _extract_page_title(page: dict) -> str:
 
 
 def _get_page_tags(page: dict) -> list[str]:
-    for prop in page.get("properties", {}).values():
-        if prop.get("type") == "multi_select":
-            return [opt["name"] for opt in prop.get("multi_select", [])]
+    prop = page.get("properties", {}).get("Tags", {})
+    if prop.get("type") == "multi_select":
+        return [opt["name"] for opt in prop.get("multi_select", [])]
     return []
 
 
