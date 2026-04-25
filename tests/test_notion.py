@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.notifier.notion import send_to_notion
+from src.notifier.notion import send_to_notion, _markdown_to_blocks
 
 
 def _make_notion_mock(title_prop="Name", page_url="https://notion.so/page-1"):
@@ -89,3 +89,34 @@ class TestSendToNotionExtraProperties:
         send_to_notion("hello", api_key="key", database_id="db-id", extra_properties=None)
         _, kwargs = mock_notion.pages.create.call_args
         assert "CharCount" not in kwargs["properties"]
+
+
+class TestMarkdownToBlocksNesting:
+    def test_indented_bullet_becomes_child_of_numbered(self):
+        md = "1. 項目A\n  - サブ項目"
+        blocks = _markdown_to_blocks(md)
+        assert len(blocks) == 1
+        assert blocks[0]["type"] == "numbered_list_item"
+        children = blocks[0]["numbered_list_item"].get("children", [])
+        assert len(children) == 1
+        assert children[0]["type"] == "bulleted_list_item"
+
+    def test_indented_tab_bullet_becomes_child(self):
+        md = "1. 項目A\n\t- サブ項目"
+        blocks = _markdown_to_blocks(md)
+        assert len(blocks) == 1
+        children = blocks[0]["numbered_list_item"].get("children", [])
+        assert len(children) == 1
+
+    def test_multiple_children(self):
+        md = "1. 項目\n  - 子1\n  - 子2"
+        blocks = _markdown_to_blocks(md)
+        assert len(blocks) == 1
+        children = blocks[0]["numbered_list_item"].get("children", [])
+        assert len(children) == 2
+
+    def test_non_indented_bullet_is_sibling(self):
+        md = "1. 項目\n- 別項目"
+        blocks = _markdown_to_blocks(md)
+        assert len(blocks) == 2
+        assert blocks[1]["type"] == "bulleted_list_item"
