@@ -198,20 +198,13 @@ class TestFetchWeeklyPages:
 # 統合テスト: weekly_handler
 # ---------------------------------------------------------------------------
 
-def _notion_mock_for_handler():
-    m = MagicMock()
-    m.databases.retrieve.return_value = {"properties": {"Name": {"type": "title"}}}
-    m.pages.create.return_value = {"id": "pid", "url": "https://notion.so/weekly"}
-    return m
-
-
 class TestWeeklyHandler:
     def test_success_returns_200(self):
         pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
         with (
             patch("src.weekly_handler.fetch_weekly_pages", return_value=pages),
             patch("src.weekly_handler.generate_weekly_summary", return_value="サマリー"),
-            patch("src.notifier.notion.Client", return_value=_notion_mock_for_handler()),
+            patch("src.weekly_handler.send_to_notion", return_value="https://notion.so/weekly"),
         ):
             result = weekly_handler()
         assert result["statusCode"] == 200
