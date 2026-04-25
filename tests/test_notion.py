@@ -120,3 +120,21 @@ class TestMarkdownToBlocksNesting:
         blocks = _markdown_to_blocks(md)
         assert len(blocks) == 2
         assert blocks[1]["type"] == "bulleted_list_item"
+
+
+class TestLabelColonSplit:
+    def test_colon_stripped_from_label(self):
+        """ラベル部分から末尾の「：」が除去されること。"""
+        md = "- **米中技術競争の進展：**強い動き"
+        blocks = _markdown_to_blocks(md)
+        # ラベルブロックの rich_text に「：」が含まれないこと
+        label_block = blocks[0]
+        texts = [rt["text"]["content"] for rt in label_block[label_block["type"]]["rich_text"]]
+        assert "：" not in "".join(texts)
+
+    def test_fullwidth_colon_stripped(self):
+        md = "**AI競争：**内容あり"
+        blocks = _markdown_to_blocks(md)
+        label_block = blocks[0]
+        texts = [rt["text"]["content"] for rt in label_block[label_block["type"]]["rich_text"]]
+        assert "：" not in "".join(texts)

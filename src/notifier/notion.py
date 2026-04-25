@@ -172,7 +172,7 @@ def _split_label_colon(line: str) -> list[str]:
     m = _LABEL_COLON_RE.match(line.rstrip())
     if not m:
         return [line]
-    label = m.group(2).strip("* ")
+    label = m.group(2).strip("* ").rstrip("：:")
     content = re.sub(r"^\*+\s*|\s*\*+$", "", m.group(3).strip())
     return [f"**{label}**", content]
 
