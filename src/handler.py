@@ -1,3 +1,4 @@
+import os
 from datetime import date
 
 from src.config import CONFIG
@@ -27,9 +28,11 @@ def lambda_handler(event=None, context=None):
     send_to_discord(briefing, CONFIG.discord_token, CONFIG.discord_channel_id)
 
     logger.info("Notion にページ作成中...")
+    model = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+    notion_text = briefing + f"\n\n---\nModel: {model}"
     metrics = extract_briefing_metrics(briefing, CONFIG.portfolio.tickers)
     page_url = send_to_notion(
-        briefing,
+        notion_text,
         CONFIG.notion_api_key,
         CONFIG.notion_database_id,
         title=f"マーケットブリーフィング — {date.today().strftime('%Y-%m-%d')}",
