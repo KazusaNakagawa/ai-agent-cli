@@ -6,6 +6,15 @@ from src.logger import get_logger
 logger = get_logger(__name__)
 
 
+_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+
+
+def get_model() -> str:
+    """環境変数 CLAUDE_MODEL を読み、空・空白の場合はデフォルトを返す。"""
+    env_model = os.environ.get("CLAUDE_MODEL", "").strip()
+    return env_model if env_model else _DEFAULT_MODEL
+
+
 def run_claude(prompt: str, label: str, timeout: int = 300) -> str:
     """claude CLI を subprocess で呼び出し、結果を返す。
 
@@ -20,7 +29,7 @@ def run_claude(prompt: str, label: str, timeout: int = 300) -> str:
 
     logger.info("claude CLI 呼び出し開始: %s (timeout=%ds)", label, timeout)
     try:
-        model = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+        model = get_model()
         result = subprocess.run(
             [claude_path, "-p", prompt, "--allowedTools", "WebSearch",
              "--model", model],
