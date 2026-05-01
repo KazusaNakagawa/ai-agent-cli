@@ -1,7 +1,7 @@
 {
   "portfolio": {
     "tickers": ["PLTR", "NVDA"],
-    "themes": ["AI規制", "米中関係", "半導体", "関税・貿易戦争", "FRB金融政策", "脱炭素・エネルギー転換"]
+    "themes": ["AI規制", "米中関係", "半導体", "関税・貿易戦争", "FRB金融政策", "脱炭素・エネルギー転換", "食料安全保障・農業テック", "サイバーセキュリティ", "バイオ・ゲノム編集"]
   },
   "watch_sectors": [
     {
@@ -13,6 +13,11 @@
       "sector": "半導体・製造装置",
       "tickers": ["NVDA", "AMD", "INTC", "QCOM", "ARM", "TSM", "ASML", "AMAT", "LRCX", "MU"],
       "notes": "米中輸出規制・台湾リスク・データセンター向け需要が焦点。ASMLは欧州規制の影響大"
+    },
+    {
+      "sector": "サイバーセキュリティ",
+      "tickers": ["CRWD", "PANW", "ZS", "FTNT", "S", "OKTA", "CYBR"],
+      "notes": "ランサムウェア・国家支援型攻撃の増加で政府・企業需要が底堅い。AI活用による脅威検知が次の競争軸"
     },
     {
       "sector": "防衛・宇宙",
@@ -30,9 +35,19 @@
       "notes": "IRA補助金・金利動向・電力需要急増（データセンター）が変数。金利低下局面で追い風"
     },
     {
-      "sector": "ヘルスケア・製薬・バイオ",
+      "sector": "ヘルスケア・製薬",
       "tickers": ["LLY", "UNH", "JNJ", "PFE", "MRK", "ABBV", "BMY", "AMGN", "GILD", "MRNA"],
       "notes": "GLP-1肥満治療薬（LLY）・薬価規制（IRA）・特許崖がセクター全体の焦点"
+    },
+    {
+      "sector": "バイオテク・ゲノム編集",
+      "tickers": ["REGN", "VRTX", "BIIB", "ILMN", "CRSP", "EDIT", "NTLA", "BEAM"],
+      "notes": "CRISPR・mRNA・細胞療法が次世代パイプラインの柱。FDA承認タイミングが株価の急騰・急落トリガー"
+    },
+    {
+      "sector": "農業・農業テック",
+      "tickers": ["DE", "MOS", "CF", "CTVA", "FMC", "ADM", "BG"],
+      "notes": "食料安全保障・肥料価格（天然ガス連動）・気候変動対応が需要ドライバー。ウクライナ紛争による穀物供給不安が継続リスク"
     },
     {
       "sector": "金融・銀行",
@@ -56,8 +71,18 @@
     },
     {
       "sector": "産業・重工業・機械",
-      "tickers": ["CAT", "DE", "HON", "GE", "ETN", "EMR", "ITW"],
+      "tickers": ["CAT", "HON", "GE", "ETN", "EMR", "ITW"],
       "notes": "インフラ投資・製造業PMI・設備投資サイクルが需要ドライバー。GEはエアロエンジンで超過需要"
+    },
+    {
+      "sector": "ロボティクス・産業オートメーション",
+      "tickers": ["ABB", "ROK", "ISRG", "FANUC", "TER", "BRKS"],
+      "notes": "人件費高騰・製造業の国内回帰（ニアショアリング）が自動化投資を加速。外科ロボット（ISRG）は医療費圧縮の切り札"
+    },
+    {
+      "sector": "海運・物流",
+      "tickers": ["ZIM", "FDX", "UPS", "XPO", "CHRW", "EXPD"],
+      "notes": "紅海・ホルムズ海峡の地政学リスクが運賃に直結。eコマース需要と過剰船腹の需給バランスが焦点"
     },
     {
       "sector": "素材・資源・鉱業",
