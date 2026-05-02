@@ -1,4 +1,5 @@
 """週次ハンドラと Notion ページ取得のテスト。"""
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch, call
 
 import pytest
@@ -11,6 +12,9 @@ from src.notifier.notion import (
     fetch_weekly_pages,
 )
 from src.generator.weekly_summary import _format_briefings, week_label, generate_weekly_summary
+
+# テスト内で固定する「現在時刻」: ページ日付 2026-04-25 が days=7 の範囲内に収まる値
+_FIXED_NOW = datetime(2026, 4, 26, 12, 0, 0, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +165,10 @@ class TestFetchWeeklyPages:
                 "paragraph": {"rich_text": [{"text": {"content": "本文"}}]},
             }],
         )
-        with patch("src.notifier.notion.Client", return_value=notion_mock):
+        with (
+            patch("src.notifier.notion.Client", return_value=notion_mock),
+            patch("src.notifier.notion._utcnow", return_value=_FIXED_NOW),
+        ):
             result = fetch_weekly_pages("key", "db-id", days=7)
 
         assert len(result) == 1
@@ -181,7 +188,10 @@ class TestFetchWeeklyPages:
             pages_data=[page_agent, page_xss],
             blocks_data=[],
         )
-        with patch("src.notifier.notion.Client", return_value=notion_mock):
+        with (
+            patch("src.notifier.notion.Client", return_value=notion_mock),
+            patch("src.notifier.notion._utcnow", return_value=_FIXED_NOW),
+        ):
             result = fetch_weekly_pages("key", "db-id", days=7)
         assert len(result) == 1
         assert result[0]["title"] == "briefing"
@@ -197,7 +207,10 @@ class TestFetchWeeklyPages:
         """Notion の Z サフィックス付き created_time が正しく比較されること。"""
         page = self._make_page("new", "2026-04-25T00:00:00.000Z")
         notion_mock = _make_notion_client_mock(pages_data=[page], blocks_data=[])
-        with patch("src.notifier.notion.Client", return_value=notion_mock):
+        with (
+            patch("src.notifier.notion.Client", return_value=notion_mock),
+            patch("src.notifier.notion._utcnow", return_value=_FIXED_NOW),
+        ):
             result = fetch_weekly_pages("key", "db-id", days=7)
         assert len(result) == 1
 
