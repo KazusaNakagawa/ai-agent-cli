@@ -241,6 +241,11 @@ def _markdown_to_blocks(markdown: str) -> list[dict]:
 # ヘルパー
 # ---------------------------------------------------------------------------
 
+def _utcnow() -> datetime:
+    """テストでモック可能な UTC 現在時刻を返す。"""
+    return datetime.now(timezone.utc)
+
+
 def _resolve_title_prop(notion: Client, database_id: str, sample_title: str) -> str | None:
     """タイトルプロパティのキー名を試行して特定する。成功したキー名を返し、全て失敗した場合は None を返す。"""
     for candidate in ("Name", "title"):
@@ -439,7 +444,7 @@ def fetch_weekly_pages(
     notion = Client(auth=api_key)
     # Notion API 2025-09-03 では databases.query が廃止されたため search を使用。
     # parent.database_id・created_time・tag は Python 側でフィルタリングする。
-    since_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    since_dt = _utcnow() - timedelta(days=days)
     normalized_db_id = database_id.replace("-", "")
 
     all_results: list[dict] = []
