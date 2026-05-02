@@ -11,7 +11,7 @@ _INLINE_RE = re.compile(r"\*\*(.+?)\*\*|\[([^\]]+)\]\((https?://[^\)]+)\)")
 _LABEL_COLON_RE = re.compile(r"^([-*]\s+)?([^：\n]{1,30}：)(.+)")
 _LIST_TYPES = {"numbered_list_item", "bulleted_list_item"}
 _INDENT_RE = re.compile(r"^( {2,}|\t)([-*]|\d+\.)\s+(.*)")
-_HEADING_RE = re.compile(r"^#{1,3}\s")
+_HEADING_RE = re.compile(r"^#{1,}\s")
 
 
 # ---------------------------------------------------------------------------
@@ -91,15 +91,26 @@ def _line_to_block(line: str) -> dict | None:
     if re.fullmatch(r"-{3,}", stripped):
         return {"object": "block", "type": "divider", "divider": {}}
 
-    m = re.match(r"^(#{1,3})\s+(.*)", stripped)
+    m = re.match(r"^(#{1,})\s+(.*)", stripped)
     if m:
         level = len(m.group(1))
         block_type = f"heading_{min(level, 3)}"
-        heading_text = re.sub(r"\*+", "", m.group(2)).strip()
+        # 先頭に余分な # が残る場合（例: ### #### text）も除去する
+        heading_text = re.sub(r"^#+\s*", "", m.group(2))
+        heading_text = re.sub(r"\*+", "", heading_text).strip()
         return {
             "object": "block",
             "type": block_type,
             block_type: {"rich_text": _parse_inline(heading_text)},
+        }
+
+    # 行全体が **text** の場合は見出し3として扱う（Notionで視覚的な階層を作る）
+    m = re.fullmatch(r"\*\*(.+?)\*\*", stripped)
+    if m:
+        return {
+            "object": "block",
+            "type": "heading_3",
+            "heading_3": {"rich_text": _parse_inline(m.group(1))},
         }
 
     m = re.match(r"^[-*]\s+(.*)", stripped)
@@ -175,6 +186,8 @@ def _split_label_colon(line: str) -> list[str]:
     if not m:
         return [line]
     label = m.group(2).strip("* ").rstrip("：:")
+    if not label:
+        return [line]
     content = re.sub(r"^\*+\s*|\s*\*+$", "", m.group(3).strip())
     return [f"**{label}**", content]
 
@@ -186,6 +199,7 @@ def _markdown_to_blocks(markdown: str) -> list[dict]:
     - インデント付き箇条書き（2スペース/タブ + - や 1.）は直前のリストブロックの children に追加する。
     - 「ラベル：内容」行はラベルと内容を別ブロックに分割する（テーブル・インデント行は除く）。
     """
+    markdown = re.sub(r"\*{4,}", "**", markdown)
     blocks: list[dict] = []
     raw_lines = markdown.splitlines()
     i = 0
