@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -31,6 +31,19 @@ class TestBriefingHandler:
         ):
             result = briefing_handler()
         assert result["statusCode"] == 200
+
+    def test_notion_receives_model_footer(self):
+        briefing_text = "ブリーフィング本文"
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value=briefing_text),
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
+            patch("src.handler.get_model", return_value="claude-haiku-4-5-20251001"),
+        ):
+            briefing_handler()
+        expected_text = briefing_text + "\n\n---\nModel: claude-haiku-4-5-20251001"
+        assert mock_notion.call_args[0][0] == expected_text
 
     def test_briefing_failure_propagates(self):
         with (
