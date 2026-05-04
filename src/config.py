@@ -38,10 +38,20 @@ class WatchSector:
 
 
 @dataclass
+class WatchEvent:
+    name: str
+    trigger: str
+    affected_sectors: list[str]
+    related_tickers: list[str] = field(default_factory=list)
+    notes: Optional[str] = None
+
+
+@dataclass
 class BriefingConfig:
     portfolio: PortfolioConfig
     geopolitical: GeopoliticalConfig = field(default_factory=GeopoliticalConfig)
     watch_sectors: list[WatchSector] = field(default_factory=list)
+    watch_events: list[WatchEvent] = field(default_factory=list)
     discord_token: str = ""
     discord_channel_id: str = ""
     notion_api_key: str = ""
@@ -69,10 +79,13 @@ def load_config() -> BriefingConfig:
             + ", ".join(empty_ticker_sectors)
         )
 
+    watch_events = [WatchEvent(**e) for e in raw.get("watch_events", [])]
+
     return BriefingConfig(
         portfolio=portfolio,
         geopolitical=geopolitical,
         watch_sectors=watch_sectors,
+        watch_events=watch_events,
         discord_token=os.getenv("DISCORD_TOKEN", ""),
         discord_channel_id=os.getenv("CHANNEL_ID", ""),
         notion_api_key=os.getenv("NOTION_API_KEY", ""),

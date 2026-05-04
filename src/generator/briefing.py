@@ -36,6 +36,22 @@ def _build_watch_sectors_context(config: BriefingConfig) -> str:
     return "\n\n".join(lines)
 
 
+def _build_watch_events_context(config: BriefingConfig) -> str:
+    if not config.watch_events:
+        return ""
+    lines = []
+    for e in config.watch_events:
+        sectors = "、".join(e.affected_sectors)
+        tickers = "、".join(e.related_tickers)
+        entry = f"### {e.name}\n- トリガー: {e.trigger}\n- 影響セクター: {sectors}"
+        if tickers:
+            entry += f"\n- 関連銘柄: {tickers}"
+        if e.notes:
+            entry += f"\n- 背景: {e.notes}"
+        lines.append(entry)
+    return "\n\n".join(lines)
+
+
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
     """メイン分析とセクタースイープを並列実行してブリーフィングを生成する。"""
     tickers = ", ".join(config.portfolio.tickers)
@@ -46,6 +62,7 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
         tickers=tickers,
         themes=themes,
         geopolitical=_build_geopolitical_context(config),
+        watch_events=_build_watch_events_context(config),
         stocks=stocks,
     )
     sectors_prompt = render(

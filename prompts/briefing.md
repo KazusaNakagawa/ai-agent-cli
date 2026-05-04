@@ -9,6 +9,9 @@ WebSearchを使って今日の最新情報を調べたうえで、「My World Br
 ## 地政学リスクと市場への因果関係
 {geopolitical}
 
+## 監視イベント（IPO・規制・重要発表）
+{watch_events}
+
 ## 株価（前日比）
 {stocks}
 
