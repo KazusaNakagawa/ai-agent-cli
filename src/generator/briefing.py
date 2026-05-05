@@ -40,14 +40,14 @@ def _build_watch_events_context(config: BriefingConfig) -> str:
     if not config.watch_events:
         return ""
     lines = []
-    for e in config.watch_events:
-        sectors = "、".join(e.affected_sectors)
-        tickers = "、".join(e.related_tickers)
-        entry = f"### {e.name}\n- トリガー: {e.trigger}\n- 影響セクター: {sectors}"
-        if tickers:
-            entry += f"\n- 関連銘柄: {tickers}"
-        if e.notes:
-            entry += f"\n- 背景: {e.notes}"
+    for event in config.watch_events:
+        entry = f"### {event.name}\n- トリガー: {event.trigger}"
+        if event.affected_sectors:
+            entry += f"\n- 影響セクター: {'、'.join(event.affected_sectors)}"
+        if event.related_tickers:
+            entry += f"\n- 関連銘柄: {'、'.join(event.related_tickers)}"
+        if event.notes:
+            entry += f"\n- 背景: {event.notes}"
         lines.append(entry)
     return "\n\n".join(lines)
 

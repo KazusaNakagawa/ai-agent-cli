@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-CONFIG_PATH = Path(__file__).parents[1] / "config" / "briefing.json"
+CONFIG_PATH = Path(os.getenv("BRIEFING_CONFIG_PATH", str(Path(__file__).parents[1] / "config" / "briefing.json")))
 XSS_INTEL_CONFIG_PATH = Path(__file__).parents[1] / "config" / "xss_intel.json"
 
 
@@ -79,7 +79,7 @@ def load_config() -> BriefingConfig:
             + ", ".join(empty_ticker_sectors)
         )
 
-    watch_events = [WatchEvent(**e) for e in raw.get("watch_events", [])]
+    watch_events = [WatchEvent(**event_data) for event_data in raw.get("watch_events", [])]
 
     return BriefingConfig(
         portfolio=portfolio,

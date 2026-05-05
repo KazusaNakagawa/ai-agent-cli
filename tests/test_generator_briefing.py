@@ -107,6 +107,12 @@ class TestBuildWatchEventsContext:
         assert "関連銘柄" not in result
         assert "背景" not in result
 
+    def test_affected_sectors_omitted_when_empty(self):
+        event = WatchEvent(name="IPO", trigger="上場申請", affected_sectors=[])
+        config = _make_config(watch_events=[event])
+        result = _build_watch_events_context(config)
+        assert "影響セクター" not in result
+
 
 class TestGenerateBriefing:
     def _mock_run(self, responses: dict):
