@@ -12,6 +12,7 @@ _TIMEOUT_SECTORS = 480  # セクタースイープ（14セクター × WebSearch
 
 
 def _build_geopolitical_context(config: BriefingConfig) -> str:
+    """Return Markdown-formatted geopolitical conflicts for prompt injection."""
     lines = []
     for c in config.geopolitical.conflicts:
         sectors = "、".join(c.affected_sectors)
@@ -26,6 +27,7 @@ def _build_geopolitical_context(config: BriefingConfig) -> str:
 
 
 def _build_watch_sectors_context(config: BriefingConfig) -> str:
+    """Return Markdown-formatted watch sectors for prompt injection."""
     lines = []
     for s in config.watch_sectors:
         tickers = "、".join(s.tickers)
@@ -37,6 +39,7 @@ def _build_watch_sectors_context(config: BriefingConfig) -> str:
 
 
 def _build_watch_events_context(config: BriefingConfig) -> str:
+    """Return Markdown-formatted watch events for prompt injection; empty string when none configured."""
     if not config.watch_events:
         return ""
     lines = []
