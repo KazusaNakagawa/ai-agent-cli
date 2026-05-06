@@ -20,6 +20,19 @@ uv pip compile requirements.in -o requirements.txt  # Recompile deps
 - **`requirements.txt` is auto-generated** — only edit `requirements.in`, then recompile.
 - **`CONFIG = load_config()`** runs at import time in `src/config.py`. Tests that call `load_config()` directly must patch `src.config.CONFIG_PATH`.
 
+## Config File Rules
+
+| File | Purpose | Git |
+|---|---|---|
+| `config/briefing.json` | Real batch execution config (personal data) | Ignored |
+| `config/briefing.json.example` | Schema documentation and template | Tracked |
+| `tests/config/briefing.json` | Fixture config for CI and local tests | Tracked |
+
+- **`config/briefing.json` is never committed.** It holds personal portfolio data used only at runtime.
+- **CI and local `pytest` always load `tests/config/briefing.json`** — `tests/conftest.py` sets `BRIEFING_CONFIG_PATH` before any import of `src.config`, so no `cp` step is needed in CI.
+- **When adding or changing config schema** (new fields, renamed keys), update both `config/briefing.json.example` and `tests/config/briefing.json` to keep them in sync.
+- **`config/briefing.json`** must be updated manually by the operator after any schema change.
+
 ## Git Conventions
 
 Branch naming: `feat/` `fix/` `refactor/` `docs/` `chore/`

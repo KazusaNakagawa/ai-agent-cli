@@ -2,9 +2,10 @@ from unittest.mock import patch
 
 import pytest
 
-from src.config import BriefingConfig, Conflict, GeopoliticalConfig, PortfolioConfig, WatchSector
+from src.config import BriefingConfig, Conflict, GeopoliticalConfig, PortfolioConfig, WatchEvent, WatchSector
 from src.generator.briefing import (
     _build_geopolitical_context,
+    _build_watch_events_context,
     _build_watch_sectors_context,
     generate_briefing,
 )
@@ -76,6 +77,41 @@ class TestBuildWatchSectorsContext:
         config = _make_config(watch_sectors=sectors)
         result = _build_watch_sectors_context(config)
         assert "注目点" not in result
+
+
+class TestBuildWatchEventsContext:
+    def test_empty_events_returns_empty_string(self):
+        config = _make_config(watch_events=[])
+        assert _build_watch_events_context(config) == ""
+
+    def test_includes_name_trigger_sectors_tickers_notes(self):
+        event = WatchEvent(
+            name="SpaceX IPO",
+            trigger="SECへのS-1提出",
+            affected_sectors=["宇宙", "テクノロジー"],
+            related_tickers=["RKLB", "ASTS"],
+            notes="宇宙セクター再評価トリガー",
+        )
+        config = _make_config(watch_events=[event])
+        result = _build_watch_events_context(config)
+        assert "SpaceX IPO" in result
+        assert "SECへのS-1提出" in result
+        assert "宇宙、テクノロジー" in result
+        assert "RKLB、ASTS" in result
+        assert "宇宙セクター再評価トリガー" in result
+
+    def test_optional_fields_omitted_when_empty(self):
+        event = WatchEvent(name="IPO", trigger="上場申請", affected_sectors=["テクノロジー"])
+        config = _make_config(watch_events=[event])
+        result = _build_watch_events_context(config)
+        assert "関連銘柄" not in result
+        assert "背景" not in result
+
+    def test_affected_sectors_omitted_when_empty(self):
+        event = WatchEvent(name="IPO", trigger="上場申請", affected_sectors=[])
+        config = _make_config(watch_events=[event])
+        result = _build_watch_events_context(config)
+        assert "影響セクター" not in result
 
 
 class TestGenerateBriefing:

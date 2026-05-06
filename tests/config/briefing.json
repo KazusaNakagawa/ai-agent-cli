@@ -1,0 +1,32 @@
+{
+  "portfolio": {
+    "tickers": ["TICKER1", "TICKER2"],
+    "themes": ["theme1", "theme2", "theme3"]
+  },
+  "watch_sectors": [
+    {
+      "sector": "セクター名",
+      "tickers": ["TICKER1", "TICKER2"],
+      "notes": "このセクターの注目点"
+    }
+  ],
+  "watch_events": [
+    {
+      "name": "イベント名（例: SpaceX IPO）",
+      "trigger": "トリガー条件（例: SECへのS-1正式申請）",
+      "affected_sectors": ["影響セクター1", "影響セクター2"],
+      "related_tickers": ["TICKER1", "TICKER2"],
+      "notes": "背景メモ（任意）"
+    }
+  ],
+  "geopolitical": {
+    "conflicts": [
+      {
+        "name": "地政学リスク名",
+        "affected_sectors": ["影響セクター1"],
+        "related_tickers": ["TICKER1"],
+        "notes": "背景メモ（任意）"
+      }
+    ]
+  }
+}

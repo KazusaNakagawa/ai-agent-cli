@@ -12,6 +12,7 @@ _TIMEOUT_SECTORS = 480  # セクタースイープ（14セクター × WebSearch
 
 
 def _build_geopolitical_context(config: BriefingConfig) -> str:
+    """Return Markdown-formatted geopolitical conflicts for prompt injection."""
     lines = []
     for c in config.geopolitical.conflicts:
         sectors = "、".join(c.affected_sectors)
@@ -26,12 +27,30 @@ def _build_geopolitical_context(config: BriefingConfig) -> str:
 
 
 def _build_watch_sectors_context(config: BriefingConfig) -> str:
+    """Return Markdown-formatted watch sectors for prompt injection."""
     lines = []
     for s in config.watch_sectors:
         tickers = "、".join(s.tickers)
         entry = f"### {s.sector}\n- 銘柄: {tickers}"
         if s.notes:
             entry += f"\n- 注目点: {s.notes}"
+        lines.append(entry)
+    return "\n\n".join(lines)
+
+
+def _build_watch_events_context(config: BriefingConfig) -> str:
+    """Return Markdown-formatted watch events for prompt injection; empty string when none configured."""
+    if not config.watch_events:
+        return ""
+    lines = []
+    for event in config.watch_events:
+        entry = f"### {event.name}\n- トリガー: {event.trigger}"
+        if event.affected_sectors:
+            entry += f"\n- 影響セクター: {'、'.join(event.affected_sectors)}"
+        if event.related_tickers:
+            entry += f"\n- 関連銘柄: {'、'.join(event.related_tickers)}"
+        if event.notes:
+            entry += f"\n- 背景: {event.notes}"
         lines.append(entry)
     return "\n\n".join(lines)
 
@@ -46,6 +65,7 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
         tickers=tickers,
         themes=themes,
         geopolitical=_build_geopolitical_context(config),
+        watch_events=_build_watch_events_context(config),
         stocks=stocks,
     )
     sectors_prompt = render(
