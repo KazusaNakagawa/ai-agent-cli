@@ -53,6 +53,27 @@ class TestChunkPreservingFences:
         for chunk in chunks[:-1]:
             assert chunk.endswith("```\n")
 
+    def test_language_fence_closed_at_chunk_boundary(self):
+        # ```python のような言語指定フェンスがチャンク境界をまたぐとき
+        # 各チャンクのフェンス数は偶数（= バランスが取れている）
+        fence_text = "```python\n" + "x = 1\n" * 100 + "```\n"
+        chunks = _chunk_preserving_fences(fence_text, chunk_size=500)
+        assert len(chunks) > 1
+        for i, chunk in enumerate(chunks):
+            count = chunk.count("```")
+            assert count % 2 == 0, f"chunk {i + 1}: フェンス数が奇数 ({count})"
+
+    def test_fence_state_correct_when_closing_fence_causes_overflow(self):
+        # 閉じフェンス行自体がチャンク境界を超えるとき、前チャンクが正しく閉じられる
+        # "```\n"(4) + 247 * "x\n"(2) = 498 chars → 閉じ"```\n"(4) で 502 > 500
+        inner = "x\n" * 247  # 494 文字
+        fence_text = "```\n" + inner + "```\n"
+        chunks = _chunk_preserving_fences(fence_text, chunk_size=500)
+        assert len(chunks) > 1
+        for i, chunk in enumerate(chunks):
+            count = chunk.count("```")
+            assert count % 2 == 0, f"chunk {i + 1}: フェンス数が奇数 ({count})"
+
 
 class TestSendToDiscord:
     def test_missing_token_returns_early(self):
