@@ -63,6 +63,18 @@ class TestChunkPreservingFences:
             count = chunk.count("```")
             assert count % 2 == 0, f"chunk {i + 1}: フェンス数が奇数 ({count})"
 
+    def test_language_specifier_preserved_on_reopen(self):
+        # チャンク分割後の継続チャンクが元の言語指定フェンスで再開される
+        fence_text = "```python\n" + "x = 1\n" * 100 + "```\n"
+        chunks = _chunk_preserving_fences(fence_text, chunk_size=500)
+        assert len(chunks) > 1
+        # 最初のチャンク以外（継続チャンク）は ```python で始まる
+        for chunk in chunks[1:]:
+            if chunk.startswith("```"):
+                assert chunk.startswith("```python\n"), (
+                    f"継続チャンクが言語指定なしで再開: {repr(chunk[:30])}"
+                )
+
     def test_fence_state_correct_when_closing_fence_causes_overflow(self):
         # 閉じフェンス行自体がチャンク境界を超えるとき、前チャンクが正しく閉じられる
         # "```\n"(4) + 247 * "x\n"(2) = 498 chars → 閉じ"```\n"(4) で 502 > 500

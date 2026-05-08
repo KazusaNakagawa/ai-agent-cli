@@ -38,6 +38,7 @@ def _chunk_preserving_fences(text: str, chunk_size: int = 1900) -> list[str]:
     current_lines: list[str] = []
     current_len = 0
     in_fence = False
+    fence_opener = "```"
 
     for line in text.splitlines(keepends=True):
         # フェンス状態の更新より先に overflow を判定する（閉じフェンス行自体が
@@ -50,16 +51,19 @@ def _chunk_preserving_fences(text: str, chunk_size: int = 1900) -> list[str]:
             current_lines = []
             current_len = 0
             if in_fence:
-                current_lines = ["```\n"]  # 次チャンクでフェンスを再開
-                current_len = 4
+                reopen = fence_opener + "\n"
+                current_lines = [reopen]  # 元の言語指定を保ってフェンスを再開
+                current_len = len(reopen)
 
         # 言語指定（```python 等）も含めてフェンス開閉を追跡する
         stripped = line.rstrip()
         if in_fence:
             if stripped == "```":
                 in_fence = False
+                fence_opener = "```"
         elif stripped.startswith("```"):
             in_fence = True
+            fence_opener = stripped
 
         current_lines.append(line)
         current_len += len(line)
