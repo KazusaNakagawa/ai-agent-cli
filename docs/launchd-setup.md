@@ -6,7 +6,7 @@ macOS uses **launchd** instead of cron. `bin/run.sh` sources `.env` automaticall
 
 | Day | What runs |
 |---|---|
-| Mon – Thu | `briefing.py` (daily market briefing) |
+| Mon – Sun | `briefing.py` (daily market briefing) |
 | Fri | `briefing.py` → `weekly_summary.py` (daily + weekly recap) |
 
 ## 1. Validate credentials first (dry-run)
@@ -46,15 +46,12 @@ Save the following to `~/Library/LaunchAgents/com.kazusa.ai-agent-briefing.plist
         <string>/Users/YOUR_USERNAME</string>
     </dict>
 
-    <!-- Mon–Fri 07:00 -->
+    <!-- Every day 07:00 (no Weekday key = all days) -->
     <key>StartCalendarInterval</key>
-    <array>
-        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-    </array>
+    <dict>
+        <key>Hour</key><integer>7</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
 
     <key>StandardOutPath</key>
     <string>/path/to/ai-agent/log/launchd.stdout.log</string>
