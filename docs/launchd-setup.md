@@ -9,10 +9,22 @@ macOS uses **launchd** instead of cron. `bin/run.sh` sources `.env` automaticall
 | Mon – Sun | `briefing.py` (daily market briefing) |
 | Fri | `briefing.py` → `weekly_summary.py` (daily + weekly recap) |
 
+## 0. Define variables
+
+Run these in your shell before following any step below:
+
+```bash
+PROJECT="/path/to/ai-agent"          # absolute path to this repo
+LABEL="com.$(whoami).ai-agent-briefing"
+PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
+```
+
+> Replace `/path/to/ai-agent` with the actual absolute path (e.g. `/Users/$(whoami)/work/ai-agent`).
+
 ## 1. Validate credentials first (dry-run)
 
 ```bash
-cd /path/to/ai-agent
+cd "$PROJECT"
 source .env
 .venv/bin/python bin/briefing.py --dry-run
 ```
@@ -21,7 +33,7 @@ No WARNING lines → credentials are set correctly.
 
 ## 2. Create the plist
 
-Save the following to `~/Library/LaunchAgents/com.kazusa.ai-agent-briefing.plist`:
+Save the following to `$PLIST`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -30,7 +42,7 @@ Save the following to `~/Library/LaunchAgents/com.kazusa.ai-agent-briefing.plist
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.kazusa.ai-agent-briefing</string>
+    <string>com.YOUR_USERNAME.ai-agent-briefing</string>
 
     <key>ProgramArguments</key>
     <array>
@@ -64,28 +76,37 @@ Save the following to `~/Library/LaunchAgents/com.kazusa.ai-agent-briefing.plist
 </plist>
 ```
 
-Replace `/path/to/ai-agent` and `YOUR_USERNAME` with your actual values.
+Or generate it in one shot using the variables from Step 0:
+
+```bash
+sed \
+  -e "s|YOUR_USERNAME|$(whoami)|g" \
+  -e "s|/path/to/ai-agent|$PROJECT|g" \
+  docs/launchd-setup.md | grep -A 40 '<?xml' | head -40 > "$PLIST"
+```
+
+> Alternatively, copy the XML block above, replace `YOUR_USERNAME` and `/path/to/ai-agent` manually, and save to `$PLIST`.
 
 ## 3. Register and verify
 
 ```bash
 # Register
-launchctl load ~/Library/LaunchAgents/com.kazusa.ai-agent-briefing.plist
+launchctl load "$PLIST"
 
-# Confirm registered (shows "-  0  com.kazusa.ai-agent-briefing")
-launchctl list | grep kazusa
+# Confirm registered (shows "-  0  <LABEL>")
+launchctl list | grep "$(whoami)"
 
 # Test trigger immediately
-launchctl start com.kazusa.ai-agent-briefing
+launchctl start "$LABEL"
 
 # Watch logs
-tail -f /path/to/ai-agent/log/launchd.stderr.log
+tail -f "$PROJECT/log/launchd.stderr.log"
 ```
 
 ## 4. Unregister (if needed)
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.kazusa.ai-agent-briefing.plist
+launchctl unload "$PLIST"
 ```
 
 ## Requirements
@@ -98,7 +119,7 @@ launchctl unload ~/Library/LaunchAgents/com.kazusa.ai-agent-briefing.plist
 | `/opt/homebrew/bin` in PATH | Required for `claude` CLI installed via Homebrew |
 
 ```bash
-mkdir -p /path/to/ai-agent/log
+mkdir -p "$PROJECT/log"
 ```
 
 If credentials are missing at runtime, the agent logs a WARNING per missing credential and writes output to `output/briefing_YYYY-MM-DD.md` instead of sending to Discord/Notion.
