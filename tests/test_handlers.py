@@ -153,6 +153,7 @@ class TestBriefingHandler:
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
             patch("src.handler.generate_briefing", return_value="本文"),
+            patch("src.handler.get_model", return_value="claude-sonnet-4-6"),
             patch("src.handler.send_to_notion"),
             patch("src.handler._OUTPUT_DIR", Path("/tmp")),
         ):
