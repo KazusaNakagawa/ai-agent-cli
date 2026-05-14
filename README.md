@@ -87,6 +87,42 @@ cp .env.example .env
 bin/run.sh
 ```
 
+### Dry-run (validate credentials without executing)
+
+```bash
+.venv/bin/python bin/briefing.py --dry-run
+.venv/bin/python bin/xss_intel.py --dry-run
+```
+
+Prints a WARNING for each missing credential and exits without calling Claude or any API.
+
+---
+
+## Scheduled Execution (cron)
+
+`bin/run.sh` sources `.env` automatically, so cron jobs work without manual env setup.
+
+```cron
+# Run briefing at 07:00 on weekdays
+0 7 * * 1-5 /path/to/ai-agent/bin/run.sh >> /path/to/ai-agent/log/cron.log 2>&1
+```
+
+**Requirements for cron:**
+
+| Requirement | Why |
+|---|---|
+| `.env` present at project root | `bin/run.sh` sources it; without it, Discord/Notion tokens are empty and output falls back to `output/*.md` |
+| `~/.claude/` accessible to the cron user | Claude Code CLI reads its OAuth token from here |
+| `log/` directory exists | Redirect target for cron output |
+
+Create the log directory if needed:
+
+```bash
+mkdir -p /path/to/ai-agent/log
+```
+
+If credentials are missing at runtime, the agent logs a WARNING per missing credential and writes the briefing to `output/briefing_YYYY-MM-DD.md` instead of sending to Discord/Notion.
+
 ---
 
 ## Configuration

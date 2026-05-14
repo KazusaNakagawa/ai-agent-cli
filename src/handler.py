@@ -26,9 +26,22 @@ def _write_md_fallback(text: str, filename: str) -> Path:
     return path
 
 
-def lambda_handler(event=None, context=None):
+def _preflight() -> None:
+    """Log a WARNING for each missing credential before the pipeline starts."""
+    if not _is_configured(CONFIG.discord_token, CONFIG.discord_channel_id):
+        logger.warning("DISCORD_TOKEN または CHANNEL_ID が未設定 — Discord 通知をスキップします")
+    if not _is_configured(CONFIG.notion_api_key, CONFIG.notion_database_id):
+        logger.warning("NOTION_API_KEY または NOTION_DATABASE_ID が未設定 — Notion 通知をスキップします")
+
+
+def lambda_handler(event=None, context=None, *, dry_run: bool = False):
     """株価ブリーフィングを生成し Discord/Notion に配信する Lambda ハンドラ。"""
     logger.info("=== My World Briefing 開始 ===")
+    _preflight()
+
+    if dry_run:
+        logger.info("Dry-run モード — パイプラインをスキップします")
+        return {"statusCode": 200, "body": "dry-run"}
 
     logger.info("株価取得中...")
     stocks = fetch_stock_moves(CONFIG.portfolio.tickers)
@@ -44,8 +57,6 @@ def lambda_handler(event=None, context=None):
     if discord_ok:
         logger.info("Discord に送信中...")
         send_to_discord(briefing, CONFIG.discord_token, CONFIG.discord_channel_id)
-    else:
-        logger.warning("DISCORD_TOKEN または CHANNEL_ID が未設定 — Discord 通知をスキップします")
 
     model = get_model()
     notion_text = briefing + f"\n\n---\nModel: {model}"
@@ -63,8 +74,6 @@ def lambda_handler(event=None, context=None):
         )
         if page_url:
             logger.info("Notion ページ: %s", page_url)
-    else:
-        logger.warning("NOTION_API_KEY または NOTION_DATABASE_ID が未設定 — Notion 通知をスキップします")
 
     wrote_md = False
     if not discord_ok or not notion_ok:

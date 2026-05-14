@@ -130,6 +130,42 @@ class TestBriefingHandler:
         mock_notion.assert_not_called()
         assert len(list(tmp_path.glob("briefing_*.md"))) == 1
 
+    def test_dry_run_skips_pipeline(self):
+        with (
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.fetch_stock_moves") as mock_stocks,
+            patch("src.handler.generate_briefing") as mock_gen,
+        ):
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            result = briefing_handler(dry_run=True)
+
+        assert result["statusCode"] == 200
+        assert result["body"] == "dry-run"
+        mock_stocks.assert_not_called()
+        mock_gen.assert_not_called()
+
+    def test_preflight_warns_on_missing_discord(self, caplog):
+        import logging
+        with (
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="本文"),
+            patch("src.handler.send_to_notion"),
+            patch("src.handler._OUTPUT_DIR", Path("/tmp")),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = ""
+            mock_cfg.discord_channel_id = ""
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            with caplog.at_level(logging.WARNING, logger="src.handler"):
+                briefing_handler()
+
+        assert any("DISCORD_TOKEN" in r.message for r in caplog.records)
+
 
 # ---------------------------------------------------------------------------
 # XSS handler
@@ -181,3 +217,12 @@ class TestXssHandler:
         mock_notion.assert_not_called()
         md_files = list(tmp_path.glob("xss_intel_*.md"))
         assert len(md_files) == 1
+
+    def test_dry_run_skips_pipeline(self):
+        with patch("src.xss_handler.get_xss_config", return_value=_full_config_mock()):
+            with patch("src.xss_handler.generate_xss_report") as mock_gen:
+                result = xss_handler(dry_run=True)
+
+        assert result["statusCode"] == 200
+        assert result["body"] == "dry-run"
+        mock_gen.assert_not_called()
