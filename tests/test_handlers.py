@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock, call, patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,6 +16,24 @@ def _notion_mock():
     m.databases.retrieve.return_value = {"properties": {"Name": {"type": "title"}}}
     m.pages.create.return_value = {"id": "pid", "url": "https://notion.so/p"}
     return m
+
+
+def _full_config_mock():
+    cfg = MagicMock()
+    cfg.discord_token = "tok"
+    cfg.discord_channel_id = "ch"
+    cfg.notion_api_key = "key"
+    cfg.notion_database_id = "db"
+    return cfg
+
+
+def _no_api_config_mock():
+    cfg = MagicMock()
+    cfg.discord_token = ""
+    cfg.discord_channel_id = ""
+    cfg.notion_api_key = ""
+    cfg.notion_database_id = ""
+    return cfg
 
 
 # ---------------------------------------------------------------------------
@@ -54,24 +73,60 @@ class TestBriefingHandler:
             with pytest.raises(RuntimeError, match="claude error"):
                 briefing_handler()
 
+    def test_no_credentials_writes_md_and_skips_notifiers(self, tmp_path):
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord") as mock_discord,
+            patch("src.handler.send_to_notion") as mock_notion,
+            patch("src.handler._OUTPUT_DIR", tmp_path),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = ""
+            mock_cfg.discord_channel_id = ""
+            mock_cfg.notion_api_key = ""
+            mock_cfg.notion_database_id = ""
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        assert result["md_fallback"] is True
+        mock_discord.assert_not_called()
+        mock_notion.assert_not_called()
+        md_files = list(tmp_path.glob("briefing_*.md"))
+        assert len(md_files) == 1
+
+    def test_discord_only_writes_md_for_missing_notion(self, tmp_path):
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord") as mock_discord,
+            patch("src.handler.send_to_notion") as mock_notion,
+            patch("src.handler._OUTPUT_DIR", tmp_path),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = ""
+            mock_cfg.notion_database_id = ""
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        assert result["md_fallback"] is True
+        mock_discord.assert_called_once()
+        mock_notion.assert_not_called()
+        assert len(list(tmp_path.glob("briefing_*.md"))) == 1
+
 
 # ---------------------------------------------------------------------------
 # XSS handler
 # ---------------------------------------------------------------------------
 
-def _xss_config_mock():
-    cfg = MagicMock()
-    cfg.discord_token = "tok"
-    cfg.discord_channel_id = "ch"
-    cfg.notion_api_key = "key"
-    cfg.notion_database_id = "db"
-    return cfg
-
-
 class TestXssHandler:
     def test_success_returns_200(self):
         with (
-            patch("src.xss_handler.get_xss_config", return_value=_xss_config_mock()),
+            patch("src.xss_handler.get_xss_config", return_value=_full_config_mock()),
             patch("src.xss_handler.generate_xss_report", return_value="XSSレポート本文"),
             patch("src.xss_handler.send_to_discord"),
             patch("src.notifier.notion.Client", return_value=_notion_mock()),
@@ -81,7 +136,7 @@ class TestXssHandler:
 
     def test_report_generation_failure_returns_500(self):
         with (
-            patch("src.xss_handler.get_xss_config", return_value=_xss_config_mock()),
+            patch("src.xss_handler.get_xss_config", return_value=_full_config_mock()),
             patch("src.xss_handler.generate_xss_report", side_effect=RuntimeError("fail")),
         ):
             result = xss_handler()
@@ -90,10 +145,27 @@ class TestXssHandler:
 
     def test_all_notifiers_fail_returns_500(self):
         with (
-            patch("src.xss_handler.get_xss_config", return_value=_xss_config_mock()),
+            patch("src.xss_handler.get_xss_config", return_value=_full_config_mock()),
             patch("src.xss_handler.generate_xss_report", return_value="report"),
             patch("src.xss_handler.send_to_discord", side_effect=Exception("discord fail")),
             patch("src.xss_handler.send_to_notion", side_effect=Exception("notion fail")),
         ):
             result = xss_handler()
         assert result["statusCode"] == 500
+
+    def test_no_credentials_writes_md_and_skips_notifiers(self, tmp_path):
+        with (
+            patch("src.xss_handler.get_xss_config", return_value=_no_api_config_mock()),
+            patch("src.xss_handler.generate_xss_report", return_value="XSSレポート本文"),
+            patch("src.xss_handler.send_to_discord") as mock_discord,
+            patch("src.xss_handler.send_to_notion") as mock_notion,
+            patch("src.xss_handler._OUTPUT_DIR", tmp_path),
+        ):
+            result = xss_handler()
+
+        assert result["statusCode"] == 200
+        assert "md_fallback" in result["body"]
+        mock_discord.assert_not_called()
+        mock_notion.assert_not_called()
+        md_files = list(tmp_path.glob("xss_intel_*.md"))
+        assert len(md_files) == 1
