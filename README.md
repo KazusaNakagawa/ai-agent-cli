@@ -87,6 +87,21 @@ cp .env.example .env
 bin/run.sh
 ```
 
+### Interactive Q&A on today's briefing
+
+```bash
+bin/chat.sh
+```
+
+Opens an interactive Claude session with today's `output/briefing/briefing_YYYY-MM-DD.md` loaded as context.
+Ask questions about any stock, sector, or event mentioned in the briefing.
+
+```bash
+bin/chat.sh 2026-05-16   # Chat about a specific past briefing
+```
+
+Exits with an error if the briefing file for the specified date does not exist.
+
 ### Dry-run (validate credentials without executing)
 
 ```bash
