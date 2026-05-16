@@ -24,10 +24,23 @@ def _write_md_fallback(text: str, filename: str) -> Path:
     return path
 
 
-def lambda_handler(event=None, context=None):
+def _preflight(config) -> None:
+    """Log a WARNING for each missing credential before the pipeline starts."""
+    if not _is_configured(config.discord_token, config.discord_channel_id):
+        logger.warning("DISCORD_TOKEN または CHANNEL_ID が未設定 — Discord 通知をスキップします")
+    if not _is_configured(config.notion_api_key, config.notion_database_id):
+        logger.warning("NOTION_API_KEY または NOTION_DATABASE_ID が未設定 — Notion 通知をスキップします")
+
+
+def lambda_handler(event=None, context=None, *, dry_run: bool = False):
     """XSS インテリジェンスレポートを生成し Discord/Notion に配信する Lambda ハンドラ。"""
     logger.info("=== XSS Intel Agent 開始 ===")
     config = get_xss_config()
+    _preflight(config)
+
+    if dry_run:
+        logger.info("Dry-run モード — パイプラインをスキップします")
+        return {"statusCode": 200, "body": "dry-run"}
     result: dict[str, object] = {}
 
     logger.info("XSS 脆弱性レポート生成中 (WebSearch)...")

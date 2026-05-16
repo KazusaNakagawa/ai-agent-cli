@@ -87,6 +87,21 @@ cp .env.example .env
 bin/run.sh
 ```
 
+### Dry-run (validate credentials without executing)
+
+```bash
+.venv/bin/python bin/briefing.py --dry-run
+.venv/bin/python bin/xss_intel.py --dry-run
+```
+
+Prints a WARNING for each missing credential and exits without calling Claude or any API.
+
+---
+
+## Scheduled Execution (macOS launchd)
+
+See [docs/launchd-setup.md](docs/launchd-setup.md) for the full setup guide (plist template, dry-run validation, register/trigger/unload commands).
+
 ---
 
 ## Configuration
