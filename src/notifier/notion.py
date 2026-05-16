@@ -2,16 +2,17 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone, timedelta
 from notion_client import Client
+from src.constants import (
+    NOTION_CHAR_LIMIT,
+    NOTION_HEADING_RE,
+    NOTION_INDENT_RE,
+    NOTION_INLINE_RE,
+    NOTION_LABEL_COLON_RE,
+    NOTION_LIST_TYPES,
+)
 from src.logger import get_logger
 
 logger = get_logger(__name__)
-
-_CHAR_LIMIT = 2000
-_INLINE_RE = re.compile(r"\*\*(.+?)\*\*|\[([^\]]+)\]\((https?://[^\)]+)\)")
-_LABEL_COLON_RE = re.compile(r"^([-*]\s+)?([^：\n]{1,30}：)(.+)")
-_LIST_TYPES = {"numbered_list_item", "bulleted_list_item"}
-_INDENT_RE = re.compile(r"^( {2,}|\t)([-*]|\d+\.)\s+(.*)")
-_HEADING_RE = re.compile(r"^#{1,}\s")
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ def _parse_inline(text: str) -> list[dict]:
     rich_texts: list[dict] = []
     pos = 0
 
-    for m in _INLINE_RE.finditer(text):
+    for m in NOTION_INLINE_RE.finditer(text):
         if m.start() > pos:
             rich_texts.extend(_plain_chunks(text[pos:m.start()]))
 
@@ -46,8 +47,8 @@ def _parse_inline(text: str) -> list[dict]:
 def _plain_chunks(text: str, bold: bool = False) -> list[dict]:
     """2000文字ごとに分割したプレーンテキスト rich_text を返す。"""
     result = []
-    for i in range(0, max(len(text), 1), _CHAR_LIMIT):
-        chunk = text[i:i + _CHAR_LIMIT]
+    for i in range(0, max(len(text), 1), NOTION_CHAR_LIMIT):
+        chunk = text[i:i + NOTION_CHAR_LIMIT]
         item: dict = {"type": "text", "text": {"content": chunk}}
         if bold:
             item["annotations"] = {"bold": True}
@@ -58,8 +59,8 @@ def _plain_chunks(text: str, bold: bool = False) -> list[dict]:
 def _link_chunks(label: str, url: str) -> list[dict]:
     """リンク付き rich_text を返す。ラベルが 2000文字を超える場合はチャンク分割する。"""
     result = []
-    for i in range(0, max(len(label), 1), _CHAR_LIMIT):
-        chunk = label[i:i + _CHAR_LIMIT]
+    for i in range(0, max(len(label), 1), NOTION_CHAR_LIMIT):
+        chunk = label[i:i + NOTION_CHAR_LIMIT]
         result.append({
             "type": "text",
             "text": {"content": chunk, "link": {"url": url}},
@@ -182,7 +183,7 @@ def _split_label_colon(line: str) -> list[str]:
     - 箇条書きプレフィックス（- / *）は除去する
     - 既存の ** マーカーは除去してから付け直す（二重 ** 防止）
     """
-    m = _LABEL_COLON_RE.match(line.rstrip())
+    m = NOTION_LABEL_COLON_RE.match(line.rstrip())
     if not m:
         return [line]
     label = m.group(2).strip("* ").rstrip("：:")
@@ -214,12 +215,12 @@ def _markdown_to_blocks(markdown: str) -> list[dict]:
             blocks.append(_table_rows_to_block(table_lines))
             continue
 
-        m = _INDENT_RE.match(line)
+        m = NOTION_INDENT_RE.match(line)
         if m:
             marker, text = m.group(2), m.group(3)
             block_type = "numbered_list_item" if marker[0].isdigit() else "bulleted_list_item"
             child = _list_block(block_type, text)
-            if blocks and blocks[-1].get("type") in _LIST_TYPES:
+            if blocks and blocks[-1].get("type") in NOTION_LIST_TYPES:
                 ptype = blocks[-1]["type"]
                 blocks[-1][ptype].setdefault("children", []).append(child)
             else:
@@ -227,7 +228,7 @@ def _markdown_to_blocks(markdown: str) -> list[dict]:
             i += 1
             continue
 
-        is_heading = _HEADING_RE.match(line)
+        is_heading = NOTION_HEADING_RE.match(line)
         expanded_lines = [line] if is_heading else _split_label_colon(line)
         for expanded in expanded_lines:
             block = _line_to_block(expanded)

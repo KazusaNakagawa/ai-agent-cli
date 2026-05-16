@@ -2,11 +2,11 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
-_LOG_RETENTION_DAYS = 7
+from src.constants import LOG_RETENTION_DAYS
 
 
 def _purge_old_logs(log_dir: Path) -> None:
-    cutoff = datetime.now() - timedelta(days=_LOG_RETENTION_DAYS)
+    cutoff = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
     for path in log_dir.glob("*-app.log"):
         try:
             file_date = datetime.strptime(path.stem.replace("-app", ""), "%Y%m%d")
