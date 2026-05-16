@@ -1,18 +1,16 @@
 import os
 import shutil
 import subprocess
+from src.constants import DEFAULT_MODEL
 from src.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-
-
 def get_model() -> str:
     """環境変数 CLAUDE_MODEL を読み、空・空白の場合はデフォルトを返す。"""
     env_model = os.environ.get("CLAUDE_MODEL", "").strip()
-    return env_model if env_model else _DEFAULT_MODEL
+    return env_model if env_model else DEFAULT_MODEL
 
 
 def run_claude(prompt: str, label: str, timeout: int = 300) -> str:

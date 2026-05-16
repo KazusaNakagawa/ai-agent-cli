@@ -2,12 +2,11 @@
 from datetime import date, timedelta
 
 from src.claude_runner import run_claude
+from src.constants import TIMEOUT_WEEKLY_SUMMARY
 from src.generator.prompt import render
 from src.logger import get_logger
 
 logger = get_logger(__name__)
-
-_TIMEOUT = 300
 
 
 def _format_briefings(pages: list[dict]) -> str:
@@ -32,4 +31,4 @@ def generate_weekly_summary(pages: list[dict]) -> str:
     prompt = render("weekly_summary", briefings=_format_briefings(pages), week_label=week_label())
 
     logger.info("週次サマリー生成中 (対象ページ数=%d)...", len(pages))
-    return run_claude(prompt, "週次サマリー生成", _TIMEOUT)
+    return run_claude(prompt, "週次サマリー生成", TIMEOUT_WEEKLY_SUMMARY)

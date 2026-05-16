@@ -2,6 +2,7 @@ from datetime import date
 from pathlib import Path
 
 from src.config import get_xss_config
+from src.constants import OUTPUT_DIR
 from src.generator.xss_report import generate_xss_report
 from src.metrics.xss import extract_xss_metrics
 from src.notifier.discord import send_to_discord
@@ -10,16 +11,14 @@ from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-_OUTPUT_DIR = Path(__file__).parents[1] / "output"
-
 
 def _is_configured(*values: str) -> bool:
     return all(values)
 
 
 def _write_md_fallback(text: str, filename: str) -> Path:
-    _OUTPUT_DIR.mkdir(exist_ok=True)
-    path = _OUTPUT_DIR / filename
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    path = OUTPUT_DIR / filename
     path.write_text(text, encoding="utf-8")
     return path
 
