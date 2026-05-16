@@ -14,6 +14,7 @@ LOG_RETENTION_DAYS = 7
 
 # Output directory for MD fallback
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
+BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
 
 # Notion
 NOTION_CHAR_LIMIT = 2000

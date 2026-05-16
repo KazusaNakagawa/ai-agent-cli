@@ -92,7 +92,7 @@ class TestBriefingHandler:
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.handler.send_to_notion") as mock_notion,
-            patch("src.handler.OUTPUT_DIR", tmp_path),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = ""
@@ -115,7 +115,7 @@ class TestBriefingHandler:
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.handler.send_to_notion") as mock_notion,
-            patch("src.handler.OUTPUT_DIR", tmp_path),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = "tok"
@@ -155,7 +155,7 @@ class TestBriefingHandler:
             patch("src.handler.generate_briefing", return_value="本文"),
             patch("src.handler.get_model", return_value="claude-sonnet-4-6"),
             patch("src.handler.send_to_notion"),
-            patch("src.handler.OUTPUT_DIR", Path("/tmp")),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", Path("/tmp")),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = ""

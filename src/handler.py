@@ -3,7 +3,7 @@ from pathlib import Path
 
 from src.claude_runner import get_model
 from src.config import CONFIG
-from src.constants import OUTPUT_DIR
+from src.constants import BRIEFING_OUTPUT_DIR
 from src.fetcher.stocks import fetch_stock_moves
 from src.generator.briefing import generate_briefing
 from src.metrics.briefing import extract_briefing_metrics
@@ -19,8 +19,8 @@ def _is_configured(*values: str) -> bool:
 
 
 def _write_md_fallback(text: str, filename: str) -> Path:
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    path = OUTPUT_DIR / filename
+    BRIEFING_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = BRIEFING_OUTPUT_DIR / filename
     path.write_text(text, encoding="utf-8")
     return path
 
