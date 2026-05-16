@@ -67,9 +67,10 @@ class TestBuildCmd:
 
         cmd = chat.build_cmd("2026-05-16", briefing, session_file)
 
-        assert "--session-id" in cmd
+        assert "--resume" in cmd
         assert "existing-uuid-abcd" in cmd
         assert "--append-system-prompt" not in cmd
+        assert "--session-id" not in cmd
 
     def test_new_session_includes_name(self, tmp_path):
         briefing = tmp_path / "briefing_2026-05-16.md"
@@ -81,7 +82,7 @@ class TestBuildCmd:
         assert "--name" in cmd
         assert "briefing-chat-2026-05-16" in cmd
 
-    def test_resume_session_includes_name(self, tmp_path):
+    def test_resume_session_uses_resume_flag(self, tmp_path):
         briefing = tmp_path / "briefing_2026-05-16.md"
         briefing.write_text("内容")
         session_file = tmp_path / "2026-05-16"
@@ -89,5 +90,6 @@ class TestBuildCmd:
 
         cmd = chat.build_cmd("2026-05-16", briefing, session_file)
 
+        assert "--resume" in cmd
         assert "--name" in cmd
         assert "briefing-chat-2026-05-16" in cmd

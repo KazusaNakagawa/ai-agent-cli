@@ -29,7 +29,7 @@ def build_cmd(target_date: str, briefing_file: Path, session_file: Path) -> list
         session_id = session_file.read_text().strip()
         print(f"Resuming session: {session_name} ({session_id})")
         print("(type your question, Ctrl+C or /exit to quit)\n")
-        return ["claude", "--session-id", session_id, "--name", session_name]
+        return ["claude", "--resume", session_id, "--name", session_name]
 
     session_id = str(uuid.uuid4())
     session_file.write_text(session_id)
