@@ -90,17 +90,18 @@ bin/run.sh
 ### Interactive Q&A on today's briefing
 
 ```bash
-bin/chat.sh
+bin/chat.sh                # today's briefing (new or resumed session)
+bin/chat.sh 2026-05-16    # specific past briefing
+bin/chat.sh --list         # list all saved sessions
 ```
 
-Opens an interactive Claude session with today's `output/briefing/briefing_YYYY-MM-DD.md` loaded as context.
-Ask questions about any stock, sector, or event mentioned in the briefing.
-
-```bash
-bin/chat.sh 2026-05-16   # Chat about a specific past briefing
-```
+Opens an interactive Claude session with the briefing loaded as context.
+On the first run a session UUID is generated and saved to `output/briefing/.sessions/<date>`.
+On subsequent runs for the same date the previous conversation is automatically resumed
+via `--session-id`, so the full Q&A history carries over between restarts.
 
 Exits with an error if the briefing file for the specified date does not exist.
+Session files are stored inside `output/` which is already git-ignored.
 
 ### Dry-run (validate credentials without executing)
 
