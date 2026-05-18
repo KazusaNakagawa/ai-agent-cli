@@ -17,9 +17,12 @@ RETRY_BACKOFF_FACTOR = 3.0  # 5s -> 15s -> 45s
 # Log retention
 LOG_RETENTION_DAYS = 7
 
-# Output directory for MD fallback
+# Output directory for MD output
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
+
+# Briefing local MD retention (number of newest dated files to keep)
+BRIEFING_MD_RETENTION_DAYS = 7
 
 # Notion
 NOTION_CHAR_LIMIT = 2000

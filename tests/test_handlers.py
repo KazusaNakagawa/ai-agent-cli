@@ -41,13 +41,14 @@ def _no_api_config_mock():
 # ---------------------------------------------------------------------------
 
 class TestBriefingHandler:
-    def test_success_returns_200(self):
+    def test_success_returns_200(self, tmp_path):
         with (
             patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
             patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.notifier.notion.Client", return_value=_notion_mock()),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = "tok"
@@ -57,7 +58,57 @@ class TestBriefingHandler:
             result = briefing_handler()
         assert result["statusCode"] == 200
 
-    def test_notion_receives_model_footer(self):
+    def test_md_written_even_when_notifiers_succeed(self, tmp_path):
+        """Verifies: when Discord/Notion both succeed, a local MD file is
+        still written under BRIEFING_OUTPUT_DIR.
+        Why: the new always-write requirement (issue #38). Operators need a
+        local copy regardless of remote-notifier success.
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            result = briefing_handler()
+
+        assert result["md_written"] is True
+        md_files = list(tmp_path.glob("briefing_*.md"))
+        assert len(md_files) == 1
+        assert md_files[0].read_text(encoding="utf-8") == "ブリーフィング本文"
+
+    def test_md_failure_does_not_block_pipeline(self, tmp_path):
+        """Verifies: if save_briefing_md raises, the handler still returns
+        200 with md_written=False.
+        Why: a disk-write failure must not lose the Discord/Notion deliveries
+        that already succeeded.
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.save_briefing_md", side_effect=OSError("disk full")),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        assert result["md_written"] is False
+
+    def test_notion_receives_model_footer(self, tmp_path):
         briefing_text = "ブリーフィング本文"
         with (
             patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
@@ -66,6 +117,7 @@ class TestBriefingHandler:
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
             patch("src.handler.get_model", return_value="claude-haiku-4-5-20251001"),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = "tok"
@@ -102,7 +154,7 @@ class TestBriefingHandler:
             result = briefing_handler()
 
         assert result["statusCode"] == 200
-        assert result["md_fallback"] is True
+        assert result["md_written"] is True
         mock_discord.assert_not_called()
         mock_notion.assert_not_called()
         md_files = list(tmp_path.glob("briefing_*.md"))
@@ -125,7 +177,7 @@ class TestBriefingHandler:
             result = briefing_handler()
 
         assert result["statusCode"] == 200
-        assert result["md_fallback"] is True
+        assert result["md_written"] is True
         mock_discord.assert_called_once()
         mock_notion.assert_not_called()
         assert len(list(tmp_path.glob("briefing_*.md"))) == 1
