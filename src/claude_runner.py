@@ -24,10 +24,12 @@ def get_model() -> str:
 
 
 def _is_transient_error(stdout: str, stderr: str) -> bool:
+    """stdout/stderr に Anthropic API の 5xx エラー表記が含まれるか判定する。"""
     return bool(_TRANSIENT_ERROR_RE.search((stdout or "") + "\n" + (stderr or "")))
 
 
 def _backoff_delay(attempt: int) -> float:
+    """attempt 番目 (1-indexed) のリトライ前に待機する秒数を返す。"""
     return RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** (attempt - 1))
 
 
@@ -45,6 +47,9 @@ def run_claude(
     Anthropic API の 5xx 系エラー (例: 529 Overloaded) は指数バックオフで
     最大 ``max_attempts`` 回までリトライする。
     """
+    if max_attempts < 1:
+        raise ValueError(f"max_attempts は 1 以上である必要があります (got {max_attempts})")
+
     claude_path = shutil.which("claude")
     if claude_path is None:
         raise RuntimeError("claude CLI が見つかりません。PATH を確認してください。")

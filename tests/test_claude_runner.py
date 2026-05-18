@@ -229,6 +229,21 @@ class TestRunClaudeRetry:
 
         assert mock_run.call_count == 2
 
+    def test_invalid_max_attempts_raises_value_error(self):
+        """Verifies: max_attempts <= 0 raises ValueError before any subprocess
+        call is made.
+        Why: with the previous loop-only logic, a caller passing
+        max_attempts=0 would skip the loop entirely and surface a misleading
+        "rc=0" error. Fail loudly at the boundary instead.
+        """
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run") as mock_run:
+                with pytest.raises(ValueError, match="max_attempts"):
+                    run_claude("prompt", "test", max_attempts=0)
+                with pytest.raises(ValueError, match="max_attempts"):
+                    run_claude("prompt", "test", max_attempts=-1)
+        assert mock_run.call_count == 0
+
     def test_timeout_not_retried(self):
         """Verifies: subprocess.TimeoutExpired raises RuntimeError after a
         single subprocess call, with no retry attempts.
