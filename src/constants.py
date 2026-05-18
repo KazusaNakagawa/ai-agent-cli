@@ -9,6 +9,11 @@ TIMEOUT_BRIEFING_MAIN = 300
 TIMEOUT_BRIEFING_SECTORS = 480
 TIMEOUT_WEEKLY_SUMMARY = 300
 
+# Claude CLI retry policy (5xx transient errors only)
+RETRY_MAX_ATTEMPTS = 3
+RETRY_BASE_DELAY = 5.0  # seconds; first retry waits this long
+RETRY_BACKOFF_FACTOR = 3.0  # 5s -> 15s -> 45s
+
 # Log retention
 LOG_RETENTION_DAYS = 7
 
