@@ -84,6 +84,33 @@ class TestBriefingHandler:
         assert len(md_files) == 1
         assert md_files[0].read_text(encoding="utf-8") == "ブリーフィング本文"
 
+    def test_md_written_even_when_discord_raises(self, tmp_path):
+        """Verifies: when send_to_discord raises, the local MD file is still
+        written before the exception propagates.
+        Why: issue #38 specifies Discord/Notion/local MD as three independent
+        outputs. A Discord outage must not prevent the local copy from being
+        saved — that copy is the operator's diagnostic fallback.
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord", side_effect=RuntimeError("discord down")),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            with pytest.raises(RuntimeError, match="discord down"):
+                briefing_handler()
+
+        md_files = list(tmp_path.glob("briefing_*.md"))
+        assert len(md_files) == 1
+        assert md_files[0].read_text(encoding="utf-8") == "ブリーフィング本文"
+
     def test_md_failure_does_not_block_pipeline(self, tmp_path):
         """Verifies: if save_briefing_md raises, the handler still returns
         200 with md_written=False.

@@ -46,6 +46,14 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
     discord_ok = _is_configured(CONFIG.discord_token, CONFIG.discord_channel_id)
     notion_ok = _is_configured(CONFIG.notion_api_key, CONFIG.notion_database_id)
 
+    # ローカル MD 出力を先に行う: Discord/Notion で例外が出ても本文をディスクに残せる
+    md_written = False
+    try:
+        save_briefing_md(briefing, BRIEFING_OUTPUT_DIR, BRIEFING_MD_RETENTION_DAYS)
+        md_written = True
+    except Exception as exc:
+        logger.warning("ローカル MD 出力失敗: %s — 継続します", exc)
+
     if discord_ok:
         logger.info("Discord に送信中...")
         send_to_discord(briefing, CONFIG.discord_token, CONFIG.discord_channel_id)
@@ -65,13 +73,6 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
         )
         if page_url:
             logger.info("Notion ページ: %s", page_url)
-
-    md_written = False
-    try:
-        save_briefing_md(briefing, BRIEFING_OUTPUT_DIR, BRIEFING_MD_RETENTION_DAYS)
-        md_written = True
-    except Exception as exc:
-        logger.warning("ローカル MD 出力失敗: %s — 継続します", exc)
 
     logger.info("=== 完了 ===")
     return {"statusCode": 200, "body": "Briefing sent.", "md_written": md_written}
