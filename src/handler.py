@@ -51,7 +51,7 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
     try:
         save_briefing_md(briefing, BRIEFING_OUTPUT_DIR, BRIEFING_MD_RETENTION_DAYS)
         md_written = True
-    except Exception as exc:
+    except OSError as exc:
         logger.warning("ローカル MD 出力失敗: %s — 継続します", exc)
 
     if discord_ok:

@@ -34,7 +34,10 @@ def save_briefing_md(
 
 
 def _prune_old(output_dir: Path, retention_days: int) -> None:
-    matched = [p for p in output_dir.iterdir() if _BRIEFING_FILE_RE.match(p.name)]
+    matched = [
+        p for p in output_dir.iterdir()
+        if p.is_file() and _BRIEFING_FILE_RE.match(p.name)
+    ]
     matched.sort(key=lambda p: p.name, reverse=True)  # ISO date sorts lexicographically
     for stale in matched[retention_days:]:
         try:

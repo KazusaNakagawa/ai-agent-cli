@@ -86,6 +86,34 @@ class TestSaveBriefingMd:
         remaining = sorted(p.name for p in tmp_path.glob("briefing_*.md"))
         assert remaining == ["briefing_2026-05-19.md"]
 
+    def test_directory_with_matching_name_is_skipped(self, tmp_path):
+        """Verifies: a directory whose name happens to match the
+        briefing_YYYY-MM-DD.md pattern is not unlinked during pruning.
+        Why: unlink() on a directory raises IsADirectoryError. The pruner
+        should treat such entries as non-target and leave them alone.
+        """
+        (tmp_path / "briefing_2026-04-01.md").mkdir()  # directory, not file
+
+        # Write 8 real files; without the is_file guard, the pruner would try
+        # to unlink the oldest entry (the directory) and crash.
+        for i in range(8):
+            d = date(2026, 5, 12 + i)
+            save_briefing_md(f"day{i}", tmp_path, retention_days=7, today=d)
+
+        assert (tmp_path / "briefing_2026-04-01.md").is_dir()
+        remaining_files = sorted(
+            p.name for p in tmp_path.iterdir() if p.is_file()
+        )
+        assert remaining_files == [
+            "briefing_2026-05-13.md",
+            "briefing_2026-05-14.md",
+            "briefing_2026-05-15.md",
+            "briefing_2026-05-16.md",
+            "briefing_2026-05-17.md",
+            "briefing_2026-05-18.md",
+            "briefing_2026-05-19.md",
+        ]
+
     def test_invalid_retention_raises(self, tmp_path):
         """Verifies: retention_days < 1 raises ValueError before any file work.
         Why: zero or negative retention would delete the file we just wrote;

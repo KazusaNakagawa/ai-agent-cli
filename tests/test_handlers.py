@@ -121,8 +121,8 @@ class TestBriefingHandler:
             patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
             patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
             patch("src.handler.CONFIG") as mock_cfg,
-            patch("src.handler.send_to_discord"),
-            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.send_to_discord") as mock_discord,
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
             patch("src.handler.save_briefing_md", side_effect=OSError("disk full")),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
@@ -134,6 +134,32 @@ class TestBriefingHandler:
 
         assert result["statusCode"] == 200
         assert result["md_written"] is False
+        mock_discord.assert_called_once()
+        mock_notion.assert_called_once()
+
+    def test_unexpected_md_error_propagates(self, tmp_path):
+        """Verifies: a non-OSError raised by save_briefing_md (e.g. a
+        programming bug surfacing as ValueError) is NOT swallowed and
+        propagates to the caller.
+        Why: blanket `except Exception` would hide real defects while still
+        returning 200. The handler should only absorb expected filesystem
+        failures (OSError family) and let other errors fail loudly.
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.save_briefing_md", side_effect=ValueError("bug")),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            with pytest.raises(ValueError, match="bug"):
+                briefing_handler()
 
     def test_notion_receives_model_footer(self, tmp_path):
         briefing_text = "ブリーフィング本文"
