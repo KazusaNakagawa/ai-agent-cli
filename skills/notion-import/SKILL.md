@@ -11,7 +11,7 @@ allowed-tools: Write, mcp__claude_ai_Notion__notion-search, mcp__claude_ai_Notio
 
 ## Usage
 
-```
+```bash
 /notion-import <topic-slug>
 ```
 
