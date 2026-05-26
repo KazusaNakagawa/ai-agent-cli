@@ -3,6 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > Setup, architecture, configuration, and testing details are documented in [README.md](README.md).
+> Custom Claude Code skills used in this project: [skills/](skills/README.md).
 
 ## Quick Commands
 

@@ -14,7 +14,7 @@ Bloomberg and NewsPicks surface raw data. This agent ties every event to your ho
 
 ## Architecture
 
-```
+```bash
 bin/run.sh
   ├── bin/briefing.py
   │     └── src/handler.py
@@ -35,7 +35,10 @@ config/
   briefing.json        # Portfolio, watch sectors (14 sectors), geopolitical risks
   xss_intel.json       # XSS target frameworks / libraries / keywords
 src/config.py          # JSON → dataclass schema
+skills/                # Claude Code custom skills — see skills/README.md
 ```
+
+See [skills/](skills/README.md) for custom Claude Code skills bundled with this repo.
 
 ### Key Design Decisions
 
@@ -178,7 +181,7 @@ Prompt template for the briefing agent. Variables: `{tickers}` `{themes}` `{geop
 
 ## Sample Output
 
-```
+```markdown
 ## Today's Summary (1 sentence)
 ...
 
