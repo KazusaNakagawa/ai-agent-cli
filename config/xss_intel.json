@@ -1,0 +1,7 @@
+{
+  "targets": {
+    "frameworks": ["React", "Vue", "Angular", "Next.js", "Django", "Rails"],
+    "libraries": ["DOMPurify", "sanitize-html", "marked", "highlight.js"],
+    "keywords": ["XSS bypass", "stored XSS", "DOM XSS", "CSP bypass", "XSS PoC"]
+  }
+}
