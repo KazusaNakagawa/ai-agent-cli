@@ -3,9 +3,10 @@ import argparse
 import os
 import subprocess
 import sys
-import uuid
 from datetime import date
 from pathlib import Path
+
+from src.chat_session import build_cmd, session_name_for
 
 PROJECT_ROOT = Path(__file__).parents[1]
 BRIEFING_DIR = PROJECT_ROOT / "output" / "briefing"
@@ -29,35 +30,13 @@ def list_sessions(sessions_dir: Path) -> None:
         print(f"  {f.name}  {f.read_text().strip()}")
 
 
-def build_cmd(target_date: str, briefing_file: Path, session_file: Path) -> list[str]:
-    """Return claude CLI args. Writes session_file with a new UUID on first call."""
-    session_name = f"briefing-chat-{target_date}"
-
-    if session_file.exists():
-        session_id = session_file.read_text().strip()
-        print(f"Resuming session: {session_name} ({session_id})")
-        print("(type your question, Ctrl+C or /exit to quit)\n")
-        return ["claude", "--resume", session_id, "--name", session_name]
-
-    session_id = str(uuid.uuid4())
-    session_file.write_text(session_id)
-
-    briefing_content = briefing_file.read_text()
-    context = (
-        f"以下は {target_date} のマーケットブリーフィングです。"
-        "このブリーフィングをコンテキストとして、ユーザーの質問に日本語で回答してください。\n\n"
-        f"=== マーケットブリーフィング ({target_date}) ===\n"
-        f"{briefing_content}\n"
-        "=== END ==="
-    )
-    print(f"New session: {session_name} ({session_id})")
+def _print_intro(target_date: str, session_file: Path, is_resume: bool) -> None:
+    """Tell the user which session they're in. Lives here (not in build_cmd) so
+    the library function stays silent for SSE use."""
+    session_id = session_file.read_text().strip()
+    label = "Resuming session" if is_resume else "New session"
+    print(f"{label}: {session_name_for(target_date)} ({session_id})")
     print("(type your question, Ctrl+C or /exit to quit)\n")
-    return [
-        "claude",
-        "--session-id", session_id,
-        "--name", session_name,
-        "--append-system-prompt", context,
-    ]
 
 
 def run_claude(target_date: str, briefing_file: Path, session_file: Path) -> int:
@@ -68,8 +47,12 @@ def run_claude(target_date: str, briefing_file: Path, session_file: Path) -> int
     session id. Returns the final subprocess exit code.
     """
     env = claude_env()
+
+    is_resume = session_file.exists()
     cmd = build_cmd(target_date, briefing_file, session_file)
-    if "--resume" not in cmd:
+    _print_intro(target_date, session_file, is_resume=is_resume)
+
+    if not is_resume:
         return subprocess.run(cmd, env=env).returncode
 
     result = subprocess.run(cmd, stderr=subprocess.PIPE, text=True, env=env)
@@ -83,6 +66,7 @@ def run_claude(target_date: str, briefing_file: Path, session_file: Path) -> int
         print("Saved session is stale; starting a new session.", file=sys.stderr)
         session_file.unlink(missing_ok=True)
         new_cmd = build_cmd(target_date, briefing_file, session_file)
+        _print_intro(target_date, session_file, is_resume=False)
         return subprocess.run(new_cmd, env=env).returncode
 
     if stderr:

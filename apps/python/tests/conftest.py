@@ -8,7 +8,7 @@ os.environ.setdefault("BRIEFING_CONFIG_PATH", str(Path(__file__).parent / "confi
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src import credentials
+from src import credentials, state as state_mod
 from web import auth
 from web.app import app
 
@@ -47,6 +47,13 @@ def clear_credential_env(monkeypatch):
     """Strip any inherited env values for allow-listed credentials so .env fallback can't leak in."""
     for name in credentials.ALLOWED_KEYS:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture
+def isolated_state(monkeypatch, tmp_path):
+    """Pin ``state.STATE_FILE`` to a tmp path so tests are independent of the
+    host's ``~/.ai-agent/state.json``."""
+    monkeypatch.setattr(state_mod, "STATE_FILE", tmp_path / "state.json")
 
 
 @pytest.fixture
