@@ -27,6 +27,11 @@ Flags:
 EOF
             exit 0
             ;;
+        *)
+            echo "unknown flag: $arg" >&2
+            echo "try: bin/serve.sh --help" >&2
+            exit 2
+            ;;
     esac
 done
 
@@ -97,11 +102,34 @@ pids+=("$!")
 ( cd "$WEB_APP" && PORT="$WEB_PORT" npm run dev ) &
 pids+=("$!")
 
+# --- early-death detection ---
+# Give both processes a moment to bind their ports. If either exits before
+# this window (most commonly: port collision), surface the failure here
+# instead of leaving the user with a half-working stack.
+sleep 2
+if ! kill -0 "${pids[0]}" 2>/dev/null; then
+    echo "error: FastAPI exited early — port $API_PORT may be in use" >&2
+    exit 1
+fi
+if ! kill -0 "${pids[1]}" 2>/dev/null; then
+    echo "error: Next.js exited early — port $WEB_PORT may be in use" >&2
+    exit 1
+fi
+
 # --- browser ---
 if [ "$NO_BROWSER" = false ] && [ -z "${CI:-}" ] && command -v open >/dev/null 2>&1; then
-    # Defer the open call a few seconds so Next.js is actually serving;
-    # backgrounded + best-effort so a missing browser doesn't tear down the script.
-    ( sleep 3 && open "http://localhost:$WEB_PORT" >/dev/null 2>&1 || true ) &
+    # Poll for Next.js readiness instead of a fixed sleep — first cold start
+    # can take 5–10s and a fixed delay races with that. Best-effort: if it
+    # never comes up the loop times out and we don't open anything.
+    (
+        for _ in $(seq 1 30); do
+            if curl -fsS --max-time 1 "http://localhost:$WEB_PORT/" >/dev/null 2>&1; then
+                open "http://localhost:$WEB_PORT" >/dev/null 2>&1 || true
+                exit 0
+            fi
+            sleep 1
+        done
+    ) &
 fi
 
 wait

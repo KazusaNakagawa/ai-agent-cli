@@ -21,8 +21,11 @@ WEB_PORT=3001 ./bin/serve.sh     # Web のポートを変更
 3. `~/.ai-agent/session-token` が無ければ `secrets.token_urlsafe(32)` で作成、必ず `apps/web/.token` に 0600 でミラー (両サーバが同じトークンを参照)
 4. uvicorn を `--reload` 付きでバックグラウンド起動 (`apps/python/bin/serve.sh` 経由)
 5. `npm run dev` をバックグラウンド起動
-6. macOS なら 3 秒後に `open http://localhost:$WEB_PORT` (`--no-browser` または `$CI` で skip)
-7. Ctrl-C で両プロセスを後始末 (`trap INT TERM EXIT` + 子孫プロセスを `pkill -P`)
+6. **Early-death check**: 起動直後にどちらかが死んだら（典型: ポート衝突）即 exit 1 で原因を表示
+7. macOS なら `http://localhost:$WEB_PORT/` を polling し、200 が返ってから `open` (`--no-browser` または `$CI` で skip、最大 30 秒で諦め)
+8. Ctrl-C で両プロセスを後始末 (`trap INT TERM EXIT` + 子孫プロセスを `pkill -P`)
+
+未知のフラグは silent に無視せず `exit 2` で `bin/serve.sh --help` を案内する。
 
 `--host 127.0.0.1` で localhost-only — LAN からは到達不能。
 
