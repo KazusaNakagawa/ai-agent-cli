@@ -27,7 +27,11 @@ bin/chat.sh                    # Launch chat session
 ## Key Implementation Notes
 
 - **`apps/python/src/claude_runner.py`** is the single entry point for all claude CLI calls. Always use `run_claude()` — never call `subprocess.run(["claude", ...])` directly elsewhere.
-- **`ANTHROPIC_API_KEY` must not reach the subprocess** — it is stripped in `run_claude()`. If you add new subprocess calls to claude, apply the same env filter.
+- **Subprocess env handling for `ANTHROPIC_API_KEY` is mode-dependent.** `run_claude()` calls `_build_env(auth_mode)` based on `state.read_state().auth_mode` (defaults to `"cli"`):
+  - `cli`: the key is **stripped** so the claude CLI uses its OAuth session.
+  - `api`: the key from `credentials.get_credential("ANTHROPIC_API_KEY")` (Keychain → `.env` fallback) is **injected** into the subprocess env.
+
+  If you add new subprocess calls to claude, route them through `_build_env(state.read_state().auth_mode)` so they honor the same toggle. Never set `ANTHROPIC_API_KEY` directly in the subprocess env outside this helper.
 - **`apps/python/requirements.txt` is auto-generated** — only edit `requirements.in`, then recompile.
 - **`CONFIG = load_config()`** runs at import time in `apps/python/src/config.py`. Tests that call `load_config()` directly must patch `src.config.CONFIG_PATH`.
 

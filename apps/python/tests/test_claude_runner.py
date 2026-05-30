@@ -4,7 +4,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src import claude_runner, credentials, state as state_mod
 from src.claude_runner import run_claude
+
+
+@pytest.fixture(autouse=True)
+def isolated_state(monkeypatch, tmp_path):
+    """Pin state file so test runs are independent of the user's ~/.ai-agent/state.json."""
+    monkeypatch.setattr(state_mod, "STATE_FILE", tmp_path / "state.json")
 
 
 def _make_result(returncode=0, stdout="output", stderr=""):
@@ -261,3 +268,146 @@ class TestRunClaudeRetry:
                     run_claude("prompt", "test", timeout=300)
 
         assert mock_run.call_count == 1
+
+
+class TestBuildEnv:
+    def test_cli_mode_strips_anthropic_api_key(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "should-be-removed")
+        env = claude_runner._build_env(auth_mode="cli")
+        assert "ANTHROPIC_API_KEY" not in env
+
+    def test_cli_mode_preserves_other_env(self, monkeypatch):
+        monkeypatch.setenv("PATH", "/usr/local/bin")
+        monkeypatch.setenv("OTHER_VAR", "kept")
+        env = claude_runner._build_env(auth_mode="cli")
+        assert env.get("OTHER_VAR") == "kept"
+        assert "/usr/local/bin" in env.get("PATH", "")
+
+    def test_api_mode_injects_keychain_key(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        store = {("ai-agent", "ANTHROPIC_API_KEY"): "key-xyz"}
+
+        class _Fake:
+            def get_password(self, service, name):
+                return store.get((service, name))
+
+            def set_password(self, service, name, value):
+                store[(service, name)] = value
+
+            def delete_password(self, service, name):
+                store.pop((service, name), None)
+
+        monkeypatch.setattr(credentials, "_backend", _Fake())
+
+        env = claude_runner._build_env(auth_mode="api")
+        assert env.get("ANTHROPIC_API_KEY") == "key-xyz"
+
+    def test_api_mode_falls_back_to_env_when_keychain_empty(self, monkeypatch):
+        """If auth_mode=api but Keychain has no key, the .env value (loaded into
+        os.environ by the wrapper script) is used instead — same precedence as
+        credentials.get_credential.
+        """
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env")
+
+        class _Empty:
+            def get_password(self, service, name):
+                return None
+
+            def set_password(self, service, name, value):
+                pass
+
+            def delete_password(self, service, name):
+                pass
+
+        monkeypatch.setattr(credentials, "_backend", _Empty())
+
+        env = claude_runner._build_env(auth_mode="api")
+        assert env.get("ANTHROPIC_API_KEY") == "from-env"
+
+    def test_api_mode_does_not_inject_when_no_key_available(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        class _Empty:
+            def get_password(self, service, name):
+                return None
+
+            def set_password(self, service, name, value):
+                pass
+
+            def delete_password(self, service, name):
+                pass
+
+        monkeypatch.setattr(credentials, "_backend", _Empty())
+
+        env = claude_runner._build_env(auth_mode="api")
+        assert "ANTHROPIC_API_KEY" not in env
+
+
+class TestRunClaudeAuthMode:
+    def test_run_claude_in_api_mode_injects_keychain_key(self, monkeypatch):
+        """When state.auth_mode=api, run_claude's subprocess env contains the
+        Keychain-stored ANTHROPIC_API_KEY."""
+        state_mod.write_state(state_mod.State(auth_mode="api"))
+
+        store = {("ai-agent", "ANTHROPIC_API_KEY"): "from-keychain"}
+
+        class _Fake:
+            def get_password(self, service, name):
+                return store.get((service, name))
+
+            def set_password(self, service, name, value):
+                store[(service, name)] = value
+
+            def delete_password(self, service, name):
+                store.pop((service, name), None)
+
+        monkeypatch.setattr(credentials, "_backend", _Fake())
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured["env"] = kwargs.get("env", {})
+            return _make_result()
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
+                run_claude("prompt", "test")
+
+        assert captured["env"].get("ANTHROPIC_API_KEY") == "from-keychain"
+
+    def test_run_claude_in_cli_mode_strips_api_key_even_if_keychain_has_one(
+        self, monkeypatch
+    ):
+        """When state.auth_mode=cli, the Keychain key must NOT leak into the
+        subprocess env — claude CLI should use its own OAuth session instead.
+        Symmetric to the api-mode injection test."""
+        state_mod.write_state(state_mod.State(auth_mode="cli"))
+
+        store = {("ai-agent", "ANTHROPIC_API_KEY"): "from-keychain"}
+
+        class _Fake:
+            def get_password(self, service, name):
+                return store.get((service, name))
+
+            def set_password(self, service, name, value):
+                store[(service, name)] = value
+
+            def delete_password(self, service, name):
+                store.pop((service, name), None)
+
+        monkeypatch.setattr(credentials, "_backend", _Fake())
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env-also-present")
+
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured["env"] = kwargs.get("env", {})
+            return _make_result()
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
+                run_claude("prompt", "test")
+
+        assert "ANTHROPIC_API_KEY" not in captured["env"]
