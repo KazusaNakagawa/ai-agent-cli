@@ -1,19 +1,31 @@
 # Web UI (Phase 1) — Setup and Operation
 
-ローカル localhost-only な FastAPI バックエンドの使い方。Plan A + Plan B 完了時点で利用可能。
+ローカル localhost-only な FastAPI バックエンド + Next.js フロントエンドの使い方。
 
 ## 起動
 
 ```bash
-./bin/serve.sh                   # http://127.0.0.1:8000 (default)
-PORT=8001 ./bin/serve.sh         # ポート衝突回避
+./bin/serve.sh                   # API :8000 + Web :3000 + ブラウザ自動オープン
+./bin/serve.sh --no-browser      # ブラウザは開かない ($CI が立っていれば自動で skip)
+API_PORT=8001 ./bin/serve.sh     # API のポートを変更
+WEB_PORT=3001 ./bin/serve.sh     # Web のポートを変更
+
+# API だけ立ち上げたい場合 (CI / Swagger 動作確認など):
+./apps/python/bin/serve.sh       # FastAPI 単体
 ```
 
 `bin/serve.sh` がやること:
 
-1. `.env` を `set -a; source; set +a` で読み込み
-2. `~/.ai-agent/session-token` の場所を表示 (中身は出さない)
-3. `uvicorn web.app:app --host 127.0.0.1 --port $PORT --reload --reload-dir web --reload-dir src` を exec
+1. **Pre-flight**: `apps/python/.venv/bin/uvicorn` と `apps/web/node_modules` の存在チェック。欠けていれば即 exit 1 + 直し方を案内
+2. `.env` を `set -a; source; set +a` で読み込み
+3. `~/.ai-agent/session-token` が無ければ `secrets.token_urlsafe(32)` で作成、必ず `apps/web/.token` に 0600 でミラー (両サーバが同じトークンを参照)
+4. uvicorn を `--reload` 付きでバックグラウンド起動 (`apps/python/bin/serve.sh` 経由)
+5. `npm run dev` をバックグラウンド起動
+6. **Early-death check**: 起動直後にどちらかが死んだら（典型: ポート衝突）即 exit 1 で原因を表示
+7. macOS なら `http://localhost:$WEB_PORT/` を polling し、200 が返ってから `open` (`--no-browser` または `$CI` で skip、最大 30 秒で諦め)
+8. Ctrl-C で両プロセスを後始末 (`trap INT TERM EXIT` + 子孫プロセスを `pkill -P`)
+
+未知のフラグは silent に無視せず `exit 2` で `bin/serve.sh --help` を案内する。
 
 `--host 127.0.0.1` で localhost-only — LAN からは到達不能。
 
@@ -121,6 +133,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/run/<job_id>
 | 症状 | 原因と対処 |
 |---|---|
 | `./bin/serve.sh` で `uvicorn not found` | venv 未同期。`cd apps/python && uv pip sync requirements.txt` |
+| `./bin/serve.sh` で `web dependencies missing` | Next.js 依存未インストール。`cd apps/web && npm install` |
 | `GET /api/config` が 404 | `apps/python/config/briefing.json` が無い。`PUT /api/config` で作成 |
 | `GET /api/config` が 500 (corrupt JSON) | `briefing.json` が壊れている。`apps/python/config/briefing.json.example` を参考に手で直すか `PUT` で再作成 |
 | `POST /api/run` の job が `failed` | `GET /api/run/{job_id}` の `error` フィールドを参照。多くは `briefing.json` 不整合 or クレデンシャル不足 |
