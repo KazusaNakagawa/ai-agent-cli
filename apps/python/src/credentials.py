@@ -9,6 +9,7 @@
 保管されないようにするためのガード。
 """
 import os
+from typing import Any
 
 import keyring
 
@@ -21,7 +22,7 @@ ALLOWED_KEYS: tuple[str, ...] = (
     "ANTHROPIC_API_KEY",
 )
 
-_backend = keyring
+_backend: Any = keyring
 
 
 def _ensure_allowed(name: str) -> None:
@@ -34,8 +35,7 @@ def get_credential(name: str) -> str | None:
     value = _backend.get_password(SERVICE, name)
     if value:
         return value
-    env_value = os.environ.get(name)
-    return env_value if env_value else None
+    return os.environ.get(name) or None
 
 
 def set_credential(name: str, value: str) -> None:

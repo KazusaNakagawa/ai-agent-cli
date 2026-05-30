@@ -89,6 +89,19 @@ async def test_delete_credential_removes_value_and_returns_204():
 
 
 @pytest.mark.asyncio
+async def test_put_empty_value_returns_422():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put(
+            "/api/credentials/DISCORD_TOKEN",
+            headers={"Authorization": "Bearer test-token-123"},
+            json={"value": ""},
+        )
+    assert response.status_code == 422
+    assert credentials.get_credential("DISCORD_TOKEN") is None
+
+
+@pytest.mark.asyncio
 async def test_put_unknown_key_returns_400():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

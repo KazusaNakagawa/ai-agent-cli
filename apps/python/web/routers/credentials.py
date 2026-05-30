@@ -5,7 +5,7 @@ GET は ``{name: bool}`` の形式で各 allow-listed キーの「設定済み�
 PUT/DELETE は 204。allow-list 外のキーは 400。すべて Bearer 必須。
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src import credentials as cred_mod
 from web.auth import require_bearer
@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 class CredentialBody(BaseModel):
-    value: str
+    value: str = Field(min_length=1)
 
 
 @router.get("/credentials", dependencies=[Depends(require_bearer)])
