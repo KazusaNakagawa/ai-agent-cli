@@ -19,14 +19,18 @@ class AuthModeBody(BaseModel):
     auth_mode: Literal["cli", "api"]
 
 
-@router.get("/auth/mode")
-def get_auth_mode() -> dict[str, str]:
-    return {"auth_mode": state_mod.read_state().auth_mode}
+class AuthModeResponse(BaseModel):
+    auth_mode: Literal["cli", "api"]
 
 
-@router.put("/auth/mode")
-def put_auth_mode(body: AuthModeBody) -> dict[str, str]:
+@router.get("/auth/mode", response_model=AuthModeResponse)
+def get_auth_mode() -> AuthModeResponse:
+    return AuthModeResponse(auth_mode=state_mod.read_state().auth_mode)
+
+
+@router.put("/auth/mode", response_model=AuthModeResponse)
+def put_auth_mode(body: AuthModeBody) -> AuthModeResponse:
     current = state_mod.read_state()
     current.auth_mode = body.auth_mode
     state_mod.write_state(current)
-    return {"auth_mode": body.auth_mode}
+    return AuthModeResponse(auth_mode=body.auth_mode)

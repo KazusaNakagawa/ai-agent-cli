@@ -345,8 +345,9 @@ class TestBuildEnv:
 
 
 class TestRunClaudeAuthMode:
-    def test_run_claude_uses_state_auth_mode(self, monkeypatch):
-        """run_claude should consult state.auth_mode and pass it to _build_env."""
+    def test_run_claude_in_api_mode_injects_keychain_key(self, monkeypatch):
+        """When state.auth_mode=api, run_claude's subprocess env contains the
+        Keychain-stored ANTHROPIC_API_KEY."""
         state_mod.write_state(state_mod.State(auth_mode="api"))
 
         store = {("ai-agent", "ANTHROPIC_API_KEY"): "from-keychain"}
@@ -375,3 +376,38 @@ class TestRunClaudeAuthMode:
                 run_claude("prompt", "test")
 
         assert captured["env"].get("ANTHROPIC_API_KEY") == "from-keychain"
+
+    def test_run_claude_in_cli_mode_strips_api_key_even_if_keychain_has_one(
+        self, monkeypatch
+    ):
+        """When state.auth_mode=cli, the Keychain key must NOT leak into the
+        subprocess env — claude CLI should use its own OAuth session instead.
+        Symmetric to the api-mode injection test."""
+        state_mod.write_state(state_mod.State(auth_mode="cli"))
+
+        store = {("ai-agent", "ANTHROPIC_API_KEY"): "from-keychain"}
+
+        class _Fake:
+            def get_password(self, service, name):
+                return store.get((service, name))
+
+            def set_password(self, service, name, value):
+                store[(service, name)] = value
+
+            def delete_password(self, service, name):
+                store.pop((service, name), None)
+
+        monkeypatch.setattr(credentials, "_backend", _Fake())
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env-also-present")
+
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured["env"] = kwargs.get("env", {})
+            return _make_result()
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
+                run_claude("prompt", "test")
+
+        assert "ANTHROPIC_API_KEY" not in captured["env"]

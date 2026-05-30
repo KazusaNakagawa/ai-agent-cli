@@ -3,6 +3,9 @@ import re
 import shutil
 import subprocess
 import time
+
+from src import credentials as cred_mod
+from src import state as state_mod
 from src.constants import (
     DEFAULT_MODEL,
     RETRY_BACKOFF_FACTOR,
@@ -43,8 +46,6 @@ def _build_env(auth_mode: str) -> dict[str, str]:
     """
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     if auth_mode == "api":
-        from src import credentials as cred_mod
-
         key = cred_mod.get_credential("ANTHROPIC_API_KEY")
         if key:
             env["ANTHROPIC_API_KEY"] = key
@@ -71,8 +72,6 @@ def run_claude(
     claude_path = shutil.which("claude")
     if claude_path is None:
         raise RuntimeError("claude CLI が見つかりません。PATH を確認してください。")
-
-    from src import state as state_mod
 
     env = _build_env(auth_mode=state_mod.read_state().auth_mode)
     model = get_model()
