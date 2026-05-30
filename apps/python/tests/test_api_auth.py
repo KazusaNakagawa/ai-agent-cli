@@ -1,6 +1,12 @@
 import pytest
+from fastapi.security import HTTPAuthorizationCredentials
 
 from web import auth
+
+
+def _bearer(token: str) -> HTTPAuthorizationCredentials:
+    """Build the credentials object FastAPI's HTTPBearer dep would produce."""
+    return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
 
 async def test_health_does_not_require_auth(async_client):
@@ -30,7 +36,7 @@ def test_require_bearer_rejects_missing_header(fixed_token):
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as exc_info:
-        auth.require_bearer(authorization="")
+        auth.require_bearer(credentials=None)
     assert exc_info.value.status_code == 401
 
 
@@ -38,9 +44,9 @@ def test_require_bearer_rejects_wrong_token(fixed_token):
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as exc_info:
-        auth.require_bearer(authorization="Bearer wrong-token")
+        auth.require_bearer(credentials=_bearer("wrong-token"))
     assert exc_info.value.status_code == 401
 
 
 def test_require_bearer_accepts_correct_token(fixed_token):
-    auth.require_bearer(authorization="Bearer test-token-123")
+    auth.require_bearer(credentials=_bearer("test-token-123"))
