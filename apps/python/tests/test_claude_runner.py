@@ -273,13 +273,13 @@ class TestRunClaudeRetry:
 class TestBuildEnv:
     def test_cli_mode_strips_anthropic_api_key(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "should-be-removed")
-        env = claude_runner._build_env(auth_mode="cli")
+        env = claude_runner.build_env(auth_mode="cli")
         assert "ANTHROPIC_API_KEY" not in env
 
     def test_cli_mode_preserves_other_env(self, monkeypatch):
         monkeypatch.setenv("PATH", "/usr/local/bin")
         monkeypatch.setenv("OTHER_VAR", "kept")
-        env = claude_runner._build_env(auth_mode="cli")
+        env = claude_runner.build_env(auth_mode="cli")
         assert env.get("OTHER_VAR") == "kept"
         assert "/usr/local/bin" in env.get("PATH", "")
 
@@ -300,7 +300,7 @@ class TestBuildEnv:
 
         monkeypatch.setattr(credentials, "_backend", _Fake())
 
-        env = claude_runner._build_env(auth_mode="api")
+        env = claude_runner.build_env(auth_mode="api")
         assert env.get("ANTHROPIC_API_KEY") == "key-xyz"
 
     def test_api_mode_falls_back_to_env_when_keychain_empty(self, monkeypatch):
@@ -322,7 +322,7 @@ class TestBuildEnv:
 
         monkeypatch.setattr(credentials, "_backend", _Empty())
 
-        env = claude_runner._build_env(auth_mode="api")
+        env = claude_runner.build_env(auth_mode="api")
         assert env.get("ANTHROPIC_API_KEY") == "from-env"
 
     def test_api_mode_does_not_inject_when_no_key_available(self, monkeypatch):
@@ -340,7 +340,7 @@ class TestBuildEnv:
 
         monkeypatch.setattr(credentials, "_backend", _Empty())
 
-        env = claude_runner._build_env(auth_mode="api")
+        env = claude_runner.build_env(auth_mode="api")
         assert "ANTHROPIC_API_KEY" not in env
 
 

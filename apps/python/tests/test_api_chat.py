@@ -3,6 +3,8 @@ import io
 
 import pytest
 
+from src import credentials, state as state_mod
+
 pytestmark = pytest.mark.usefixtures("isolated_state")
 
 
@@ -197,6 +199,95 @@ async def test_chat_subprocess_env_strips_anthropic_api_key_in_cli_mode(
 
     _, kwargs = factory.calls[0]
     assert "ANTHROPIC_API_KEY" not in kwargs["env"]
+
+
+async def test_chat_subprocess_env_includes_keychain_key_in_api_mode(
+    authed_client, briefing_setup, monkeypatch
+):
+    state_mod.write_state(state_mod.State(auth_mode="api"))
+
+    store = {("ai-agent", "ANTHROPIC_API_KEY"): "from-keychain"}
+
+    class _Fake:
+        def get_password(self, service, name):
+            return store.get((service, name))
+
+        def set_password(self, service, name, value):
+            store[(service, name)] = value
+
+        def delete_password(self, service, name):
+            store.pop((service, name), None)
+
+    monkeypatch.setattr(credentials, "_backend", _Fake())
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?"},
+    )
+
+    _, kwargs = factory.calls[0]
+    assert kwargs["env"].get("ANTHROPIC_API_KEY") == "from-keychain"
+
+
+async def test_chat_rejects_invalid_date_format(authed_client, briefing_setup):
+    """Path-traversal guard: anything that doesn't match YYYY-MM-DD must 422
+    before reaching the filesystem."""
+    bad_dates = ["../foo", "2026-05", "2026-5-30", "2026-05-30/extra", "abcd-ef-gh"]
+    for bad in bad_dates:
+        response = await authed_client.post(
+            "/api/chat",
+            json={"date": bad, "question": "Q?"},
+        )
+        assert response.status_code == 422, f"expected 422 for date={bad!r}"
+
+
+async def test_chat_rejects_empty_question(authed_client, briefing_setup):
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": ""},
+    )
+    assert response.status_code == 422
+
+
+async def test_chat_strips_trailing_cr_from_stdout_lines(
+    authed_client, briefing_setup, monkeypatch
+):
+    """Windows-style \\r\\n line endings must not leak into the SSE event."""
+    factory = _make_popen(stdout_lines=[b"hello world\r\n", b"line2\r\n"])
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?"},
+    )
+    body = response.text
+    # No raw \r before the \n\n event terminator
+    assert "\r\n\n" not in body
+    assert "data: hello world\n\n" in body
+    assert "data: line2\n\n" in body
+
+
+async def test_chat_multi_line_stderr_emits_one_data_per_line(
+    authed_client, briefing_setup, monkeypatch
+):
+    """Per SSE spec, an event with multi-line content needs one `data:` prefix
+    per line — a single `data:` with embedded \\n breaks compliant parsers."""
+    factory = _make_popen(stderr=b"err line 1\nerr line 2\nerr line 3", returncode=1)
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?"},
+    )
+    body = response.text
+    assert "event: error\n" in body
+    assert "data: err line 1\n" in body
+    assert "data: err line 2\n" in body
+    assert "data: err line 3\n" in body
 
 
 async def test_chat_requires_bearer(async_client, briefing_setup):

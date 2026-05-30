@@ -13,19 +13,24 @@ in-stream because once any stdout has been emitted to the client there
 is no clean way to "rewind" the SSE stream.
 
 ``ANTHROPIC_API_KEY`` propagation follows ``state.read_state().auth_mode``
-via ``claude_runner._build_env`` — same toggle used by ``run_claude``.
+via ``claude_runner.build_env`` — same toggle used by ``run_claude``.
+
+Stderr is drained in a background thread to avoid a pipe-buffer deadlock
+(if stderr ever exceeded the OS pipe buffer ~64KB without being read,
+claude would block writing and stdout streaming would stall).
 """
 import subprocess
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src import state as state_mod
 from src.chat_session import build_cmd
-from src.claude_runner import _build_env
+from src.claude_runner import build_env
 from web.auth import require_bearer
 
 PYTHON_APP = Path(__file__).resolve().parents[2]  # apps/python/
@@ -36,8 +41,23 @@ router = APIRouter(dependencies=[Depends(require_bearer)])
 
 
 class ChatBody(BaseModel):
-    date: str
-    question: str
+    # Pinned to YYYY-MM-DD so user input can't path-traverse into
+    # SESSIONS_DIR (e.g. "../foo").
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    question: str = Field(min_length=1)
+
+
+def _sse_event(content: str, event: str | None = None) -> bytes:
+    """Build a well-formed SSE event from possibly multi-line content.
+
+    Per the SSE spec, multi-line content needs one ``data:`` prefix per
+    line; an empty trailing line terminates the event."""
+    out: list[str] = []
+    if event:
+        out.append(f"event: {event}")
+    for line in content.splitlines() or [""]:
+        out.append(f"data: {line}")
+    return ("\n".join(out) + "\n\n").encode("utf-8")
 
 
 def _stream(cmd: list[str], session_file: Path, env: dict[str, str]) -> Iterator[bytes]:
@@ -48,21 +68,39 @@ def _stream(cmd: list[str], session_file: Path, env: dict[str, str]) -> Iterator
         stderr=subprocess.PIPE,
         env=env,
     )
+
+    # Drain stderr concurrently — without this, a large stderr write would
+    # fill the OS pipe buffer, block claude, and stall the stdout iteration.
+    stderr_chunks: list[bytes] = []
+
+    def _drain_stderr() -> None:
+        assert proc.stderr is not None
+        for chunk in iter(lambda: proc.stderr.read(4096), b""):
+            stderr_chunks.append(chunk)
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
+
     try:
+        assert proc.stdout is not None
         for line_bytes in proc.stdout:
-            line = line_bytes.decode("utf-8", errors="replace").rstrip("\n")
-            yield f"data: {line}\n\n".encode("utf-8")
+            line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
+            yield _sse_event(line)
     finally:
         proc.wait()
+        stderr_thread.join(timeout=2)
 
     if proc.returncode != 0:
-        stderr = (proc.stderr.read() or b"").decode("utf-8", errors="replace")
+        stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
         is_resume = "--resume" in cmd
         if is_resume and "No conversation found" in stderr:
             session_file.unlink(missing_ok=True)
-            yield b"event: stale_session\ndata: saved session expired; retry the request\n\n"
+            yield _sse_event(
+                "saved session expired; retry the request",
+                event="stale_session",
+            )
         else:
-            yield f"event: error\ndata: {stderr.strip()}\n\n".encode("utf-8")
+            yield _sse_event(stderr.strip(), event="error")
 
 
 @router.post("/chat")
@@ -75,7 +113,7 @@ def post_chat(body: ChatBody) -> StreamingResponse:
 
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     cmd = build_cmd(body.date, briefing_file, session_file) + ["-p", body.question]
-    env = _build_env(auth_mode=state_mod.read_state().auth_mode)
+    env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     return StreamingResponse(
         _stream(cmd, session_file, env),
