@@ -29,7 +29,8 @@ build/
 htmlcov/
 
 # Editor
-.vscode/
+.vscode/*
+!.vscode/settings.json
 
 # OS
 .DS_Store
