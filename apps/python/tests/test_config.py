@@ -1,4 +1,8 @@
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -101,3 +105,34 @@ class TestLoadConfig:
             config = load_config()
 
         assert config.watch_events == []
+
+    def test_importing_src_config_does_not_eagerly_read_file(self, tmp_path):
+        """Regression: importing src.config must not read briefing.json at
+        module-load time. The FastAPI web server (web.app → web.routers.config
+        → web.schemas → src.config) needs to boot before briefing.json exists
+        — its whole purpose is to let the operator create that file via
+        /api/config. Spawning a fresh interpreter so this test doesn't depend
+        on whatever state src.config is already in for the current process."""
+        missing = tmp_path / "definitely-missing.json"
+        assert not missing.exists()
+
+        env = {**os.environ, "BRIEFING_CONFIG_PATH": str(missing)}
+        apps_python = Path(__file__).parent.parent  # apps/python
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import src.config; from web.app import app; print('imported-ok')",
+            ],
+            env=env,
+            cwd=apps_python,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert result.returncode == 0, (
+            f"importing failed unexpectedly\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+        assert "imported-ok" in result.stdout

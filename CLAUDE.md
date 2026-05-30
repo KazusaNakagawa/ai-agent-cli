@@ -33,7 +33,7 @@ bin/chat.sh                    # Launch chat session
 
   If you add new subprocess calls to claude, route them through `_build_env(state.read_state().auth_mode)` so they honor the same toggle. Never set `ANTHROPIC_API_KEY` directly in the subprocess env outside this helper.
 - **`apps/python/requirements.txt` is auto-generated** — only edit `requirements.in`, then recompile.
-- **`CONFIG = load_config()`** runs at import time in `apps/python/src/config.py`. Tests that call `load_config()` directly must patch `src.config.CONFIG_PATH`.
+- **`src.config.CONFIG` is lazy.** A module-level `__getattr__` calls `load_config()` on the first attribute access — importing `src.config` itself does **not** read `briefing.json`. This is what lets the FastAPI web server boot before `briefing.json` exists (the operator creates it via `PUT /api/config`). Batch jobs that dereference `CONFIG.portfolio` etc. still get a clear `FileNotFoundError` at first use if the file is missing. Tests that call `load_config()` directly must patch `src.config.CONFIG_PATH`.
 
 ## Config File Rules
 
