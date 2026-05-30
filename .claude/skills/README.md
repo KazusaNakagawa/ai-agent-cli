@@ -20,6 +20,7 @@ repo 内で完結させる場合は不要。他のプロジェクトからも呼
 Symlink（推奨 — repo の編集と同期される）:
 
 ```bash
+mkdir -p "$HOME/.claude/skills"
 for s in notion-import tech-architect architecting-defaults issue-create; do
   ln -s "$(pwd)/.claude/skills/$s" "$HOME/.claude/skills/$s"
 done

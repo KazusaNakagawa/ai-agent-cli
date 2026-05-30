@@ -53,12 +53,14 @@ allowed-tools: Read, Bash, AskUserQuestion, Edit, Write
 **❌ NG**: 「Tailwind、Bootstrap、MUI、Chakra、Bulma、Foundation、Materialize、Semantic UI、Pure CSS、Tachyons、Spectre、Skeleton...」のような長いリスト。
 
 **✅ OK**:
+
 > | Framework | Type | 特徴 |
 > |---|---|---|
 > | Tailwind CSS | ユーティリティ | 自由度高い |
 > | shadcn/ui | コンポーネント (Tailwind) | Vercel 推奨、ロックインなし |
 > | MUI | コンポーネント | Material Design、業務系 |
-> ... (5-7 行)
+>
+> （主要候補を 5-7 行に絞って提示）
 >
 > 推奨は **shadcn/ui**。理由: Next.js との相性、ロックインなし、ダーク/ライト標準対応。
 
@@ -75,12 +77,16 @@ allowed-tools: Read, Bash, AskUserQuestion, Edit, Write
 **❌ NG**: 「rep-xxx を参考にしたいんですね。バックエンドは何にしますか？」(リポを読まずに進む)
 
 **✅ OK**:
+
 > rep-xxx のスタックは下記です:
+>
 > | レイヤ | 技術 |
 > |---|---|
 > | Backend | Node.js + Express + TS |
 > | Frontend | Vue 3 + Vite + Tailwind 4 |
-> | ... |
+>
+> （必要に応じて他レイヤも追記）
+>
 > 「参考にする」範囲を確認させてください: UX のみ / スタックも揃える / どこか部分流用
 
 ### 4. Terse UI Labels (簡潔ラベル)
