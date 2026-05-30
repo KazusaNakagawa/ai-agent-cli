@@ -14,6 +14,7 @@ Python sources live under `apps/python/`. Root-level `bin/run.sh` and `bin/chat.
 ```bash
 # From apps/python/
 cd apps/python
+uv venv .venv                  # Create venv (first time only)
 uv pip sync requirements.txt   # Install deps
 .venv/bin/pytest -v            # Run tests
 uv pip compile requirements.in -o requirements.txt  # Recompile deps
