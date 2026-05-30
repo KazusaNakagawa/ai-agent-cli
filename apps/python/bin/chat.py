@@ -1,6 +1,7 @@
 """Interactive Q&A session using a daily briefing as context."""
 import argparse
 import os
+import subprocess
 import sys
 import uuid
 from datetime import date
@@ -9,6 +10,19 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parents[1]
 BRIEFING_DIR = PROJECT_ROOT / "output" / "briefing"
 SESSIONS_DIR = BRIEFING_DIR / ".sessions"
+
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+def claude_env() -> dict[str, str]:
+    """Return the parent environment without Anthropic API credentials."""
+    env = os.environ.copy()
+    env.pop("ANTHROPIC_API_KEY", None)
+    return env
 
 
 def list_sessions(sessions_dir: Path) -> None:
@@ -52,6 +66,36 @@ def build_cmd(target_date: str, briefing_file: Path, session_file: Path) -> list
     ]
 
 
+def run_claude(target_date: str, briefing_file: Path, session_file: Path) -> int:
+    """Run claude CLI and recreate the session if the saved id is stale.
+
+    target_date selects the briefing/session label, briefing_file provides the
+    initial context for new sessions, and session_file stores the saved Claude
+    session id. Returns the final subprocess exit code.
+    """
+    env = claude_env()
+    cmd = build_cmd(target_date, briefing_file, session_file)
+    if "--resume" not in cmd:
+        return subprocess.run(cmd, env=env).returncode
+
+    result = subprocess.run(cmd, stderr=subprocess.PIPE, text=True, env=env)
+    stderr = result.stderr or ""
+
+    if result.returncode == 0:
+        return 0
+
+    if "No conversation found" in stderr:
+        logger.warning("%s", stderr.strip())
+        logger.warning("Saved session is stale; starting a new session.")
+        session_file.unlink(missing_ok=True)
+        new_cmd = build_cmd(target_date, briefing_file, session_file)
+        return subprocess.run(new_cmd, env=env).returncode
+
+    if stderr:
+        logger.error("%s", stderr.strip())
+    return result.returncode
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Chat about a daily briefing")
     parser.add_argument(
@@ -77,8 +121,7 @@ def main() -> None:
         sys.exit(1)
 
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    cmd = build_cmd(target_date, briefing_file, session_file)
-    os.execvp(cmd[0], cmd)
+    sys.exit(run_claude(target_date, briefing_file, session_file))
 
 
 if __name__ == "__main__":

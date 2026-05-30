@@ -1,5 +1,6 @@
 """Tests for bin/chat.py — session management and command building."""
 import importlib.util
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -93,3 +94,52 @@ class TestBuildCmd:
         assert "--resume" in cmd
         assert "--name" in cmd
         assert "briefing-chat-2026-05-16" in cmd
+
+
+class TestRunClaude:
+    def test_claude_subprocess_strips_anthropic_api_key(self, tmp_path, monkeypatch):
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+        monkeypatch.setattr(chat.subprocess, "run", fake_run)
+
+        exit_code = chat.run_claude("2026-05-16", briefing, session_file)
+
+        assert exit_code == 0
+        assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") is None
+
+    def test_stale_resume_session_falls_back_to_new_session(self, tmp_path, monkeypatch, caplog):
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        session_file.write_text("stale-uuid")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            if "--resume" in cmd:
+                return subprocess.CompletedProcess(
+                    cmd,
+                    1,
+                    stderr="No conversation found with session ID: stale-uuid\n",
+                )
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+        monkeypatch.setattr(chat.subprocess, "run", fake_run)
+
+        exit_code = chat.run_claude("2026-05-16", briefing, session_file)
+
+        assert exit_code == 0
+        assert "--resume" in calls[0][0]
+        assert "--session-id" in calls[1][0]
+        assert all(call[1]["env"].get("ANTHROPIC_API_KEY") is None for call in calls)
+        assert session_file.read_text().strip() != "stale-uuid"
+        assert "Saved session is stale; starting a new session." in caplog.text
