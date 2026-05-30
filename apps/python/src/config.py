@@ -110,7 +110,25 @@ def load_config() -> BriefingConfig:
         ) from e
 
 
-CONFIG = load_config()
+_CONFIG_CACHE: BriefingConfig | None = None
+
+
+def __getattr__(name: str) -> BriefingConfig:
+    """Lazy-evaluate ``CONFIG`` on first attribute access (PEP 562).
+
+    Importing ``src.config`` no longer reads ``briefing.json`` at module-load
+    time. The FastAPI web server can boot before that file exists — which is
+    the whole point of ``/api/config`` (the operator manages the file via the
+    API). Batch jobs that actually dereference ``CONFIG.portfolio`` etc. still
+    hit ``FileNotFoundError`` at first access if the file is missing, which is
+    the correct behavior for them — the briefing can't run without it.
+    """
+    if name == "CONFIG":
+        global _CONFIG_CACHE
+        if _CONFIG_CACHE is None:
+            _CONFIG_CACHE = load_config()
+        return _CONFIG_CACHE
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # XSS configs stay as dataclasses intentionally — they have no /api/config
