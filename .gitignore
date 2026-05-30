@@ -5,7 +5,8 @@
 apps/python/config/briefing.json
 
 # Claude Code
-.claude/
+.claude/*
+!.claude/skills/
 
 # 仮想環境
 .venv/
