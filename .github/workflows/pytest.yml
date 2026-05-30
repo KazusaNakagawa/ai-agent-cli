@@ -20,7 +20,9 @@ jobs:
         run: pip install uv
 
       - name: Install dependencies
+        working-directory: apps/python
         run: uv pip sync requirements.txt --system
 
       - name: Run pytest
+        working-directory: apps/python
         run: pytest -v
