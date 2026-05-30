@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from web.auth import require_bearer
 from web.schemas import BriefingConfigSchema
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_bearer)])
 
 
 def _config_path() -> Path:
@@ -29,11 +29,7 @@ def _config_path() -> Path:
     )
 
 
-@router.get(
-    "/config",
-    response_model=BriefingConfigSchema,
-    dependencies=[Depends(require_bearer)],
-)
+@router.get("/config", response_model=BriefingConfigSchema)
 def get_config() -> BriefingConfigSchema:
     path = _config_path()
     if not path.exists():
@@ -51,7 +47,7 @@ def get_config() -> BriefingConfigSchema:
         ) from e
 
 
-@router.put("/config", dependencies=[Depends(require_bearer)])
+@router.put("/config")
 def put_config(payload: BriefingConfigSchema) -> dict:
     path = _config_path()
     path.parent.mkdir(parents=True, exist_ok=True)

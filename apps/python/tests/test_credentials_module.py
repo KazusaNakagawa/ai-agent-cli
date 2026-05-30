@@ -3,30 +3,7 @@ import pytest
 
 from src import credentials
 
-
-@pytest.fixture(autouse=True)
-def isolated_keyring(monkeypatch):
-    """Replace the keyring backend with an in-memory dict."""
-    store: dict[tuple[str, str], str] = {}
-
-    class _Fake:
-        def get_password(self, service, name):
-            return store.get((service, name))
-
-        def set_password(self, service, name, value):
-            store[(service, name)] = value
-
-        def delete_password(self, service, name):
-            store.pop((service, name), None)
-
-    monkeypatch.setattr(credentials, "_backend", _Fake())
-
-
-@pytest.fixture(autouse=True)
-def clear_credential_env(monkeypatch):
-    """Strip any inherited env values for allow-listed credentials."""
-    for name in credentials.ALLOWED_KEYS:
-        monkeypatch.delenv(name, raising=False)
+pytestmark = pytest.mark.usefixtures("isolated_keyring", "clear_credential_env")
 
 
 def test_set_and_get_credential():

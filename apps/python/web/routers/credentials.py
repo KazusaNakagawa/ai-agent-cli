@@ -10,23 +10,19 @@ from pydantic import BaseModel, Field
 from src import credentials as cred_mod
 from web.auth import require_bearer
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_bearer)])
 
 
 class CredentialBody(BaseModel):
     value: str = Field(min_length=1)
 
 
-@router.get("/credentials", dependencies=[Depends(require_bearer)])
+@router.get("/credentials")
 def list_credentials() -> dict[str, bool]:
     return cred_mod.list_credentials()
 
 
-@router.put(
-    "/credentials/{name}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_bearer)],
-)
+@router.put("/credentials/{name}", status_code=status.HTTP_204_NO_CONTENT)
 def put_credential(name: str, body: CredentialBody) -> None:
     try:
         cred_mod.set_credential(name, body.value)
@@ -34,11 +30,7 @@ def put_credential(name: str, body: CredentialBody) -> None:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
-@router.delete(
-    "/credentials/{name}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_bearer)],
-)
+@router.delete("/credentials/{name}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_credential(name: str) -> None:
     try:
         cred_mod.delete_credential(name)
