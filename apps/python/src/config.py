@@ -18,10 +18,9 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 load_dotenv()
 
@@ -33,7 +32,7 @@ class Conflict(BaseModel):
     name: str
     affected_sectors: list[str]
     related_tickers: list[str] = Field(default_factory=list)
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class GeopoliticalConfig(BaseModel):
@@ -48,7 +47,7 @@ class PortfolioConfig(BaseModel):
 class WatchSector(BaseModel):
     sector: str
     tickers: list[str] = Field(min_length=1)
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class WatchEvent(BaseModel):
@@ -56,13 +55,17 @@ class WatchEvent(BaseModel):
     trigger: str
     affected_sectors: list[str]
     related_tickers: list[str] = Field(default_factory=list)
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class BriefingFileConfig(BaseModel):
     """``briefing.json`` で表現される部分。クレデンシャルは含まない。
 
-    ``/api/config`` の input/output として直接安全に使える形にしてある。"""
+    ``/api/config`` の input/output として直接安全に使える形にしてある。
+    ``extra="forbid"`` は briefing.json の typo (例: ``watch_evens``) を黙って
+    捨てるのではなく load 時に弾くため。"""
+
+    model_config = ConfigDict(extra="forbid")
 
     portfolio: PortfolioConfig
     geopolitical: GeopoliticalConfig = Field(default_factory=GeopoliticalConfig)
@@ -87,7 +90,9 @@ def load_config() -> BriefingConfig:
 
     Pydantic の ``ValidationError`` は ``ValueError`` にラップする — 既存の
     呼び出し側 (load_config を直接叩く CLI 起動パス、tests/test_config.py) が
-    ``ValueError`` を期待しているための後方互換。"""
+    ``ValueError`` を期待しているための後方互換。エラーメッセージは最初の
+    違反だけを抜き出して "at <loc>: <msg>" の形に整える (Pydantic 既定の
+    フル stringification は startup ログとして読みづらい)。"""
     raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     try:
         return BriefingConfig(
@@ -98,12 +103,18 @@ def load_config() -> BriefingConfig:
             notion_database_id=os.getenv("NOTION_DATABASE_ID", ""),
         )
     except ValidationError as e:
-        raise ValueError(f"briefing.json validation failed: {e}") from e
+        first = e.errors()[0]
+        loc = ".".join(str(x) for x in first["loc"])
+        raise ValueError(
+            f"briefing.json validation failed at {loc}: {first['msg']}"
+        ) from e
 
 
 CONFIG = load_config()
 
 
+# XSS configs stay as dataclasses intentionally — they have no /api/config
+# counterpart so the Pydantic schema-sharing argument doesn't apply.
 @dataclass
 class XssTargetsConfig:
     frameworks: list[str] = field(default_factory=list)
@@ -134,7 +145,7 @@ def load_xss_config() -> XssIntelConfig:
     )
 
 
-_XSS_CONFIG: Optional[XssIntelConfig] = None
+_XSS_CONFIG: XssIntelConfig | None = None
 
 
 def get_xss_config() -> XssIntelConfig:
