@@ -109,6 +109,35 @@ async def test_put_config_requires_bearer(temp_config):
 
 
 @pytest.mark.asyncio
+async def test_get_config_returns_500_on_corrupt_json(temp_config):
+    temp_config.write_text("not json {{{", encoding="utf-8")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/api/config",
+            headers={"Authorization": "Bearer test-token-123"},
+        )
+    assert response.status_code == 500
+    assert "corrupt" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_config_returns_500_on_schema_mismatch(temp_config):
+    temp_config.write_text(
+        json.dumps({"portfolio": "not-an-object", "watch_sectors": []}),
+        encoding="utf-8",
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/api/config",
+            headers={"Authorization": "Bearer test-token-123"},
+        )
+    assert response.status_code == 500
+    assert "schema" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_put_config_leaves_no_tmp_file_on_failure(monkeypatch, temp_config):
     """When the atomic write fails mid-flight, no .tmp file may remain."""
 
