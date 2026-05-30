@@ -1,39 +1,23 @@
-"""API 境界の Pydantic v2 スキーマ。src.config のデータクラスを変更せず、JSON ⇔ dict 変換を担う。"""
-from pydantic import BaseModel, Field
+"""API 境界のスキーマ。
 
+historical な ``*Schema`` 名で ``src.config`` の Pydantic モデルを re-export する。
+スキーマの真の定義は `src/config.py` 側にある — そちらが ``load_config()`` の
+入力検証と ``/api/config`` の I/O 検証の両方を担う。
+"""
+from src.config import (
+    BriefingFileConfig as BriefingConfigSchema,
+    Conflict as ConflictSchema,
+    GeopoliticalConfig as GeopoliticalSchema,
+    PortfolioConfig as PortfolioSchema,
+    WatchEvent as WatchEventSchema,
+    WatchSector as WatchSectorSchema,
+)
 
-class ConflictSchema(BaseModel):
-    name: str
-    affected_sectors: list[str]
-    related_tickers: list[str] = Field(default_factory=list)
-    notes: str | None = None
-
-
-class GeopoliticalSchema(BaseModel):
-    conflicts: list[ConflictSchema] = Field(default_factory=list)
-
-
-class PortfolioSchema(BaseModel):
-    tickers: list[str] = Field(min_length=1)
-    themes: list[str]
-
-
-class WatchSectorSchema(BaseModel):
-    sector: str
-    tickers: list[str] = Field(min_length=1)
-    notes: str | None = None
-
-
-class WatchEventSchema(BaseModel):
-    name: str
-    trigger: str
-    affected_sectors: list[str]
-    related_tickers: list[str] = Field(default_factory=list)
-    notes: str | None = None
-
-
-class BriefingConfigSchema(BaseModel):
-    portfolio: PortfolioSchema
-    geopolitical: GeopoliticalSchema = Field(default_factory=GeopoliticalSchema)
-    watch_sectors: list[WatchSectorSchema] = Field(min_length=1)
-    watch_events: list[WatchEventSchema] = Field(default_factory=list)
+__all__ = [
+    "BriefingConfigSchema",
+    "ConflictSchema",
+    "GeopoliticalSchema",
+    "PortfolioSchema",
+    "WatchEventSchema",
+    "WatchSectorSchema",
+]
