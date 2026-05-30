@@ -115,7 +115,7 @@ class TestRunClaude:
         assert exit_code == 0
         assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") is None
 
-    def test_stale_resume_session_falls_back_to_new_session(self, tmp_path, monkeypatch, caplog):
+    def test_stale_resume_session_falls_back_to_new_session(self, tmp_path, monkeypatch, capsys):
         briefing = tmp_path / "briefing_2026-05-16.md"
         briefing.write_text("本文テスト")
         session_file = tmp_path / "2026-05-16"
@@ -141,5 +141,5 @@ class TestRunClaude:
         assert "--resume" in calls[0][0]
         assert "--session-id" in calls[1][0]
         assert all(call[1]["env"].get("ANTHROPIC_API_KEY") is None for call in calls)
-        assert session_file.read_text().strip() != "stale-uuid"
-        assert "Saved session is stale; starting a new session." in caplog.text
+        uuid.UUID(session_file.read_text().strip())
+        assert "Saved session is stale; starting a new session." in capsys.readouterr().err

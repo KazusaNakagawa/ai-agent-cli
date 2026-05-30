@@ -11,12 +11,6 @@ PROJECT_ROOT = Path(__file__).parents[1]
 BRIEFING_DIR = PROJECT_ROOT / "output" / "briefing"
 SESSIONS_DIR = BRIEFING_DIR / ".sessions"
 
-sys.path.insert(0, str(PROJECT_ROOT))
-
-from src.logger import get_logger
-
-logger = get_logger(__name__)
-
 
 def claude_env() -> dict[str, str]:
     """Return the parent environment without Anthropic API credentials."""
@@ -85,14 +79,14 @@ def run_claude(target_date: str, briefing_file: Path, session_file: Path) -> int
         return 0
 
     if "No conversation found" in stderr:
-        logger.warning("%s", stderr.strip())
-        logger.warning("Saved session is stale; starting a new session.")
+        print(stderr.strip(), file=sys.stderr)
+        print("Saved session is stale; starting a new session.", file=sys.stderr)
         session_file.unlink(missing_ok=True)
         new_cmd = build_cmd(target_date, briefing_file, session_file)
         return subprocess.run(new_cmd, env=env).returncode
 
     if stderr:
-        logger.error("%s", stderr.strip())
+        print(stderr.strip(), file=sys.stderr)
     return result.returncode
 
 
