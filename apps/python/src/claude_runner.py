@@ -33,6 +33,24 @@ def _backoff_delay(attempt: int) -> float:
     return RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** (attempt - 1))
 
 
+def _build_env(auth_mode: str) -> dict[str, str]:
+    """auth_mode に応じてサブプロセスに渡す env を作る。
+
+    - ``cli``: ``ANTHROPIC_API_KEY`` を削除して Claude Code CLI の OAuth を使わせる。
+    - ``api``: Keychain (なければ .env 経由の os.environ) から
+      ``ANTHROPIC_API_KEY`` を取り出して env に注入する。Keychain にも env にも
+      無ければキーは未設定のまま — 呼び出し側で claude CLI が認証エラーになる。
+    """
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    if auth_mode == "api":
+        from src import credentials as cred_mod
+
+        key = cred_mod.get_credential("ANTHROPIC_API_KEY")
+        if key:
+            env["ANTHROPIC_API_KEY"] = key
+    return env
+
+
 def run_claude(
     prompt: str,
     label: str,
@@ -54,7 +72,9 @@ def run_claude(
     if claude_path is None:
         raise RuntimeError("claude CLI が見つかりません。PATH を確認してください。")
 
-    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    from src import state as state_mod
+
+    env = _build_env(auth_mode=state_mod.read_state().auth_mode)
     model = get_model()
     cmd = [claude_path, "-p", prompt, "--allowedTools", "WebSearch", "--model", model]
 
