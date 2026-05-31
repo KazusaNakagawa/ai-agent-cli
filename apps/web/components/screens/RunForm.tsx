@@ -1,5 +1,5 @@
 "use client"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -34,9 +34,26 @@ export function RunForm() {
   const [error, setError] = useState<string | null>(null)
   const [sessionExpired, setSessionExpired] = useState(false)
 
+  // Cancel in-flight fetches and suppress setState if the component unmounts
+  // mid-poll (e.g. user navigates away via the sidebar during a ~5-min run).
+  const mountedRef = useRef(true)
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      abortRef.current?.abort()
+    }
+  }, [])
+
   const busy = status === "pending" || status === "running"
 
   const run = useCallback(async () => {
+    abortRef.current?.abort()
+    const ctl = new AbortController()
+    abortRef.current = ctl
+    const aborted = () => ctl.signal.aborted || !mountedRef.current
+
     setError(null)
     setSessionExpired(false)
     setJob(null)
@@ -44,8 +61,9 @@ export function RunForm() {
     try {
       const postRes = await fetch(
         `/api/run${dryRun ? "?dry_run=true" : ""}`,
-        { method: "POST", cache: "no-store" },
+        { method: "POST", cache: "no-store", signal: ctl.signal },
       )
+      if (aborted()) return
       if (postRes.status === 401) {
         setSessionExpired(true)
         setStatus("idle")
@@ -53,18 +71,21 @@ export function RunForm() {
       }
       if (!postRes.ok) {
         const text = await postRes.text()
+        if (aborted()) return
         setError(`POST /api/run failed (HTTP ${postRes.status}): ${text}`)
         setStatus("failed")
         return
       }
       const body = (await postRes.json()) as JobDetail
+      if (aborted()) return
       setJob(body)
-      // Poll until terminal status or timeout. No cancellation guard
-      // (StrictMode-safe) — the timeout is the bound, and the Run button
-      // is disabled while busy so the user can't navigate away mid-poll.
+      // Poll until terminal status or timeout. The 10-min ceiling bounds
+      // the loop; unmount/navigation triggers AbortController + mountedRef
+      // to stop polling and discard pending setState calls.
       const startedAt = Date.now()
       while (true) {
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+        if (aborted()) return
         if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
           setError("Timed out waiting for the job to finish")
           setStatus("failed")
@@ -72,7 +93,9 @@ export function RunForm() {
         }
         const pollRes = await fetch(`/api/run/${body.job_id}`, {
           cache: "no-store",
+          signal: ctl.signal,
         })
+        if (aborted()) return
         if (pollRes.status === 401) {
           setSessionExpired(true)
           setStatus("idle")
@@ -84,6 +107,7 @@ export function RunForm() {
           return
         }
         const detail = (await pollRes.json()) as JobDetail
+        if (aborted()) return
         // Merge: the GET response may omit `dry_run`, which was set on the
         // POST response. Without merging the badge would flicker off.
         setJob((prev) => (prev ? { ...prev, ...detail } : detail))
@@ -95,6 +119,7 @@ export function RunForm() {
         }
       }
     } catch (e) {
+      if (aborted()) return
       setError(e instanceof Error ? e.message : "Network error")
       setStatus("failed")
     }
