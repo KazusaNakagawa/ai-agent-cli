@@ -1,17 +1,13 @@
 "use client"
-import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ChipInput } from "@/components/ChipInput"
-import { SaveStatus, SaveStatusValue } from "@/components/SaveStatus"
+import { SaveStatus } from "@/components/SaveStatus"
 import { BriefingConfig, WatchSector } from "@/lib/config-types"
-import {
-  ValidationErrorMap,
-  parseValidationErrors,
-} from "@/lib/validation-errors"
+import { useConfigSave } from "@/lib/hooks/useConfigSave"
 
 type Props = { initial: BriefingConfig }
 
@@ -19,11 +15,8 @@ const blankSector = (): WatchSector => ({ sector: "", tickers: [], notes: "" })
 const upper = (s: string) => s.toUpperCase()
 
 export function WatchSectorsForm({ initial }: Props) {
-  const router = useRouter()
   const [rows, setRows] = useState<WatchSector[]>(initial.watch_sectors)
-  const [status, setStatus] = useState<SaveStatusValue>("idle")
-  const [errors, setErrors] = useState<ValidationErrorMap>(new Map())
-  const [genericError, setGenericError] = useState<string | null>(null)
+  const { status, errors, genericError, save } = useConfigSave()
 
   const collectionError = errors.get("watch_sectors")
 
@@ -37,35 +30,15 @@ export function WatchSectorsForm({ initial }: Props) {
   }
   const addRow = () => setRows((prev) => [...prev, blankSector()])
 
-  const save = async () => {
-    setStatus("saving")
-    setErrors(new Map())
-    setGenericError(null)
-    const payload: BriefingConfig = {
+  const onSave = () =>
+    save({
       ...initial,
       // Trim empty notes to null since the backend types `notes: str | None`.
       watch_sectors: rows.map((r) => ({
         ...r,
         notes: r.notes && r.notes.trim() !== "" ? r.notes : null,
       })),
-    }
-    const res = await fetch("/api/config", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
     })
-    if (res.ok) {
-      setStatus("saved")
-      router.refresh()
-      return
-    }
-    if (res.status === 422) {
-      setErrors(await parseValidationErrors(res))
-    } else {
-      setGenericError(`PUT /api/config failed (HTTP ${res.status})`)
-    }
-    setStatus("error")
-  }
 
   return (
     <div className="space-y-4">
@@ -135,7 +108,7 @@ export function WatchSectorsForm({ initial }: Props) {
         <Button variant="outline" onClick={addRow} data-testid="sector-add">
           + Add sector
         </Button>
-        <Button onClick={() => void save()} disabled={status === "saving"}>
+        <Button onClick={() => void onSave()} disabled={status === "saving"}>
           Save
         </Button>
         <SaveStatus status={status} />

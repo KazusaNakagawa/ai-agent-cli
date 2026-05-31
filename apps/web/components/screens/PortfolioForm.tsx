@@ -1,56 +1,26 @@
 "use client"
-import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { ChipInput } from "@/components/ChipInput"
-import { SaveStatus, SaveStatusValue } from "@/components/SaveStatus"
+import { SaveStatus } from "@/components/SaveStatus"
 import { BriefingConfig } from "@/lib/config-types"
-import {
-  ValidationErrorMap,
-  parseValidationErrors,
-} from "@/lib/validation-errors"
+import { useConfigSave } from "@/lib/hooks/useConfigSave"
 
 type Props = { initial: BriefingConfig }
 
 const upper = (s: string) => s.toUpperCase()
 
 export function PortfolioForm({ initial }: Props) {
-  const router = useRouter()
   const [tickers, setTickers] = useState<string[]>(initial.portfolio.tickers)
   const [themes, setThemes] = useState<string[]>(initial.portfolio.themes)
-  const [status, setStatus] = useState<SaveStatusValue>("idle")
-  const [errors, setErrors] = useState<ValidationErrorMap>(new Map())
-  const [genericError, setGenericError] = useState<string | null>(null)
+  const { status, errors, genericError, save } = useConfigSave()
 
   const tickersError = errors.get("portfolio/tickers")
   const themesError = errors.get("portfolio/themes")
 
-  const save = async () => {
-    setStatus("saving")
-    setErrors(new Map())
-    setGenericError(null)
-    const payload: BriefingConfig = {
-      ...initial,
-      portfolio: { tickers, themes },
-    }
-    const res = await fetch("/api/config", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-    if (res.ok) {
-      setStatus("saved")
-      router.refresh()
-      return
-    }
-    if (res.status === 422) {
-      setErrors(await parseValidationErrors(res))
-    } else {
-      setGenericError(`PUT /api/config failed (HTTP ${res.status})`)
-    }
-    setStatus("error")
-  }
+  const onSave = () =>
+    save({ ...initial, portfolio: { tickers, themes } })
 
   return (
     <div className="space-y-4">
@@ -90,7 +60,7 @@ export function PortfolioForm({ initial }: Props) {
         )}
       </div>
       <div className="flex items-center gap-3">
-        <Button onClick={() => void save()} disabled={status === "saving"}>
+        <Button onClick={() => void onSave()} disabled={status === "saving"}>
           Save
         </Button>
         <SaveStatus status={status} />
