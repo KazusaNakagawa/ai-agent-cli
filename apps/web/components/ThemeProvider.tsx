@@ -116,6 +116,8 @@ export const themeBootScript = `
   var b = localStorage.getItem(${JSON.stringify(BACKGROUND_STORAGE_KEY)});
   if (BGS.indexOf(b) === -1) b = ${JSON.stringify(DEFAULT_BG)};
   document.documentElement.setAttribute("data-bg", b);
+  var sc = localStorage.getItem("ai-agent:sidebar-collapsed");
+  if (sc === "true") document.documentElement.setAttribute("data-sidebar-collapsed", "true");
 }catch(e){}})();
 `
 

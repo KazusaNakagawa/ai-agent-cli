@@ -79,4 +79,31 @@
         hsl(var(--bg-soft-end)) 100%
       );
   }
+
+  /* Sidebar collapsed mode — driven by data-sidebar-collapsed on <html>
+     written by the pre-hydration script in app/layout.tsx. Doing the visual
+     switch in CSS rather than React keeps the first paint correct, so the
+     rail doesn't briefly render expanded before useEffect can react. */
+  html[data-sidebar-collapsed="true"] [data-sidebar-rail] {
+    width: 3.5rem;
+  }
+  html[data-sidebar-collapsed="true"] [data-sidebar-label],
+  html[data-sidebar-collapsed="true"] [data-sidebar-section="config"],
+  html[data-sidebar-collapsed="true"] [data-sidebar-brand] {
+    display: none;
+  }
+  html[data-sidebar-collapsed="true"] [data-sidebar-header] {
+    justify-content: center;
+  }
+  html[data-sidebar-collapsed="true"] [data-sidebar-row] {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  html[data-sidebar-collapsed="true"] [data-sidebar-toggle-icon]::before {
+    content: "›";
+  }
+  html:not([data-sidebar-collapsed="true"]) [data-sidebar-toggle-icon]::before {
+    content: "‹";
+  }
 }

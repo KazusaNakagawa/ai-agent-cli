@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -9,68 +9,66 @@ vi.mock("next/navigation", () => ({
 }))
 
 const COLLAPSED_KEY = "ai-agent:sidebar-collapsed"
+const HTML_ATTR = "data-sidebar-collapsed"
 
 describe("Sidebar collapse", () => {
   beforeEach(() => {
     localStorage.clear()
+    document.documentElement.removeAttribute(HTML_ATTR)
   })
   afterEach(() => {
     localStorage.clear()
+    document.documentElement.removeAttribute(HTML_ATTR)
   })
 
-  it("starts expanded by default with labels visible", () => {
+  it("starts expanded when neither the html attribute nor localStorage is set", () => {
     render(<Sidebar />)
     expect(screen.getByTestId("sidebar")).toHaveAttribute(
       "data-collapsed",
       "false",
     )
-    expect(screen.getByText("Portfolio")).toBeInTheDocument()
-    expect(screen.getByText("Config")).toBeInTheDocument()
+    expect(document.documentElement.hasAttribute(HTML_ATTR)).toBe(false)
   })
 
-  it("toggles to icon-only mode, hides labels, exposes accessible names", async () => {
-    const user = userEvent.setup()
+  it("nav links always expose title and aria-label so tooltips work when collapsed", () => {
     render(<Sidebar />)
-    await user.click(screen.getByTestId("sidebar-toggle"))
-    const sidebar = screen.getByTestId("sidebar")
-    expect(sidebar).toHaveAttribute("data-collapsed", "true")
-    // Text labels gone, Config section hidden, accessible name preserved.
-    expect(screen.queryByText("Portfolio")).not.toBeInTheDocument()
-    expect(screen.queryByText("Config")).not.toBeInTheDocument()
-    expect(screen.getByTestId("nav-portfolio")).toHaveAttribute(
-      "aria-label",
-      "Portfolio",
-    )
     expect(screen.getByTestId("nav-portfolio")).toHaveAttribute(
       "title",
       "Portfolio",
     )
+    expect(screen.getByTestId("nav-portfolio")).toHaveAttribute(
+      "aria-label",
+      "Portfolio",
+    )
   })
 
-  it("persists collapsed=true across renders via localStorage", async () => {
+  it("toggle writes html attribute + localStorage and round-trips", async () => {
     const user = userEvent.setup()
-    const { unmount } = render(<Sidebar />)
-    await user.click(screen.getByTestId("sidebar-toggle"))
-    expect(localStorage.getItem(COLLAPSED_KEY)).toBe("true")
-    unmount()
-
     render(<Sidebar />)
-    await waitFor(() => {
-      expect(screen.getByTestId("sidebar")).toHaveAttribute(
-        "data-collapsed",
-        "true",
-      )
-    })
+
+    await user.click(screen.getByTestId("sidebar-toggle"))
+    expect(document.documentElement.getAttribute(HTML_ATTR)).toBe("true")
+    expect(localStorage.getItem(COLLAPSED_KEY)).toBe("true")
+    expect(screen.getByTestId("sidebar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    )
+
+    await user.click(screen.getByTestId("sidebar-toggle"))
+    expect(document.documentElement.hasAttribute(HTML_ATTR)).toBe(false)
+    expect(localStorage.getItem(COLLAPSED_KEY)).toBe("false")
+    expect(screen.getByTestId("sidebar")).toHaveAttribute(
+      "data-collapsed",
+      "false",
+    )
   })
 
-  it("ignores a missing or non-true localStorage value (default expanded)", async () => {
-    localStorage.setItem(COLLAPSED_KEY, "garbage")
+  it("reads initial collapsed state from the html attribute (pre-hydration path)", () => {
+    document.documentElement.setAttribute(HTML_ATTR, "true")
     render(<Sidebar />)
-    await waitFor(() => {
-      expect(screen.getByTestId("sidebar")).toHaveAttribute(
-        "data-collapsed",
-        "false",
-      )
-    })
+    expect(screen.getByTestId("sidebar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    )
   })
 })
