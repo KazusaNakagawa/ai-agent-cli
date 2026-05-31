@@ -14,5 +14,10 @@ export async function apiFetch(
 ): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set("Authorization", `Bearer ${readToken()}`)
-  return fetch(`${API_BASE}${path}`, { ...init, headers })
+  // `cache: 'no-store'` opts out of Next.js's Server Component fetch cache.
+  // Without it, RSC reads (e.g. /api/state) are memoised for the lifetime
+  // of the render and stale after the user mutates state, so the wizard
+  // would not advance to OnboardedHome on reload. Set AFTER `...init` so
+  // callers can't accidentally re-enable caching.
+  return fetch(`${API_BASE}${path}`, { ...init, cache: "no-store", headers })
 }
