@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 
 import { apiFetch } from "@/lib/api"
-import { Wizard } from "@/components/onboarding/Wizard"
+import { Sidebar } from "@/components/Sidebar"
 
 async function isOnboarded(): Promise<boolean> {
   try {
@@ -16,14 +16,17 @@ async function isOnboarded(): Promise<boolean> {
 
 export const dynamic = "force-dynamic"
 
-export default async function Home() {
-  const onboarded = await isOnboarded()
-  if (onboarded) {
-    redirect("/portfolio")
-  }
+export default async function MainLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  // Guard: kick anyone not onboarded back to / for the wizard.
+  if (!(await isOnboarded())) redirect("/")
   return (
-    <main className="flex min-h-screen items-center justify-center p-8">
-      <Wizard />
-    </main>
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <main className="flex-1 p-8">{children}</main>
+    </div>
   )
 }
