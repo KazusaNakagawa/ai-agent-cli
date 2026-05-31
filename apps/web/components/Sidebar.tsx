@@ -1,9 +1,10 @@
 "use client"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState } from "react"
 
 import { AppearancePanel } from "@/components/AppearancePanel"
+import { ConfigFilePanel } from "@/components/ConfigFilePanel"
+import { SidebarDisclosure } from "@/components/SidebarDisclosure"
 import { cn } from "@/lib/utils"
 
 type Item = { href: string; label: string; icon: string }
@@ -20,7 +21,6 @@ const ITEMS: Item[] = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const [appearanceOpen, setAppearanceOpen] = useState(false)
   return (
     <aside className="flex w-60 flex-col gap-4 border-r bg-card p-4">
       <section className="flex flex-col gap-1">
@@ -49,31 +49,29 @@ export function Sidebar() {
       </section>
 
       <section className="flex flex-col gap-1">
-        <h2 className="flex items-center gap-2 px-2 pb-2 text-base font-semibold">
-          <span aria-hidden>⚙️</span>
-          <span>Config</span>
-        </h2>
-        <button
-          type="button"
-          onClick={() => setAppearanceOpen((v) => !v)}
-          aria-expanded={appearanceOpen}
-          aria-controls="appearance-panel-body"
-          data-testid="appearance-toggle"
-          className="flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/50"
+        <SidebarDisclosure
+          label="Config"
+          icon="⚙️"
+          testid="config-toggle"
+          variant="heading"
         >
-          <span className="flex items-center gap-2">
-            <span aria-hidden>🎨</span>
-            <span>Appearance</span>
-          </span>
-          <span aria-hidden className="text-xs text-muted-foreground">
-            {appearanceOpen ? "▾" : "▸"}
-          </span>
-        </button>
-        {appearanceOpen && (
-          <div id="appearance-panel-body" className="px-3 pb-1 pt-1">
-            <AppearancePanel />
+          <div className="flex flex-col gap-1">
+            <SidebarDisclosure
+              label="Appearance"
+              icon="🎨"
+              testid="appearance-toggle"
+            >
+              <AppearancePanel />
+            </SidebarDisclosure>
+            <SidebarDisclosure
+              label="Config file"
+              icon="📁"
+              testid="config-file-toggle"
+            >
+              <ConfigFilePanel />
+            </SidebarDisclosure>
           </div>
-        )}
+        </SidebarDisclosure>
       </section>
     </aside>
   )
