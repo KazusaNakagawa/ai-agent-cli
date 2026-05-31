@@ -59,7 +59,7 @@ export function Sidebar() {
       data-sidebar-rail
       data-testid="sidebar"
       data-collapsed={collapsed}
-      className="flex w-60 flex-col gap-4 border-r bg-card p-4 transition-[width] duration-150"
+      className="flex flex-col gap-4 border-r bg-card p-4 transition-[width] duration-150"
     >
       <div data-sidebar-header className="flex items-center justify-between">
         <span data-sidebar-brand className="px-2 text-base font-semibold">
