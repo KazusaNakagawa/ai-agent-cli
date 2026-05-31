@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process"
+import { randomBytes } from "node:crypto"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 
 import { defineConfig, devices } from "@playwright/test"
@@ -23,11 +23,7 @@ import { PATHS } from "./e2e/paths"
 if (!process.env.TEST_WORKER_INDEX) {
   rmSync(PATHS.TMP_HOME, { recursive: true, force: true })
   mkdirSync(PATHS.TMP_AGENT_DIR, { recursive: true })
-  const token = execSync(
-    "node -e \"process.stdout.write(require('crypto').randomBytes(32).toString('base64url'))\"",
-  )
-    .toString()
-    .trim()
+  const token = randomBytes(32).toString("base64url")
   writeFileSync(PATHS.TMP_TOKEN_FILE, token, { mode: 0o600 })
   writeFileSync(PATHS.NEXT_TOKEN_FILE, token, { mode: 0o600 })
 }

@@ -6,7 +6,10 @@ const TMP_HOME = join(WEB_DIR, "e2e", ".tmp-home")
 const TMP_AGENT_DIR = join(TMP_HOME, ".ai-agent")
 const TMP_TOKEN_FILE = join(TMP_AGENT_DIR, "session-token")
 const TMP_CONFIG_FILE = join(TMP_AGENT_DIR, "briefing.json")
-const NEXT_TOKEN_FILE = join(WEB_DIR, ".token")
+// Inside TMP_HOME (not apps/web/.token) so an E2E run never clobbers the
+// real `.token` that bin/serve.sh writes for the developer's local Next.js
+// session. The Next dev server reaches this path via AI_AGENT_TOKEN_PATH.
+const NEXT_TOKEN_FILE = join(TMP_HOME, ".token")
 
 export const PATHS = {
   WEB_DIR,

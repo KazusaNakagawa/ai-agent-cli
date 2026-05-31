@@ -69,9 +69,18 @@ Isolation is per-run, no manual cleanup required:
 Failures drop a screenshot + trace under `e2e/test-results/`; view a
 trace with `npx playwright show-trace e2e/test-results/<test>/trace.zip`.
 
-Prerequisites: `cd apps/python && uv pip sync requirements.txt` (the
-config invokes `apps/python/.venv/bin/uvicorn`) and one-time
-`npx playwright install chromium`.
+Prerequisites (one-time per machine):
+
+```bash
+cd apps/python
+uv venv .venv                  # create the venv the config invokes
+uv pip sync requirements.txt   # install backend deps
+cd ../web
+npx playwright install chromium
+```
+
+The config invokes `apps/python/.venv/bin/uvicorn` directly, so the venv
+must exist before `npm run test:e2e` is run.
 
 ## References
 
