@@ -26,11 +26,18 @@ export function useConfigSave(): UseConfigSave {
     setStatus("saving")
     setErrors(new Map())
     setGenericError(null)
-    const res = await fetch("/api/config", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    })
+    let res: Response
+    try {
+      res = await fetch("/api/config", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+    } catch (e) {
+      setGenericError(e instanceof Error ? e.message : "Network error")
+      setStatus("error")
+      return
+    }
     if (res.ok) {
       setStatus("saved")
       router.refresh()
