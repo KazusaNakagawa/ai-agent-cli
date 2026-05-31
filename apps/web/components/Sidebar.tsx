@@ -49,23 +49,28 @@ export function Sidebar() {
       </section>
 
       <section className="flex flex-col gap-1">
-        <h2 className="flex items-center gap-2 px-2 pb-2 text-base font-semibold">
-          <span aria-hidden>⚙️</span>
-          <span>Config</span>
-        </h2>
         <SidebarDisclosure
-          label="Appearance"
-          icon="🎨"
-          testid="appearance-toggle"
+          label="Config"
+          icon="⚙️"
+          testid="config-toggle"
+          variant="heading"
         >
-          <AppearancePanel />
-        </SidebarDisclosure>
-        <SidebarDisclosure
-          label="Config file"
-          icon="📁"
-          testid="config-file-toggle"
-        >
-          <ConfigFilePanel />
+          <div className="flex flex-col gap-1">
+            <SidebarDisclosure
+              label="Appearance"
+              icon="🎨"
+              testid="appearance-toggle"
+            >
+              <AppearancePanel />
+            </SidebarDisclosure>
+            <SidebarDisclosure
+              label="Config file"
+              icon="📁"
+              testid="config-file-toggle"
+            >
+              <ConfigFilePanel />
+            </SidebarDisclosure>
+          </div>
         </SidebarDisclosure>
       </section>
     </aside>
