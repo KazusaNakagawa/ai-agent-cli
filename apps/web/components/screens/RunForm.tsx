@@ -1,10 +1,11 @@
 "use client"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useState } from "react"
 
 import { SessionExpiredCard } from "@/components/SessionExpiredCard"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { LoadingDots } from "@/components/ui/loading-dots"
+import { useAbortableMount } from "@/lib/hooks/useAbortableMount"
 
 type JobStatus = "idle" | "pending" | "running" | "done" | "failed"
 
@@ -38,15 +39,7 @@ export function RunForm() {
 
   // Cancel in-flight fetches and suppress setState if the component unmounts
   // mid-poll (e.g. user navigates away via the sidebar during a ~5-min run).
-  const mountedRef = useRef(true)
-  const abortRef = useRef<AbortController | null>(null)
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-      abortRef.current?.abort()
-    }
-  }, [])
+  const { mountedRef, abortRef } = useAbortableMount()
 
   const busy = status === "pending" || status === "running"
 
@@ -125,7 +118,7 @@ export function RunForm() {
       setError(e instanceof Error ? e.message : "Network error")
       setStatus("failed")
     }
-  }, [dryRun])
+  }, [abortRef, dryRun, mountedRef])
 
   if (sessionExpired) {
     return <SessionExpiredCard />

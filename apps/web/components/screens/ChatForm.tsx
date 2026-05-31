@@ -7,6 +7,7 @@ import { SessionExpiredCard } from "@/components/SessionExpiredCard"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { LoadingDots } from "@/components/ui/loading-dots"
+import { useAbortableMount } from "@/lib/hooks/useAbortableMount"
 import { cn } from "@/lib/utils"
 
 type Message = {
@@ -75,16 +76,12 @@ export function ChatForm() {
   const [supportsMic, setSupportsMic] = useState(false)
 
   // Suppress setState and cancel in-flight work after unmount.
-  const mountedRef = useRef(true)
-  const abortRef = useRef<AbortController | null>(null)
+  const { mountedRef, abortRef } = useAbortableMount()
   const recRef = useRef<Recognition | null>(null)
 
   useEffect(() => {
-    mountedRef.current = true
     setSupportsMic(getRecognitionCtor() !== null)
     return () => {
-      mountedRef.current = false
-      abortRef.current?.abort()
       recRef.current?.stop()
     }
   }, [])
@@ -151,7 +148,7 @@ export function ChatForm() {
       }
       return stale ? "stale" : "ok"
     },
-    [],
+    [mountedRef],
   )
 
   const send = useCallback(async () => {
@@ -216,7 +213,7 @@ export function ChatForm() {
         setRetrying(false)
       }
     }
-  }, [busy, input, stream])
+  }, [abortRef, busy, input, mountedRef, stream])
 
   const toggleMic = useCallback(() => {
     if (listening) {
@@ -245,7 +242,7 @@ export function ChatForm() {
     rec.start()
     recRef.current = rec
     setListening(true)
-  }, [listening])
+  }, [listening, mountedRef])
 
   if (sessionExpired) {
     return <SessionExpiredCard />
