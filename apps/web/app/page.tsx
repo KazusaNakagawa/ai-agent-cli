@@ -1,26 +1,25 @@
-import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { apiFetch } from "@/lib/api"
+import { OnboardedHome } from "@/components/OnboardedHome"
+import { Wizard } from "@/components/onboarding/Wizard"
 
-export default function Home() {
+async function isOnboarded(): Promise<boolean> {
+  try {
+    const res = await apiFetch("/api/state")
+    if (!res.ok) return false
+    const data = (await res.json()) as { onboarded?: boolean }
+    return Boolean(data.onboarded)
+  } catch {
+    return false
+  }
+}
+
+export const dynamic = "force-dynamic"
+
+export default async function Home() {
+  const onboarded = await isOnboarded()
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>ai-agent</CardTitle>
-          <CardDescription>
-            Daily briefing &amp; Q&amp;A — Phase 1 scaffold
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button>Get started</Button>
-        </CardContent>
-      </Card>
+      {onboarded ? <OnboardedHome /> : <Wizard />}
     </main>
   )
 }
