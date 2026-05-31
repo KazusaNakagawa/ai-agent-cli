@@ -26,14 +26,15 @@ export function ChipInput({
   const [draft, setDraft] = useState("")
 
   const commit = (raw: string) => {
+    // Clear the draft up front so every branch (empty / duplicate / new)
+    // leaves the input empty. Avoids the "TEST が残る" symptom where the
+    // duplicate branch used to only clear before returning, but a quick
+    // click+blur sequence could mis-order the state updates.
+    setDraft("")
     const trimmed = (normalise ? normalise(raw) : raw).trim()
     if (!trimmed) return
-    if (values.includes(trimmed)) {
-      setDraft("")
-      return
-    }
+    if (values.includes(trimmed)) return
     onChange([...values, trimmed])
-    setDraft("")
   }
 
   const removeAt = (idx: number) => {

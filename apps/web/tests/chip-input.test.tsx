@@ -69,4 +69,34 @@ describe("ChipInput", () => {
     await user.type(screen.getByTestId("t-draft"), "pltr{Enter}")
     expect(onChange).not.toHaveBeenCalled()
   })
+
+  it("clears the draft when a duplicate is committed via blur", async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <ChipInput
+        values={["TEST"]}
+        onChange={onChange}
+        testid="t"
+        normalise={(s) => s.toUpperCase()}
+      />,
+    )
+    const input = screen.getByTestId("t-draft") as HTMLInputElement
+    await user.type(input, "test")
+    expect(input.value).toBe("test")
+    await user.tab() // blur
+    expect(input.value).toBe("")
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it("commits an uncommitted draft on blur", async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(<ChipInput values={[]} onChange={onChange} testid="t" />)
+    const input = screen.getByTestId("t-draft") as HTMLInputElement
+    await user.type(input, "AI規制")
+    await user.tab()
+    expect(input.value).toBe("")
+    expect(onChange).toHaveBeenLastCalledWith(["AI規制"])
+  })
 })
