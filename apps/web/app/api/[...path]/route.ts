@@ -34,6 +34,11 @@ async function handle(
   upstream.headers.forEach((value, key) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value)
   })
+  // Stop the browser's HTTP cache from serving stale `/api/run/{id}` polls
+  // and similarly stop Next.js from caching the GET route handler itself.
+  // Override whatever upstream sent (FastAPI sets no cache headers).
+  headers.set("Cache-Control", "no-store, no-cache, must-revalidate")
+  headers.set("Pragma", "no-cache")
 
   return new Response(upstream.body, {
     status: upstream.status,
@@ -41,6 +46,9 @@ async function handle(
     headers,
   })
 }
+
+// Force the proxy out of Next.js's static cache so every request hits FastAPI.
+export const dynamic = "force-dynamic"
 
 export {
   handle as GET,

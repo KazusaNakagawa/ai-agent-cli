@@ -52,7 +52,10 @@ export function Step4TestRun({ onBack, step }: Props) {
     setStatus("pending")
     setJobId(null)
     try {
-      const res = await fetch("/api/run?dry_run=true", { method: "POST" })
+      const res = await fetch("/api/run?dry_run=true", {
+        method: "POST",
+        cache: "no-store",
+      })
       if (!res.ok) {
         const text = await res.text()
         setError(`POST /api/run failed (HTTP ${res.status}): ${text}`)
@@ -70,7 +73,9 @@ export function Step4TestRun({ onBack, step }: Props) {
           setStatus("failed")
           return
         }
-        const pollRes = await fetch(`/api/run/${body.job_id}`)
+        const pollRes = await fetch(`/api/run/${body.job_id}`, {
+          cache: "no-store",
+        })
         if (!pollRes.ok) {
           setError(`GET /api/run/${body.job_id} failed (HTTP ${pollRes.status})`)
           setStatus("failed")
