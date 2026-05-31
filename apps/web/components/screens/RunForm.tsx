@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { LoadingDots } from "@/components/ui/loading-dots"
 
 type JobStatus = "idle" | "pending" | "running" | "done" | "failed"
 
@@ -184,6 +185,9 @@ export function RunForm() {
             <p className="flex items-center gap-2">
               <span className="font-medium">Status:</span>
               <span data-testid="job-status">{status}</span>
+              {(status === "pending" || status === "running") && (
+                <LoadingDots label="" data-testid="job-running" />
+              )}
               {status === "done" && <span aria-hidden>✅</span>}
               {status === "failed" && (
                 <span aria-hidden className="text-destructive">

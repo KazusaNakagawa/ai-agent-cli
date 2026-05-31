@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { LoadingDots } from "@/components/ui/loading-dots"
 import { cn } from "@/lib/utils"
 
 type Message = {
@@ -293,12 +294,18 @@ export function ChatForm() {
                   {m.role}
                 </p>
                 {m.role === "assistant" ? (
-                  <div className="prose prose-sm max-w-none dark:prose-invert">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {m.content ||
-                        (busy && i === messages.length - 1 ? "…" : "")}
-                    </ReactMarkdown>
-                  </div>
+                  m.content ? (
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {m.content}
+                      </ReactMarkdown>
+                    </div>
+                  ) : busy && i === messages.length - 1 ? (
+                    <LoadingDots
+                      label="調査中"
+                      data-testid="chat-thinking"
+                    />
+                  ) : null
                 ) : (
                   <p className="whitespace-pre-wrap">{m.content}</p>
                 )}
