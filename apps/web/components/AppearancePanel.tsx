@@ -17,16 +17,16 @@ const BG_LABEL: Record<Background, string> = {
   soft: "Soft",
 }
 
+// Renders only the Theme + Background controls. The "Appearance" label and
+// any surrounding disclosure live in the Sidebar so this panel can be reused
+// from a future /appearance route without duplicating the heading.
 export function AppearancePanel() {
   const { theme, background, setTheme, setBackground } = useTheme()
   return (
-    <div className="space-y-2 border-t pt-3" data-testid="appearance-panel">
-      <p className="px-2 text-[10px] font-medium uppercase text-muted-foreground">
-        Appearance
-      </p>
+    <div className="space-y-2" data-testid="appearance-panel">
       <div className="space-y-1">
-        <p className="px-2 text-xs text-muted-foreground">Theme</p>
-        <div className="flex gap-1 px-2">
+        <p className="text-[10px] uppercase text-muted-foreground">Theme</p>
+        <div className="flex gap-1">
           {THEMES.map((t) => (
             <button
               key={t}
@@ -47,8 +47,10 @@ export function AppearancePanel() {
         </div>
       </div>
       <div className="space-y-1">
-        <p className="px-2 text-xs text-muted-foreground">Background</p>
-        <div className="flex gap-1 px-2">
+        <p className="text-[10px] uppercase text-muted-foreground">
+          Background
+        </p>
+        <div className="flex gap-1">
           {BACKGROUNDS.map((b) => (
             <button
               key={b}
