@@ -1,5 +1,5 @@
 "use client"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useState } from "react"
 
 import { WizardData } from "./Wizard"
 import { WizardShell } from "./wizard-shell"
@@ -21,9 +21,6 @@ export function Step4TestRun({ onBack, step }: Props) {
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [completing, setCompleting] = useState(false)
-  const cancelledRef = useRef(false)
-
-  useEffect(() => () => { cancelledRef.current = true }, [])
 
   const finishOnboarding = useCallback(async () => {
     setCompleting(true)
@@ -64,9 +61,13 @@ export function Step4TestRun({ onBack, step }: Props) {
       }
       const body = (await res.json()) as { job_id: string; status: JobStatus }
       setJobId(body.job_id)
-      // poll
+      // Poll until the job leaves pending/running. The 30s ceiling is the
+      // only stop condition; we don't track a cancelled flag because the
+      // button is disabled while busy so the user can't navigate away
+      // mid-poll, and StrictMode double-invoke of an effect-based flag was
+      // the source of an earlier "loop never starts" bug.
       const startedAt = Date.now()
-      while (!cancelledRef.current) {
+      while (true) {
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
         if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
           setError("Timed out waiting for the job to finish")
