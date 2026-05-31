@@ -94,25 +94,14 @@ html[data-sidebar-collapsed="true"] [data-sidebar-rail] {
   width: 3.5rem;
 }
 
-/* Labels animate by max-width — never display:none — so the flex row
-   never has a moment where the label box is "too narrow for the text".
-   With nowrap + overflow:hidden the text slides in from behind the icon
-   instead of momentarily wrapping. */
-[data-sidebar-row] {
-  white-space: nowrap;
-}
+/* No transitions: with the rail snapping width and labels snapping
+   display, there is no intermediate frame where the row can render with
+   "label needs N px / row only has M px" — so no wrap, no flicker. */
+[data-sidebar-row],
 [data-sidebar-label] {
-  display: inline-block;
-  max-width: 12rem;
-  overflow: hidden;
   white-space: nowrap;
-  vertical-align: middle;
-  transition: max-width 150ms ease-out;
 }
-html[data-sidebar-collapsed="true"] [data-sidebar-label] {
-  max-width: 0;
-}
-
+html[data-sidebar-collapsed="true"] [data-sidebar-label],
 html[data-sidebar-collapsed="true"] [data-sidebar-section="config"],
 html[data-sidebar-collapsed="true"] [data-sidebar-brand] {
   display: none;
