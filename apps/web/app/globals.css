@@ -24,6 +24,12 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
+
+    /* Soft preset stops — kept as tokens so the gradient palette is
+       editable in one place, not buried in the selector below. */
+    --bg-soft-start: 210 40% 98%;
+    --bg-soft-mid: 220 35% 92%;
+    --bg-soft-end: 225 30% 88%;
   }
 
   .dark {
@@ -46,6 +52,10 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+
+    --bg-soft-start: 222.2 84% 6%;
+    --bg-soft-mid: 220 50% 8%;
+    --bg-soft-end: 217.2 35% 12%;
   }
 }
 
@@ -55,5 +65,18 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Background presets. The "default" preset is just the theme background.
+     "soft" paints a radial gradient using --bg-soft-* tokens that swap
+     automatically with the theme via the .dark override above. */
+  html[data-bg="soft"] body {
+    background:
+      radial-gradient(
+        circle at top left,
+        hsl(var(--bg-soft-start)) 0%,
+        hsl(var(--bg-soft-mid)) 40%,
+        hsl(var(--bg-soft-end)) 100%
+      );
   }
 }

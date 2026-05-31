@@ -11,7 +11,10 @@ export function SaveStatus({ status }: { status: Status }) {
     )
   if (status === "saved")
     return (
-      <span className="text-sm text-green-600" data-testid="save-status">
+      <span
+        className="text-sm text-green-600 dark:text-green-400"
+        data-testid="save-status"
+      >
         Saved
       </span>
     )
