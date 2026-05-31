@@ -3,9 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
+import { SessionExpiredCard } from "@/components/SessionExpiredCard"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { LoadingDots } from "@/components/ui/loading-dots"
+import { useAbortableMount } from "@/lib/hooks/useAbortableMount"
 import { cn } from "@/lib/utils"
 
 type Message = {
@@ -74,16 +76,12 @@ export function ChatForm() {
   const [supportsMic, setSupportsMic] = useState(false)
 
   // Suppress setState and cancel in-flight work after unmount.
-  const mountedRef = useRef(true)
-  const abortRef = useRef<AbortController | null>(null)
+  const { mountedRef, abortRef } = useAbortableMount()
   const recRef = useRef<Recognition | null>(null)
 
   useEffect(() => {
-    mountedRef.current = true
     setSupportsMic(getRecognitionCtor() !== null)
     return () => {
-      mountedRef.current = false
-      abortRef.current?.abort()
       recRef.current?.stop()
     }
   }, [])
@@ -150,7 +148,7 @@ export function ChatForm() {
       }
       return stale ? "stale" : "ok"
     },
-    [],
+    [mountedRef],
   )
 
   const send = useCallback(async () => {
@@ -215,7 +213,7 @@ export function ChatForm() {
         setRetrying(false)
       }
     }
-  }, [busy, input, stream])
+  }, [abortRef, busy, input, mountedRef, stream])
 
   const toggleMic = useCallback(() => {
     if (listening) {
@@ -244,26 +242,10 @@ export function ChatForm() {
     rec.start()
     recRef.current = rec
     setListening(true)
-  }, [listening])
+  }, [listening, mountedRef])
 
   if (sessionExpired) {
-    return (
-      <Card>
-        <CardContent
-          className="space-y-2 pt-6 text-sm"
-          data-testid="session-expired"
-        >
-          <p className="font-medium text-destructive">Session expired</p>
-          <p className="text-muted-foreground">
-            The bearer token in <code className="font-mono">apps/web/.token</code>
-            {" "}no longer matches{" "}
-            <code className="font-mono">~/.ai-agent/session-token</code>.
-            Restart the dev server (<code className="font-mono">bin/serve.sh</code>)
-            to mirror a fresh token and refresh this page.
-          </p>
-        </CardContent>
-      </Card>
-    )
+    return <SessionExpiredCard />
   }
 
   return (

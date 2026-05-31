@@ -1,17 +1,13 @@
 "use client"
-import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ChipInput } from "@/components/ChipInput"
-import { SaveStatus, SaveStatusValue } from "@/components/SaveStatus"
+import { SaveStatus } from "@/components/SaveStatus"
 import { BriefingConfig, Conflict } from "@/lib/config-types"
-import {
-  ValidationErrorMap,
-  parseValidationErrors,
-} from "@/lib/validation-errors"
+import { useConfigSave } from "@/lib/hooks/useConfigSave"
 
 type Props = { initial: BriefingConfig }
 
@@ -24,11 +20,8 @@ const blankConflict = (): Conflict => ({
 const upper = (s: string) => s.toUpperCase()
 
 export function GeopoliticalForm({ initial }: Props) {
-  const router = useRouter()
   const [rows, setRows] = useState<Conflict[]>(initial.geopolitical.conflicts)
-  const [status, setStatus] = useState<SaveStatusValue>("idle")
-  const [errors, setErrors] = useState<ValidationErrorMap>(new Map())
-  const [genericError, setGenericError] = useState<string | null>(null)
+  const { status, errors, genericError, save } = useConfigSave()
 
   const updateRow = (idx: number, patch: Partial<Conflict>) =>
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
@@ -36,11 +29,8 @@ export function GeopoliticalForm({ initial }: Props) {
     setRows((prev) => prev.filter((_, i) => i !== idx))
   const addRow = () => setRows((prev) => [...prev, blankConflict()])
 
-  const save = async () => {
-    setStatus("saving")
-    setErrors(new Map())
-    setGenericError(null)
-    const payload: BriefingConfig = {
+  const onSave = () =>
+    save({
       ...initial,
       geopolitical: {
         conflicts: rows.map((r) => ({
@@ -48,24 +38,7 @@ export function GeopoliticalForm({ initial }: Props) {
           notes: r.notes && r.notes.trim() !== "" ? r.notes : null,
         })),
       },
-    }
-    const res = await fetch("/api/config", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
     })
-    if (res.ok) {
-      setStatus("saved")
-      router.refresh()
-      return
-    }
-    if (res.status === 422) {
-      setErrors(await parseValidationErrors(res))
-    } else {
-      setGenericError(`PUT /api/config failed (HTTP ${res.status})`)
-    }
-    setStatus("error")
-  }
 
   return (
     <div className="space-y-4">
@@ -149,7 +122,7 @@ export function GeopoliticalForm({ initial }: Props) {
         <Button variant="outline" onClick={addRow} data-testid="conflict-add">
           + Add conflict
         </Button>
-        <Button onClick={() => void save()} disabled={status === "saving"}>
+        <Button onClick={() => void onSave()} disabled={status === "saving"}>
           Save
         </Button>
         <SaveStatus status={status} />
