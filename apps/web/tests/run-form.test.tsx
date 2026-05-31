@@ -101,4 +101,122 @@ describe("RunForm", () => {
     expect(screen.getByText(/abc-123/)).toBeInTheDocument()
     expect(screen.getByText("dry_run")).toBeInTheDocument()
   })
+
+  it("renders the error card when POST fails with non-401", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("oops", { status: 500 }))
+    const user = userEvent.setup()
+    render(<RunForm />)
+    await user.click(screen.getByTestId("run-button"))
+    await waitFor(() => {
+      expect(screen.getByTestId("run-error")).toBeInTheDocument()
+    })
+    expect(screen.getByTestId("run-error")).toHaveTextContent("HTTP 500")
+    // Button re-enables (status === "failed", not busy) so user can retry.
+    expect(screen.getByTestId("run-button")).not.toBeDisabled()
+  })
+
+  describe("polling loop", () => {
+    // Collapse the 2s poll delay to 0ms so the loop runs at microtask speed.
+    // Keeping real timers everywhere else avoids the userEvent + fake-timer
+    // entanglement and lets waitFor work normally.
+    let realSetTimeout: typeof setTimeout
+    beforeEach(() => {
+      realSetTimeout = global.setTimeout
+      vi.stubGlobal(
+        "setTimeout",
+        ((cb: (...a: unknown[]) => void) =>
+          realSetTimeout(cb, 0)) as unknown as typeof setTimeout,
+      )
+    })
+
+    it("polls pending → running → done and preserves dry_run badge", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              job_id: "abc-123",
+              status: "pending",
+              dry_run: true,
+            }),
+            { status: 202 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ job_id: "abc-123", status: "running" }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              job_id: "abc-123",
+              status: "done",
+              finished_at: "2026-05-31T12:00:00Z",
+            }),
+            { status: 200 },
+          ),
+        )
+      const user = userEvent.setup()
+      render(<RunForm />)
+      await user.click(screen.getByTestId("dry-run-checkbox"))
+      await user.click(screen.getByTestId("run-button"))
+
+      await waitFor(() => {
+        expect(screen.getByTestId("job-status")).toHaveTextContent("done")
+      })
+      // dry_run came from the POST response; the GET responses omit it,
+      // so this assertion proves the merge logic preserves the badge.
+      expect(screen.getByText("dry_run")).toBeInTheDocument()
+      expect(screen.getByTestId("finished-at")).toBeInTheDocument()
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/run/abc-123",
+        expect.objectContaining({ cache: "no-store" }),
+      )
+    })
+
+    it("surfaces a failed job with its error message", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ job_id: "abc-123", status: "pending" }),
+            { status: 202 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              job_id: "abc-123",
+              status: "failed",
+              error: "boom",
+            }),
+            { status: 200 },
+          ),
+        )
+      const user = userEvent.setup()
+      render(<RunForm />)
+      await user.click(screen.getByTestId("run-button"))
+      await waitFor(() => {
+        expect(screen.getByTestId("job-status")).toHaveTextContent("failed")
+      })
+      expect(screen.getByTestId("run-error")).toHaveTextContent("boom")
+    })
+
+    it("shows session-expired when a poll returns 401", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ job_id: "abc-123", status: "pending" }),
+            { status: 202 },
+          ),
+        )
+        .mockResolvedValueOnce(new Response("", { status: 401 }))
+      const user = userEvent.setup()
+      render(<RunForm />)
+      await user.click(screen.getByTestId("run-button"))
+      await waitFor(() => {
+        expect(screen.getByTestId("session-expired")).toBeInTheDocument()
+      })
+    })
+  })
 })

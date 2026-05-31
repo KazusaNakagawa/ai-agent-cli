@@ -84,7 +84,9 @@ export function RunForm() {
           return
         }
         const detail = (await pollRes.json()) as JobDetail
-        setJob(detail)
+        // Merge: the GET response may omit `dry_run`, which was set on the
+        // POST response. Without merging the badge would flicker off.
+        setJob((prev) => (prev ? { ...prev, ...detail } : detail))
         setStatus(detail.status)
         if (detail.status === "done") return
         if (detail.status === "failed") {
@@ -182,14 +184,18 @@ export function RunForm() {
                 <span className="font-medium">Finished:</span> {finished}
               </p>
             )}
-            {error && (
-              <div
-                className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-destructive"
-                data-testid="run-error"
-              >
-                {error}
-              </div>
-            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {error && (
+        <Card>
+          <CardContent
+            className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+            data-testid="run-error"
+            role="alert"
+          >
+            {error}
           </CardContent>
         </Card>
       )}
