@@ -11,10 +11,12 @@ import {
 import {
   Background,
   BACKGROUND_STORAGE_KEY,
+  BACKGROUNDS,
   isBackground,
   isTheme,
   Theme,
   THEME_STORAGE_KEY,
+  THEMES,
 } from "@/lib/theme"
 
 type Ctx = {
@@ -91,16 +93,28 @@ export function useTheme(): Ctx {
 // Inline script that runs before React hydration, applied via dangerouslySet-
 // InnerHTML in app/layout.tsx. It must be self-contained, defensive against
 // missing storage, and idempotent.
+//
+// String literals (themes, backgrounds, defaults) are interpolated from
+// lib/theme so this script can never drift from the typed constants — adding
+// a new theme/background propagates here automatically.
+const THEMES_JSON = JSON.stringify(THEMES)
+const BGS_JSON = JSON.stringify(BACKGROUNDS)
+const DEFAULT_BG: Background = "default"
+const DARK: Theme = "dark"
+const LIGHT: Theme = "light"
+
 export const themeBootScript = `
 (function(){try{
+  var THEMES = ${THEMES_JSON};
+  var BGS = ${BGS_JSON};
   var t = localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
-  if (t !== "light" && t !== "dark") {
+  if (THEMES.indexOf(t) === -1) {
     t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark" : "light";
+      ? ${JSON.stringify(DARK)} : ${JSON.stringify(LIGHT)};
   }
-  if (t === "dark") document.documentElement.classList.add("dark");
+  if (t === ${JSON.stringify(DARK)}) document.documentElement.classList.add(${JSON.stringify(DARK)});
   var b = localStorage.getItem(${JSON.stringify(BACKGROUND_STORAGE_KEY)});
-  if (b !== "default" && b !== "soft") b = "default";
+  if (BGS.indexOf(b) === -1) b = ${JSON.stringify(DEFAULT_BG)};
   document.documentElement.setAttribute("data-bg", b);
 }catch(e){}})();
 `
