@@ -36,3 +36,9 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# Playwright E2E
+/e2e/.tmp-home
+/e2e/test-results
+/playwright-report
+/test-results

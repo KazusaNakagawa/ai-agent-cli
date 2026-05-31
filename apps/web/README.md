@@ -13,6 +13,7 @@ npm run start    # serve the production build
 npm run lint     # next lint
 npm run test     # vitest run (one-off)
 npm run test:watch
+npm run test:e2e # playwright — onboarding-and-run smoke gate
 ```
 
 ## API client
@@ -41,6 +42,45 @@ component will fail at build time.
 
 Vitest + jsdom + Testing Library. Tests live in `tests/` and run with
 `npm run test`. See `tests/smoke.test.tsx` for the baseline pattern.
+
+### E2E smoke gate
+
+`npm run test:e2e` runs the single Playwright scenario in `e2e/` that walks
+the first-time user flow end-to-end: launch → 4-step onboarding wizard →
+`POST /api/run?dry_run=true` → sidebar reachable. This is intentionally
+the *only* E2E test — everything else is covered by Vitest. Treat it as
+the manual smoke gate before cutting a release; it is **not** wired into
+the `web` GitHub Actions workflow because Playwright's browser download
+(~150 MB) inflates CI time disproportionately for a single scenario.
+
+Isolation is per-run, no manual cleanup required:
+
+- `playwright.config.ts` wipes `e2e/.tmp-home/` and pre-seeds a session
+  token there before either server boots.
+- FastAPI is started with `HOME=<tmp-home>` and
+  `BRIEFING_CONFIG_PATH=<tmp-home>/.ai-agent/briefing.json`, so
+  `state.json`, the session token, and `briefing.json` all live under the
+  tmp tree — your real `~/.ai-agent/` is untouched.
+- Step 3 is submitted blank, so no `PUT /api/credentials/*` calls reach
+  the macOS Keychain.
+- The job runs with `dry_run=true`, so no claude / Discord / Notion calls
+  happen.
+
+Failures drop a screenshot + trace under `e2e/test-results/`; view a
+trace with `npx playwright show-trace e2e/test-results/<test>/trace.zip`.
+
+Prerequisites (one-time per machine):
+
+```bash
+cd apps/python
+uv venv .venv                  # create the venv the config invokes
+uv pip sync requirements.txt   # install backend deps
+cd ../web
+npx playwright install chromium
+```
+
+The config invokes `apps/python/.venv/bin/uvicorn` directly, so the venv
+must exist before `npm run test:e2e` is run.
 
 ## References
 
