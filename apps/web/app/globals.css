@@ -79,4 +79,44 @@
         hsl(var(--bg-soft-end)) 100%
       );
   }
+
+}
+
+/* Sidebar collapsed mode — kept OUTSIDE @layer base so Tailwind utilities
+   can't outrank the cascade. The flag is set on <html> by the pre-hydration
+   script (see app/layout.tsx / themeBootScript) so the rail starts in the
+   correct geometry on the very first paint, before React hydrates. */
+[data-sidebar-rail] {
+  width: 15rem;
+  overflow-x: hidden;
+}
+html[data-sidebar-collapsed="true"] [data-sidebar-rail] {
+  width: 3.5rem;
+}
+
+/* No transitions: with the rail snapping width and labels snapping
+   display, there is no intermediate frame where the row can render with
+   "label needs N px / row only has M px" — so no wrap, no flicker. */
+[data-sidebar-row],
+[data-sidebar-label] {
+  white-space: nowrap;
+}
+html[data-sidebar-collapsed="true"] [data-sidebar-label],
+html[data-sidebar-collapsed="true"] [data-sidebar-section="config"],
+html[data-sidebar-collapsed="true"] [data-sidebar-brand] {
+  display: none;
+}
+html[data-sidebar-collapsed="true"] [data-sidebar-header] {
+  justify-content: center;
+}
+html[data-sidebar-collapsed="true"] [data-sidebar-row] {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+html[data-sidebar-collapsed="true"] [data-sidebar-toggle-icon]::before {
+  content: "›";
+}
+html:not([data-sidebar-collapsed="true"]) [data-sidebar-toggle-icon]::before {
+  content: "‹";
 }
