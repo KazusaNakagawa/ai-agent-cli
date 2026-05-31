@@ -89,6 +89,15 @@
    first paint, before React hydrates. */
 [data-sidebar-rail] {
   width: 15rem; /* default expanded width (matches the old w-60) */
+  /* Clip labels during the width transition. Without this, multi-word
+     labels ("Geopolitical Risks") wrap onto a second line while the rail
+     is narrower than the text, producing a visible vertical-stack flash
+     just before the animation completes. */
+  overflow-x: hidden;
+}
+[data-sidebar-row],
+[data-sidebar-label] {
+  white-space: nowrap;
 }
 html[data-sidebar-collapsed="true"] [data-sidebar-rail] {
   width: 3.5rem;
