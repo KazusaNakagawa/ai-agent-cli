@@ -1,11 +1,15 @@
 "use client"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { AppearancePanel } from "@/components/AppearancePanel"
 import { ConfigFilePanel } from "@/components/ConfigFilePanel"
 import { SidebarDisclosure } from "@/components/SidebarDisclosure"
+import {
+  SIDEBAR_COLLAPSED_ATTR,
+  SIDEBAR_COLLAPSED_KEY,
+} from "@/lib/sidebar"
 import { cn } from "@/lib/utils"
 
 type Item = { href: string; label: string; icon: string }
@@ -20,39 +24,40 @@ const ITEMS: Item[] = [
   { href: "/chat", label: "Q&A Chat", icon: "💬" },
 ]
 
-const COLLAPSED_KEY = "ai-agent:sidebar-collapsed"
-const HTML_ATTR = "data-sidebar-collapsed"
-
-// Read the collapsed flag already painted onto <html> by the pre-hydration
-// script (see app/layout.tsx via themeBootScript). On the server the flag
-// can't exist yet; React's first client render reads the same DOM the
-// pre-hydration script just wrote, so the initial paint already matches the
-// final state — no expanded→collapsed flash on reload.
-function readInitialCollapsed(): boolean {
-  if (typeof document === "undefined") return false
-  return document.documentElement.getAttribute(HTML_ATTR) === "true"
-}
-
 export function Sidebar() {
   const pathname = usePathname()
-  const [collapsed, setCollapsed] = useState(readInitialCollapsed)
+  // Initialize to false so SSR and the first client render agree (avoiding
+  // a hydration mismatch on data-collapsed / aria-expanded / title). The
+  // visible width is already correct on first paint because CSS reacts to
+  // the html attribute the pre-hydration script writes; the React state
+  // catches up in the mount effect below.
+  const [collapsed, setCollapsed] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
 
-  const toggle = () => {
-    setCollapsed((prev) => {
-      const next = !prev
-      try {
-        localStorage.setItem(COLLAPSED_KEY, String(next))
-      } catch {
-        // localStorage unavailable (private mode / quota); toggle still works
-      }
-      if (next) {
-        document.documentElement.setAttribute(HTML_ATTR, "true")
-      } else {
-        document.documentElement.removeAttribute(HTML_ATTR)
-      }
-      return next
-    })
-  }
+  useEffect(() => {
+    setCollapsed(
+      document.documentElement.getAttribute(SIDEBAR_COLLAPSED_ATTR) === "true",
+    )
+    setHydrated(true)
+  }, [])
+
+  // Persist + mirror to the html attribute whenever the user toggles. Skip
+  // the initial mount tick so we don't write back the value we just read.
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
+    } catch {
+      // localStorage unavailable (private mode / quota); state still works
+    }
+    if (collapsed) {
+      document.documentElement.setAttribute(SIDEBAR_COLLAPSED_ATTR, "true")
+    } else {
+      document.documentElement.removeAttribute(SIDEBAR_COLLAPSED_ATTR)
+    }
+  }, [collapsed, hydrated])
+
+  const toggle = () => setCollapsed((prev) => !prev)
 
   return (
     <aside
