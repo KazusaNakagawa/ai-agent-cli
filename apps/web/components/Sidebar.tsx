@@ -13,6 +13,7 @@ const ITEMS: Item[] = [
   { href: "/credentials", label: "Credentials", icon: "📨" },
   { href: "/auth", label: "Auth", icon: "🔑" },
   { href: "/run", label: "Run", icon: "▶️" },
+  { href: "/chat", label: "Q&A Chat", icon: "💬" },
 ]
 
 export function Sidebar() {
