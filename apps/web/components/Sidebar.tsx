@@ -2,6 +2,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
+import { AppearancePanel } from "@/components/AppearancePanel"
 import { cn } from "@/lib/utils"
 
 type Item = { href: string; label: string; icon: string }
@@ -42,6 +43,9 @@ export function Sidebar() {
           )
         })}
       </nav>
+      <div className="mt-auto">
+        <AppearancePanel />
+      </div>
     </aside>
   )
 }
