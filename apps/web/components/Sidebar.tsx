@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation"
 import { useState } from "react"
 
 import { AppearancePanel } from "@/components/AppearancePanel"
+import { ConfigFilePanel } from "@/components/ConfigFilePanel"
 import { cn } from "@/lib/utils"
 
 type Item = { href: string; label: string; icon: string }
@@ -21,6 +22,7 @@ const ITEMS: Item[] = [
 export function Sidebar() {
   const pathname = usePathname()
   const [appearanceOpen, setAppearanceOpen] = useState(false)
+  const [configFileOpen, setConfigFileOpen] = useState(false)
   return (
     <aside className="flex w-60 flex-col gap-4 border-r bg-card p-4">
       <section className="flex flex-col gap-1">
@@ -72,6 +74,27 @@ export function Sidebar() {
         {appearanceOpen && (
           <div id="appearance-panel-body" className="px-3 pb-1 pt-1">
             <AppearancePanel />
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setConfigFileOpen((v) => !v)}
+          aria-expanded={configFileOpen}
+          aria-controls="config-file-panel-body"
+          data-testid="config-file-toggle"
+          className="flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/50"
+        >
+          <span className="flex items-center gap-2">
+            <span aria-hidden>📁</span>
+            <span>Config file</span>
+          </span>
+          <span aria-hidden className="text-xs text-muted-foreground">
+            {configFileOpen ? "▾" : "▸"}
+          </span>
+        </button>
+        {configFileOpen && (
+          <div id="config-file-panel-body" className="px-3 pb-1 pt-1">
+            <ConfigFilePanel />
           </div>
         )}
       </section>
