@@ -1,7 +1,7 @@
 """GET / PUT /api/state — ``~/.ai-agent/state.json`` の読み書き。
 
 ``auth_mode`` 専用の ``/api/auth/mode`` と違い、こちらは state.json 全体を返す
-／部分更新できる汎用エンドポイント。オンボーディングウィザードが
+/ 部分更新できる汎用エンドポイント。オンボーディングウィザードが
 ``onboarded: true`` を立てるために使う。
 
 部分更新ポリシー: 渡されたフィールドだけを read-modify-write で書き戻す。

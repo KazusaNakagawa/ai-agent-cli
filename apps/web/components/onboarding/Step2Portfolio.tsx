@@ -19,13 +19,19 @@ const splitCsv = (raw: string): string[] =>
     .map((t) => t.trim())
     .filter(Boolean)
 
+// Backend writes tickers verbatim and downstream metrics sum over the array,
+// so dedupe + uppercase here to avoid double-counting (PLTR vs pltr) and
+// repeat fetches.
+const normalizeTickers = (raw: string): string[] =>
+  Array.from(new Set(splitCsv(raw).map((t) => t.toUpperCase())))
+
 export function Step2Portfolio({ data, setData, onNext, onBack, step }: Props) {
   const [tickersRaw, setTickersRaw] = useState<string>(data.tickers.join(", "))
   const [themesRaw, setThemesRaw] = useState<string>(data.themes.join(", "))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const tickers = splitCsv(tickersRaw)
+  const tickers = normalizeTickers(tickersRaw)
   const themes = splitCsv(themesRaw)
   const canSubmit = tickers.length > 0
 

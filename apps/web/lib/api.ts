@@ -17,6 +17,7 @@ export async function apiFetch(
   // `cache: 'no-store'` opts out of Next.js's Server Component fetch cache.
   // Without it, RSC reads (e.g. /api/state) are memoised for the lifetime
   // of the render and stale after the user mutates state, so the wizard
-  // would not advance to OnboardedHome on reload.
-  return fetch(`${API_BASE}${path}`, { cache: "no-store", ...init, headers })
+  // would not advance to OnboardedHome on reload. Set AFTER `...init` so
+  // callers can't accidentally re-enable caching.
+  return fetch(`${API_BASE}${path}`, { ...init, cache: "no-store", headers })
 }

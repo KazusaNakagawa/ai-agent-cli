@@ -17,12 +17,13 @@ type Field = {
   name: string
   label: string
   hint?: string
+  secret?: boolean
 }
 
 const FIELDS: Field[] = [
-  { name: "DISCORD_TOKEN", label: "Discord bot token" },
+  { name: "DISCORD_TOKEN", label: "Discord bot token", secret: true },
   { name: "CHANNEL_ID", label: "Discord channel id" },
-  { name: "NOTION_API_KEY", label: "Notion integration API key" },
+  { name: "NOTION_API_KEY", label: "Notion integration API key", secret: true },
   { name: "NOTION_DATABASE_ID", label: "Notion database id" },
 ]
 
@@ -44,6 +45,7 @@ export function Step3Notifications({
           name: "ANTHROPIC_API_KEY",
           label: "Anthropic API key",
           hint: "Required because you picked API mode in Step 1.",
+          secret: true,
         },
       ]
     : FIELDS
@@ -96,7 +98,7 @@ export function Step3Notifications({
         <label key={f.name} className="block space-y-1">
           <span className="text-sm font-medium">{f.label}</span>
           <Input
-            type="password"
+            type={f.secret ? "password" : "text"}
             value={values[f.name] ?? ""}
             onChange={(e) =>
               setValues((prev) => ({ ...prev, [f.name]: e.target.value }))
