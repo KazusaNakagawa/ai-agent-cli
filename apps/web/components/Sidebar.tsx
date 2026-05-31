@@ -12,6 +12,7 @@ const ITEMS: Item[] = [
   { href: "/geopolitical", label: "Geopolitical Risks", icon: "🗺️" },
   { href: "/credentials", label: "Credentials", icon: "📨" },
   { href: "/auth", label: "Auth", icon: "🔑" },
+  { href: "/run", label: "Run", icon: "▶️" },
 ]
 
 export function Sidebar() {
