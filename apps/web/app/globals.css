@@ -83,26 +83,36 @@
 }
 
 /* Sidebar collapsed mode — kept OUTSIDE @layer base so Tailwind utilities
-   (eg. w-60 in the previous draft) can't outrank the cascade. The flag is
-   set on <html> by the pre-hydration script (see app/layout.tsx /
-   themeBootScript) so the rail starts in the correct geometry on the very
-   first paint, before React hydrates. */
+   can't outrank the cascade. The flag is set on <html> by the pre-hydration
+   script (see app/layout.tsx / themeBootScript) so the rail starts in the
+   correct geometry on the very first paint, before React hydrates. */
 [data-sidebar-rail] {
-  width: 15rem; /* default expanded width (matches the old w-60) */
-  /* Clip labels during the width transition. Without this, multi-word
-     labels ("Geopolitical Risks") wrap onto a second line while the rail
-     is narrower than the text, producing a visible vertical-stack flash
-     just before the animation completes. */
+  width: 15rem;
   overflow-x: hidden;
-}
-[data-sidebar-row],
-[data-sidebar-label] {
-  white-space: nowrap;
 }
 html[data-sidebar-collapsed="true"] [data-sidebar-rail] {
   width: 3.5rem;
 }
-html[data-sidebar-collapsed="true"] [data-sidebar-label],
+
+/* Labels animate by max-width — never display:none — so the flex row
+   never has a moment where the label box is "too narrow for the text".
+   With nowrap + overflow:hidden the text slides in from behind the icon
+   instead of momentarily wrapping. */
+[data-sidebar-row] {
+  white-space: nowrap;
+}
+[data-sidebar-label] {
+  display: inline-block;
+  max-width: 12rem;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: middle;
+  transition: max-width 150ms ease-out;
+}
+html[data-sidebar-collapsed="true"] [data-sidebar-label] {
+  max-width: 0;
+}
+
 html[data-sidebar-collapsed="true"] [data-sidebar-section="config"],
 html[data-sidebar-collapsed="true"] [data-sidebar-brand] {
   display: none;
