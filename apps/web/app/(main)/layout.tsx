@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 
 import { apiFetch } from "@/lib/api"
 import { Sidebar } from "@/components/Sidebar"
+import { JobStateProvider } from "@/lib/jobStore"
 
 async function isOnboarded(): Promise<boolean> {
   try {
@@ -24,9 +25,11 @@ export default async function MainLayout({
   // Guard: kick anyone not onboarded back to / for the wizard.
   if (!(await isOnboarded())) redirect("/")
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 p-8">{children}</main>
-    </div>
+    <JobStateProvider>
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <main className="flex-1 p-8">{children}</main>
+      </div>
+    </JobStateProvider>
   )
 }

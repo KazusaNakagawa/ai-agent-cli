@@ -6,6 +6,7 @@ import { useEffect, useState } from "react"
 import { AppearancePanel } from "@/components/AppearancePanel"
 import { ConfigFilePanel } from "@/components/ConfigFilePanel"
 import { SidebarDisclosure } from "@/components/SidebarDisclosure"
+import { useJobState } from "@/lib/jobStore"
 import {
   SIDEBAR_COLLAPSED_ATTR,
   SIDEBAR_COLLAPSED_KEY,
@@ -26,6 +27,7 @@ const ITEMS: Item[] = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const { isBackgrounded: runJobActive } = useJobState()
   // Initialize to false so SSR and the first client render agree (avoiding
   // a hydration mismatch on data-collapsed / aria-expanded / title). The
   // visible width is already correct on first paint because CSS reacts to
@@ -87,6 +89,7 @@ export function Sidebar() {
         <nav className="flex flex-col gap-1">
           {ITEMS.map((item) => {
             const active = pathname === item.href
+            const showRunDot = item.href === "/run" && runJobActive
             return (
               <Link
                 key={item.href}
@@ -104,6 +107,13 @@ export function Sidebar() {
               >
                 <span aria-hidden>{item.icon}</span>
                 <span data-sidebar-label>{item.label}</span>
+                {showRunDot && (
+                  <span
+                    data-testid="sidebar-run-dot"
+                    aria-label="Background job in progress"
+                    className="ml-auto h-2 w-2 shrink-0 rounded-full bg-primary"
+                  />
+                )}
               </Link>
             )
           })}
