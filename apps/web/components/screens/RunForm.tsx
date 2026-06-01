@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { SessionExpiredCard } from "@/components/SessionExpiredCard"
 import { Button } from "@/components/ui/button"
@@ -29,6 +29,13 @@ export function RunForm() {
     isBackgrounded,
     startJob,
   } = useJobState()
+
+  // Mirror the persisted job's dryRun into the checkbox after hydration so the
+  // control reflects the restored job's mode. User toggles still flow through
+  // setDryRunChoice and override the restored value.
+  useEffect(() => {
+    if (jobId) setDryRunChoice(Boolean(dryRun))
+  }, [jobId, dryRun])
 
   const busy = isBackgrounded
 

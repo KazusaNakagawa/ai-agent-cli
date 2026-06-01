@@ -62,7 +62,12 @@ function loadPersisted(): JobState {
     const raw = window.sessionStorage.getItem(STORAGE_KEY)
     if (!raw) return initialState
     const parsed = JSON.parse(raw) as Partial<JobState>
-    return { ...initialState, ...parsed, sessionExpired: false }
+    const next = { ...initialState, ...parsed, sessionExpired: false }
+    // Drop unresumable snapshots: an in-flight status with no jobId can only
+    // come from the brief window between startJob() flipping status to
+    // "pending" and the POST returning. Polling has nothing to resume on.
+    if (!next.jobId && isInFlight(next.status)) return initialState
+    return next
   } catch {
     return initialState
   }
@@ -104,7 +109,10 @@ export function JobStateProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return
-    if (!state.jobId && state.status === "idle" && !state.error) {
+    // Don't persist if there's nothing recoverable: no jobId AND no error to
+    // surface. This covers idle and the transient "pending without jobId"
+    // window during startJob() before the POST returns.
+    if (!state.jobId && !state.error) {
       clearPersisted()
     } else {
       persist(state)
@@ -154,17 +162,25 @@ export function JobStateProvider({ children }: { children: ReactNode }) {
           })
           if (stopped) return
           if (res.status === 401) {
-            setState((prev) => ({ ...prev, sessionExpired: true }))
+            setState((prev) =>
+              prev.jobId === jobId
+                ? { ...prev, sessionExpired: true }
+                : prev,
+            )
             return
           }
           if (res.status === 404) {
             // Backend no longer knows this job (process restart, eviction).
             // Per AC: clear state cleanly with an informative message.
-            setState({
-              ...initialState,
-              error:
-                "The previous background job is no longer available — please run it again.",
-            })
+            setState((prev) =>
+              prev.jobId === jobId
+                ? {
+                    ...initialState,
+                    error:
+                      "The previous background job is no longer available — please run it again.",
+                  }
+                : prev,
+            )
             return
           }
           if (!res.ok) {

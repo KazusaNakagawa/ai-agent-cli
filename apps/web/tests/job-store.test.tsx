@@ -132,6 +132,57 @@ describe("JobStateProvider — resume from sessionStorage", () => {
     expect(sessionStorage.getItem(STORAGE_KEY)).toBeTruthy() // error state persisted
   })
 
+  it("drops an unresumable persisted snapshot (status=pending, jobId=null)", async () => {
+    // Simulates a reload during the brief window where startJob() has flipped
+    // status to "pending" but the POST has not yet returned a job_id.
+    seedStoredJob({
+      jobId: null,
+      status: "pending",
+      dryRun: false,
+      startedAt: null,
+      finishedAt: null,
+      error: null,
+    })
+
+    render(
+      <JobStateProvider>
+        <RunForm />
+      </JobStateProvider>,
+    )
+
+    // No job card (no jobId), Run button enabled (status normalized to idle).
+    await waitFor(() => {
+      expect(screen.getByTestId("run-button")).not.toBeDisabled()
+    })
+    expect(screen.queryByTestId("job-status")).toBeNull()
+    // Nothing in flight → no poll fetched.
+    await new Promise((r) => realSetTimeout(r, 20))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("restores the dry-run checkbox to match the persisted job's mode", async () => {
+    seedStoredJob({
+      jobId: "dry-job",
+      status: "done",
+      dryRun: true,
+      startedAt: "2026-05-31T12:00:00Z",
+      finishedAt: "2026-05-31T12:05:00Z",
+      error: null,
+    })
+
+    render(
+      <JobStateProvider>
+        <RunForm />
+      </JobStateProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dry-run-checkbox")).toBeChecked()
+    })
+    // Badge on the restored job card confirms dryRun made it through hydration.
+    expect(screen.getByText("dry_run")).toBeInTheDocument()
+  })
+
   it("shows the sidebar dot on /run while a background job is in flight", async () => {
     seedStoredJob({
       jobId: "bg-job",
