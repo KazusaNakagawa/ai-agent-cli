@@ -26,10 +26,12 @@ function sseResponse(parts: SSEPart[]): Response {
 
 describe("ChatForm", () => {
   const fetchMock = vi.fn()
+  const DRAFT_KEY = "ai-agent:chat-draft:v1"
 
   beforeEach(() => {
     fetchMock.mockReset()
     vi.stubGlobal("fetch", fetchMock)
+    window.sessionStorage.clear()
     // Default: no SpeechRecognition (mimics Firefox / unsupported browsers).
     delete (window as unknown as { SpeechRecognition?: unknown })
       .SpeechRecognition
@@ -151,6 +153,31 @@ describe("ChatForm", () => {
     render(<ChatForm />)
     expect(screen.getByTestId("mic-button")).toBeInTheDocument()
     expect(screen.queryByTestId("mic-unsupported")).toBeNull()
+  })
+
+  it("hydrates the input from sessionStorage on mount", async () => {
+    window.sessionStorage.setItem(DRAFT_KEY, "draft in progress")
+    render(<ChatForm />)
+    const input = await screen.findByTestId("chat-input")
+    await waitFor(() => {
+      expect(input).toHaveValue("draft in progress")
+    })
+  })
+
+  it("persists the draft on each change and clears it on successful send", async () => {
+    fetchMock.mockResolvedValueOnce(sseResponse([{ data: "ok" }]))
+    const user = userEvent.setup()
+    render(<ChatForm />)
+    const input = screen.getByTestId("chat-input")
+    await user.type(input, "ab")
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem(DRAFT_KEY)).toBe("ab")
+    })
+    await user.click(screen.getByTestId("send-button"))
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem(DRAFT_KEY)).toBeNull()
+    })
+    expect(input).toHaveValue("")
   })
 
   it("shows the session-expired card on 401", async () => {

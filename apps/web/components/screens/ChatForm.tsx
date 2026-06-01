@@ -18,6 +18,36 @@ type Message = {
 
 type SSEEvent = { type: string; data: string }
 
+// Bumped if the persisted shape changes incompatibly.
+const DRAFT_STORAGE_KEY = "ai-agent:chat-draft:v1"
+
+function loadDraft(): string {
+  if (typeof window === "undefined") return ""
+  try {
+    return window.sessionStorage.getItem(DRAFT_STORAGE_KEY) ?? ""
+  } catch {
+    return ""
+  }
+}
+
+function persistDraft(draft: string) {
+  if (typeof window === "undefined") return
+  try {
+    window.sessionStorage.setItem(DRAFT_STORAGE_KEY, draft)
+  } catch {
+    // quota / unavailable — draft remains in memory for the tab
+  }
+}
+
+function clearDraft() {
+  if (typeof window === "undefined") return
+  try {
+    window.sessionStorage.removeItem(DRAFT_STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -68,7 +98,11 @@ function getRecognitionCtor(): RecognitionCtor | null {
 
 export function ChatForm() {
   const [messages, setMessages] = useState<Message[]>([])
+  // Render "" on first paint so SSR and the first client render agree
+  // (sessionStorage is unavailable on the server). The hydrate effect
+  // below promotes input to whatever draft was persisted in this tab.
   const [input, setInput] = useState("")
+  const [hydrated, setHydrated] = useState(false)
   const [busy, setBusy] = useState(false)
   const [sessionExpired, setSessionExpired] = useState(false)
   const [retrying, setRetrying] = useState(false)
@@ -81,10 +115,21 @@ export function ChatForm() {
 
   useEffect(() => {
     setSupportsMic(getRecognitionCtor() !== null)
+    setInput(loadDraft())
+    setHydrated(true)
     return () => {
       recRef.current?.stop()
     }
   }, [])
+
+  useEffect(() => {
+    if (!hydrated) return
+    if (input === "") {
+      clearDraft()
+    } else {
+      persistDraft(input)
+    }
+  }, [input, hydrated])
 
   // Stream one POST /api/chat round trip. Returns "stale" iff the backend
   // emitted the `stale_session` event — the caller retries exactly once.
