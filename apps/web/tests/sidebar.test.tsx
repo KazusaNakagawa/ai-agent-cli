@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { Sidebar } from "@/components/Sidebar"
+import { JobStateProvider } from "@/lib/jobStore"
 import {
   SIDEBAR_COLLAPSED_ATTR as HTML_ATTR,
   SIDEBAR_COLLAPSED_KEY as COLLAPSED_KEY,
@@ -12,18 +13,28 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/portfolio",
 }))
 
+function renderSidebar() {
+  return render(
+    <JobStateProvider>
+      <Sidebar />
+    </JobStateProvider>,
+  )
+}
+
 describe("Sidebar collapse", () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     document.documentElement.removeAttribute(HTML_ATTR)
   })
   afterEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     document.documentElement.removeAttribute(HTML_ATTR)
   })
 
   it("starts expanded when neither the html attribute nor localStorage is set", () => {
-    render(<Sidebar />)
+    renderSidebar()
     expect(screen.getByTestId("sidebar")).toHaveAttribute(
       "data-collapsed",
       "false",
@@ -32,7 +43,7 @@ describe("Sidebar collapse", () => {
   })
 
   it("nav links always expose title and aria-label so tooltips work when collapsed", () => {
-    render(<Sidebar />)
+    renderSidebar()
     expect(screen.getByTestId("nav-portfolio")).toHaveAttribute(
       "title",
       "Portfolio",
@@ -45,7 +56,7 @@ describe("Sidebar collapse", () => {
 
   it("toggle writes html attribute + localStorage and round-trips", async () => {
     const user = userEvent.setup()
-    render(<Sidebar />)
+    renderSidebar()
 
     await user.click(screen.getByTestId("sidebar-toggle"))
     expect(document.documentElement.getAttribute(HTML_ATTR)).toBe("true")
@@ -66,7 +77,7 @@ describe("Sidebar collapse", () => {
 
   it("syncs to the html attribute set by the pre-hydration script after mount", async () => {
     document.documentElement.setAttribute(HTML_ATTR, "true")
-    render(<Sidebar />)
+    renderSidebar()
     // First render matches SSR (collapsed=false) so React doesn't see a
     // hydration mismatch; the mount effect then promotes state to true.
     await waitFor(() => {

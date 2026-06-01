@@ -3,20 +3,31 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { RunForm } from "@/components/screens/RunForm"
+import { JobStateProvider } from "@/lib/jobStore"
+
+function renderWithProvider() {
+  return render(
+    <JobStateProvider>
+      <RunForm />
+    </JobStateProvider>,
+  )
+}
 
 describe("RunForm", () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
+    sessionStorage.clear()
     fetchMock.mockReset()
     vi.stubGlobal("fetch", fetchMock)
   })
   afterEach(() => {
     vi.unstubAllGlobals()
+    sessionStorage.clear()
   })
 
   it("renders idle with the Run button enabled", () => {
-    render(<RunForm />)
+    renderWithProvider()
     expect(screen.getByTestId("run-button")).not.toBeDisabled()
   })
 
@@ -28,7 +39,7 @@ describe("RunForm", () => {
       ),
     )
     const user = userEvent.setup()
-    render(<RunForm />)
+    renderWithProvider()
     await user.click(screen.getByTestId("run-button"))
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/run",
@@ -44,7 +55,7 @@ describe("RunForm", () => {
       ),
     )
     const user = userEvent.setup()
-    render(<RunForm />)
+    renderWithProvider()
     await user.click(screen.getByTestId("dry-run-checkbox"))
     await user.click(screen.getByTestId("run-button"))
     expect(fetchMock).toHaveBeenCalledWith(
@@ -61,7 +72,7 @@ describe("RunForm", () => {
       ),
     )
     const user = userEvent.setup()
-    render(<RunForm />)
+    renderWithProvider()
     await user.click(screen.getByTestId("run-button"))
     await waitFor(() => {
       expect(screen.getByTestId("run-button")).toBeDisabled()
@@ -71,7 +82,7 @@ describe("RunForm", () => {
   it("shows the session-expired card when POST returns 401", async () => {
     fetchMock.mockResolvedValueOnce(new Response("", { status: 401 }))
     const user = userEvent.setup()
-    render(<RunForm />)
+    renderWithProvider()
     await user.click(screen.getByTestId("run-button"))
     await waitFor(() => {
       expect(screen.getByTestId("session-expired")).toBeInTheDocument()
@@ -92,7 +103,7 @@ describe("RunForm", () => {
       ),
     )
     const user = userEvent.setup()
-    render(<RunForm />)
+    renderWithProvider()
     await user.click(screen.getByTestId("dry-run-checkbox"))
     await user.click(screen.getByTestId("run-button"))
     await waitFor(() => {
@@ -105,7 +116,7 @@ describe("RunForm", () => {
   it("renders the error card when POST fails with non-401", async () => {
     fetchMock.mockResolvedValueOnce(new Response("oops", { status: 500 }))
     const user = userEvent.setup()
-    render(<RunForm />)
+    renderWithProvider()
     await user.click(screen.getByTestId("run-button"))
     await waitFor(() => {
       expect(screen.getByTestId("run-error")).toBeInTheDocument()
@@ -158,7 +169,7 @@ describe("RunForm", () => {
           ),
         )
       const user = userEvent.setup()
-      render(<RunForm />)
+      renderWithProvider()
       await user.click(screen.getByTestId("dry-run-checkbox"))
       await user.click(screen.getByTestId("run-button"))
 
@@ -194,7 +205,7 @@ describe("RunForm", () => {
           ),
         )
       const user = userEvent.setup()
-      render(<RunForm />)
+      renderWithProvider()
       await user.click(screen.getByTestId("run-button"))
       await waitFor(() => {
         expect(screen.getByTestId("job-status")).toHaveTextContent("failed")
@@ -212,7 +223,7 @@ describe("RunForm", () => {
         )
         .mockResolvedValueOnce(new Response("", { status: 401 }))
       const user = userEvent.setup()
-      render(<RunForm />)
+      renderWithProvider()
       await user.click(screen.getByTestId("run-button"))
       await waitFor(() => {
         expect(screen.getByTestId("session-expired")).toBeInTheDocument()
