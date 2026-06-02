@@ -427,6 +427,80 @@ def _get_page_tags(page: dict) -> list[str]:
     return []
 
 
+def find_briefing_page(
+    api_key: str, database_id: str, briefing_date: str
+) -> dict | None:
+    """Return the briefing page for ``briefing_date`` (matched by title) or None.
+
+    Title shape mirrors what the briefing job emits and what the local
+    notion-import skill searches for: ``マーケットブリーフィング — YYYY-MM-DD``.
+    The parent database is asserted so we never write into an unrelated page
+    that happens to share the title.
+    """
+    if not api_key or not database_id:
+        return None
+
+    notion = Client(auth=api_key)
+    expected_title = f"マーケットブリーフィング — {briefing_date}"
+    normalized_db_id = database_id.replace("-", "")
+
+    cursor: str | None = None
+    try:
+        while True:
+            kwargs: dict = {
+                "query": expected_title,
+                "filter": {"value": "page", "property": "object"},
+                "page_size": 25,
+            }
+            if cursor:
+                kwargs["start_cursor"] = cursor
+            resp = notion.search(**kwargs)
+            for page in resp.get("results", []):
+                parent = page.get("parent", {})
+                if (parent.get("database_id") or "").replace("-", "") != normalized_db_id:
+                    continue
+                if _extract_page_title(page) == expected_title:
+                    return page
+            if not resp.get("has_more"):
+                return None
+            cursor = resp.get("next_cursor")
+    except Exception:
+        logger.exception(
+            "Notion ブリーフィングページ検索に失敗しました (date=%s)", briefing_date
+        )
+        return None
+
+
+def append_to_briefing_page(
+    api_key: str, database_id: str, briefing_date: str, markdown: str
+) -> str:
+    """Append ``markdown`` to the briefing page for ``briefing_date``.
+
+    Returns the page URL on success, or ``""`` if no matching page was found
+    or the Notion API call failed. The caller distinguishes the two with a
+    prior ``find_briefing_page`` call when it needs a 404 vs 502 split.
+    """
+    page = find_briefing_page(api_key, database_id, briefing_date)
+    if not page:
+        return ""
+
+    notion = Client(auth=api_key)
+    page_id = page["id"]
+    blocks = _markdown_to_blocks(markdown)
+    try:
+        # Notion API caps children.append at 100 blocks per call.
+        for i in range(0, len(blocks), 100):
+            notion.blocks.children.append(
+                block_id=page_id,
+                children=blocks[i:i + 100],
+            )
+    except Exception:
+        logger.exception("Notion ブロック追記に失敗しました (page_id=%s)", page_id)
+        return ""
+
+    return page.get("url", "")
+
+
 def fetch_weekly_pages(
     api_key: str, database_id: str, days: int = 7, tag: str = "agent"
 ) -> list[dict]:

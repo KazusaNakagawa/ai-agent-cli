@@ -33,7 +33,7 @@ from src import credentials as cred_mod
 from src import state as state_mod
 from src.chat_session import build_cmd
 from src.claude_runner import build_env
-from src.notifier.notion import send_to_notion
+from src.notifier.notion import append_to_briefing_page, find_briefing_page
 from web.auth import require_bearer
 
 PYTHON_APP = Path(__file__).resolve().parents[2]  # apps/python/
@@ -118,34 +118,35 @@ class ChatNotionImportResponse(BaseModel):
     url: str
 
 
-def _compose_notion_page(
-    question: str, answer: str, briefing_date: str, when: datetime
-) -> tuple[str, str]:
-    """Return (title, markdown body) for a Q&A chat → Notion page.
+def _compose_append_body(question: str, answer: str, when: datetime) -> str:
+    """Return the markdown to append to the day's briefing page.
 
-    The title carries the briefing date from the request so the page lines
-    up with the briefing the user was asking about; the body header carries
-    the server timestamp so the operator can see when the save happened.
+    Mirrors the local notion-import skill: leads with a divider + `## 追記:`
+    header so the chat additions sit visually below the briefing body and
+    multiple saves on the same day stack cleanly.
     """
-    title_snippet = question.strip().splitlines()[0][:60]
-    title = f"Q&A chat — {briefing_date} — {title_snippet}"
-    body = (
-        f"# Q&A chat — {when.isoformat(timespec='seconds')}\n\n"
-        "## Question\n\n"
+    return (
+        "---\n\n"
+        f"## 追記: Q&A chat — {when.isoformat(timespec='seconds')}\n\n"
+        "### Question\n\n"
         f"{question.strip()}\n\n"
-        "## Answer\n\n"
+        "### Answer\n\n"
         f"{answer.strip()}\n"
     )
-    return title, body
 
 
 @router.post("/chat/notion-import", response_model=ChatNotionImportResponse)
 def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportResponse:
-    """Push a single Q&A exchange to the configured Notion database.
+    """Append a Q&A exchange to the briefing page for ``body.date``.
 
-    Returns 400 with a descriptive detail if NOTION_API_KEY or
-    NOTION_DATABASE_ID is unset — the frontend surfaces that detail verbatim
-    so the operator knows exactly which credential is missing.
+    Mirrors the local ``notion-import`` skill: we never create a new page —
+    if the briefing page for the date doesn't exist we 404, so the operator
+    can't accidentally fan out chat scratchpads across the database.
+
+    Status map:
+      400 — NOTION_API_KEY or NOTION_DATABASE_ID is unset
+      404 — no briefing page found for the date
+      502 — Notion API call failed during the append
     """
     api_key = cred_mod.get_credential("NOTION_API_KEY")
     database_id = cred_mod.get_credential("NOTION_DATABASE_ID")
@@ -163,23 +164,27 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
             detail=f"Notion credentials not configured: {', '.join(missing)}",
         )
 
-    title, markdown = _compose_notion_page(
-        body.question, body.answer, body.date, datetime.now(timezone.utc)
+    page = find_briefing_page(api_key, database_id, body.date)
+    if not page:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No Notion briefing page found for {body.date} "
+                f"(expected title: 'マーケットブリーフィング — {body.date}')."
+            ),
+        )
+
+    markdown = _compose_append_body(
+        body.question, body.answer, datetime.now(timezone.utc)
     )
-    url = send_to_notion(
-        markdown,
-        api_key=api_key,
-        database_id=database_id,
-        title=title,
-        tags=["chat"],
-    )
+    url = append_to_briefing_page(api_key, database_id, body.date, markdown)
     if not url:
-        # send_to_notion swallows exceptions and returns "" on failure
-        # (see src/notifier/notion.py). Surface a generic 502 so the UI can
-        # tell the operator "try again / check logs" without leaking internals.
+        # append_to_briefing_page swallows exceptions and returns "" on
+        # failure (see src/notifier/notion.py). The page was confirmed to
+        # exist above, so a "" here means the API call itself failed.
         raise HTTPException(
             status_code=502,
-            detail="Failed to create the Notion page — check the server logs.",
+            detail="Failed to append to the Notion briefing page — check the server logs.",
         )
     return ChatNotionImportResponse(url=url)
 

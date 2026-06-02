@@ -2,7 +2,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.notifier.notion import send_to_notion, _markdown_to_blocks, _block_to_text
+from src.notifier.notion import (
+    append_to_briefing_page,
+    find_briefing_page,
+    send_to_notion,
+    _block_to_text,
+    _markdown_to_blocks,
+)
 
 
 def _make_notion_mock(title_prop="Name", page_url="https://notion.so/page-1"):
@@ -173,3 +179,143 @@ class TestBlockToTextTableRow:
             ]},
         }
         assert _block_to_text(block) == "| 週初 | 週末 |"
+
+
+# ---------------------------------------------------------------------------
+# find_briefing_page / append_to_briefing_page (Issue #87)
+# ---------------------------------------------------------------------------
+
+def _title_prop(title: str) -> dict:
+    return {
+        "type": "title",
+        "title": [{"type": "text", "text": {"content": title}}],
+    }
+
+
+class TestFindBriefingPage:
+    def _setup(self, search_pages):
+        mock = MagicMock()
+        mock.search.return_value = {"results": search_pages, "has_more": False}
+        patcher = patch("src.notifier.notion.Client", return_value=mock)
+        patcher.start()
+        return mock, patcher
+
+    def test_returns_none_when_credentials_missing(self):
+        assert find_briefing_page("", "db", "2026-05-30") is None
+        assert find_briefing_page("k", "", "2026-05-30") is None
+
+    def test_returns_matching_page_in_database(self):
+        target_db = "db-uuid"
+        page = {
+            "id": "p1",
+            "url": "https://www.notion.so/p1",
+            "parent": {"database_id": target_db},
+            "properties": {"Name": _title_prop("マーケットブリーフィング — 2026-05-30")},
+        }
+        _, patcher = self._setup([page])
+        try:
+            result = find_briefing_page("k", target_db, "2026-05-30")
+            assert result is not None
+            assert result["id"] == "p1"
+        finally:
+            patcher.stop()
+
+    def test_skips_pages_in_other_databases(self):
+        target_db = "right-db"
+        page = {
+            "id": "p1",
+            "url": "https://www.notion.so/p1",
+            "parent": {"database_id": "wrong-db"},
+            "properties": {"Name": _title_prop("マーケットブリーフィング — 2026-05-30")},
+        }
+        _, patcher = self._setup([page])
+        try:
+            assert find_briefing_page("k", target_db, "2026-05-30") is None
+        finally:
+            patcher.stop()
+
+    def test_skips_pages_with_mismatched_title(self):
+        target_db = "db-uuid"
+        page = {
+            "id": "p1",
+            "url": "https://www.notion.so/p1",
+            "parent": {"database_id": target_db},
+            "properties": {"Name": _title_prop("週次サマリー — 2026-05-30")},
+        }
+        _, patcher = self._setup([page])
+        try:
+            assert find_briefing_page("k", target_db, "2026-05-30") is None
+        finally:
+            patcher.stop()
+
+    def test_database_id_match_is_dash_insensitive(self):
+        # Notion sometimes returns ids with dashes, sometimes without.
+        page = {
+            "id": "p1",
+            "url": "https://www.notion.so/p1",
+            "parent": {"database_id": "abc-123-def"},
+            "properties": {"Name": _title_prop("マーケットブリーフィング — 2026-05-30")},
+        }
+        _, patcher = self._setup([page])
+        try:
+            assert find_briefing_page("k", "abc123def", "2026-05-30") is not None
+        finally:
+            patcher.stop()
+
+
+class TestAppendToBriefingPage:
+    def test_returns_empty_when_page_not_found(self, monkeypatch):
+        monkeypatch.setattr(
+            "src.notifier.notion.find_briefing_page",
+            lambda *a, **kw: None,
+        )
+        assert append_to_briefing_page("k", "db", "2026-05-30", "body") == ""
+
+    def test_appends_blocks_and_returns_page_url(self, monkeypatch):
+        page = {"id": "p1", "url": "https://www.notion.so/p1"}
+        monkeypatch.setattr(
+            "src.notifier.notion.find_briefing_page",
+            lambda *a, **kw: page,
+        )
+        client = MagicMock()
+        monkeypatch.setattr("src.notifier.notion.Client", lambda auth: client)
+
+        url = append_to_briefing_page("k", "db", "2026-05-30", "## hi\n\nbody")
+        assert url == "https://www.notion.so/p1"
+        client.blocks.children.append.assert_called_once()
+        kwargs = client.blocks.children.append.call_args.kwargs
+        assert kwargs["block_id"] == "p1"
+        # Body produced two blocks (h2 + paragraph) — both passed in one batch.
+        assert len(kwargs["children"]) == 2
+
+    def test_returns_empty_when_notion_api_raises(self, monkeypatch):
+        page = {"id": "p1", "url": "https://www.notion.so/p1"}
+        monkeypatch.setattr(
+            "src.notifier.notion.find_briefing_page",
+            lambda *a, **kw: page,
+        )
+        client = MagicMock()
+        client.blocks.children.append.side_effect = RuntimeError("boom")
+        monkeypatch.setattr("src.notifier.notion.Client", lambda auth: client)
+
+        assert append_to_briefing_page("k", "db", "2026-05-30", "body") == ""
+
+    def test_splits_into_100_block_batches(self, monkeypatch):
+        page = {"id": "p1", "url": "https://www.notion.so/p1"}
+        monkeypatch.setattr(
+            "src.notifier.notion.find_briefing_page",
+            lambda *a, **kw: page,
+        )
+        client = MagicMock()
+        monkeypatch.setattr("src.notifier.notion.Client", lambda auth: client)
+
+        # 250 bullet lines → 250 blocks → 3 append calls (100, 100, 50).
+        body = "\n".join(f"- item {i}" for i in range(250))
+        url = append_to_briefing_page("k", "db", "2026-05-30", body)
+        assert url == "https://www.notion.so/p1"
+        assert client.blocks.children.append.call_count == 3
+        sizes = [
+            len(call.kwargs["children"])
+            for call in client.blocks.children.append.call_args_list
+        ]
+        assert sizes == [100, 100, 50]

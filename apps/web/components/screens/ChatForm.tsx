@@ -116,10 +116,10 @@ function NotionSaveRow({
         data-testid="notion-save-button"
       >
         {status === "saving"
-          ? "保存中…"
+          ? "追記中…"
           : status === "saved"
-          ? "✓ Notion 保存済"
-          : "Notion に保存"}
+          ? "✓ Notion に追記済"
+          : "Notion ブリーフィングに追記"}
       </Button>
       {status === "saved" && state?.url && (
         <a

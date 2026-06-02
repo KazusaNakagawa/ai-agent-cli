@@ -340,21 +340,27 @@ async def test_chat_notion_import_400_when_api_key_missing(
     assert "NOTION_DATABASE_ID" not in detail
 
 
-async def test_chat_notion_import_success_returns_url_and_composes_page(
+async def test_chat_notion_import_success_appends_to_existing_briefing_page(
     authed_client, isolated_keyring, clear_credential_env, monkeypatch
 ):
     _seed_notion_creds(monkeypatch)
     captured: dict = {}
 
-    def fake_send(text, api_key, database_id, title=None, tags=None, extra_properties=None):
-        captured["text"] = text
-        captured["api_key"] = api_key
-        captured["database_id"] = database_id
-        captured["title"] = title
-        captured["tags"] = tags
-        return "https://www.notion.so/created-page-id"
+    def fake_find(api_key, database_id, briefing_date):
+        captured["find"] = (api_key, database_id, briefing_date)
+        return {"id": "page-uuid", "url": "https://www.notion.so/existing-briefing"}
 
-    monkeypatch.setattr("web.routers.chat.send_to_notion", fake_send)
+    def fake_append(api_key, database_id, briefing_date, markdown):
+        captured["append"] = {
+            "api_key": api_key,
+            "database_id": database_id,
+            "briefing_date": briefing_date,
+            "markdown": markdown,
+        }
+        return "https://www.notion.so/existing-briefing"
+
+    monkeypatch.setattr("web.routers.chat.find_briefing_page", fake_find)
+    monkeypatch.setattr("web.routers.chat.append_to_briefing_page", fake_append)
 
     response = await authed_client.post(
         "/api/chat/notion-import",
@@ -366,27 +372,59 @@ async def test_chat_notion_import_success_returns_url_and_composes_page(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"url": "https://www.notion.so/created-page-id"}
-    assert captured["api_key"] == "k-test"
-    assert captured["database_id"] == "db-test"
-    assert captured["tags"] == ["chat"]
-    # AC: header line identifying source, plus question and answer sections.
-    assert "Q&A chat —" in captured["text"]
-    assert "## Question" in captured["text"]
-    assert "半導体セクターの新着リスクは？" in captured["text"]
-    assert "## Answer" in captured["text"]
-    assert "TSMC" in captured["text"]
-    # Title carries the date plus a snippet of the question.
-    assert captured["title"].startswith("Q&A chat — 2026-05-30 — ")
-    assert "半導体" in captured["title"]
+    # AC: returned URL is the existing briefing page, not a freshly created one.
+    assert response.json() == {"url": "https://www.notion.so/existing-briefing"}
+    assert captured["find"] == ("k-test", "db-test", "2026-05-30")
+    assert captured["append"]["api_key"] == "k-test"
+    assert captured["append"]["database_id"] == "db-test"
+    assert captured["append"]["briefing_date"] == "2026-05-30"
+    # Appended markdown mirrors the local notion-import skill's shape:
+    # divider + `## 追記: Q&A chat — <ts>` + Question / Answer sub-sections.
+    markdown = captured["append"]["markdown"]
+    assert markdown.startswith("---\n\n## 追記: Q&A chat —")
+    assert "### Question" in markdown
+    assert "半導体セクターの新着リスクは？" in markdown
+    assert "### Answer" in markdown
+    assert "TSMC" in markdown
 
 
-async def test_chat_notion_import_502_when_send_returns_empty(
+async def test_chat_notion_import_404_when_briefing_page_missing(
     authed_client, isolated_keyring, clear_credential_env, monkeypatch
 ):
     _seed_notion_creds(monkeypatch)
     monkeypatch.setattr(
-        "web.routers.chat.send_to_notion",
+        "web.routers.chat.find_briefing_page",
+        lambda *a, **kw: None,
+    )
+    # append must NOT be called when there's no page to append to.
+    called = {"append": False}
+
+    def boom(*a, **kw):
+        called["append"] = True
+        return "noop"
+
+    monkeypatch.setattr("web.routers.chat.append_to_briefing_page", boom)
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 404
+    assert "2026-05-30" in response.json()["detail"]
+    assert "マーケットブリーフィング" in response.json()["detail"]
+    assert called["append"] is False
+
+
+async def test_chat_notion_import_502_when_append_returns_empty(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds(monkeypatch)
+    monkeypatch.setattr(
+        "web.routers.chat.find_briefing_page",
+        lambda *a, **kw: {"id": "p", "url": "https://www.notion.so/p"},
+    )
+    monkeypatch.setattr(
+        "web.routers.chat.append_to_briefing_page",
         lambda *a, **kw: "",
     )
 
@@ -402,6 +440,7 @@ async def test_chat_notion_import_rejects_invalid_date(
     authed_client, isolated_keyring, clear_credential_env, monkeypatch
 ):
     _seed_notion_creds(monkeypatch)
+    monkeypatch.setattr("web.routers.chat.find_briefing_page", lambda *a, **kw: None)
     response = await authed_client.post(
         "/api/chat/notion-import",
         json={"date": "../foo", "question": "Q?", "answer": "A!"},
@@ -413,6 +452,7 @@ async def test_chat_notion_import_rejects_empty_answer(
     authed_client, isolated_keyring, clear_credential_env, monkeypatch
 ):
     _seed_notion_creds(monkeypatch)
+    monkeypatch.setattr("web.routers.chat.find_briefing_page", lambda *a, **kw: None)
     response = await authed_client.post(
         "/api/chat/notion-import",
         json={"date": "2026-05-30", "question": "Q?", "answer": ""},
