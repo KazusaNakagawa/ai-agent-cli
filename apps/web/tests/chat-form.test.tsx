@@ -281,7 +281,7 @@ describe("ChatForm", () => {
     })
   })
 
-  it("POSTs the picked model with the Q&A and surfaces the returned URL", async () => {
+  it("POSTs the Q&A on click and surfaces the returned URL", async () => {
     on("/api/credentials", () =>
       mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
     )
@@ -299,8 +299,11 @@ describe("ChatForm", () => {
     await waitFor(() => {
       expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
     })
-    // Pick opus before saving.
-    await user.selectOptions(screen.getByTestId("notion-model-select"), "opus")
+    // The model selector was removed (PR #110 review feedback): saving the
+    // already-streamed answer doesn't benefit from a fresh model choice —
+    // the only work left is a Notion API append, for which the backend
+    // default (sonnet) is sufficient. So no UI control to assert here.
+    expect(screen.queryByTestId("notion-model-select")).toBeNull()
     await user.click(screen.getByTestId("notion-save-button"))
 
     await waitFor(() => {
@@ -315,38 +318,14 @@ describe("ChatForm", () => {
       date: string
       question: string
       answer: string
-      model: string
+      model?: string
     }
     expect(sent.question).toBe("a question")
     expect(sent.answer).toBe("an answer")
-    expect(sent.model).toBe("opus")
     expect(sent.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-  })
-
-  it("defaults to model=sonnet when the user doesn't change it", async () => {
-    on("/api/credentials", () =>
-      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
-    )
-    let importBody: string | null = null
-    on("/api/chat/notion-import", (init) => {
-      importBody = (init?.body as string) ?? null
-      return new Response(JSON.stringify({ url: "https://www.notion.so/x" }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      })
-    })
-    const user = userEvent.setup()
-    renderChatForm()
-    await sendOneTurn(user)
-    await waitFor(() => {
-      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
-    })
-    await user.click(screen.getByTestId("notion-save-button"))
-    await waitFor(() => {
-      expect(importBody).not.toBeNull()
-    })
-    const sent = JSON.parse(importBody!) as { model: string }
-    expect(sent.model).toBe("sonnet")
+    // model is omitted from the request body now that the UI no longer
+    // surfaces a picker; the backend's Pydantic default (sonnet) kicks in.
+    expect(sent.model).toBeUndefined()
   })
 
   it("keeps Notion save disabled while the assistant message is still streaming", async () => {
@@ -385,32 +364,6 @@ describe("ChatForm", () => {
     await waitFor(() => {
       expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
     })
-  })
-
-  it("keeps the Notion model selection independent per message", async () => {
-    on("/api/credentials", () =>
-      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
-    )
-    const user = userEvent.setup()
-    renderChatForm()
-
-    // Two complete turns → two assistant messages → two NotionSaveRow rows.
-    await sendOneTurn(user)
-    on("/api/chat", () => sseResponse([{ data: "another answer" }]))
-    await user.type(screen.getByTestId("chat-input"), "second q")
-    await user.click(screen.getByTestId("send-button"))
-    await waitFor(() => {
-      expect(screen.getAllByTestId("chat-msg-assistant")).toHaveLength(2)
-    })
-
-    const selects = screen.getAllByTestId("notion-model-select")
-    expect(selects).toHaveLength(2)
-
-    // Change only the first row's model.
-    await user.selectOptions(selects[0], "opus")
-    expect((selects[0] as HTMLSelectElement).value).toBe("opus")
-    // Second row stays on its own default.
-    expect((selects[1] as HTMLSelectElement).value).toBe("sonnet")
   })
 
   it("surfaces the backend detail verbatim on 4xx (skill failure)", async () => {

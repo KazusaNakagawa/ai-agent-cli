@@ -21,8 +21,6 @@ type NotionSaveState = {
   error?: string
 }
 
-type NotionModel = "sonnet" | "opus" | "haiku"
-
 // Bumped if the persisted shape changes incompatibly.
 const DRAFT_STORAGE_KEY = "ai-agent:chat-draft:v1"
 
@@ -95,14 +93,10 @@ type RecognitionCtor = new () => Recognition
 function NotionSaveRow({
   state,
   enabled,
-  model,
-  onModelChange,
   onSave,
 }: {
   state: NotionSaveState | undefined
   enabled: boolean
-  model: NotionModel
-  onModelChange: (m: NotionModel) => void
   onSave: () => void
 }) {
   const status: NotionSaveStatus = state?.status ?? "idle"
@@ -127,18 +121,6 @@ function NotionSaveRow({
           ? "✓ Notion に追記済"
           : "Notion ブリーフィングに追記"}
       </Button>
-      <select
-        value={model}
-        onChange={(e) => onModelChange(e.target.value as NotionModel)}
-        disabled={status === "saving"}
-        className="h-8 rounded-md border bg-background px-2 text-xs"
-        data-testid="notion-model-select"
-        title="このリクエストで claude CLI に渡すモデル"
-      >
-        <option value="sonnet">sonnet</option>
-        <option value="opus">opus</option>
-        <option value="haiku">haiku</option>
-      </select>
       {status === "saved" && state?.url && (
         <a
           href={state.url}
@@ -191,12 +173,6 @@ export function ChatForm() {
   // page itself is the durable artifact.
   const [notionState, setNotionState] = useState<
     Record<number, NotionSaveState>
-  >({})
-  // Per-message model selection. Keeping it per-row (instead of one shared
-  // state) means changing the dropdown on one row doesn't rewrite the others,
-  // and a saved row keeps showing the model that was actually used.
-  const [notionModelByMessage, setNotionModelByMessage] = useState<
-    Record<number, NotionModel>
   >({})
 
   // Suppress setState and cancel in-flight work after unmount.
@@ -386,7 +362,6 @@ export function ChatForm() {
       if (!question) return
 
       setNotionState((prev) => ({ ...prev, [idx]: { status: "saving" } }))
-      const model = notionModelByMessage[idx] ?? "sonnet"
       try {
         const res = await fetch("/api/chat/notion-import", {
           method: "POST",
@@ -396,7 +371,6 @@ export function ChatForm() {
             date: today(),
             question,
             answer: assistant.content,
-            model,
           }),
         })
         if (!res.ok) {
@@ -433,7 +407,7 @@ export function ChatForm() {
         }))
       }
     },
-    [messages, mountedRef, notionModelByMessage],
+    [messages, mountedRef],
   )
 
   const toggleMic = useCallback(() => {
@@ -528,13 +502,6 @@ export function ChatForm() {
                     // partial answer.
                     enabled={
                       notionReady && !(busy && i === messages.length - 1)
-                    }
-                    model={notionModelByMessage[i] ?? "sonnet"}
-                    onModelChange={(model) =>
-                      setNotionModelByMessage((prev) => ({
-                        ...prev,
-                        [i]: model,
-                      }))
                     }
                     onSave={() => void saveToNotion(i)}
                   />
