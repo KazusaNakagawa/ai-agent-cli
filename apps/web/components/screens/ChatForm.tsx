@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { LoadingDots } from "@/components/ui/loading-dots"
 import { useChatState } from "@/lib/chatStore"
 import { useAbortableMount } from "@/lib/hooks/useAbortableMount"
-import { cn } from "@/lib/utils"
+import { cn, formatLocalDate } from "@/lib/utils"
 
 type SSEEvent = { type: string; data: string }
 
@@ -52,7 +52,7 @@ function clearDraft() {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return formatLocalDate()
 }
 
 // Parse buffered SSE text. Events are terminated by a blank line ("\n\n");
