@@ -349,6 +349,70 @@ describe("ChatForm", () => {
     expect(sent.model).toBe("sonnet")
   })
 
+  it("keeps Notion save disabled while the assistant message is still streaming", async () => {
+    on("/api/credentials", () =>
+      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
+    )
+
+    // Hand-rolled SSE stream we can hold open: enqueue a partial chunk, let
+    // the UI render, then assert the button is disabled before closing.
+    const encoder = new TextEncoder()
+    let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controllerRef = controller
+        controller.enqueue(encoder.encode("data: partial\n\n"))
+      },
+    })
+    on("/api/chat", () => new Response(stream, { status: 200 }))
+
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "q")
+    await user.click(screen.getByTestId("send-button"))
+
+    // First chunk arrived — content rendered, button visible but disabled.
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent(
+        "partial",
+      )
+    })
+    const button = screen.getByTestId("notion-save-button")
+    expect(button).toBeDisabled()
+
+    // Close the stream → busy flips false → button re-enables.
+    controllerRef!.close()
+    await waitFor(() => {
+      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
+    })
+  })
+
+  it("keeps the Notion model selection independent per message", async () => {
+    on("/api/credentials", () =>
+      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
+    )
+    const user = userEvent.setup()
+    renderChatForm()
+
+    // Two complete turns → two assistant messages → two NotionSaveRow rows.
+    await sendOneTurn(user)
+    on("/api/chat", () => sseResponse([{ data: "another answer" }]))
+    await user.type(screen.getByTestId("chat-input"), "second q")
+    await user.click(screen.getByTestId("send-button"))
+    await waitFor(() => {
+      expect(screen.getAllByTestId("chat-msg-assistant")).toHaveLength(2)
+    })
+
+    const selects = screen.getAllByTestId("notion-model-select")
+    expect(selects).toHaveLength(2)
+
+    // Change only the first row's model.
+    await user.selectOptions(selects[0], "opus")
+    expect((selects[0] as HTMLSelectElement).value).toBe("opus")
+    // Second row stays on its own default.
+    expect((selects[1] as HTMLSelectElement).value).toBe("sonnet")
+  })
+
   it("surfaces the backend detail verbatim on 4xx (skill failure)", async () => {
     on("/api/credentials", () =>
       mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),

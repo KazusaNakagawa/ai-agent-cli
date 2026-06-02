@@ -228,6 +228,13 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
         "--model", body.model,
     ]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
+    # The /notion-import skill currently authenticates via the Notion MCP server
+    # (configured in ~/.claude.json), but Python fallbacks like notion-client
+    # read these env vars directly. Forwarding them keeps the skill working
+    # even if a future revision switches off MCP, and matches what the
+    # interactive `claude` CLI sees in the operator's shell.
+    env["NOTION_API_KEY"] = api_key
+    env["NOTION_DATABASE_ID"] = database_id
 
     try:
         result = subprocess.run(

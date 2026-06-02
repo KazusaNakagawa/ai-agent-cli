@@ -405,6 +405,11 @@ async def test_chat_notion_import_success_invokes_skill_and_extracts_url(
     assert "stream-json" in cmd
     assert cmd[cmd.index("--model") + 1] == "opus"
     assert "--add-dir" in cmd
+    # Notion credentials must reach the subprocess env so a non-MCP fallback
+    # path (e.g. notion-client reading env directly) can still authenticate.
+    env = factory.calls[0]["kwargs"]["env"]
+    assert env.get("NOTION_API_KEY") == "k-test"
+    assert env.get("NOTION_DATABASE_ID") == "db-test"
 
 
 async def test_chat_notion_import_defaults_to_sonnet_model(

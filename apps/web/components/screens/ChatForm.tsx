@@ -192,7 +192,12 @@ export function ChatForm() {
   const [notionState, setNotionState] = useState<
     Record<number, NotionSaveState>
   >({})
-  const [notionModel, setNotionModel] = useState<NotionModel>("sonnet")
+  // Per-message model selection. Keeping it per-row (instead of one shared
+  // state) means changing the dropdown on one row doesn't rewrite the others,
+  // and a saved row keeps showing the model that was actually used.
+  const [notionModelByMessage, setNotionModelByMessage] = useState<
+    Record<number, NotionModel>
+  >({})
 
   // Suppress setState and cancel in-flight work after unmount.
   const { mountedRef, abortRef } = useAbortableMount()
@@ -381,6 +386,7 @@ export function ChatForm() {
       if (!question) return
 
       setNotionState((prev) => ({ ...prev, [idx]: { status: "saving" } }))
+      const model = notionModelByMessage[idx] ?? "sonnet"
       try {
         const res = await fetch("/api/chat/notion-import", {
           method: "POST",
@@ -390,7 +396,7 @@ export function ChatForm() {
             date: today(),
             question,
             answer: assistant.content,
-            model: notionModel,
+            model,
           }),
         })
         if (!res.ok) {
@@ -427,7 +433,7 @@ export function ChatForm() {
         }))
       }
     },
-    [messages, mountedRef, notionModel],
+    [messages, mountedRef, notionModelByMessage],
   )
 
   const toggleMic = useCallback(() => {
@@ -517,9 +523,19 @@ export function ChatForm() {
                 {m.role === "assistant" && m.content && (
                   <NotionSaveRow
                     state={notionState[i]}
-                    enabled={notionReady}
-                    model={notionModel}
-                    onModelChange={setNotionModel}
+                    // Disable while this assistant message is still streaming
+                    // (last message + busy) so the user can't persist a
+                    // partial answer.
+                    enabled={
+                      notionReady && !(busy && i === messages.length - 1)
+                    }
+                    model={notionModelByMessage[i] ?? "sonnet"}
+                    onModelChange={(model) =>
+                      setNotionModelByMessage((prev) => ({
+                        ...prev,
+                        [i]: model,
+                      }))
+                    }
                     onSave={() => void saveToNotion(i)}
                   />
                 )}
