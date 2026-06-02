@@ -34,6 +34,9 @@ def build_cmd(target_date: str, briefing_file: Path, session_file: Path) -> list
     context = (
         f"以下は {target_date} のマーケットブリーフィングです。"
         "このブリーフィングをコンテキストとして、ユーザーの質問に日本語で回答してください。\n\n"
+        "重要な制約: あなたはこのチャット環境では `/notion-import` などの"
+        "ローカル skill / slash command を実行できません。Notion への保存などは"
+        "UI のボタンから行う前提で案内し、自分が代行できると述べないでください。\n\n"
         f"=== マーケットブリーフィング ({target_date}) ===\n"
         f"{briefing_content}\n"
         "=== END ==="

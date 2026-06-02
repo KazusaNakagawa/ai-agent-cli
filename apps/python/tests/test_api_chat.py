@@ -296,3 +296,133 @@ async def test_chat_requires_bearer(async_client, briefing_setup):
         json={"date": "2026-05-30", "question": "Q?"},
     )
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/chat/notion-import
+# ---------------------------------------------------------------------------
+
+
+def _seed_notion_creds(monkeypatch):
+    """Drop NOTION_* into the in-memory keychain so the endpoint short-circuit
+    doesn't trip. Requires the ``isolated_keyring`` fixture to be active."""
+    from src import credentials as cred_mod
+    cred_mod.set_credential("NOTION_API_KEY", "k-test")
+    cred_mod.set_credential("NOTION_DATABASE_ID", "db-test")
+
+
+async def test_chat_notion_import_400_when_both_credentials_missing(
+    authed_client, isolated_keyring, clear_credential_env
+):
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "NOTION_API_KEY" in detail
+    assert "NOTION_DATABASE_ID" in detail
+
+
+async def test_chat_notion_import_400_when_api_key_missing(
+    authed_client, isolated_keyring, clear_credential_env
+):
+    from src import credentials as cred_mod
+    cred_mod.set_credential("NOTION_DATABASE_ID", "db-test")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "NOTION_API_KEY" in detail
+    assert "NOTION_DATABASE_ID" not in detail
+
+
+async def test_chat_notion_import_success_returns_url_and_composes_page(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds(monkeypatch)
+    captured: dict = {}
+
+    def fake_send(text, api_key, database_id, title=None, tags=None, extra_properties=None):
+        captured["text"] = text
+        captured["api_key"] = api_key
+        captured["database_id"] = database_id
+        captured["title"] = title
+        captured["tags"] = tags
+        return "https://www.notion.so/created-page-id"
+
+    monkeypatch.setattr("web.routers.chat.send_to_notion", fake_send)
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={
+            "date": "2026-05-30",
+            "question": "半導体セクターの新着リスクは？",
+            "answer": "TSMC の地政学リスクと NVDA 在庫…",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"url": "https://www.notion.so/created-page-id"}
+    assert captured["api_key"] == "k-test"
+    assert captured["database_id"] == "db-test"
+    assert captured["tags"] == ["chat"]
+    # AC: header line identifying source, plus question and answer sections.
+    assert "Q&A chat —" in captured["text"]
+    assert "## Question" in captured["text"]
+    assert "半導体セクターの新着リスクは？" in captured["text"]
+    assert "## Answer" in captured["text"]
+    assert "TSMC" in captured["text"]
+    # Title carries the date plus a snippet of the question.
+    assert captured["title"].startswith("Q&A chat — 2026-05-30 — ")
+    assert "半導体" in captured["title"]
+
+
+async def test_chat_notion_import_502_when_send_returns_empty(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds(monkeypatch)
+    monkeypatch.setattr(
+        "web.routers.chat.send_to_notion",
+        lambda *a, **kw: "",
+    )
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 502
+    assert "Notion" in response.json()["detail"]
+
+
+async def test_chat_notion_import_rejects_invalid_date(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds(monkeypatch)
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "../foo", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 422
+
+
+async def test_chat_notion_import_rejects_empty_answer(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds(monkeypatch)
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": ""},
+    )
+    assert response.status_code == 422
+
+
+async def test_chat_notion_import_requires_bearer(async_client):
+    response = await async_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 401

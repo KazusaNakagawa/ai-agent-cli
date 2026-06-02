@@ -22,15 +22,18 @@ claude would block writing and stdout streaming would stall).
 import subprocess
 import threading
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from src import credentials as cred_mod
 from src import state as state_mod
 from src.chat_session import build_cmd
 from src.claude_runner import build_env
+from src.notifier.notion import send_to_notion
 from web.auth import require_bearer
 
 PYTHON_APP = Path(__file__).resolve().parents[2]  # apps/python/
@@ -101,6 +104,84 @@ def _stream(cmd: list[str], session_file: Path, env: dict[str, str]) -> Iterator
             )
         else:
             yield _sse_event(stderr.strip(), event="error")
+
+
+class ChatNotionImportBody(BaseModel):
+    # Same path-traversal guard as ChatBody; the date is surfaced on the
+    # Notion page as provenance.
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    question: str = Field(min_length=1)
+    answer: str = Field(min_length=1)
+
+
+class ChatNotionImportResponse(BaseModel):
+    url: str
+
+
+def _compose_notion_page(
+    question: str, answer: str, briefing_date: str, when: datetime
+) -> tuple[str, str]:
+    """Return (title, markdown body) for a Q&A chat → Notion page.
+
+    The title carries the briefing date from the request so the page lines
+    up with the briefing the user was asking about; the body header carries
+    the server timestamp so the operator can see when the save happened.
+    """
+    title_snippet = question.strip().splitlines()[0][:60]
+    title = f"Q&A chat — {briefing_date} — {title_snippet}"
+    body = (
+        f"# Q&A chat — {when.isoformat(timespec='seconds')}\n\n"
+        "## Question\n\n"
+        f"{question.strip()}\n\n"
+        "## Answer\n\n"
+        f"{answer.strip()}\n"
+    )
+    return title, body
+
+
+@router.post("/chat/notion-import", response_model=ChatNotionImportResponse)
+def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportResponse:
+    """Push a single Q&A exchange to the configured Notion database.
+
+    Returns 400 with a descriptive detail if NOTION_API_KEY or
+    NOTION_DATABASE_ID is unset — the frontend surfaces that detail verbatim
+    so the operator knows exactly which credential is missing.
+    """
+    api_key = cred_mod.get_credential("NOTION_API_KEY")
+    database_id = cred_mod.get_credential("NOTION_DATABASE_ID")
+    missing = [
+        name
+        for name, value in (
+            ("NOTION_API_KEY", api_key),
+            ("NOTION_DATABASE_ID", database_id),
+        )
+        if not value
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Notion credentials not configured: {', '.join(missing)}",
+        )
+
+    title, markdown = _compose_notion_page(
+        body.question, body.answer, body.date, datetime.now(timezone.utc)
+    )
+    url = send_to_notion(
+        markdown,
+        api_key=api_key,
+        database_id=database_id,
+        title=title,
+        tags=["chat"],
+    )
+    if not url:
+        # send_to_notion swallows exceptions and returns "" on failure
+        # (see src/notifier/notion.py). Surface a generic 502 so the UI can
+        # tell the operator "try again / check logs" without leaking internals.
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to create the Notion page — check the server logs.",
+        )
+    return ChatNotionImportResponse(url=url)
 
 
 @router.post("/chat")
