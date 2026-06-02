@@ -3,6 +3,15 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ChatForm } from "@/components/screens/ChatForm"
+import { ChatStateProvider } from "@/lib/chatStore"
+
+function renderChatForm() {
+  return render(
+    <ChatStateProvider>
+      <ChatForm />
+    </ChatStateProvider>,
+  )
+}
 
 type SSEPart = { event?: string; data: string }
 
@@ -43,14 +52,14 @@ describe("ChatForm", () => {
   })
 
   it("renders the empty state and a disabled send button", () => {
-    render(<ChatForm />)
+    renderChatForm()
     expect(screen.getByTestId("chat-input")).toBeInTheDocument()
     expect(screen.getByTestId("send-button")).toBeDisabled()
   })
 
   it("enables send once the input is non-empty", async () => {
     const user = userEvent.setup()
-    render(<ChatForm />)
+    renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "hi")
     expect(screen.getByTestId("send-button")).not.toBeDisabled()
   })
@@ -60,7 +69,7 @@ describe("ChatForm", () => {
       sseResponse([{ data: "hello" }, { data: "world" }]),
     )
     const user = userEvent.setup()
-    render(<ChatForm />)
+    renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "what's new?")
     await user.click(screen.getByTestId("send-button"))
 
@@ -85,7 +94,7 @@ describe("ChatForm", () => {
   it("renders markdown in assistant output via react-markdown", async () => {
     fetchMock.mockResolvedValueOnce(sseResponse([{ data: "**bold** text" }]))
     const user = userEvent.setup()
-    render(<ChatForm />)
+    renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
     await user.click(screen.getByTestId("send-button"))
 
@@ -102,7 +111,7 @@ describe("ChatForm", () => {
       )
       .mockResolvedValueOnce(sseResponse([{ data: "after retry" }]))
     const user = userEvent.setup()
-    render(<ChatForm />)
+    renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
     await user.click(screen.getByTestId("send-button"))
 
@@ -121,7 +130,7 @@ describe("ChatForm", () => {
       sseResponse([{ event: "error", data: "boom" }]),
     )
     const user = userEvent.setup()
-    render(<ChatForm />)
+    renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
     await user.click(screen.getByTestId("send-button"))
 
@@ -132,7 +141,7 @@ describe("ChatForm", () => {
   })
 
   it("hides the mic button when SpeechRecognition is unavailable", () => {
-    render(<ChatForm />)
+    renderChatForm()
     expect(screen.queryByTestId("mic-button")).toBeNull()
     expect(screen.getByTestId("mic-unsupported")).toBeInTheDocument()
   })
@@ -150,14 +159,14 @@ describe("ChatForm", () => {
     }
     ;(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
       FakeRecognition
-    render(<ChatForm />)
+    renderChatForm()
     expect(screen.getByTestId("mic-button")).toBeInTheDocument()
     expect(screen.queryByTestId("mic-unsupported")).toBeNull()
   })
 
   it("hydrates the input from sessionStorage on mount", async () => {
     window.sessionStorage.setItem(DRAFT_KEY, "draft in progress")
-    render(<ChatForm />)
+    renderChatForm()
     const input = await screen.findByTestId("chat-input")
     await waitFor(() => {
       expect(input).toHaveValue("draft in progress")
@@ -167,7 +176,7 @@ describe("ChatForm", () => {
   it("persists the draft on each change and clears it on successful send", async () => {
     fetchMock.mockResolvedValueOnce(sseResponse([{ data: "ok" }]))
     const user = userEvent.setup()
-    render(<ChatForm />)
+    renderChatForm()
     const input = screen.getByTestId("chat-input")
     await user.type(input, "ab")
     await waitFor(() => {
@@ -183,7 +192,7 @@ describe("ChatForm", () => {
   it("shows the session-expired card on 401", async () => {
     fetchMock.mockResolvedValueOnce(new Response("", { status: 401 }))
     const user = userEvent.setup()
-    render(<ChatForm />)
+    renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
     await user.click(screen.getByTestId("send-button"))
 
