@@ -7,14 +7,9 @@ import { SessionExpiredCard } from "@/components/SessionExpiredCard"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { LoadingDots } from "@/components/ui/loading-dots"
+import { useChatState } from "@/lib/chatStore"
 import { useAbortableMount } from "@/lib/hooks/useAbortableMount"
 import { cn } from "@/lib/utils"
-
-type Message = {
-  role: "user" | "assistant"
-  content: string
-  error?: string | null
-}
 
 type SSEEvent = { type: string; data: string }
 
@@ -97,7 +92,7 @@ function getRecognitionCtor(): RecognitionCtor | null {
 }
 
 export function ChatForm() {
-  const [messages, setMessages] = useState<Message[]>([])
+  const { messages, setMessages } = useChatState()
   // Render "" on first paint so SSR and the first client render agree
   // (sessionStorage is unavailable on the server). The hydrate effect
   // below promotes input to whatever draft was persisted in this tab.
@@ -193,7 +188,7 @@ export function ChatForm() {
       }
       return stale ? "stale" : "ok"
     },
-    [mountedRef],
+    [mountedRef, setMessages],
   )
 
   const send = useCallback(async () => {
@@ -258,7 +253,7 @@ export function ChatForm() {
         setRetrying(false)
       }
     }
-  }, [abortRef, busy, input, mountedRef, stream])
+  }, [abortRef, busy, input, mountedRef, setMessages, stream])
 
   const toggleMic = useCallback(() => {
     if (listening) {
