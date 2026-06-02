@@ -9,9 +9,17 @@ import { Card, CardContent } from "@/components/ui/card"
 import { LoadingDots } from "@/components/ui/loading-dots"
 import { useChatState } from "@/lib/chatStore"
 import { useAbortableMount } from "@/lib/hooks/useAbortableMount"
-import { cn } from "@/lib/utils"
+import { cn, formatLocalDate } from "@/lib/utils"
 
 type SSEEvent = { type: string; data: string }
+
+type NotionSaveStatus = "idle" | "saving" | "saved" | "error"
+
+type NotionSaveState = {
+  status: NotionSaveStatus
+  url?: string
+  error?: string
+}
 
 // Bumped if the persisted shape changes incompatibly.
 const DRAFT_STORAGE_KEY = "ai-agent:chat-draft:v1"
@@ -44,7 +52,7 @@ function clearDraft() {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return formatLocalDate()
 }
 
 // Parse buffered SSE text. Events are terminated by a blank line ("\n\n");
@@ -82,6 +90,60 @@ type Recognition = {
 }
 type RecognitionCtor = new () => Recognition
 
+function NotionSaveRow({
+  state,
+  enabled,
+  onSave,
+}: {
+  state: NotionSaveState | undefined
+  enabled: boolean
+  onSave: () => void
+}) {
+  const status: NotionSaveStatus = state?.status ?? "idle"
+  const disabled = !enabled || status === "saving" || status === "saved"
+  const title = enabled
+    ? undefined
+    : "Notion 認証情報が未設定です（Credentials タブで設定してください）"
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={onSave}
+        disabled={disabled}
+        title={title}
+        data-testid="notion-save-button"
+      >
+        {status === "saving"
+          ? "追記中…"
+          : status === "saved"
+          ? "✓ Notion に追記済"
+          : "Notion ブリーフィングに追記"}
+      </Button>
+      {status === "saved" && state?.url && (
+        <a
+          href={state.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-primary underline"
+          data-testid="notion-save-link"
+        >
+          ページを開く
+        </a>
+      )}
+      {status === "error" && state?.error && (
+        <span
+          className="text-destructive"
+          data-testid="notion-save-error"
+        >
+          {state.error}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function getRecognitionCtor(): RecognitionCtor | null {
   if (typeof window === "undefined") return null
   const w = window as unknown as {
@@ -103,6 +165,15 @@ export function ChatForm() {
   const [retrying, setRetrying] = useState(false)
   const [listening, setListening] = useState(false)
   const [supportsMic, setSupportsMic] = useState(false)
+  // null until /api/credentials answers; the Notion button stays disabled
+  // until we know whether both NOTION_* keys exist (no premature enable).
+  const [creds, setCreds] = useState<Record<string, boolean> | null>(null)
+  // Per-message Notion save state. Keyed by message index — transient by
+  // design (not part of the persisted chat history) because the Notion
+  // page itself is the durable artifact.
+  const [notionState, setNotionState] = useState<
+    Record<number, NotionSaveState>
+  >({})
 
   // Suppress setState and cancel in-flight work after unmount.
   const { mountedRef, abortRef } = useAbortableMount()
@@ -116,6 +187,27 @@ export function ChatForm() {
       recRef.current?.stop()
     }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/credentials", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: Record<string, boolean> | null) => {
+        if (cancelled) return
+        setCreds(data ?? {})
+      })
+      .catch(() => {
+        // Network failure — leave creds null so the button stays disabled
+        // rather than enabling it on incomplete information.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const notionReady = Boolean(
+    creds && creds.NOTION_API_KEY && creds.NOTION_DATABASE_ID,
+  )
 
   useEffect(() => {
     if (!hydrated) return
@@ -255,6 +347,69 @@ export function ChatForm() {
     }
   }, [abortRef, busy, input, mountedRef, setMessages, stream])
 
+  const saveToNotion = useCallback(
+    async (idx: number) => {
+      const assistant = messages[idx]
+      if (!assistant || assistant.role !== "assistant" || !assistant.content) return
+      // Walk back to find the user question this answer is responding to.
+      let question = ""
+      for (let j = idx - 1; j >= 0; j--) {
+        if (messages[j].role === "user") {
+          question = messages[j].content
+          break
+        }
+      }
+      if (!question) return
+
+      setNotionState((prev) => ({ ...prev, [idx]: { status: "saving" } }))
+      try {
+        const res = await fetch("/api/chat/notion-import", {
+          method: "POST",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            date: today(),
+            question,
+            answer: assistant.content,
+          }),
+        })
+        if (!res.ok) {
+          // AC: surface the backend's `detail` verbatim so the operator
+          // sees the skill's own error message (e.g. "page not found").
+          let detail = `HTTP ${res.status}`
+          try {
+            const body = (await res.json()) as { detail?: string }
+            if (body.detail) detail = body.detail
+          } catch {
+            // Body wasn't JSON — keep the HTTP fallback.
+          }
+          if (!mountedRef.current) return
+          setNotionState((prev) => ({
+            ...prev,
+            [idx]: { status: "error", error: detail },
+          }))
+          return
+        }
+        const body = (await res.json()) as { url: string }
+        if (!mountedRef.current) return
+        setNotionState((prev) => ({
+          ...prev,
+          [idx]: { status: "saved", url: body.url },
+        }))
+      } catch (e) {
+        if (!mountedRef.current) return
+        setNotionState((prev) => ({
+          ...prev,
+          [idx]: {
+            status: "error",
+            error: e instanceof Error ? e.message : "Network error",
+          },
+        }))
+      }
+    },
+    [messages, mountedRef],
+  )
+
   const toggleMic = useCallback(() => {
     if (listening) {
       recRef.current?.stop()
@@ -338,6 +493,18 @@ export function ChatForm() {
                   >
                     {m.error}
                   </p>
+                )}
+                {m.role === "assistant" && m.content && (
+                  <NotionSaveRow
+                    state={notionState[i]}
+                    // Disable while this assistant message is still streaming
+                    // (last message + busy) so the user can't persist a
+                    // partial answer.
+                    enabled={
+                      notionReady && !(busy && i === messages.length - 1)
+                    }
+                    onSave={() => void saveToNotion(i)}
+                  />
                 )}
               </div>
             ))
