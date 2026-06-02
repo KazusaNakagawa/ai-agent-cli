@@ -106,8 +106,11 @@ describe("ChatStateProvider — sessionStorage persistence", () => {
       STORAGE_KEY,
       JSON.stringify([
         { role: "user", content: "kept" },
+        { role: "assistant", content: "kept too", error: null },
+        { role: "assistant", content: "kept three", error: "stream error" },
         { role: "bogus", content: "dropped" },
         { role: "assistant" }, // missing content
+        { role: "assistant", content: "bad error", error: 123 }, // non-string error
         "string entry",
         null,
       ]),
@@ -119,9 +122,11 @@ describe("ChatStateProvider — sessionStorage persistence", () => {
       </ChatStateProvider>,
     )
     await waitFor(() => {
-      expect(screen.getByTestId("count")).toHaveTextContent("1")
+      expect(screen.getByTestId("count")).toHaveTextContent("3")
     })
     expect(screen.getByTestId("msg-0")).toHaveTextContent("kept")
+    expect(screen.getByTestId("msg-1")).toHaveTextContent("kept too")
+    expect(screen.getByTestId("msg-2")).toHaveTextContent("kept three")
   })
 
   it("enforces a FIFO cap of 50 messages — the oldest drops when the 51st arrives", async () => {
@@ -146,7 +151,7 @@ describe("ChatStateProvider — sessionStorage persistence", () => {
     await waitFor(() => {
       expect(screen.getByTestId("count")).toHaveTextContent("50")
     })
-    // Oldest two seeded entries dropped — first surviving is seed-1.
+    // Oldest seeded entry (seed-0) dropped — first surviving is seed-1.
     expect(screen.getByTestId("msg-0")).toHaveTextContent("seed-1")
     // Persisted snapshot matches the in-memory cap.
     const persisted = JSON.parse(
