@@ -296,3 +296,255 @@ async def test_chat_requires_bearer(async_client, briefing_setup):
         json={"date": "2026-05-30", "question": "Q?"},
     )
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/chat/notion-import — delegates to /notion-import skill via claude CLI
+# ---------------------------------------------------------------------------
+
+
+def _seed_notion_creds():
+    from src import credentials as cred_mod
+    cred_mod.set_credential("NOTION_API_KEY", "k-test")
+    cred_mod.set_credential("NOTION_DATABASE_ID", "db-test")
+
+
+def _stream_json_result(text: str) -> str:
+    """Build a minimal --output-format stream-json stdout containing a result
+    record with the given final text."""
+    import json as _json
+    return _json.dumps({"type": "result", "subtype": "success", "result": text}) + "\n"
+
+
+def _fake_run_factory(stdout: str = "", stderr: str = "", returncode: int = 0):
+    """Return a fake subprocess.run that records the call and returns a
+    CompletedProcess-shaped object. The first positional arg (cmd list) is
+    captured into `.calls` so tests can assert on flags / model selection."""
+    calls: list[dict] = []
+
+    class _Result:
+        def __init__(self):
+            self.stdout = stdout
+            self.stderr = stderr
+            self.returncode = returncode
+
+    def factory(cmd, **kwargs):
+        calls.append({"cmd": cmd, "kwargs": kwargs})
+        return _Result()
+
+    factory.calls = calls  # type: ignore[attr-defined]
+    return factory
+
+
+async def test_chat_notion_import_400_when_both_credentials_missing(
+    authed_client, isolated_keyring, clear_credential_env
+):
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "NOTION_API_KEY" in detail
+    assert "NOTION_DATABASE_ID" in detail
+
+
+async def test_chat_notion_import_400_when_api_key_missing(
+    authed_client, isolated_keyring, clear_credential_env
+):
+    from src import credentials as cred_mod
+    cred_mod.set_credential("NOTION_DATABASE_ID", "db-test")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "NOTION_API_KEY" in detail
+    assert "NOTION_DATABASE_ID" not in detail
+
+
+async def test_chat_notion_import_success_invokes_skill_and_extracts_url(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds()
+    page_url = "https://www.notion.so/created-page-abc123"
+    factory = _fake_run_factory(
+        stdout=_stream_json_result(
+            f"追記しました。\nNotion: {page_url}\n保存: output/chat-2026-05-30_2026-05-30.md"
+        ),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={
+            "date": "2026-05-30",
+            "question": "半導体セクターの新着リスクは？",
+            "answer": "TSMC の地政学リスクと NVDA 在庫…",
+            "model": "opus",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["url"] == page_url
+    assert "追記しました" in payload["summary"]
+
+    # The CLI invocation must carry the slash command, the model selection,
+    # bypass perms, stream-json output, and an --add-dir for skill discovery.
+    cmd = factory.calls[0]["cmd"]
+    prompt = cmd[cmd.index("-p") + 1]
+    assert "/notion-import chat-2026-05-30" in prompt
+    assert "半導体セクターの新着リスクは？" in prompt
+    assert "TSMC" in prompt
+    assert "bypassPermissions" in cmd
+    assert "stream-json" in cmd
+    assert cmd[cmd.index("--model") + 1] == "opus"
+    assert "--add-dir" in cmd
+
+
+async def test_chat_notion_import_defaults_to_sonnet_model(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds()
+    factory = _fake_run_factory(
+        stdout=_stream_json_result("done https://www.notion.so/abc"),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+
+    cmd = factory.calls[0]["cmd"]
+    assert cmd[cmd.index("--model") + 1] == "sonnet"
+
+
+async def test_chat_notion_import_rejects_unknown_model(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds()
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!", "model": "gpt-4"},
+    )
+    assert response.status_code == 422
+
+
+async def test_chat_notion_import_404_when_skill_reports_no_briefing_page(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds()
+    # Skill ran cleanly (rc=0) but the result text contains no Notion URL —
+    # SKILL.md mandates this when the page isn't found.
+    factory = _fake_run_factory(
+        stdout=_stream_json_result(
+            "対象ページが見つかりませんでした: マーケットブリーフィング — 2026-05-30"
+        ),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 404
+    # Skill's own report is echoed verbatim so the operator sees why.
+    assert "2026-05-30" in response.json()["detail"]
+    assert "対象ページが見つかりません" in response.json()["detail"]
+
+
+async def test_chat_notion_import_502_when_cli_exits_nonzero(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds()
+    factory = _fake_run_factory(
+        stdout="",
+        stderr="claude: authentication failed",
+        returncode=1,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 502
+    assert "rc=1" in response.json()["detail"]
+
+
+async def test_chat_notion_import_502_when_claude_binary_missing(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds()
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: None)
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 502
+    assert "claude CLI not found" in response.json()["detail"]
+
+
+async def test_chat_notion_import_502_on_subprocess_timeout(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    import subprocess as sp
+    _seed_notion_creds()
+
+    def raise_timeout(*a, **kw):
+        raise sp.TimeoutExpired(cmd=a[0] if a else [], timeout=120)
+
+    monkeypatch.setattr("web.routers.chat.subprocess.run", raise_timeout)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 502
+    assert "did not finish" in response.json()["detail"]
+
+
+async def test_chat_notion_import_rejects_invalid_date(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds()
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "../foo", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 422
+
+
+async def test_chat_notion_import_rejects_empty_answer(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+):
+    _seed_notion_creds()
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": ""},
+    )
+    assert response.status_code == 422
+
+
+async def test_chat_notion_import_requires_bearer(async_client):
+    response = await async_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+    assert response.status_code == 401
