@@ -13,6 +13,7 @@ export type ChatMessage = {
   role: "user" | "assistant"
   content: string
   error?: string | null
+  cancelled?: boolean
 }
 
 export type ChatStateContextValue = {
@@ -40,7 +41,8 @@ function isChatMessage(value: unknown): value is ChatMessage {
   return (
     (m.role === "user" || m.role === "assistant") &&
     typeof m.content === "string" &&
-    (m.error === undefined || m.error === null || typeof m.error === "string")
+    (m.error === undefined || m.error === null || typeof m.error === "string") &&
+    (m.cancelled === undefined || typeof m.cancelled === "boolean")
   )
 }
 
