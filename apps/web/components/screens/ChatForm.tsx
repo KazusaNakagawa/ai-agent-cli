@@ -180,6 +180,7 @@ export function ChatForm() {
   const { mountedRef, abortRef } = useAbortableMount()
   const recRef = useRef<Recognition | null>(null)
   const composingRef = useRef(false)
+  const micPrefixRef = useRef("")
 
   useEffect(() => {
     setSupportsMic(getRecognitionCtor() !== null)
@@ -423,23 +424,27 @@ export function ChatForm() {
     rec.lang = "ja-JP"
     rec.continuous = true
     rec.interimResults = true
+    micPrefixRef.current = input
     rec.onresult = (e) => {
       let transcript = ""
       for (let i = 0; i < e.results.length; i++) {
         transcript += e.results[i][0].transcript
       }
-      setInput(transcript)
+      const prefix = micPrefixRef.current
+      const sep = prefix && !/\s$/.test(prefix) ? " " : ""
+      setInput(prefix + sep + transcript)
     }
     const stop = () => {
       if (mountedRef.current) setListening(false)
       recRef.current = null
+      micPrefixRef.current = ""
     }
     rec.onend = stop
     rec.onerror = stop
     rec.start()
     recRef.current = rec
     setListening(true)
-  }, [listening, mountedRef])
+  }, [listening, mountedRef, input])
 
   if (sessionExpired) {
     return <SessionExpiredCard />

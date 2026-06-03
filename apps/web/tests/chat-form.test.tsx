@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -239,6 +239,50 @@ describe("ChatForm", () => {
     renderChatForm()
     expect(screen.getByTestId("mic-button")).toBeInTheDocument()
     expect(screen.queryByTestId("mic-unsupported")).toBeNull()
+  })
+
+  it("preserves the already-typed text when the mic starts", async () => {
+    type FakeRec = {
+      lang: string
+      continuous: boolean
+      interimResults: boolean
+      onresult: ((e: { results: { 0: { transcript: string } }[] }) => void) | null
+      onend: (() => void) | null
+      onerror: ((e: unknown) => void) | null
+      start: () => void
+      stop: () => void
+    }
+    let lastRec: FakeRec | null = null
+    class FakeRecognition implements FakeRec {
+      lang = ""
+      continuous = false
+      interimResults = false
+      onresult: FakeRec["onresult"] = null
+      onend: FakeRec["onend"] = null
+      onerror: FakeRec["onerror"] = null
+      start() {
+        lastRec = this
+      }
+      stop() {}
+    }
+    ;(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+      FakeRecognition
+
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "前段の文字列")
+    await user.click(screen.getByTestId("mic-button"))
+
+    expect(lastRec).not.toBeNull()
+    act(() => {
+      lastRec!.onresult!({
+        results: [{ 0: { transcript: "音声入力" } }] as unknown as {
+          0: { transcript: string }
+        }[],
+      } as { results: { 0: { transcript: string } }[] })
+    })
+
+    expect(screen.getByTestId("chat-input")).toHaveValue("前段の文字列 音声入力")
   })
 
   it("hydrates the input from sessionStorage on mount", async () => {
