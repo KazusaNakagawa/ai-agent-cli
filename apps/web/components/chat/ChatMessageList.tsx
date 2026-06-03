@@ -85,16 +85,21 @@ export function ChatMessageList({
                   Cancelled
                 </p>
               )}
-              {m.role === "assistant" && m.content && (
-                <NotionSaveRow
-                  state={notionState[i]}
-                  // Disable while this assistant message is still streaming
-                  // (last message + busy) so the user can't persist a
-                  // partial answer.
-                  enabled={notionReady && !(busy && i === messages.length - 1)}
-                  onSave={() => onNotionSave(i)}
-                />
-              )}
+              {m.role === "assistant" &&
+                m.content &&
+                !m.error &&
+                !m.cancelled && (
+                  <NotionSaveRow
+                    state={notionState[i]}
+                    // Disable while this assistant message is still streaming
+                    // (last message + busy) so the user can't persist a
+                    // partial answer.
+                    enabled={
+                      notionReady && !(busy && i === messages.length - 1)
+                    }
+                    onSave={() => onNotionSave(i)}
+                  />
+                )}
             </div>
           ))
         )}

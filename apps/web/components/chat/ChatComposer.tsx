@@ -35,6 +35,7 @@ export function ChatComposer({
       <CardContent className="space-y-2 pt-6">
         <div className="flex items-end gap-2">
           <textarea
+            aria-label="Chat message"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onCompositionStart={() => {
@@ -65,6 +66,7 @@ export function ChatComposer({
               variant={listening ? "destructive" : "outline"}
               onClick={() => onToggleMic(input)}
               data-testid="mic-button"
+              aria-label={listening ? "音声入力停止" : "音声入力開始"}
               aria-pressed={listening}
               title={listening ? "音声入力停止" : "音声入力開始 (ja-JP)"}
             >
