@@ -10,47 +10,16 @@ import { Card, CardContent } from "@/components/ui/card"
 import { LoadingDots } from "@/components/ui/loading-dots"
 import { useChatState } from "@/lib/chatStore"
 import { useAbortableMount } from "@/lib/hooks/useAbortableMount"
+import { useDraftPersistence } from "@/lib/hooks/useDraftPersistence"
+import { useNotionCredentials } from "@/lib/hooks/useNotionCredentials"
+import {
+  useNotionSave,
+  type NotionSaveState,
+} from "@/lib/hooks/useNotionSave"
+import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition"
 import { cn, formatLocalDate } from "@/lib/utils"
 
 type SSEEvent = { type: string; data: string }
-
-type NotionSaveStatus = "idle" | "saving" | "saved" | "error"
-
-type NotionSaveState = {
-  status: NotionSaveStatus
-  url?: string
-  error?: string
-}
-
-// Bumped if the persisted shape changes incompatibly.
-const DRAFT_STORAGE_KEY = "ai-agent:chat-draft:v1"
-
-function loadDraft(): string {
-  if (typeof window === "undefined") return ""
-  try {
-    return window.sessionStorage.getItem(DRAFT_STORAGE_KEY) ?? ""
-  } catch {
-    return ""
-  }
-}
-
-function persistDraft(draft: string) {
-  if (typeof window === "undefined") return
-  try {
-    window.sessionStorage.setItem(DRAFT_STORAGE_KEY, draft)
-  } catch {
-    // quota / unavailable — draft remains in memory for the tab
-  }
-}
-
-function clearDraft() {
-  if (typeof window === "undefined") return
-  try {
-    window.sessionStorage.removeItem(DRAFT_STORAGE_KEY)
-  } catch {
-    // ignore
-  }
-}
 
 function today(): string {
   return formatLocalDate()
@@ -76,21 +45,6 @@ function parseSSE(buffer: string): { events: SSEEvent[]; rest: string } {
   return { events, rest }
 }
 
-// SpeechRecognition globals — typed loosely because the TS DOM lib omits them.
-type Recognition = {
-  lang: string
-  continuous: boolean
-  interimResults: boolean
-  onresult:
-    | ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void)
-    | null
-  onend: (() => void) | null
-  onerror: ((e: { error: string }) => void) | null
-  start(): void
-  stop(): void
-}
-type RecognitionCtor = new () => Recognition
-
 function NotionSaveRow({
   state,
   enabled,
@@ -100,7 +54,7 @@ function NotionSaveRow({
   enabled: boolean
   onSave: () => void
 }) {
-  const status: NotionSaveStatus = state?.status ?? "idle"
+  const status: NotionSaveState["status"] = state?.status ?? "idle"
   const disabled = !enabled || status === "saving" || status === "saved"
   const title = enabled
     ? undefined
@@ -145,84 +99,26 @@ function NotionSaveRow({
   )
 }
 
-function getRecognitionCtor(): RecognitionCtor | null {
-  if (typeof window === "undefined") return null
-  const w = window as unknown as {
-    SpeechRecognition?: RecognitionCtor
-    webkitSpeechRecognition?: RecognitionCtor
-  }
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
-}
-
 export function ChatForm() {
   const { messages, setMessages } = useChatState()
-  // Render "" on first paint so SSR and the first client render agree
-  // (sessionStorage is unavailable on the server). The hydrate effect
-  // below promotes input to whatever draft was persisted in this tab.
-  const [input, setInput] = useState("")
-  const [hydrated, setHydrated] = useState(false)
+  const { draft: input, setDraft: setInput } = useDraftPersistence({
+    storageKey: "ai-agent:chat-draft:v1",
+  })
   const [busy, setBusy] = useState(false)
   const [sessionExpired, setSessionExpired] = useState(false)
   const [retrying, setRetrying] = useState(false)
-  const [listening, setListening] = useState(false)
-  const [supportsMic, setSupportsMic] = useState(false)
-  // null until /api/credentials answers; the Notion button stays disabled
-  // until we know whether both NOTION_* keys exist (no premature enable).
-  const [creds, setCreds] = useState<Record<string, boolean> | null>(null)
-  // Per-message Notion save state. Keyed by message index — transient by
-  // design (not part of the persisted chat history) because the Notion
-  // page itself is the durable artifact.
-  const [notionState, setNotionState] = useState<
-    Record<number, NotionSaveState>
-  >({})
+  const { notionReady } = useNotionCredentials()
+  const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
+    onTranscript: setInput,
+  })
+  const { notionState, saveToNotion } = useNotionSave({ messages })
 
   // Suppress setState and cancel in-flight work after unmount.
   const { mountedRef, abortRef } = useAbortableMount()
-  const recRef = useRef<Recognition | null>(null)
   const composingRef = useRef(false)
-  const micPrefixRef = useRef("")
   // The question currently in flight — restored into the textarea on cancel
   // so the user can edit and resend without retyping.
   const pendingQuestionRef = useRef("")
-
-  useEffect(() => {
-    setSupportsMic(getRecognitionCtor() !== null)
-    setInput(loadDraft())
-    setHydrated(true)
-    return () => {
-      recRef.current?.stop()
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    fetch("/api/credentials", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: Record<string, boolean> | null) => {
-        if (cancelled) return
-        setCreds(data ?? {})
-      })
-      .catch(() => {
-        // Network failure — leave creds null so the button stays disabled
-        // rather than enabling it on incomplete information.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const notionReady = Boolean(
-    creds && creds.NOTION_API_KEY && creds.NOTION_DATABASE_ID,
-  )
-
-  useEffect(() => {
-    if (!hydrated) return
-    if (input === "") {
-      clearDraft()
-    } else {
-      persistDraft(input)
-    }
-  }, [input, hydrated])
 
   // Stream one POST /api/chat round trip. Returns "stale" iff the backend
   // emitted the `stale_session` event — the caller retries exactly once.
@@ -352,7 +248,7 @@ export function ChatForm() {
         setRetrying(false)
       }
     }
-  }, [abortRef, busy, input, mountedRef, setMessages, stream])
+  }, [abortRef, busy, input, mountedRef, setInput, setMessages, stream])
 
   // Abort the in-flight stream, mark the last assistant message as cancelled
   // (distinct visual from an error), and restore the original question into
@@ -374,7 +270,7 @@ export function ChatForm() {
       }
       return copy
     })
-  }, [abortRef, busy, mountedRef, setMessages])
+  }, [abortRef, busy, mountedRef, setInput, setMessages])
 
   // Window-level Esc handler — only active while streaming so it doesn't
   // intercept Esc in other contexts (modals, popovers).
@@ -389,102 +285,6 @@ export function ChatForm() {
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [busy, cancel])
-
-  const saveToNotion = useCallback(
-    async (idx: number) => {
-      const assistant = messages[idx]
-      if (!assistant || assistant.role !== "assistant" || !assistant.content) return
-      // Walk back to find the user question this answer is responding to.
-      let question = ""
-      for (let j = idx - 1; j >= 0; j--) {
-        if (messages[j].role === "user") {
-          question = messages[j].content
-          break
-        }
-      }
-      if (!question) return
-
-      setNotionState((prev) => ({ ...prev, [idx]: { status: "saving" } }))
-      try {
-        const res = await fetch("/api/chat/notion-import", {
-          method: "POST",
-          cache: "no-store",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            date: today(),
-            question,
-            answer: assistant.content,
-          }),
-        })
-        if (!res.ok) {
-          // AC: surface the backend's `detail` verbatim so the operator
-          // sees the skill's own error message (e.g. "page not found").
-          let detail = `HTTP ${res.status}`
-          try {
-            const body = (await res.json()) as { detail?: string }
-            if (body.detail) detail = body.detail
-          } catch {
-            // Body wasn't JSON — keep the HTTP fallback.
-          }
-          if (!mountedRef.current) return
-          setNotionState((prev) => ({
-            ...prev,
-            [idx]: { status: "error", error: detail },
-          }))
-          return
-        }
-        const body = (await res.json()) as { url: string }
-        if (!mountedRef.current) return
-        setNotionState((prev) => ({
-          ...prev,
-          [idx]: { status: "saved", url: body.url },
-        }))
-      } catch (e) {
-        if (!mountedRef.current) return
-        setNotionState((prev) => ({
-          ...prev,
-          [idx]: {
-            status: "error",
-            error: e instanceof Error ? e.message : "Network error",
-          },
-        }))
-      }
-    },
-    [messages, mountedRef],
-  )
-
-  const toggleMic = useCallback(() => {
-    if (listening) {
-      recRef.current?.stop()
-      return
-    }
-    const Ctor = getRecognitionCtor()
-    if (!Ctor) return
-    const rec = new Ctor()
-    rec.lang = "ja-JP"
-    rec.continuous = true
-    rec.interimResults = true
-    micPrefixRef.current = input
-    rec.onresult = (e) => {
-      let transcript = ""
-      for (let i = 0; i < e.results.length; i++) {
-        transcript += e.results[i][0].transcript
-      }
-      const prefix = micPrefixRef.current
-      const sep = prefix && !/\s$/.test(prefix) ? " " : ""
-      setInput(prefix + sep + transcript)
-    }
-    const stop = () => {
-      if (mountedRef.current) setListening(false)
-      recRef.current = null
-      micPrefixRef.current = ""
-    }
-    rec.onend = stop
-    rec.onerror = stop
-    rec.start()
-    recRef.current = rec
-    setListening(true)
-  }, [listening, mountedRef, input])
 
   if (sessionExpired) {
     return <SessionExpiredCard />
@@ -610,7 +410,7 @@ export function ChatForm() {
               <Button
                 type="button"
                 variant={listening ? "destructive" : "outline"}
-                onClick={toggleMic}
+                onClick={() => toggleMic(input)}
                 data-testid="mic-button"
                 aria-pressed={listening}
                 title={listening ? "音声入力停止" : "音声入力開始 (ja-JP)"}
