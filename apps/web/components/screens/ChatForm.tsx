@@ -1,23 +1,16 @@
 "use client"
 import { useCallback, useEffect, useRef, useState } from "react"
-import ReactMarkdown from "react-markdown"
-import rehypeSanitize from "rehype-sanitize"
-import remarkGfm from "remark-gfm"
 
+import { ChatComposer } from "@/components/chat/ChatComposer"
+import { ChatMessageList } from "@/components/chat/ChatMessageList"
 import { SessionExpiredCard } from "@/components/SessionExpiredCard"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { LoadingDots } from "@/components/ui/loading-dots"
 import { useChatState } from "@/lib/chatStore"
 import { useAbortableMount } from "@/lib/hooks/useAbortableMount"
 import { useDraftPersistence } from "@/lib/hooks/useDraftPersistence"
 import { useNotionCredentials } from "@/lib/hooks/useNotionCredentials"
-import {
-  useNotionSave,
-  type NotionSaveState,
-} from "@/lib/hooks/useNotionSave"
+import { useNotionSave } from "@/lib/hooks/useNotionSave"
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition"
-import { cn, formatLocalDate } from "@/lib/utils"
+import { formatLocalDate } from "@/lib/utils"
 
 type SSEEvent = { type: string; data: string }
 
@@ -45,60 +38,6 @@ function parseSSE(buffer: string): { events: SSEEvent[]; rest: string } {
   return { events, rest }
 }
 
-function NotionSaveRow({
-  state,
-  enabled,
-  onSave,
-}: {
-  state: NotionSaveState | undefined
-  enabled: boolean
-  onSave: () => void
-}) {
-  const status: NotionSaveState["status"] = state?.status ?? "idle"
-  const disabled = !enabled || status === "saving" || status === "saved"
-  const title = enabled
-    ? undefined
-    : "Notion 認証情報が未設定です（Credentials タブで設定してください）"
-  return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={onSave}
-        disabled={disabled}
-        title={title}
-        data-testid="notion-save-button"
-      >
-        {status === "saving"
-          ? "追記中…"
-          : status === "saved"
-          ? "✓ Notion に追記済"
-          : "Notion ブリーフィングに追記"}
-      </Button>
-      {status === "saved" && state?.url && (
-        <a
-          href={state.url}
-          target="_blank"
-          rel="noreferrer"
-          className="text-primary underline"
-          data-testid="notion-save-link"
-        >
-          ページを開く
-        </a>
-      )}
-      {status === "error" && state?.error && (
-        <span
-          className="text-destructive"
-          data-testid="notion-save-error"
-        >
-          {state.error}
-        </span>
-      )}
-    </div>
-  )
-}
-
 export function ChatForm() {
   const { messages, setMessages } = useChatState()
   const { draft: input, setDraft: setInput } = useDraftPersistence({
@@ -115,7 +54,6 @@ export function ChatForm() {
 
   // Suppress setState and cancel in-flight work after unmount.
   const { mountedRef, abortRef } = useAbortableMount()
-  const composingRef = useRef(false)
   // The question currently in flight — restored into the textarea on cancel
   // so the user can edit and resend without retyping.
   const pendingQuestionRef = useRef("")
@@ -292,162 +230,24 @@ export function ChatForm() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardContent
-          className="max-h-[60vh] space-y-3 overflow-y-auto pt-6"
-          data-testid="chat-log"
-        >
-          {messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Ask anything about today&apos;s briefing — e.g.
-              {" "}&ldquo;半導体セクターの新着リスクは？&rdquo;
-            </p>
-          ) : (
-            messages.map((m, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "rounded-md border p-3 text-sm",
-                  m.role === "user"
-                    ? "border-primary/30 bg-primary/5"
-                    : "border-muted bg-muted/30",
-                )}
-                data-testid={`chat-msg-${m.role}`}
-              >
-                <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-                  {m.role}
-                </p>
-                {m.role === "assistant" ? (
-                  m.content ? (
-                    <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeSanitize]}
-                      >
-                        {m.content}
-                      </ReactMarkdown>
-                    </div>
-                  ) : busy && i === messages.length - 1 && !m.cancelled ? (
-                    <LoadingDots
-                      label="調査中"
-                      data-testid="chat-thinking"
-                    />
-                  ) : null
-                ) : (
-                  <p className="whitespace-pre-wrap">{m.content}</p>
-                )}
-                {m.error && (
-                  <p
-                    className="mt-2 text-xs text-destructive"
-                    data-testid="chat-error"
-                  >
-                    {m.error}
-                  </p>
-                )}
-                {m.role === "assistant" && m.cancelled && (
-                  <p
-                    className="mt-2 text-xs text-muted-foreground"
-                    data-testid="chat-cancelled"
-                  >
-                    Cancelled
-                  </p>
-                )}
-                {m.role === "assistant" && m.content && (
-                  <NotionSaveRow
-                    state={notionState[i]}
-                    // Disable while this assistant message is still streaming
-                    // (last message + busy) so the user can't persist a
-                    // partial answer.
-                    enabled={
-                      notionReady && !(busy && i === messages.length - 1)
-                    }
-                    onSave={() => void saveToNotion(i)}
-                  />
-                )}
-              </div>
-            ))
-          )}
-          {retrying && (
-            <p
-              className="text-xs text-muted-foreground"
-              data-testid="chat-retrying"
-            >
-              Session expired upstream, retrying…
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="space-y-2 pt-6">
-          <div className="flex items-end gap-2">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onCompositionStart={() => {
-                composingRef.current = true
-              }}
-              onCompositionEnd={() => {
-                composingRef.current = false
-              }}
-              onKeyDown={(e) => {
-                if (
-                  e.key === "Enter" &&
-                  !e.shiftKey &&
-                  !composingRef.current &&
-                  !e.nativeEvent.isComposing
-                ) {
-                  e.preventDefault()
-                  void send()
-                }
-              }}
-              placeholder="Ask about today's briefing…"
-              rows={2}
-              className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm"
-              data-testid="chat-input"
-            />
-            {supportsMic && (
-              <Button
-                type="button"
-                variant={listening ? "destructive" : "outline"}
-                onClick={() => toggleMic(input)}
-                data-testid="mic-button"
-                aria-pressed={listening}
-                title={listening ? "音声入力停止" : "音声入力開始 (ja-JP)"}
-              >
-                {listening ? "🛑" : "🎤"}
-              </Button>
-            )}
-            {busy ? (
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={cancel}
-                data-testid="cancel-button"
-                title="送信中の応答を中止 (Esc)"
-              >
-                Cancel
-              </Button>
-            ) : (
-              <Button
-                onClick={() => void send()}
-                disabled={input.trim().length === 0}
-                data-testid="send-button"
-              >
-                Send
-              </Button>
-            )}
-          </div>
-          {!supportsMic && (
-            <p
-              className="text-xs text-muted-foreground"
-              data-testid="mic-unsupported"
-            >
-              Voice input is unavailable in this browser (Chrome / Edge supported).
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <ChatMessageList
+        messages={messages}
+        busy={busy}
+        retrying={retrying}
+        notionReady={notionReady}
+        notionState={notionState}
+        onNotionSave={(idx) => void saveToNotion(idx)}
+      />
+      <ChatComposer
+        input={input}
+        setInput={setInput}
+        busy={busy}
+        supportsMic={supportsMic}
+        listening={listening}
+        onToggleMic={toggleMic}
+        onSend={() => void send()}
+        onCancel={cancel}
+      />
     </div>
   )
 }
