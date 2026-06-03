@@ -179,6 +179,7 @@ export function ChatForm() {
   // Suppress setState and cancel in-flight work after unmount.
   const { mountedRef, abortRef } = useAbortableMount()
   const recRef = useRef<Recognition | null>(null)
+  const composingRef = useRef(false)
 
   useEffect(() => {
     setSupportsMic(getRecognitionCtor() !== null)
@@ -530,8 +531,19 @@ export function ChatForm() {
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onCompositionStart={() => {
+                composingRef.current = true
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false
+              }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !composingRef.current &&
+                  !e.nativeEvent.isComposing
+                ) {
                   e.preventDefault()
                   void send()
                 }

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -183,6 +183,35 @@ describe("ChatForm", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("chat-error")).toHaveTextContent("boom")
+    })
+    const chatCalls = fetchMock.mock.calls.filter(([u]) => u === "/api/chat")
+    expect(chatCalls).toHaveLength(1)
+  })
+
+  it("does not send on Enter while IME composition is active", async () => {
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = screen.getByTestId("chat-input")
+    await user.type(input, "あ")
+    fireEvent.compositionStart(input)
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true })
+    await new Promise((r) => setTimeout(r, 0))
+    const chatCalls = fetchMock.mock.calls.filter(([u]) => u === "/api/chat")
+    expect(chatCalls).toHaveLength(0)
+  })
+
+  it("sends on Enter after compositionend fires", async () => {
+    on("/api/chat", () => sseResponse([{ data: "ok" }]))
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = screen.getByTestId("chat-input")
+    await user.type(input, "あ")
+    fireEvent.compositionStart(input)
+    fireEvent.compositionEnd(input)
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent("ok")
     })
     const chatCalls = fetchMock.mock.calls.filter(([u]) => u === "/api/chat")
     expect(chatCalls).toHaveLength(1)
