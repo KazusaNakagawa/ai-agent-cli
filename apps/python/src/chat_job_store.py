@@ -32,10 +32,15 @@ class ChatJob:
     started_at: str | None = None
     finished_at: str | None = None
     error: str | None = None
-    events: deque[bytes] = field(
+    # Each event is tagged with a monotonic seq id (starts at 1) so a
+    # re-attaching client can identify "what's new" by filtering on
+    # ``seq > last_seen_seq`` — robust against the deque trimming oldest
+    # entries when the buffer hits its cap.
+    events: deque[tuple[int, bytes]] = field(
         default_factory=lambda: deque(maxlen=DEFAULT_EVENT_BUFFER_MAX),
     )
     process: subprocess.Popen | None = None
+    _next_seq: int = 1
 
 
 _lock = threading.Lock()
@@ -90,19 +95,21 @@ def mark_failed(job_id: str, error: str) -> ChatJob | None:
         return job
 
 
-def append_event(job_id: str, event: bytes) -> bool:
+def append_event(job_id: str, event: bytes) -> int | None:
     """Append an SSE-encoded event to the job's replay buffer.
 
-    Returns ``True`` if the job existed (event was buffered) or ``False``
-    if the job is unknown (event dropped). The bounded ``deque`` silently
-    trims the oldest event when the cap is reached.
+    Returns the assigned monotonic seq id if the job existed (event was
+    buffered) or ``None`` if the job is unknown (event dropped). The bounded
+    ``deque`` silently trims the oldest entry when the cap is reached.
     """
     with _lock:
         job = _store.get(job_id)
         if not job:
-            return False
-        job.events.append(event)
-        return True
+            return None
+        seq = job._next_seq
+        job._next_seq += 1
+        job.events.append((seq, event))
+        return seq
 
 
 def attach_process(job_id: str, process: subprocess.Popen) -> None:

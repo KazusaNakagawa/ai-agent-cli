@@ -1,16 +1,37 @@
-"""POST /api/chat — SSE streaming Q&A against a daily briefing.
+"""POST /api/chat + GET /api/chat/{job_id}/stream — job-backed Q&A.
 
-The endpoint spawns the same ``claude`` CLI invocation that
+The endpoint kicks off the same ``claude`` CLI invocation that
 ``bin/chat.py`` uses (via the shared ``src.chat_session.build_cmd`` helper)
-and streams its stdout line-by-line as Server-Sent Events.
+and streams its stdout line-by-line as Server-Sent Events. As of #123
+the streaming is split from the kickoff so a chat answer survives a tab
+switch or page reload (Epic #126):
+
+- ``POST /api/chat`` creates a ``ChatJob`` in ``src.chat_job_store``,
+  schedules the subprocess on FastAPI's ``BackgroundTasks``, and returns
+  ``202 {job_id, status}`` — mirrors ``POST /api/run``.
+- The background runner spawns ``claude``, appends each stdout line as
+  an SSE-encoded event into the job's bounded replay buffer, then marks
+  the job ``done`` / ``failed``.
+- ``GET /api/chat/{job_id}/stream`` opens an SSE response that first
+  replays every buffered event (so a reconnecting client doesn't miss
+  the start of the answer) and then tails new events until the job's
+  status is terminal.
+- ``DELETE /api/chat/{job_id}`` terminates the subprocess if it's still
+  running. The cancel path is idempotent and quiet on already-finished
+  jobs.
+
+The subprocess intentionally does **not** die on client SSE disconnect —
+a new GET against the same ``job_id`` simply re-attaches and replays.
+After completion the job is GC'd from the in-memory store on a grace
+timer (default ~120s) so we don't accumulate dead buffers.
 
 Stale-session handling: if a saved session id can no longer be resumed
 (claude exits with the sentinel ``"No conversation found"``) the stale
-``.sessions/<date>`` file is deleted and an SSE event ``stale_session``
-is emitted. The frontend should re-issue the same request, which will
-then create a fresh session because the file is gone. We do NOT retry
-in-stream because once any stdout has been emitted to the client there
-is no clean way to "rewind" the SSE stream.
+``.sessions/<date>`` file is deleted and a ``stale_session`` SSE event
+is appended to the job's buffer. The frontend re-issues the POST, which
+creates a fresh session because the file is gone. We do NOT retry
+in-stream because once any stdout has been emitted there is no clean
+way to "rewind" the SSE stream.
 
 ``ANTHROPIC_API_KEY`` propagation follows ``state.read_state().auth_mode``
 via ``claude_runner.build_env`` — same toggle used by ``run_claude``.
@@ -29,14 +50,16 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from src import chat_job_store
 from src import credentials as cred_mod
 from src import state as state_mod
 from src.chat_session import build_cmd
@@ -58,6 +81,15 @@ PYTHON_APP = Path(__file__).resolve().parents[2]  # apps/python/
 BRIEFING_DIR = PYTHON_APP / "output" / "briefing"
 SESSIONS_DIR = BRIEFING_DIR / ".sessions"
 
+# Drop a completed chat job from the store this many seconds after its
+# subprocess exits. The buffer keeps replay working for a short reconnect
+# window; longer than this and we'd accumulate dead buffers in memory.
+CHAT_JOB_GC_GRACE_SEC = 120.0
+# How long ``_tail_events`` sleeps between polls when waiting for new
+# events on a running job. Small enough to feel live, large enough not
+# to spin a CPU per attached client.
+_TAIL_POLL_INTERVAL_SEC = 0.05
+
 router = APIRouter(dependencies=[Depends(require_bearer)])
 
 
@@ -66,6 +98,11 @@ class ChatBody(BaseModel):
     # SESSIONS_DIR (e.g. "../foo").
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     question: str = Field(min_length=1)
+
+
+class ChatPostResponse(BaseModel):
+    job_id: str
+    status: str
 
 
 def _sse_event(content: str, event: str | None = None) -> bytes:
@@ -81,14 +118,27 @@ def _sse_event(content: str, event: str | None = None) -> bytes:
     return ("\n".join(out) + "\n\n").encode("utf-8")
 
 
-def _stream(cmd: list[str], session_file: Path, env: dict[str, str]) -> Iterator[bytes]:
-    """Pipe claude's stdout to SSE bytes; detect the stale-session sentinel."""
+def _run_chat_job(
+    job_id: str,
+    cmd: list[str],
+    session_file: Path,
+    env: dict[str, str],
+) -> None:
+    """Background task: drive the claude subprocess to completion and
+    append each stdout line into the job's replay buffer.
+
+    Always advances the job through running → done / failed regardless of
+    exception path. A grace-timer GC is scheduled at the end so memory
+    doesn't grow per-request.
+    """
+    chat_job_store.mark_running(job_id)
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
     )
+    chat_job_store.attach_process(job_id, proc)
 
     # Drain stderr concurrently — without this, a large stderr write would
     # fill the OS pipe buffer, block claude, and stall the stdout iteration.
@@ -106,22 +156,133 @@ def _stream(cmd: list[str], session_file: Path, env: dict[str, str]) -> Iterator
         assert proc.stdout is not None
         for line_bytes in proc.stdout:
             line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
-            yield _sse_event(line)
+            chat_job_store.append_event(job_id, _sse_event(line))
     finally:
         proc.wait()
         stderr_thread.join(timeout=2)
+        chat_job_store.detach_process(job_id)
 
     if proc.returncode != 0:
         stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
         is_resume = "--resume" in cmd
         if is_resume and "No conversation found" in stderr:
+            # Stale saved session: drop the file so the next POST creates a
+            # fresh one, and tell the client to retry. The job itself is
+            # still considered "done" (not "failed") because the user-facing
+            # remediation is a quiet retry, not an error to surface.
             session_file.unlink(missing_ok=True)
-            yield _sse_event(
-                "saved session expired; retry the request",
-                event="stale_session",
+            chat_job_store.append_event(
+                job_id,
+                _sse_event(
+                    "saved session expired; retry the request",
+                    event="stale_session",
+                ),
             )
+            chat_job_store.mark_done(job_id)
         else:
-            yield _sse_event(stderr.strip(), event="error")
+            chat_job_store.append_event(
+                job_id, _sse_event(stderr.strip(), event="error")
+            )
+            chat_job_store.mark_failed(
+                job_id, stderr.strip() or "chat subprocess failed"
+            )
+    else:
+        chat_job_store.mark_done(job_id)
+
+    _schedule_gc(job_id, CHAT_JOB_GC_GRACE_SEC)
+
+
+def _schedule_gc(job_id: str, delay_sec: float) -> None:
+    """Schedule the job's removal from the in-memory store after the grace
+    period. Daemon timer so it doesn't block uvicorn shutdown."""
+    timer = threading.Timer(delay_sec, lambda: chat_job_store.remove_job(job_id))
+    timer.daemon = True
+    timer.start()
+
+
+def _tail_events(job_id: str) -> Iterator[bytes]:
+    """Yield SSE events from a chat job: first replay every buffered event,
+    then poll for new ones until the job reaches a terminal status. Each
+    event is tagged with a monotonic seq id (see ``chat_job_store``), so a
+    re-attaching client doesn't see duplicates even if the buffer was
+    partially drained between attaches in the same connection.
+    """
+    last_seq = 0
+    while True:
+        job = chat_job_store.get_job(job_id)
+        if job is None:
+            # GC'd while we were tailing — emit a terminal hint so the
+            # client closes cleanly rather than seeing a connection drop.
+            yield _sse_event("job no longer available", event="error")
+            return
+
+        # Snapshot under no lock — the runner thread mutates ``events`` in
+        # place. ``list()`` gives a stable view for this iteration.
+        for seq, event_bytes in list(job.events):
+            if seq > last_seq:
+                yield event_bytes
+                last_seq = seq
+
+        if job.status in ("done", "failed"):
+            return
+
+        time.sleep(_TAIL_POLL_INTERVAL_SEC)
+
+
+@router.post("/chat", status_code=202, response_model=ChatPostResponse)
+def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResponse:
+    """Create a chat job and schedule the subprocess. Returns immediately
+    with the ``job_id`` so the client can open a GET stream against it."""
+    briefing_file = BRIEFING_DIR / f"briefing_{body.date}.md"
+    session_file = SESSIONS_DIR / body.date
+
+    if not briefing_file.exists():
+        raise HTTPException(status_code=404, detail=f"no briefing for {body.date}")
+
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    cmd = build_cmd(body.date, briefing_file, session_file) + ["-p", body.question]
+    env = build_env(auth_mode=state_mod.read_state().auth_mode)
+
+    job = chat_job_store.create_job()
+    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env)
+    return ChatPostResponse(job_id=job.job_id, status=job.status)
+
+
+@router.get("/chat/{job_id}/stream")
+def get_chat_stream(job_id: str) -> StreamingResponse:
+    """Open an SSE stream against a chat job. Replays the full buffer then
+    tails until terminal status. 404 if the job doesn't exist (already
+    GC'd or never created)."""
+    job = chat_job_store.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"chat job not found: {job_id}")
+    return StreamingResponse(
+        _tail_events(job_id),
+        media_type="text/event-stream",
+    )
+
+
+@router.delete("/chat/{job_id}", status_code=204)
+def delete_chat(job_id: str) -> None:
+    """Cancel an in-flight chat job by terminating its subprocess.
+
+    Idempotent: a 204 comes back even if the job has already finished or
+    been GC'd, so the frontend doesn't need to special-case races.
+    """
+    job = chat_job_store.get_job(job_id)
+    if job is None:
+        return
+    proc = job.process
+    if proc is None or proc.poll() is not None:
+        # Already exited or was never attached — nothing to terminate.
+        return
+    try:
+        proc.terminate()
+    except Exception:
+        # Best-effort: the runner thread will mark_failed when proc.wait()
+        # returns; suppressing here avoids surfacing OS-level cancel races
+        # as 5xx to the operator.
+        logger.exception("failed to terminate chat subprocess (job_id=%s)", job_id)
 
 
 class ChatNotionImportBody(BaseModel):
@@ -279,21 +440,3 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
         )
 
     return ChatNotionImportResponse(url=url_match.group(0), summary=final_text.strip()[:500])
-
-
-@router.post("/chat")
-def post_chat(body: ChatBody) -> StreamingResponse:
-    briefing_file = BRIEFING_DIR / f"briefing_{body.date}.md"
-    session_file = SESSIONS_DIR / body.date
-
-    if not briefing_file.exists():
-        raise HTTPException(status_code=404, detail=f"no briefing for {body.date}")
-
-    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    cmd = build_cmd(body.date, briefing_file, session_file) + ["-p", body.question]
-    env = build_env(auth_mode=state_mod.read_state().auth_mode)
-
-    return StreamingResponse(
-        _stream(cmd, session_file, env),
-        media_type="text/event-stream",
-    )
