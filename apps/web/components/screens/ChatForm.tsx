@@ -181,6 +181,9 @@ export function ChatForm() {
   const recRef = useRef<Recognition | null>(null)
   const composingRef = useRef(false)
   const micPrefixRef = useRef("")
+  // The question currently in flight — restored into the textarea on cancel
+  // so the user can edit and resend without retyping.
+  const pendingQuestionRef = useRef("")
 
   useEffect(() => {
     setSupportsMic(getRecognitionCtor() !== null)
@@ -293,6 +296,7 @@ export function ChatForm() {
     abortRef.current?.abort()
     const ctl = new AbortController()
     abortRef.current = ctl
+    pendingQuestionRef.current = question
 
     setInput("")
     setBusy(true)
@@ -349,6 +353,42 @@ export function ChatForm() {
       }
     }
   }, [abortRef, busy, input, mountedRef, setMessages, stream])
+
+  // Abort the in-flight stream, mark the last assistant message as cancelled
+  // (distinct visual from an error), and restore the original question into
+  // the textarea so the user can edit and resend. `busy` flips back to false
+  // via send()'s finally{} once the abort propagates through the reader.
+  const cancel = useCallback(() => {
+    const ctl = abortRef.current
+    if (!ctl || !busy) return
+    ctl.abort()
+    // Esc fires at window scope, so a late keystroke could land after unmount —
+    // skip the state writes if so. abort() above is safe either way.
+    if (!mountedRef.current) return
+    setInput(pendingQuestionRef.current)
+    setMessages((prev) => {
+      const copy = [...prev]
+      const last = copy[copy.length - 1]
+      if (last && last.role === "assistant") {
+        copy[copy.length - 1] = { ...last, cancelled: true, error: null }
+      }
+      return copy
+    })
+  }, [abortRef, busy, mountedRef, setMessages])
+
+  // Window-level Esc handler — only active while streaming so it doesn't
+  // intercept Esc in other contexts (modals, popovers).
+  useEffect(() => {
+    if (!busy) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        cancel()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [busy, cancel])
 
   const saveToNotion = useCallback(
     async (idx: number) => {
@@ -487,7 +527,7 @@ export function ChatForm() {
                         {m.content}
                       </ReactMarkdown>
                     </div>
-                  ) : busy && i === messages.length - 1 ? (
+                  ) : busy && i === messages.length - 1 && !m.cancelled ? (
                     <LoadingDots
                       label="調査中"
                       data-testid="chat-thinking"
@@ -502,6 +542,14 @@ export function ChatForm() {
                     data-testid="chat-error"
                   >
                     {m.error}
+                  </p>
+                )}
+                {m.role === "assistant" && m.cancelled && (
+                  <p
+                    className="mt-2 text-xs text-muted-foreground"
+                    data-testid="chat-cancelled"
+                  >
+                    Cancelled
                   </p>
                 )}
                 {m.role === "assistant" && m.content && (
@@ -557,7 +605,6 @@ export function ChatForm() {
               rows={2}
               className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm"
               data-testid="chat-input"
-              disabled={busy}
             />
             {supportsMic && (
               <Button
@@ -571,13 +618,25 @@ export function ChatForm() {
                 {listening ? "🛑" : "🎤"}
               </Button>
             )}
-            <Button
-              onClick={() => void send()}
-              disabled={busy || input.trim().length === 0}
-              data-testid="send-button"
-            >
-              {busy ? "Sending…" : "Send"}
-            </Button>
+            {busy ? (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={cancel}
+                data-testid="cancel-button"
+                title="送信中の応答を中止 (Esc)"
+              >
+                Cancel
+              </Button>
+            ) : (
+              <Button
+                onClick={() => void send()}
+                disabled={input.trim().length === 0}
+                data-testid="send-button"
+              >
+                Send
+              </Button>
+            )}
           </div>
           {!supportsMic && (
             <p

@@ -485,4 +485,164 @@ describe("ChatForm", () => {
     // After an error the button re-enables so the user can retry.
     expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
   })
+
+  // ----- Cancel in-flight streaming (Issue #98) ------------------------
+
+  // Open a streaming response that emits one chunk and stays open until the
+  // request's AbortSignal fires — emulating real fetch+SSE cancellation so
+  // send()'s reader.read() actually resolves after cancel.
+  function openChatStream(firstChunk = "partial"): Handler {
+    const encoder = new TextEncoder()
+    return (init) => {
+      const signal = init?.signal ?? undefined
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${firstChunk}\n\n`))
+          signal?.addEventListener("abort", () => {
+            try {
+              controller.close()
+            } catch {
+              // already closed
+            }
+          })
+        },
+      })
+      return new Response(stream, { status: 200 })
+    }
+  }
+
+  it("replaces Send with Cancel while streaming", async () => {
+    on("/api/chat", openChatStream())
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "my question")
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent(
+        "partial",
+      )
+    })
+    expect(screen.queryByTestId("send-button")).toBeNull()
+    expect(screen.getByTestId("cancel-button")).toBeInTheDocument()
+
+    // Clean up so the test doesn't leave a pending stream.
+    await user.click(screen.getByTestId("cancel-button"))
+    await waitFor(() => {
+      expect(screen.getByTestId("send-button")).toBeInTheDocument()
+    })
+  })
+
+  it("clicking Cancel aborts, marks the message cancelled, and restores the question", async () => {
+    on("/api/chat", openChatStream())
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "my question")
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent(
+        "partial",
+      )
+    })
+    await user.click(screen.getByTestId("cancel-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-cancelled")).toHaveTextContent("Cancelled")
+    })
+    expect(screen.getByTestId("chat-input")).toHaveValue("my question")
+    expect(screen.queryByTestId("chat-error")).toBeNull()
+    // Cancel button gone, Send back so the user can resend.
+    await waitFor(() => {
+      expect(screen.getByTestId("send-button")).toBeInTheDocument()
+    })
+  })
+
+  it("Esc cancels the in-flight stream", async () => {
+    on("/api/chat", openChatStream("hi"))
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "q")
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent("hi")
+    })
+    await user.keyboard("{Escape}")
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-cancelled")).toBeInTheDocument()
+    })
+    expect(screen.getByTestId("chat-input")).toHaveValue("q")
+  })
+
+  it("keeps the textarea editable while streaming", async () => {
+    on("/api/chat", openChatStream())
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "q")
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent(
+        "partial",
+      )
+    })
+    expect(screen.getByTestId("chat-input")).not.toBeDisabled()
+
+    await user.click(screen.getByTestId("cancel-button"))
+    await waitFor(() => {
+      expect(screen.getByTestId("send-button")).toBeInTheDocument()
+    })
+  })
+
+  it("does not log a React warning when unmounted mid-stream", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    on("/api/chat", openChatStream())
+    const user = userEvent.setup()
+    const { unmount } = renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "q")
+    await user.click(screen.getByTestId("send-button"))
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent(
+        "partial",
+      )
+    })
+    // useAbortableMount's cleanup aborts the in-flight fetch on unmount —
+    // any post-unmount setState would surface as a React console.error.
+    unmount()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(errorSpy).not.toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+
+  it("allows sending a fresh request after cancel", async () => {
+    on("/api/chat", openChatStream("first"))
+    on("/api/chat", () => sseResponse([{ data: "second answer" }]))
+
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "q1")
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent("first")
+    })
+    await user.click(screen.getByTestId("cancel-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("send-button")).toBeInTheDocument()
+    })
+    const input = screen.getByTestId("chat-input")
+    await user.clear(input)
+    await user.type(input, "q2")
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      const assistants = screen.getAllByTestId("chat-msg-assistant")
+      expect(assistants[assistants.length - 1]).toHaveTextContent(
+        "second answer",
+      )
+    })
+  })
 })
