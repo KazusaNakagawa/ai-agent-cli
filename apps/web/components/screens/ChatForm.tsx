@@ -1,6 +1,7 @@
 "use client"
 import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
+import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 
 import { SessionExpiredCard } from "@/components/SessionExpiredCard"
@@ -473,7 +474,10 @@ export function ChatForm() {
                 {m.role === "assistant" ? (
                   m.content ? (
                     <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeSanitize]}
+                      >
                         {m.content}
                       </ReactMarkdown>
                     </div>

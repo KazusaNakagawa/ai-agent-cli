@@ -135,6 +135,23 @@ describe("ChatForm", () => {
     })
   })
 
+  it("strips dangerous raw HTML from assistant markdown (rehype-sanitize)", async () => {
+    on("/api/chat", () =>
+      sseResponse([{ data: "<img src=x onerror=alert(1)> after" }]),
+    )
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "q")
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent("after")
+    })
+    const assistant = screen.getByTestId("chat-msg-assistant")
+    expect(assistant.querySelector("img")).toBeNull()
+    expect(assistant.innerHTML).not.toMatch(/onerror/i)
+  })
+
   it("retries exactly once on stale_session with the same payload", async () => {
     on("/api/chat", () =>
       sseResponse([{ event: "stale_session", data: "expired" }]),
