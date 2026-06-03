@@ -8,6 +8,8 @@ receive informational text in the response stream.
 import uuid
 from pathlib import Path
 
+from src.prompt_safety import wrap_untrusted
+
 
 def session_name_for(target_date: str) -> str:
     return f"briefing-chat-{target_date}"
@@ -35,7 +37,7 @@ def build_cmd(target_date: str, briefing_file: Path, session_file: Path) -> list
         f"以下は {target_date} のマーケットブリーフィングです。"
         "このブリーフィングをコンテキストとして、ユーザーの質問に日本語で回答してください。\n\n"
         f"=== マーケットブリーフィング ({target_date}) ===\n"
-        f"{briefing_content}\n"
+        f"{wrap_untrusted(briefing_content, label='previous_briefing')}\n"
         "=== END ==="
     )
     return [
