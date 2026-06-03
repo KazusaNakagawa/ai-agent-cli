@@ -596,6 +596,26 @@ describe("ChatForm", () => {
     })
   })
 
+  it("does not log a React warning when unmounted mid-stream", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    on("/api/chat", openChatStream())
+    const user = userEvent.setup()
+    const { unmount } = renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "q")
+    await user.click(screen.getByTestId("send-button"))
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent(
+        "partial",
+      )
+    })
+    // useAbortableMount's cleanup aborts the in-flight fetch on unmount —
+    // any post-unmount setState would surface as a React console.error.
+    unmount()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(errorSpy).not.toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+
   it("allows sending a fresh request after cancel", async () => {
     on("/api/chat", openChatStream("first"))
     on("/api/chat", () => sseResponse([{ data: "second answer" }]))

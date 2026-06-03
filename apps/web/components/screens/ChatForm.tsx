@@ -362,6 +362,9 @@ export function ChatForm() {
     const ctl = abortRef.current
     if (!ctl || !busy) return
     ctl.abort()
+    // Esc fires at window scope, so a late keystroke could land after unmount —
+    // skip the state writes if so. abort() above is safe either way.
+    if (!mountedRef.current) return
     setInput(pendingQuestionRef.current)
     setMessages((prev) => {
       const copy = [...prev]
@@ -371,7 +374,7 @@ export function ChatForm() {
       }
       return copy
     })
-  }, [abortRef, busy, setMessages])
+  }, [abortRef, busy, mountedRef, setMessages])
 
   // Window-level Esc handler — only active while streaming so it doesn't
   // intercept Esc in other contexts (modals, popovers).
