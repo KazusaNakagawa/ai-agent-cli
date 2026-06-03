@@ -70,8 +70,8 @@ def _build_watch_events_context(config: BriefingConfig) -> str:
 
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
     """メイン分析とセクタースイープを並列実行してブリーフィングを生成する。"""
-    tickers = ", ".join(config.portfolio.tickers)
-    themes = ", ".join(config.portfolio.themes)
+    tickers = _join_safe(config.portfolio.tickers, sep=", ")
+    themes = _join_safe(config.portfolio.themes, sep=", ")
 
     main_prompt = render(
         "briefing",
