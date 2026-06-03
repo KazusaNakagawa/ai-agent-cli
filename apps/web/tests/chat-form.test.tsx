@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -188,6 +188,35 @@ describe("ChatForm", () => {
     expect(chatCalls).toHaveLength(1)
   })
 
+  it("does not send on Enter while IME composition is active", async () => {
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = screen.getByTestId("chat-input")
+    await user.type(input, "あ")
+    fireEvent.compositionStart(input)
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true })
+    await new Promise((r) => setTimeout(r, 0))
+    const chatCalls = fetchMock.mock.calls.filter(([u]) => u === "/api/chat")
+    expect(chatCalls).toHaveLength(0)
+  })
+
+  it("sends on Enter after compositionend fires", async () => {
+    on("/api/chat", () => sseResponse([{ data: "ok" }]))
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = screen.getByTestId("chat-input")
+    await user.type(input, "あ")
+    fireEvent.compositionStart(input)
+    fireEvent.compositionEnd(input)
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent("ok")
+    })
+    const chatCalls = fetchMock.mock.calls.filter(([u]) => u === "/api/chat")
+    expect(chatCalls).toHaveLength(1)
+  })
+
   it("hides the mic button when SpeechRecognition is unavailable", () => {
     renderChatForm()
     expect(screen.queryByTestId("mic-button")).toBeNull()
@@ -210,6 +239,50 @@ describe("ChatForm", () => {
     renderChatForm()
     expect(screen.getByTestId("mic-button")).toBeInTheDocument()
     expect(screen.queryByTestId("mic-unsupported")).toBeNull()
+  })
+
+  it("preserves the already-typed text when the mic starts", async () => {
+    type FakeRec = {
+      lang: string
+      continuous: boolean
+      interimResults: boolean
+      onresult: ((e: { results: { 0: { transcript: string } }[] }) => void) | null
+      onend: (() => void) | null
+      onerror: ((e: unknown) => void) | null
+      start: () => void
+      stop: () => void
+    }
+    let lastRec: FakeRec | null = null
+    class FakeRecognition implements FakeRec {
+      lang = ""
+      continuous = false
+      interimResults = false
+      onresult: FakeRec["onresult"] = null
+      onend: FakeRec["onend"] = null
+      onerror: FakeRec["onerror"] = null
+      start() {
+        lastRec = this
+      }
+      stop() {}
+    }
+    ;(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+      FakeRecognition
+
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "前段の文字列")
+    await user.click(screen.getByTestId("mic-button"))
+
+    expect(lastRec).not.toBeNull()
+    act(() => {
+      lastRec!.onresult!({
+        results: [{ 0: { transcript: "音声入力" } }] as unknown as {
+          0: { transcript: string }
+        }[],
+      } as { results: { 0: { transcript: string } }[] })
+    })
+
+    expect(screen.getByTestId("chat-input")).toHaveValue("前段の文字列 音声入力")
   })
 
   it("hydrates the input from sessionStorage on mount", async () => {
