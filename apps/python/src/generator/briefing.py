@@ -4,6 +4,7 @@ from src.config import BriefingConfig
 from src.constants import TIMEOUT_BRIEFING_MAIN, TIMEOUT_BRIEFING_SECTORS
 from src.generator.prompt import render
 from src.logger import get_logger
+from src.prompt_safety import neutralize_user_text
 
 logger = get_logger(__name__)
 
@@ -16,11 +17,11 @@ def _build_geopolitical_context(config: BriefingConfig) -> str:
     for c in config.geopolitical.conflicts:
         sectors = "、".join(c.affected_sectors)
         tickers = "、".join(c.related_tickers)
-        entry = f"### {c.name}\n- 影響セクター: {sectors}"
+        entry = f"### {neutralize_user_text(c.name)}\n- 影響セクター: {sectors}"
         if tickers:
             entry += f"\n- 関連銘柄: {tickers}"
         if c.notes:
-            entry += f"\n- 背景: {c.notes}"
+            entry += f"\n- 背景: {neutralize_user_text(c.notes)}"
         lines.append(entry)
     return "\n\n".join(lines)
 
@@ -30,9 +31,9 @@ def _build_watch_sectors_context(config: BriefingConfig) -> str:
     lines = []
     for s in config.watch_sectors:
         tickers = "、".join(s.tickers)
-        entry = f"### {s.sector}\n- 銘柄: {tickers}"
+        entry = f"### {neutralize_user_text(s.sector)}\n- 銘柄: {tickers}"
         if s.notes:
-            entry += f"\n- 注目点: {s.notes}"
+            entry += f"\n- 注目点: {neutralize_user_text(s.notes)}"
         lines.append(entry)
     return "\n\n".join(lines)
 
@@ -43,13 +44,16 @@ def _build_watch_events_context(config: BriefingConfig) -> str:
         return ""
     lines = []
     for event in config.watch_events:
-        entry = f"### {event.name}\n- トリガー: {event.trigger}"
+        entry = (
+            f"### {neutralize_user_text(event.name)}\n"
+            f"- トリガー: {neutralize_user_text(event.trigger)}"
+        )
         if event.affected_sectors:
             entry += f"\n- 影響セクター: {'、'.join(event.affected_sectors)}"
         if event.related_tickers:
             entry += f"\n- 関連銘柄: {'、'.join(event.related_tickers)}"
         if event.notes:
-            entry += f"\n- 背景: {event.notes}"
+            entry += f"\n- 背景: {neutralize_user_text(event.notes)}"
         lines.append(entry)
     return "\n\n".join(lines)
 

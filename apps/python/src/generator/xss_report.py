@@ -3,15 +3,16 @@ from src.claude_runner import run_claude
 from src.config import XssIntelConfig
 from src.generator.prompt import render
 from src.logger import get_logger
+from src.prompt_safety import neutralize_user_text
 
 logger = get_logger(__name__)
 
 
 def generate_xss_report(config: XssIntelConfig) -> str:
     """claude CLI + WebSearch で XSS 脆弱性インテリジェンスレポートを生成"""
-    frameworks = ", ".join(config.targets.frameworks)
-    libraries = ", ".join(config.targets.libraries)
-    keywords = ", ".join(config.targets.keywords)
+    frameworks = neutralize_user_text(", ".join(config.targets.frameworks))
+    libraries = neutralize_user_text(", ".join(config.targets.libraries))
+    keywords = neutralize_user_text(", ".join(config.targets.keywords))
 
     prompt = render(
         "xss_intel",
