@@ -54,6 +54,11 @@ export function useSpeechRecognition({
   callbackRef.current = onTranscript
 
   useEffect(() => {
+    // React Strict Mode (and any unmount/remount cycle) runs the cleanup
+    // between mounts; without re-arming mountedRef here it stays false on
+    // the second mount, which causes the rec.onend stop callback to skip
+    // setListening(false) and leave the mic UI stuck in the listening state.
+    mountedRef.current = true
     setSupportsMic(getRecognitionCtor() !== null)
     return () => {
       mountedRef.current = false

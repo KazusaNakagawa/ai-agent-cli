@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { StrictMode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ChatForm } from "@/components/screens/ChatForm"
@@ -10,6 +11,16 @@ function renderChatForm() {
     <ChatStateProvider>
       <ChatForm />
     </ChatStateProvider>,
+  )
+}
+
+function renderChatFormStrict() {
+  return render(
+    <StrictMode>
+      <ChatStateProvider>
+        <ChatForm />
+      </ChatStateProvider>
+    </StrictMode>,
   )
 }
 
@@ -283,6 +294,58 @@ describe("ChatForm", () => {
     })
 
     expect(screen.getByTestId("chat-input")).toHaveValue("前段の文字列 音声入力")
+  })
+
+  it("returns the mic button to idle after stop, even under StrictMode double-mount", async () => {
+    type FakeRec = {
+      lang: string
+      continuous: boolean
+      interimResults: boolean
+      onresult: ((e: { results: { 0: { transcript: string } }[] }) => void) | null
+      onend: (() => void) | null
+      onerror: ((e: unknown) => void) | null
+      start: () => void
+      stop: () => void
+    }
+    class FakeRecognition implements FakeRec {
+      lang = ""
+      continuous = false
+      interimResults = false
+      onresult: FakeRec["onresult"] = null
+      onend: FakeRec["onend"] = null
+      onerror: FakeRec["onerror"] = null
+      start() {}
+      stop() {
+        // Simulate the browser firing onend in response to stop().
+        this.onend?.()
+      }
+    }
+    ;(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+      FakeRecognition
+
+    const user = userEvent.setup()
+    renderChatFormStrict()
+
+    const micBtn = await screen.findByTestId("mic-button")
+    expect(micBtn).toHaveAttribute("aria-pressed", "false")
+
+    await user.click(micBtn)
+    expect(screen.getByTestId("mic-button")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+
+    // Click again to stop. Before the fix, StrictMode's mount → cleanup →
+    // remount sequence left mountedRef stuck at false, so the onend stop
+    // callback would skip setListening(false) and the button would stay
+    // pressed.
+    await user.click(screen.getByTestId("mic-button"))
+    await waitFor(() => {
+      expect(screen.getByTestId("mic-button")).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      )
+    })
   })
 
   it("hydrates the input from sessionStorage on mount", async () => {
