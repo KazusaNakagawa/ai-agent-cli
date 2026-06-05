@@ -1,11 +1,12 @@
 "use client"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { ChatComposer } from "@/components/chat/ChatComposer"
 import { ChatMessageList } from "@/components/chat/ChatMessageList"
 import { SessionExpiredCard } from "@/components/SessionExpiredCard"
 import { useChatState } from "@/lib/chatStore"
 import { useAbortableMount } from "@/lib/hooks/useAbortableMount"
+import { useChatHistoryNavigation } from "@/lib/hooks/useChatHistoryNavigation"
 import { useDraftPersistence } from "@/lib/hooks/useDraftPersistence"
 import { useNotionCredentials } from "@/lib/hooks/useNotionCredentials"
 import { useNotionSave } from "@/lib/hooks/useNotionSave"
@@ -54,6 +55,16 @@ export function ChatForm() {
 
   // Suppress setState and cancel in-flight work after unmount.
   const { mountedRef, abortRef } = useAbortableMount()
+  // Shell-style Up/Down history of prior user questions (Issue #117).
+  const userHistory = useMemo(
+    () => messages.filter((m) => m.role === "user").map((m) => m.content),
+    [messages],
+  )
+  const onHistoryKeyDown = useChatHistoryNavigation({
+    history: userHistory,
+    setInput,
+    busy,
+  })
   // The question currently in flight — restored into the textarea on cancel
   // so the user can edit and resend without retyping.
   const pendingQuestionRef = useRef("")
@@ -264,6 +275,7 @@ export function ChatForm() {
         onToggleMic={toggleMic}
         onSend={() => void send()}
         onCancel={cancel}
+        onHistoryKeyDown={onHistoryKeyDown}
       />
     </div>
   )
