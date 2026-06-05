@@ -335,10 +335,10 @@ async def test_chat_job_marked_failed_when_popen_raises(
     authed_client, briefing_setup, monkeypatch
 ):
     """If ``subprocess.Popen`` itself raises, the job must end up ``failed``
-    rather than leaking in ``running`` (docstring contract: always advance
-    to done/failed)."""
+    (rather than leaking in ``running``) and the SSE stream must surface an
+    ``error`` event so clients close cleanly instead of polling forever."""
     def _boom(*args, **kwargs):
-        raise OSError("fork failed")
+        raise FileNotFoundError("claude binary missing")
 
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", _boom)
 
@@ -352,7 +352,12 @@ async def test_chat_job_marked_failed_when_popen_raises(
     job = chat_job_store.get_job(job_id)
     assert job is not None
     assert job.status == "failed"
-    assert "fork failed" in (job.error or "")
+    assert "claude binary missing" in (job.error or "")
+
+    stream = await authed_client.get(f"/api/chat/{job_id}/stream")
+    assert stream.status_code == 200
+    assert "event: error" in stream.text
+    assert "claude binary missing" in stream.text
 
 
 async def test_chat_stream_can_be_reattached_to_replay_buffer(
