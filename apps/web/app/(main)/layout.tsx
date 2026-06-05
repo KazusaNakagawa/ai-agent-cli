@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 
 import { apiFetch } from "@/lib/api"
 import { Sidebar } from "@/components/Sidebar"
+import { ChatJobStateProvider } from "@/lib/chatJobStore"
 import { ChatStateProvider } from "@/lib/chatStore"
 import { JobStateProvider } from "@/lib/jobStore"
 
@@ -28,10 +29,12 @@ export default async function MainLayout({
   return (
     <JobStateProvider>
       <ChatStateProvider>
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 p-8">{children}</main>
-        </div>
+        <ChatJobStateProvider>
+          <div className="flex min-h-screen">
+            <Sidebar />
+            <main className="flex-1 p-8">{children}</main>
+          </div>
+        </ChatJobStateProvider>
       </ChatStateProvider>
     </JobStateProvider>
   )
