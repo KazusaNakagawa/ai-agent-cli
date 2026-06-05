@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 import subprocess
 import time
@@ -13,22 +12,15 @@ from src.constants import (
     RETRY_MAX_ATTEMPTS,
 )
 from src.logger import get_logger
+from src.transient_errors import is_transient
 
 logger = get_logger(__name__)
-
-# Anthropic API の 5xx 系一時障害 (例: "API Error: 529 Overloaded.") を検出
-_TRANSIENT_ERROR_RE = re.compile(r"API Error:\s*5\d\d")
 
 
 def get_model() -> str:
     """環境変数 CLAUDE_MODEL を読み、空・空白の場合はデフォルトを返す。"""
     env_model = os.environ.get("CLAUDE_MODEL", "").strip()
     return env_model if env_model else DEFAULT_MODEL
-
-
-def _is_transient_error(stdout: str, stderr: str) -> bool:
-    """stdout/stderr に Anthropic API の 5xx エラー表記が含まれるか判定する。"""
-    return bool(_TRANSIENT_ERROR_RE.search((stdout or "") + "\n" + (stderr or "")))
 
 
 def _backoff_delay(attempt: int) -> float:
@@ -111,7 +103,7 @@ def run_claude(
         last_returncode = result.returncode
         last_detail = (result.stderr or result.stdout or "").strip()
 
-        if _is_transient_error(result.stdout, result.stderr) and attempt < max_attempts:
+        if is_transient(result.stdout, result.stderr) and attempt < max_attempts:
             delay = _backoff_delay(attempt)
             logger.warning(
                 "一時的なエラーを検出、%.1fs 後にリトライします [%s] (attempt %d/%d)",

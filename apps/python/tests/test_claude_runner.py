@@ -123,6 +123,31 @@ class TestRunClaudeRetry:
         assert mock_run.call_count == 2
         assert mock_sleep.call_count == 1
 
+    def test_retries_on_socket_close(self):
+        """Verifies: the node-fetch 'socket connection was closed unexpectedly'
+        message (no HTTP code) is detected as transient and retried.
+        Why: regression for the weekly job failure on 2026-06-05. Previously
+        the classifier only matched 5xx codes, so this short-circuited after
+        a single attempt and required manual rerun.
+        """
+        error_result = _make_result(
+            returncode=1,
+            stdout="API Error: The socket connection was closed unexpectedly. "
+            "For more information, pass `verbose: true` in the second argument to fetch()",
+        )
+        success_result = _make_result(returncode=0, stdout="recovered")
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.time.sleep"):
+                with patch(
+                    "src.claude_runner.subprocess.run",
+                    side_effect=[error_result, success_result],
+                ) as mock_run:
+                    result = run_claude("prompt", "test")
+
+        assert result == "recovered"
+        assert mock_run.call_count == 2
+
     def test_retries_on_503_in_stdout(self):
         """Verifies: a 5xx error written to stdout (not stderr) is still
         detected and retried.
