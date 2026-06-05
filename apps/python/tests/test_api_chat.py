@@ -1,11 +1,34 @@
-"""Tests for /api/chat — SSE streaming Q&A endpoint."""
+"""Tests for /api/chat — job-backed POST + GET /stream + DELETE.
+
+Phase-1 contract (#123 / #126):
+- ``POST /api/chat`` returns ``202 {job_id, status}`` and schedules the
+  subprocess on FastAPI's BackgroundTasks.
+- ``GET /api/chat/{job_id}/stream`` replays the buffered events and then
+  tails until the job is terminal.
+- ``DELETE /api/chat/{job_id}`` terminates the subprocess if still running.
+
+In test mode httpx's TestClient runs the BackgroundTask synchronously
+before yielding the response back to the test, so by the time POST
+returns the FakePopen has already completed and the job is ``done`` —
+which makes the GET-stream assertions deterministic without sleeps.
+"""
+import asyncio
 import io
+import time
+from unittest.mock import MagicMock
 
 import pytest
 
-from src import credentials, state as state_mod
+from src import chat_job_store, credentials, state as state_mod
 
 pytestmark = pytest.mark.usefixtures("isolated_state")
+
+
+@pytest.fixture(autouse=True)
+def reset_chat_store():
+    chat_job_store._reset_for_tests()
+    yield
+    chat_job_store._reset_for_tests()
 
 
 @pytest.fixture
@@ -25,10 +48,12 @@ def briefing_setup(tmp_path, monkeypatch):
 
 
 class FakePopen:
-    """Stand-in for subprocess.Popen for the chat router tests.
+    """Stand-in for ``subprocess.Popen`` for the chat router tests.
 
-    Yields the given stdout_lines from ``proc.stdout`` and exposes the given
-    stderr/returncode after ``wait()``.
+    Iterates the given ``stdout_lines`` from ``proc.stdout``, exposes the
+    given stderr/returncode after ``wait()``, and supports ``poll()`` +
+    ``terminate()`` so the DELETE path can exercise the running-vs-finished
+    distinction.
     """
 
     def __init__(
@@ -45,10 +70,18 @@ class FakePopen:
         self.stderr = io.BytesIO(stderr)
         self._returncode = returncode
         self.returncode = None
+        self.terminated = False
 
     def wait(self):
         self.returncode = self._returncode
         return self._returncode
+
+    def poll(self):
+        # None until ``wait()`` flips it, mirroring real Popen semantics.
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
 
 
 def _make_popen(stdout_lines=None, stderr=b"", returncode=0):
@@ -65,34 +98,82 @@ def _make_popen(stdout_lines=None, stderr=b"", returncode=0):
     return factory
 
 
-async def test_chat_returns_sse_content_type(authed_client, briefing_setup, monkeypatch):
-    factory = _make_popen(stdout_lines=[b"hello\n"])
-    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+async def _post_and_drain_stream(client, body) -> tuple[str, str]:
+    """POST /api/chat, then GET the stream and return ``(job_id, sse_body)``.
 
-    response = await authed_client.post(
-        "/api/chat",
-        json={"date": "2026-05-30", "question": "What's up?"},
-    )
+    Asserts the POST returned 202 + a non-empty job_id along the way."""
+    post = await client.post("/api/chat", json=body)
+    assert post.status_code == 202, post.text
+    job_id = post.json()["job_id"]
+    assert job_id
+    stream = await client.get(f"/api/chat/{job_id}/stream")
+    assert stream.status_code == 200
+    return job_id, stream.text
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
+
+# ---------------------------------------------------------------------------
+# POST /api/chat — kickoff
+# ---------------------------------------------------------------------------
 
 
-async def test_chat_streams_stdout_lines_as_data_events(
+async def test_post_chat_returns_202_with_job_id(
     authed_client, briefing_setup, monkeypatch
 ):
-    factory = _make_popen(stdout_lines=[b"line1\n", b"line2\n", b"line3\n"])
+    factory = _make_popen()
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     response = await authed_client.post(
         "/api/chat",
         json={"date": "2026-05-30", "question": "Q?"},
     )
-    body = response.text
 
-    assert "data: line1\n\n" in body
-    assert "data: line2\n\n" in body
-    assert "data: line3\n\n" in body
+    assert response.status_code == 202
+    body = response.json()
+    assert body["job_id"]
+    assert body["status"] in ("pending", "running", "done")
+    # The job exists in the store after the background task runs.
+    assert chat_job_store.get_job(body["job_id"]) is not None
+
+
+async def test_post_chat_404_when_briefing_missing(authed_client, briefing_setup):
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2099-12-31", "question": "Q?"},
+    )
+    assert response.status_code == 404
+
+
+async def test_post_chat_rejects_invalid_date_format(authed_client, briefing_setup):
+    """Path-traversal guard: anything that doesn't match YYYY-MM-DD must 422
+    before reaching the filesystem."""
+    bad_dates = ["../foo", "2026-05", "2026-5-30", "2026-05-30/extra", "abcd-ef-gh"]
+    for bad in bad_dates:
+        response = await authed_client.post(
+            "/api/chat",
+            json={"date": bad, "question": "Q?"},
+        )
+        assert response.status_code == 422, f"expected 422 for date={bad!r}"
+
+
+async def test_post_chat_rejects_empty_question(authed_client, briefing_setup):
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": ""},
+    )
+    assert response.status_code == 422
+
+
+async def test_post_chat_requires_bearer(async_client, briefing_setup):
+    response = await async_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?"},
+    )
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Subprocess invocation — preserved from the pre-#123 contract
+# ---------------------------------------------------------------------------
 
 
 async def test_chat_first_request_creates_new_session_with_briefing_context(
@@ -137,52 +218,6 @@ async def test_chat_resume_uses_saved_session_id(
     assert "--resume" in cmd
     assert "saved-uuid-xyz" in cmd
     assert "--append-system-prompt" not in cmd
-
-
-async def test_chat_stale_session_deletes_file_and_emits_event(
-    authed_client, briefing_setup, monkeypatch
-):
-    session_file = briefing_setup / ".sessions" / "2026-05-30"
-    session_file.write_text("stale-uuid")
-
-    factory = _make_popen(
-        stderr=b"No conversation found with session ID: stale-uuid\n",
-        returncode=1,
-    )
-    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
-
-    response = await authed_client.post(
-        "/api/chat",
-        json={"date": "2026-05-30", "question": "Q?"},
-    )
-
-    assert response.status_code == 200
-    assert "event: stale_session" in response.text
-    assert not session_file.exists()
-
-
-async def test_chat_other_subprocess_error_emits_error_event(
-    authed_client, briefing_setup, monkeypatch
-):
-    factory = _make_popen(stderr=b"auth failed", returncode=1)
-    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
-
-    response = await authed_client.post(
-        "/api/chat",
-        json={"date": "2026-05-30", "question": "Q?"},
-    )
-
-    assert response.status_code == 200
-    assert "event: error" in response.text
-    assert "auth failed" in response.text
-
-
-async def test_chat_404_when_briefing_missing(authed_client, briefing_setup):
-    response = await authed_client.post(
-        "/api/chat",
-        json={"date": "2099-12-31", "question": "Q?"},
-    )
-    assert response.status_code == 404
 
 
 async def test_chat_subprocess_env_strips_anthropic_api_key_in_cli_mode(
@@ -233,45 +268,175 @@ async def test_chat_subprocess_env_includes_keychain_key_in_api_mode(
     assert kwargs["env"].get("ANTHROPIC_API_KEY") == "from-keychain"
 
 
-async def test_chat_rejects_invalid_date_format(authed_client, briefing_setup):
-    """Path-traversal guard: anything that doesn't match YYYY-MM-DD must 422
-    before reaching the filesystem."""
-    bad_dates = ["../foo", "2026-05", "2026-5-30", "2026-05-30/extra", "abcd-ef-gh"]
-    for bad in bad_dates:
-        response = await authed_client.post(
-            "/api/chat",
-            json={"date": bad, "question": "Q?"},
-        )
-        assert response.status_code == 422, f"expected 422 for date={bad!r}"
+# ---------------------------------------------------------------------------
+# GET /api/chat/{job_id}/stream — replay + tail
+# ---------------------------------------------------------------------------
 
 
-async def test_chat_rejects_empty_question(authed_client, briefing_setup):
+async def test_chat_stream_returns_sse_content_type(
+    authed_client, briefing_setup, monkeypatch
+):
+    factory = _make_popen(stdout_lines=[b"hello\n"])
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    _, _ = await _post_and_drain_stream(
+        authed_client, {"date": "2026-05-30", "question": "Q?"}
+    )
+    # Re-attach to assert the content-type explicitly (the helper already
+    # consumed the body once but we just need the header here).
+    job = next(iter(chat_job_store._store.values()))  # only one in this test
+    stream = await authed_client.get(f"/api/chat/{job.job_id}/stream")
+    assert stream.headers["content-type"].startswith("text/event-stream")
+
+
+async def test_chat_stream_replays_stdout_lines_as_data_events(
+    authed_client, briefing_setup, monkeypatch
+):
+    factory = _make_popen(stdout_lines=[b"line1\n", b"line2\n", b"line3\n"])
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    _, body = await _post_and_drain_stream(
+        authed_client, {"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert "data: line1\n\n" in body
+    assert "data: line2\n\n" in body
+    assert "data: line3\n\n" in body
+
+
+async def test_chat_stream_supports_concurrent_attaches(
+    authed_client, briefing_setup, monkeypatch
+):
+    """Two simultaneous GET streams against the same job both see the full
+    transcript. Guards the snapshot path against deque-mutation races and
+    confirms a second attach isn't starved by the first."""
+    factory = _make_popen(stdout_lines=[b"x\n", b"y\n"])
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    post = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?"},
+    )
+    assert post.status_code == 202
+    job_id = post.json()["job_id"]
+
+    first, second = await asyncio.gather(
+        authed_client.get(f"/api/chat/{job_id}/stream"),
+        authed_client.get(f"/api/chat/{job_id}/stream"),
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    for line in ("x", "y"):
+        assert f"data: {line}\n\n" in first.text
+        assert f"data: {line}\n\n" in second.text
+
+
+async def test_chat_job_marked_failed_when_popen_raises(
+    authed_client, briefing_setup, monkeypatch
+):
+    """If ``subprocess.Popen`` itself raises, the job must end up ``failed``
+    (rather than leaking in ``running``) and the SSE stream must surface an
+    ``error`` event so clients close cleanly instead of polling forever."""
+    def _boom(*args, **kwargs):
+        raise FileNotFoundError("claude binary missing")
+
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", _boom)
+
     response = await authed_client.post(
         "/api/chat",
-        json={"date": "2026-05-30", "question": ""},
+        json={"date": "2026-05-30", "question": "Q?"},
     )
-    assert response.status_code == 422
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+
+    job = chat_job_store.get_job(job_id)
+    assert job is not None
+    assert job.status == "failed"
+    assert "claude binary missing" in (job.error or "")
+
+    stream = await authed_client.get(f"/api/chat/{job_id}/stream")
+    assert stream.status_code == 200
+    assert "event: error" in stream.text
+    assert "claude binary missing" in stream.text
 
 
-async def test_chat_strips_trailing_cr_from_stdout_lines(
+async def test_chat_stream_can_be_reattached_to_replay_buffer(
+    authed_client, briefing_setup, monkeypatch
+):
+    """Survives a client disconnect: a second GET against the same job_id
+    sees every event from the start. This is the core #112 / #126 win —
+    a tab switch or page reload no longer drops the in-flight answer."""
+    factory = _make_popen(stdout_lines=[b"a\n", b"b\n"])
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    job_id, first = await _post_and_drain_stream(
+        authed_client, {"date": "2026-05-30", "question": "Q?"}
+    )
+    second = await authed_client.get(f"/api/chat/{job_id}/stream")
+    assert second.status_code == 200
+    body = second.text
+
+    # Both attaches receive the full transcript.
+    for line in ("a", "b"):
+        assert f"data: {line}\n\n" in first
+        assert f"data: {line}\n\n" in body
+
+
+async def test_get_chat_stream_404_when_job_unknown(authed_client, briefing_setup):
+    response = await authed_client.get("/api/chat/does-not-exist/stream")
+    assert response.status_code == 404
+
+
+async def test_chat_stream_strips_trailing_cr_from_stdout_lines(
     authed_client, briefing_setup, monkeypatch
 ):
     """Windows-style \\r\\n line endings must not leak into the SSE event."""
     factory = _make_popen(stdout_lines=[b"hello world\r\n", b"line2\r\n"])
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
-    response = await authed_client.post(
-        "/api/chat",
-        json={"date": "2026-05-30", "question": "Q?"},
+    _, body = await _post_and_drain_stream(
+        authed_client, {"date": "2026-05-30", "question": "Q?"}
     )
-    body = response.text
-    # No raw \r before the \n\n event terminator
     assert "\r\n\n" not in body
     assert "data: hello world\n\n" in body
     assert "data: line2\n\n" in body
 
 
-async def test_chat_multi_line_stderr_emits_one_data_per_line(
+async def test_chat_stream_stale_session_deletes_file_and_emits_event(
+    authed_client, briefing_setup, monkeypatch
+):
+    session_file = briefing_setup / ".sessions" / "2026-05-30"
+    session_file.write_text("stale-uuid")
+
+    factory = _make_popen(
+        stderr=b"No conversation found with session ID: stale-uuid\n",
+        returncode=1,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    _, body = await _post_and_drain_stream(
+        authed_client, {"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert "event: stale_session" in body
+    assert not session_file.exists()
+
+
+async def test_chat_stream_other_subprocess_error_emits_error_event(
+    authed_client, briefing_setup, monkeypatch
+):
+    factory = _make_popen(stderr=b"auth failed", returncode=1)
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    _, body = await _post_and_drain_stream(
+        authed_client, {"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert "event: error" in body
+    assert "auth failed" in body
+
+
+async def test_chat_stream_multi_line_stderr_emits_one_data_per_line(
     authed_client, briefing_setup, monkeypatch
 ):
     """Per SSE spec, an event with multi-line content needs one `data:` prefix
@@ -279,23 +444,80 @@ async def test_chat_multi_line_stderr_emits_one_data_per_line(
     factory = _make_popen(stderr=b"err line 1\nerr line 2\nerr line 3", returncode=1)
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
-    response = await authed_client.post(
-        "/api/chat",
-        json={"date": "2026-05-30", "question": "Q?"},
+    _, body = await _post_and_drain_stream(
+        authed_client, {"date": "2026-05-30", "question": "Q?"}
     )
-    body = response.text
     assert "event: error\n" in body
     assert "data: err line 1\n" in body
     assert "data: err line 2\n" in body
     assert "data: err line 3\n" in body
 
 
-async def test_chat_requires_bearer(async_client, briefing_setup):
-    response = await async_client.post(
+# ---------------------------------------------------------------------------
+# DELETE /api/chat/{job_id} — cancel
+# ---------------------------------------------------------------------------
+
+
+async def test_delete_chat_terminates_running_subprocess(authed_client):
+    """Setting up a job directly (skip POST) gives us a Popen handle whose
+    ``poll()`` still returns ``None`` so the cancel path actually fires."""
+    job = chat_job_store.create_job()
+    fake = MagicMock(spec=["poll", "terminate"])
+    fake.poll.return_value = None
+    chat_job_store.attach_process(job.job_id, fake)
+
+    response = await authed_client.delete(f"/api/chat/{job.job_id}")
+    assert response.status_code == 204
+    fake.terminate.assert_called_once()
+
+
+async def test_delete_chat_idempotent_when_subprocess_already_exited(authed_client):
+    job = chat_job_store.create_job()
+    fake = MagicMock(spec=["poll", "terminate"])
+    fake.poll.return_value = 0  # already exited
+    chat_job_store.attach_process(job.job_id, fake)
+
+    response = await authed_client.delete(f"/api/chat/{job.job_id}")
+    assert response.status_code == 204
+    fake.terminate.assert_not_called()
+
+
+async def test_delete_chat_idempotent_when_job_missing(authed_client):
+    response = await authed_client.delete("/api/chat/does-not-exist")
+    assert response.status_code == 204
+
+
+# ---------------------------------------------------------------------------
+# Grace-timer GC after completion
+# ---------------------------------------------------------------------------
+
+
+async def test_chat_job_is_gc_after_grace_period(
+    authed_client, briefing_setup, monkeypatch
+):
+    # Tiny grace so the test doesn't have to wait. The runner reads
+    # CHAT_JOB_GC_GRACE_SEC from the module namespace at call time, so
+    # patching the module attribute before POST takes effect.
+    monkeypatch.setattr("web.routers.chat.CHAT_JOB_GC_GRACE_SEC", 0.05)
+
+    factory = _make_popen(stdout_lines=[b"hi\n"])
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    post = await authed_client.post(
         "/api/chat",
         json={"date": "2026-05-30", "question": "Q?"},
     )
-    assert response.status_code == 401
+    job_id = post.json()["job_id"]
+    assert chat_job_store.get_job(job_id) is not None
+
+    # Poll instead of one fixed sleep: a fixed 0.25s wait is flaky on
+    # busy CI where Timer scheduling can be delayed past that window.
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if chat_job_store.get_job(job_id) is None:
+            break
+        time.sleep(0.05)
+    assert chat_job_store.get_job(job_id) is None
 
 
 # ---------------------------------------------------------------------------

@@ -70,25 +70,53 @@ def test_state_transitions_for_unknown_job_return_none():
     assert chat_job_store.mark_failed("nope", "x") is None
 
 
-def test_append_event_buffers_in_order_and_returns_true():
+def test_append_event_assigns_monotonic_seq_ids():
     job = chat_job_store.create_job()
-    assert chat_job_store.append_event(job.job_id, b"data: a\n\n") is True
-    assert chat_job_store.append_event(job.job_id, b"data: b\n\n") is True
-    assert list(job.events) == [b"data: a\n\n", b"data: b\n\n"]
+    assert chat_job_store.append_event(job.job_id, b"data: a\n\n") == 1
+    assert chat_job_store.append_event(job.job_id, b"data: b\n\n") == 2
+    assert list(job.events) == [(1, b"data: a\n\n"), (2, b"data: b\n\n")]
 
 
-def test_append_event_returns_false_for_unknown_job():
-    assert chat_job_store.append_event("nope", b"data: lost\n\n") is False
+def test_append_event_returns_none_for_unknown_job():
+    assert chat_job_store.append_event("nope", b"data: lost\n\n") is None
 
 
-def test_event_buffer_trims_oldest_at_max(monkeypatch):
+def test_event_buffer_trims_oldest_at_max_but_seq_keeps_climbing(monkeypatch):
     # The field default factory reads DEFAULT_EVENT_BUFFER_MAX at call time,
     # so monkeypatching before create_job() changes the maxlen of new deques.
     monkeypatch.setattr(chat_job_store, "DEFAULT_EVENT_BUFFER_MAX", 3)
     job = chat_job_store.create_job()
     for i in range(5):
         chat_job_store.append_event(job.job_id, f"data: {i}\n\n".encode())
-    assert list(job.events) == [b"data: 2\n\n", b"data: 3\n\n", b"data: 4\n\n"]
+    # Oldest two are dropped from the deque but the seq ids of the surviving
+    # entries are stable, so a client with last_seen_seq=2 sees only 3,4,5.
+    assert list(job.events) == [
+        (3, b"data: 2\n\n"),
+        (4, b"data: 3\n\n"),
+        (5, b"data: 4\n\n"),
+    ]
+
+
+def test_snapshot_events_since_returns_new_events_with_status():
+    job = chat_job_store.create_job()
+    chat_job_store.append_event(job.job_id, b"a")
+    chat_job_store.append_event(job.job_id, b"b")
+    chat_job_store.append_event(job.job_id, b"c")
+
+    events, status = chat_job_store.snapshot_events_since(job.job_id, last_seq=1)
+    assert events == [(2, b"b"), (3, b"c")]
+    assert status == "pending"
+
+    # last_seq beyond the latest returns an empty list but still the live status.
+    events, status = chat_job_store.snapshot_events_since(job.job_id, last_seq=99)
+    assert events == []
+    assert status == "pending"
+
+
+def test_snapshot_events_since_returns_none_status_for_unknown_job():
+    events, status = chat_job_store.snapshot_events_since("nope", last_seq=0)
+    assert events == []
+    assert status is None
 
 
 def test_attach_process_records_handle():
@@ -110,7 +138,7 @@ def test_detach_process_clears_handle_but_keeps_events():
     chat_job_store.append_event(job.job_id, b"data: kept\n\n")
     chat_job_store.detach_process(job.job_id)
     assert job.process is None
-    assert list(job.events) == [b"data: kept\n\n"]
+    assert list(job.events) == [(1, b"data: kept\n\n")]
 
 
 def test_detach_process_silent_on_unknown_job():
