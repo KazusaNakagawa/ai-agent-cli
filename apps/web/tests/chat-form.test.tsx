@@ -727,4 +727,173 @@ describe("ChatForm", () => {
       )
     })
   })
+
+  // ----- Up/Down history recall (Issue #117) ---------------------------
+
+  const CHAT_HISTORY_KEY = "ai-agent:chat-history:v1"
+
+  // Seed the chat store directly via sessionStorage so each test can start
+  // with a controlled history without going through real POST→stream
+  // roundtrips for every entry.
+  function seedHistory(questions: string[]): void {
+    const messages = questions.flatMap((q) => [
+      { role: "user" as const, content: q },
+      { role: "assistant" as const, content: "answer for " + q },
+    ])
+    window.sessionStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages))
+  }
+
+  function getInput(): HTMLTextAreaElement {
+    return screen.getByTestId("chat-input") as HTMLTextAreaElement
+  }
+
+  it("Up in an empty textarea recalls the most recent user question", async () => {
+    seedHistory(["first", "second", "third"])
+    renderChatForm()
+    const input = await screen.findByTestId("chat-input")
+    await waitFor(() => expect(input).toBeInTheDocument())
+
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("third"))
+  })
+
+  it("subsequent Up keystrokes walk further back through history", async () => {
+    seedHistory(["first", "second", "third"])
+    renderChatForm()
+    const input = getInput()
+
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("third"))
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("second"))
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("first"))
+    // Up at the oldest is a no-op (preventDefault keeps caret stable but
+    // value doesn't regress further).
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(input).toHaveValue("first")
+  })
+
+  it("Down walks forward and Down past newest restores the saved draft", async () => {
+    seedHistory(["first", "second"])
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = getInput()
+    // User had a draft in progress before nav.
+    await user.type(input, "draft")
+
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("second"))
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("first"))
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    await waitFor(() => expect(input).toHaveValue("second"))
+    // Past the newest → original draft restored, nav state reset.
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    await waitFor(() => expect(input).toHaveValue("draft"))
+    // A subsequent Down without a prior Up is a no-op.
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(input).toHaveValue("draft")
+  })
+
+  it("Esc while navigating restores the draft without aborting any stream", async () => {
+    seedHistory(["older", "newer"])
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = getInput()
+    await user.type(input, "in progress")
+
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("newer"))
+    fireEvent.keyDown(input, { key: "Escape" })
+    await waitFor(() => expect(input).toHaveValue("in progress"))
+    // After Esc resets nav, a fresh Up should re-snapshot (current "in
+    // progress") and walk to newest again.
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("newer"))
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    await waitFor(() => expect(input).toHaveValue("in progress"))
+  })
+
+  it("Up while IME composing does not navigate history", async () => {
+    seedHistory(["older"])
+    renderChatForm()
+    const input = getInput()
+
+    fireEvent.compositionStart(input)
+    fireEvent.keyDown(input, { key: "ArrowUp", isComposing: true })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(input).toHaveValue("")
+    fireEvent.compositionEnd(input)
+    // After composition ends, Up works again.
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("older"))
+  })
+
+  it("Up with caret not on the first line of a multi-line draft does NOT recall", async () => {
+    seedHistory(["older"])
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = getInput()
+    // Multi-line draft via Shift+Enter (avoids triggering send).
+    await user.type(input, "line1{Shift>}{Enter}{/Shift}line2")
+    expect(input.value).toBe("line1\nline2")
+
+    // Caret in the middle of line2 — Up should naturally move it to line1,
+    // not hijack to history recall.
+    input.selectionStart = 8
+    input.selectionEnd = 8
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(input).toHaveValue("line1\nline2")
+
+    // Caret on the first line → Up DOES recall, replacing the draft.
+    input.selectionStart = 2
+    input.selectionEnd = 2
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("older"))
+  })
+
+  it("Down with caret not on the last line of a multi-line draft does NOT exit recall", async () => {
+    seedHistory(["older"])
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = getInput()
+
+    // Enter nav, then build a multi-line draft mid-nav (simulates edits).
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("older"))
+    await user.type(input, "{Shift>}{Enter}{/Shift}second")
+    expect(input.value).toBe("older\nsecond")
+
+    // Caret on the first line — Down should move it to line 2, not bail nav.
+    input.selectionStart = 2
+    input.selectionEnd = 2
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(input).toHaveValue("older\nsecond")
+  })
+
+  it("nav state resets after a successful send", async () => {
+    seedHistory(["seed"])
+    chatRoundtrip(() => sseResponse([{ data: "ok" }]))
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = getInput()
+
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("seed"))
+    // Send the recalled question.
+    await user.click(screen.getByTestId("send-button"))
+    await waitFor(() => {
+      const all = screen.getAllByTestId("chat-msg-assistant")
+      expect(all[all.length - 1]).toHaveTextContent("ok")
+    })
+    // After send, input clears AND nav resets — the next Up should start
+    // from the newest entry again (which is now the just-sent question).
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    await waitFor(() => expect(input).toHaveValue("seed"))
+  })
 })

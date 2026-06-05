@@ -1,5 +1,5 @@
 "use client"
-import { useRef } from "react"
+import { useRef, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -15,6 +15,9 @@ type Props = {
   onToggleMic: (prefix: string) => void
   onSend: () => void
   onCancel: () => void
+  // Optional Up/Down/Esc history recall (Issue #117). When provided, runs
+  // after the IME + Enter guards so Enter-to-send still wins.
+  onHistoryKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
 }
 
 export function ChatComposer({
@@ -26,6 +29,7 @@ export function ChatComposer({
   onToggleMic,
   onSend,
   onCancel,
+  onHistoryKeyDown,
 }: Props) {
   // Tracks IME composition so Enter doesn't submit while picking kanji.
   const composingRef = useRef(false)
@@ -45,15 +49,15 @@ export function ChatComposer({
               composingRef.current = false
             }}
             onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !composingRef.current &&
-                !e.nativeEvent.isComposing
-              ) {
+              // IME guard covers both Enter-to-send and history recall — Up/Down
+              // during kanji selection must move the suggestion cursor, not nav.
+              if (composingRef.current || e.nativeEvent.isComposing) return
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
                 onSend()
+                return
               }
+              onHistoryKeyDown?.(e)
             }}
             placeholder="Ask about today's briefing…"
             rows={2}
