@@ -53,10 +53,28 @@ describe("ChatForm", () => {
   // accidentally consuming a chat-POST response.
   type Handler = (init?: RequestInit) => Promise<Response> | Response
   let queues: Record<string, Handler[]>
+  let nextJobId: number
 
   function on(url: string, handler: Handler) {
     if (!queues[url]) queues[url] = []
     queues[url].push(handler)
+  }
+
+  // The backend now answers /api/chat with `202 {job_id}`, then streams via
+  // GET /api/chat/{job_id}/stream. Most tests just want to set "given this
+  // chat turn, the SSE looks like X" — this helper queues the canned 202 and
+  // the SSE response together, with a unique job_id per call so concurrent
+  // turns (e.g. the stale_session retry) don't collide on the same URL key.
+  function chatRoundtrip(streamHandler: Handler): string {
+    const jobId = `job-${nextJobId++}`
+    on("/api/chat", () =>
+      new Response(JSON.stringify({ job_id: jobId, status: "pending" }), {
+        status: 202,
+        headers: { "content-type": "application/json" },
+      }),
+    )
+    on(`/api/chat/${jobId}/stream`, streamHandler)
+    return jobId
   }
 
   function mockCreds(creds: Record<string, boolean> = {}) {
@@ -68,6 +86,7 @@ describe("ChatForm", () => {
 
   beforeEach(() => {
     queues = {}
+    nextJobId = 1
     fetchMock.mockReset()
     fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
       const u = typeof url === "string" ? url : url.toString()
@@ -107,7 +126,7 @@ describe("ChatForm", () => {
   })
 
   it("POSTs today's date + question and streams assistant output", async () => {
-    on("/api/chat", () => sseResponse([{ data: "hello" }, { data: "world" }]))
+    chatRoundtrip(() => sseResponse([{ data: "hello" }, { data: "world" }]))
     const user = userEvent.setup()
     renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "what's new?")
@@ -134,7 +153,7 @@ describe("ChatForm", () => {
   })
 
   it("renders markdown in assistant output via react-markdown", async () => {
-    on("/api/chat", () => sseResponse([{ data: "**bold** text" }]))
+    chatRoundtrip(() => sseResponse([{ data: "**bold** text" }]))
     const user = userEvent.setup()
     renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
@@ -147,7 +166,7 @@ describe("ChatForm", () => {
   })
 
   it("strips dangerous raw HTML from assistant markdown (rehype-sanitize)", async () => {
-    on("/api/chat", () =>
+    chatRoundtrip(() =>
       sseResponse([{ data: "<img src=x onerror=alert(1)> after" }]),
     )
     const user = userEvent.setup()
@@ -164,10 +183,10 @@ describe("ChatForm", () => {
   })
 
   it("retries exactly once on stale_session with the same payload", async () => {
-    on("/api/chat", () =>
+    chatRoundtrip(() =>
       sseResponse([{ event: "stale_session", data: "expired" }]),
     )
-    on("/api/chat", () => sseResponse([{ data: "after retry" }]))
+    chatRoundtrip(() => sseResponse([{ data: "after retry" }]))
     const user = userEvent.setup()
     renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
@@ -186,7 +205,7 @@ describe("ChatForm", () => {
   })
 
   it("shows event:error inline and does not retry", async () => {
-    on("/api/chat", () => sseResponse([{ event: "error", data: "boom" }]))
+    chatRoundtrip(() => sseResponse([{ event: "error", data: "boom" }]))
     const user = userEvent.setup()
     renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
@@ -212,7 +231,7 @@ describe("ChatForm", () => {
   })
 
   it("sends on Enter after compositionend fires", async () => {
-    on("/api/chat", () => sseResponse([{ data: "ok" }]))
+    chatRoundtrip(() => sseResponse([{ data: "ok" }]))
     const user = userEvent.setup()
     renderChatForm()
     const input = screen.getByTestId("chat-input")
@@ -358,7 +377,7 @@ describe("ChatForm", () => {
   })
 
   it("persists the draft on each change and clears it on successful send", async () => {
-    on("/api/chat", () => sseResponse([{ data: "ok" }]))
+    chatRoundtrip(() => sseResponse([{ data: "ok" }]))
     const user = userEvent.setup()
     renderChatForm()
     const input = screen.getByTestId("chat-input")
@@ -389,7 +408,7 @@ describe("ChatForm", () => {
   // ----- Notion save (Issue #87) ----------------------------------------
 
   async function sendOneTurn(user: ReturnType<typeof userEvent.setup>) {
-    on("/api/chat", () => sseResponse([{ data: "an answer" }]))
+    chatRoundtrip(() => sseResponse([{ data: "an answer" }]))
     await user.type(screen.getByTestId("chat-input"), "a question")
     await user.click(screen.getByTestId("send-button"))
     await waitFor(() => {
@@ -496,7 +515,7 @@ describe("ChatForm", () => {
         controller.enqueue(encoder.encode("data: partial\n\n"))
       },
     })
-    on("/api/chat", () => new Response(stream, { status: 200 }))
+    chatRoundtrip(() => new Response(stream, { status: 200 }))
 
     const user = userEvent.setup()
     renderChatForm()
@@ -575,7 +594,7 @@ describe("ChatForm", () => {
   }
 
   it("replaces Send with Cancel while streaming", async () => {
-    on("/api/chat", openChatStream())
+    chatRoundtrip(openChatStream())
     const user = userEvent.setup()
     renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "my question")
@@ -597,7 +616,7 @@ describe("ChatForm", () => {
   })
 
   it("clicking Cancel aborts, marks the message cancelled, and restores the question", async () => {
-    on("/api/chat", openChatStream())
+    chatRoundtrip(openChatStream())
     const user = userEvent.setup()
     renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "my question")
@@ -622,7 +641,7 @@ describe("ChatForm", () => {
   })
 
   it("Esc cancels the in-flight stream", async () => {
-    on("/api/chat", openChatStream("hi"))
+    chatRoundtrip(openChatStream("hi"))
     const user = userEvent.setup()
     renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
@@ -640,7 +659,7 @@ describe("ChatForm", () => {
   })
 
   it("keeps the textarea editable while streaming", async () => {
-    on("/api/chat", openChatStream())
+    chatRoundtrip(openChatStream())
     const user = userEvent.setup()
     renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
@@ -661,7 +680,7 @@ describe("ChatForm", () => {
 
   it("does not log a React warning when unmounted mid-stream", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
-    on("/api/chat", openChatStream())
+    chatRoundtrip(openChatStream())
     const user = userEvent.setup()
     const { unmount } = renderChatForm()
     await user.type(screen.getByTestId("chat-input"), "q")
@@ -680,8 +699,8 @@ describe("ChatForm", () => {
   })
 
   it("allows sending a fresh request after cancel", async () => {
-    on("/api/chat", openChatStream("first"))
-    on("/api/chat", () => sseResponse([{ data: "second answer" }]))
+    chatRoundtrip(openChatStream("first"))
+    chatRoundtrip(() => sseResponse([{ data: "second answer" }]))
 
     const user = userEvent.setup()
     renderChatForm()
