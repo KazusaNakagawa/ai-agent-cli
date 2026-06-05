@@ -1,13 +1,7 @@
 "use client"
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react"
+import type { ReactNode } from "react"
+
+import { createJobStoreProvider } from "./createJobStoreProvider"
 
 export type JobStatus = "idle" | "pending" | "running" | "done" | "failed"
 
@@ -44,7 +38,7 @@ const initialState: JobState = {
   sessionExpired: false,
 }
 
-const isInFlight = (s: JobStatus) => s === "pending" || s === "running"
+const isInFlightStatus = (s: JobStatus) => s === "pending" || s === "running"
 const isTerminal = (s: JobStatus) => s === "done" || s === "failed"
 
 type ApiJobDetail = {
@@ -56,196 +50,25 @@ type ApiJobDetail = {
   error?: string | null
 }
 
-function loadPersisted(): JobState {
-  if (typeof window === "undefined") return initialState
-  try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY)
-    if (!raw) return initialState
-    const parsed = JSON.parse(raw) as Partial<JobState>
-    const next = { ...initialState, ...parsed, sessionExpired: false }
-    // Drop unresumable snapshots: an in-flight status with no jobId can only
-    // come from the brief window between startJob() flipping status to
-    // "pending" and the POST returning. Polling has nothing to resume on.
-    if (!next.jobId && isInFlight(next.status)) return initialState
-    return next
-  } catch {
-    return initialState
-  }
-}
+const { Provider, useStore } = createJobStoreProvider<JobState, StartOpts>({
+  storageKey: STORAGE_KEY,
+  initialState,
+  getJobId: (s) => s.jobId,
+  isInFlight: (s) => isInFlightStatus(s.status),
+  // sessionExpired is UI-only; never persist it. Persist when there's anything
+  // worth resuming: a jobId or a surfaced error message.
+  isPersistable: (s) => Boolean(s.jobId) || Boolean(s.error),
+  serializeForStorage: (s) => ({ ...s, sessionExpired: false }),
 
-function persist(state: JobState) {
-  if (typeof window === "undefined") return
-  try {
-    // sessionExpired is UI-only; never persist it
-    const toStore = { ...state, sessionExpired: false }
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(toStore))
-  } catch {
-    // quota / unavailable — state remains in memory for the tab
-  }
-}
-
-function clearPersisted() {
-  if (typeof window === "undefined") return
-  try {
-    window.sessionStorage.removeItem(STORAGE_KEY)
-  } catch {
-    // ignore
-  }
-}
-
-const JobStateContext = createContext<JobStateContextValue | null>(null)
-
-export function JobStateProvider({ children }: { children: ReactNode }) {
-  // Render initialState on first paint so SSR and the first client render
-  // agree (sessionStorage is unavailable on the server). The hydrate effect
-  // below promotes state to whatever was persisted in this tab.
-  const [state, setState] = useState<JobState>(initialState)
-  const [hydrated, setHydrated] = useState(false)
-
-  useEffect(() => {
-    setState(loadPersisted())
-    setHydrated(true)
-  }, [])
-
-  useEffect(() => {
-    if (!hydrated) return
-    // Don't persist if there's nothing recoverable: no jobId AND no error to
-    // surface. This covers idle and the transient "pending without jobId"
-    // window during startJob() before the POST returns.
-    if (!state.jobId && !state.error) {
-      clearPersisted()
-    } else {
-      persist(state)
-    }
-  }, [state, hydrated])
-
-  const inFlight = isInFlight(state.status)
-
-  // Polling loop. Runs while an in-flight job is present; aborted/cleaned up
-  // on jobId change, status leaving in-flight, or unmount. Mount with a
-  // persisted in-flight job resumes polling per the acceptance criteria.
-  useEffect(() => {
-    if (!hydrated) return
-    if (!state.jobId) return
-    if (!inFlight) return
-
-    const jobId = state.jobId
-    const ctl = new AbortController()
-    const pollStartedAt = Date.now()
-    let stopped = false
-
-    const stop = () => {
-      stopped = true
-      ctl.abort()
-    }
-
-    ;(async () => {
-      while (!stopped) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
-        if (stopped) return
-        if (Date.now() - pollStartedAt > POLL_TIMEOUT_MS) {
-          setState((prev) =>
-            prev.jobId === jobId
-              ? {
-                  ...prev,
-                  status: "failed",
-                  error: "Timed out waiting for the job to finish",
-                }
-              : prev,
-          )
-          return
-        }
-        try {
-          const res = await fetch(`/api/run/${jobId}`, {
-            cache: "no-store",
-            signal: ctl.signal,
-          })
-          if (stopped) return
-          if (res.status === 401) {
-            setState((prev) =>
-              prev.jobId === jobId
-                ? { ...prev, sessionExpired: true }
-                : prev,
-            )
-            return
-          }
-          if (res.status === 404) {
-            // Backend no longer knows this job (process restart, eviction).
-            // Per AC: clear state cleanly with an informative message.
-            setState((prev) =>
-              prev.jobId === jobId
-                ? {
-                    ...initialState,
-                    error:
-                      "The previous background job is no longer available — please run it again.",
-                  }
-                : prev,
-            )
-            return
-          }
-          if (!res.ok) {
-            setState((prev) =>
-              prev.jobId === jobId
-                ? {
-                    ...prev,
-                    status: "failed",
-                    error: `GET /api/run/${jobId} failed (HTTP ${res.status})`,
-                  }
-                : prev,
-            )
-            return
-          }
-          const detail = (await res.json()) as ApiJobDetail
-          if (stopped) return
-          setState((prev) =>
-            prev.jobId === jobId
-              ? {
-                  ...prev,
-                  status: detail.status,
-                  startedAt: detail.started_at ?? prev.startedAt,
-                  finishedAt: detail.finished_at ?? prev.finishedAt,
-                  // dry_run is set on the POST response; preserve it across GETs that omit it
-                  dryRun: detail.dry_run ?? prev.dryRun,
-                  error:
-                    detail.status === "failed"
-                      ? detail.error ?? "Job failed without an error message"
-                      : prev.error,
-                }
-                : prev,
-          )
-          if (isTerminal(detail.status)) return
-        } catch (e) {
-          if (stopped) return
-          setState((prev) =>
-            prev.jobId === jobId
-              ? {
-                  ...prev,
-                  status: "failed",
-                  error: e instanceof Error ? e.message : "Network error",
-                }
-              : prev,
-          )
-          return
-        }
-      }
-    })()
-
-    return stop
-  }, [hydrated, state.jobId, inFlight])
-
-  const startJob = useCallback(async ({ dryRun }: StartOpts) => {
-    setState({
-      ...initialState,
-      status: "pending",
-      dryRun,
-    })
+  start: async ({ dryRun }, { setState }) => {
+    setState(() => ({ ...initialState, status: "pending", dryRun }))
     try {
       const res = await fetch(`/api/run${dryRun ? "?dry_run=true" : ""}`, {
         method: "POST",
         cache: "no-store",
       })
       if (res.status === 401) {
-        setState({ ...initialState, sessionExpired: true })
+        setState(() => ({ ...initialState, sessionExpired: true }))
         return
       }
       if (!res.ok) {
@@ -273,34 +96,81 @@ export function JobStateProvider({ children }: { children: ReactNode }) {
         error: e instanceof Error ? e.message : "Network error",
       }))
     }
-  }, [])
+  },
 
-  const reset = useCallback(() => {
-    setState(initialState)
-    clearPersisted()
-  }, [])
+  watch: async (jobId, { signal, setState }) => {
+    const pollStartedAt = Date.now()
+    while (!signal.aborted) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+      if (signal.aborted) return
+      if (Date.now() - pollStartedAt > POLL_TIMEOUT_MS) {
+        setState((prev) => ({
+          ...prev,
+          status: "failed",
+          error: "Timed out waiting for the job to finish",
+        }))
+        return
+      }
+      try {
+        const res = await fetch(`/api/run/${jobId}`, {
+          cache: "no-store",
+          signal,
+        })
+        if (signal.aborted) return
+        if (res.status === 401) {
+          setState((prev) => ({ ...prev, sessionExpired: true }))
+          return
+        }
+        if (res.status === 404) {
+          // Backend no longer knows this job (process restart, eviction).
+          // Per AC: clear state cleanly with an informative message.
+          setState(() => ({
+            ...initialState,
+            error:
+              "The previous background job is no longer available — please run it again.",
+          }))
+          return
+        }
+        if (!res.ok) {
+          setState((prev) => ({
+            ...prev,
+            status: "failed",
+            error: `GET /api/run/${jobId} failed (HTTP ${res.status})`,
+          }))
+          return
+        }
+        const detail = (await res.json()) as ApiJobDetail
+        if (signal.aborted) return
+        setState((prev) => ({
+          ...prev,
+          status: detail.status,
+          startedAt: detail.started_at ?? prev.startedAt,
+          finishedAt: detail.finished_at ?? prev.finishedAt,
+          // dry_run is set on the POST response; preserve it across GETs that omit it
+          dryRun: detail.dry_run ?? prev.dryRun,
+          error:
+            detail.status === "failed"
+              ? detail.error ?? "Job failed without an error message"
+              : prev.error,
+        }))
+        if (isTerminal(detail.status)) return
+      } catch (e) {
+        if (signal.aborted) return
+        setState((prev) => ({
+          ...prev,
+          status: "failed",
+          error: e instanceof Error ? e.message : "Network error",
+        }))
+        return
+      }
+    }
+  },
+})
 
-  const value = useMemo<JobStateContextValue>(
-    () => ({
-      ...state,
-      isBackgrounded: inFlight,
-      startJob,
-      reset,
-    }),
-    [state, inFlight, startJob, reset],
-  )
-
-  return (
-    <JobStateContext.Provider value={value}>
-      {children}
-    </JobStateContext.Provider>
-  )
+export function JobStateProvider({ children }: { children: ReactNode }) {
+  return <Provider>{children}</Provider>
 }
 
 export function useJobState(): JobStateContextValue {
-  const ctx = useContext(JobStateContext)
-  if (!ctx) {
-    throw new Error("useJobState must be used inside <JobStateProvider>")
-  }
-  return ctx
+  return useStore()
 }
