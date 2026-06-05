@@ -97,6 +97,28 @@ def test_event_buffer_trims_oldest_at_max_but_seq_keeps_climbing(monkeypatch):
     ]
 
 
+def test_snapshot_events_since_returns_new_events_with_status():
+    job = chat_job_store.create_job()
+    chat_job_store.append_event(job.job_id, b"a")
+    chat_job_store.append_event(job.job_id, b"b")
+    chat_job_store.append_event(job.job_id, b"c")
+
+    events, status = chat_job_store.snapshot_events_since(job.job_id, last_seq=1)
+    assert events == [(2, b"b"), (3, b"c")]
+    assert status == "pending"
+
+    # last_seq beyond the latest returns an empty list but still the live status.
+    events, status = chat_job_store.snapshot_events_since(job.job_id, last_seq=99)
+    assert events == []
+    assert status == "pending"
+
+
+def test_snapshot_events_since_returns_none_status_for_unknown_job():
+    events, status = chat_job_store.snapshot_events_since("nope", last_seq=0)
+    assert events == []
+    assert status is None
+
+
 def test_attach_process_records_handle():
     job = chat_job_store.create_job()
     fake_proc = MagicMock(spec=subprocess.Popen)

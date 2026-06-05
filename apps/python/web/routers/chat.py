@@ -132,64 +132,71 @@ def _run_chat_job(
     doesn't grow per-request.
     """
     chat_job_store.mark_running(job_id)
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-    )
-    chat_job_store.attach_process(job_id, proc)
-
-    # Drain stderr concurrently — without this, a large stderr write would
-    # fill the OS pipe buffer, block claude, and stall the stdout iteration.
-    stderr_chunks: list[bytes] = []
-
-    def _drain_stderr() -> None:
-        assert proc.stderr is not None
-        for chunk in iter(lambda: proc.stderr.read(4096), b""):
-            stderr_chunks.append(chunk)
-
-    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
-    stderr_thread.start()
-
     try:
-        assert proc.stdout is not None
-        for line_bytes in proc.stdout:
-            line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
-            chat_job_store.append_event(job_id, _sse_event(line))
-    finally:
-        proc.wait()
-        stderr_thread.join(timeout=2)
-        chat_job_store.detach_process(job_id)
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        chat_job_store.attach_process(job_id, proc)
 
-    if proc.returncode != 0:
-        stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
-        is_resume = "--resume" in cmd
-        if is_resume and "No conversation found" in stderr:
-            # Stale saved session: drop the file so the next POST creates a
-            # fresh one, and tell the client to retry. The job itself is
-            # still considered "done" (not "failed") because the user-facing
-            # remediation is a quiet retry, not an error to surface.
-            session_file.unlink(missing_ok=True)
-            chat_job_store.append_event(
-                job_id,
-                _sse_event(
-                    "saved session expired; retry the request",
-                    event="stale_session",
-                ),
-            )
-            chat_job_store.mark_done(job_id)
+        # Drain stderr concurrently — without this, a large stderr write would
+        # fill the OS pipe buffer, block claude, and stall the stdout iteration.
+        stderr_chunks: list[bytes] = []
+
+        def _drain_stderr() -> None:
+            assert proc.stderr is not None
+            for chunk in iter(lambda: proc.stderr.read(4096), b""):
+                stderr_chunks.append(chunk)
+
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stderr_thread.start()
+
+        try:
+            assert proc.stdout is not None
+            for line_bytes in proc.stdout:
+                line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
+                chat_job_store.append_event(job_id, _sse_event(line))
+        finally:
+            proc.wait()
+            stderr_thread.join(timeout=2)
+            chat_job_store.detach_process(job_id)
+
+        if proc.returncode != 0:
+            stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
+            is_resume = "--resume" in cmd
+            if is_resume and "No conversation found" in stderr:
+                # Stale saved session: drop the file so the next POST creates a
+                # fresh one, and tell the client to retry. The job itself is
+                # still considered "done" (not "failed") because the user-facing
+                # remediation is a quiet retry, not an error to surface.
+                session_file.unlink(missing_ok=True)
+                chat_job_store.append_event(
+                    job_id,
+                    _sse_event(
+                        "saved session expired; retry the request",
+                        event="stale_session",
+                    ),
+                )
+                chat_job_store.mark_done(job_id)
+            else:
+                chat_job_store.append_event(
+                    job_id, _sse_event(stderr.strip(), event="error")
+                )
+                chat_job_store.mark_failed(
+                    job_id, stderr.strip() or "chat subprocess failed"
+                )
         else:
-            chat_job_store.append_event(
-                job_id, _sse_event(stderr.strip(), event="error")
-            )
-            chat_job_store.mark_failed(
-                job_id, stderr.strip() or "chat subprocess failed"
-            )
-    else:
-        chat_job_store.mark_done(job_id)
-
-    _schedule_gc(job_id, CHAT_JOB_GC_GRACE_SEC)
+            chat_job_store.mark_done(job_id)
+    except Exception as exc:
+        # Catch-all so a Popen / OSError / etc. before we reach the normal
+        # done/failed branches can't leave the job stuck in ``running``.
+        logger.exception("chat job %s crashed before normal completion", job_id)
+        chat_job_store.append_event(job_id, _sse_event(str(exc), event="error"))
+        chat_job_store.mark_failed(job_id, str(exc) or exc.__class__.__name__)
+    finally:
+        _schedule_gc(job_id, CHAT_JOB_GC_GRACE_SEC)
 
 
 def _schedule_gc(job_id: str, delay_sec: float) -> None:
@@ -209,21 +216,19 @@ def _tail_events(job_id: str) -> Iterator[bytes]:
     """
     last_seq = 0
     while True:
-        job = chat_job_store.get_job(job_id)
-        if job is None:
+        new_events, status = chat_job_store.snapshot_events_since(job_id, last_seq)
+
+        if status is None:
             # GC'd while we were tailing — emit a terminal hint so the
             # client closes cleanly rather than seeing a connection drop.
             yield _sse_event("job no longer available", event="error")
             return
 
-        # Snapshot under no lock — the runner thread mutates ``events`` in
-        # place. ``list()`` gives a stable view for this iteration.
-        for seq, event_bytes in list(job.events):
-            if seq > last_seq:
-                yield event_bytes
-                last_seq = seq
+        for seq, event_bytes in new_events:
+            yield event_bytes
+            last_seq = seq
 
-        if job.status in ("done", "failed"):
+        if status in ("done", "failed"):
             return
 
         time.sleep(_TAIL_POLL_INTERVAL_SEC)
@@ -278,11 +283,12 @@ def delete_chat(job_id: str) -> None:
         return
     try:
         proc.terminate()
-    except Exception:
-        # Best-effort: the runner thread will mark_failed when proc.wait()
-        # returns; suppressing here avoids surfacing OS-level cancel races
-        # as 5xx to the operator.
+    except Exception as exc:
+        # If terminate() blew up, the runner's proc.wait() can hang and the
+        # job would otherwise stay ``running`` forever — explicitly fail it
+        # so the GET stream can close and the GC timer eventually clears it.
         logger.exception("failed to terminate chat subprocess (job_id=%s)", job_id)
+        chat_job_store.mark_failed(job_id, f"terminate failed: {exc}")
 
 
 class ChatNotionImportBody(BaseModel):

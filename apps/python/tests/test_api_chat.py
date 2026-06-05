@@ -12,6 +12,7 @@ before yielding the response back to the test, so by the time POST
 returns the FakePopen has already completed and the job is ``done`` —
 which makes the GET-stream assertions deterministic without sleeps.
 """
+import asyncio
 import io
 import time
 from unittest.mock import MagicMock
@@ -303,6 +304,57 @@ async def test_chat_stream_replays_stdout_lines_as_data_events(
     assert "data: line3\n\n" in body
 
 
+async def test_chat_stream_supports_concurrent_attaches(
+    authed_client, briefing_setup, monkeypatch
+):
+    """Two simultaneous GET streams against the same job both see the full
+    transcript. Guards the snapshot path against deque-mutation races and
+    confirms a second attach isn't starved by the first."""
+    factory = _make_popen(stdout_lines=[b"x\n", b"y\n"])
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    post = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?"},
+    )
+    assert post.status_code == 202
+    job_id = post.json()["job_id"]
+
+    first, second = await asyncio.gather(
+        authed_client.get(f"/api/chat/{job_id}/stream"),
+        authed_client.get(f"/api/chat/{job_id}/stream"),
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    for line in ("x", "y"):
+        assert f"data: {line}\n\n" in first.text
+        assert f"data: {line}\n\n" in second.text
+
+
+async def test_chat_job_marked_failed_when_popen_raises(
+    authed_client, briefing_setup, monkeypatch
+):
+    """If ``subprocess.Popen`` itself raises, the job must end up ``failed``
+    rather than leaking in ``running`` (docstring contract: always advance
+    to done/failed)."""
+    def _boom(*args, **kwargs):
+        raise OSError("fork failed")
+
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", _boom)
+
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?"},
+    )
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+
+    job = chat_job_store.get_job(job_id)
+    assert job is not None
+    assert job.status == "failed"
+    assert "fork failed" in (job.error or "")
+
+
 async def test_chat_stream_can_be_reattached_to_replay_buffer(
     authed_client, briefing_setup, monkeypatch
 ):
@@ -453,8 +505,13 @@ async def test_chat_job_is_gc_after_grace_period(
     job_id = post.json()["job_id"]
     assert chat_job_store.get_job(job_id) is not None
 
-    # Wait a hair past the grace window for the Timer to fire.
-    time.sleep(0.25)
+    # Poll instead of one fixed sleep: a fixed 0.25s wait is flaky on
+    # busy CI where Timer scheduling can be delayed past that window.
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if chat_job_store.get_job(job_id) is None:
+            break
+        time.sleep(0.05)
     assert chat_job_store.get_job(job_id) is None
 
 

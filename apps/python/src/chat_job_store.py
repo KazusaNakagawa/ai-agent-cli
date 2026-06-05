@@ -95,6 +95,25 @@ def mark_failed(job_id: str, error: str) -> ChatJob | None:
         return job
 
 
+def snapshot_events_since(
+    job_id: str, last_seq: int
+) -> tuple[list[tuple[int, bytes]], JobStatus | None]:
+    """Atomically snapshot events newer than ``last_seq`` plus the job status.
+
+    Returns ``(new_events, status)``. ``status`` is ``None`` when the job has
+    been GC'd. Taking the snapshot under the store lock prevents the caller
+    from iterating ``events`` while the runner thread's ``append_event`` is
+    mid-trim — without this, a ``deque`` at ``maxlen`` could raise
+    ``RuntimeError: deque mutated during iteration``.
+    """
+    with _lock:
+        job = _store.get(job_id)
+        if job is None:
+            return [], None
+        new_events = [(seq, ev) for seq, ev in job.events if seq > last_seq]
+        return new_events, job.status
+
+
 def append_event(job_id: str, event: bytes) -> int | None:
     """Append an SSE-encoded event to the job's replay buffer.
 
