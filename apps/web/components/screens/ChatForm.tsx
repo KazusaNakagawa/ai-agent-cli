@@ -58,24 +58,41 @@ export function ChatForm() {
   // so the user can edit and resend without retyping.
   const pendingQuestionRef = useRef("")
 
-  // Stream one POST /api/chat round trip. Returns "stale" iff the backend
-  // emitted the `stale_session` event — the caller retries exactly once.
+  // Drive one chat turn: POST kicks off a backend job (returns 202 + job_id),
+  // then GET /api/chat/{job_id}/stream tails the SSE buffer to completion.
+  // Returns "stale" iff the backend emitted the `stale_session` event — the
+  // caller retries exactly once.
   const stream = useCallback(
     async (
       question: string,
       ctl: AbortController,
     ): Promise<"ok" | "stale" | "401"> => {
-      const res = await fetch("/api/chat", {
+      const post = await fetch("/api/chat", {
         method: "POST",
         cache: "no-store",
         signal: ctl.signal,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ date: today(), question }),
       })
+      if (post.status === 401) return "401"
+      if (!post.ok) {
+        const text = await post.text().catch(() => "")
+        throw new Error(`POST /api/chat failed (HTTP ${post.status}): ${text}`)
+      }
+      const { job_id: jobId } = (await post.json()) as { job_id?: string }
+      if (!jobId) throw new Error("POST /api/chat returned no job_id")
+
+      const res = await fetch(`/api/chat/${jobId}/stream`, {
+        method: "GET",
+        cache: "no-store",
+        signal: ctl.signal,
+      })
       if (res.status === 401) return "401"
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => "")
-        throw new Error(`POST /api/chat failed (HTTP ${res.status}): ${text}`)
+        throw new Error(
+          `GET /api/chat/${jobId}/stream failed (HTTP ${res.status}): ${text}`,
+        )
       }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
