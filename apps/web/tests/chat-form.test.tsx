@@ -4,12 +4,15 @@ import { StrictMode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ChatForm } from "@/components/screens/ChatForm"
+import { ChatJobStateProvider } from "@/lib/chatJobStore"
 import { ChatStateProvider } from "@/lib/chatStore"
 
 function renderChatForm() {
   return render(
     <ChatStateProvider>
-      <ChatForm />
+      <ChatJobStateProvider>
+        <ChatForm />
+      </ChatJobStateProvider>
     </ChatStateProvider>,
   )
 }
@@ -18,7 +21,9 @@ function renderChatFormStrict() {
   return render(
     <StrictMode>
       <ChatStateProvider>
-        <ChatForm />
+        <ChatJobStateProvider>
+          <ChatForm />
+        </ChatJobStateProvider>
       </ChatStateProvider>
     </StrictMode>,
   )
@@ -726,6 +731,55 @@ describe("ChatForm", () => {
         "second answer",
       )
     })
+  })
+
+  // ----- Resume in-flight job on mount (Issue #125) --------------------
+
+  it("hydrates an in-flight job from sessionStorage and resumes the stream", async () => {
+    const CHAT_JOB_KEY = "ai-agent:chat-job:v1"
+    window.sessionStorage.setItem(
+      CHAT_JOB_KEY,
+      JSON.stringify({
+        jobId: "resume-2",
+        status: "running",
+        question: "今日の株価は？",
+        date: "2026-06-06",
+        assistantContent: "",
+        error: null,
+        sessionExpired: false,
+        staleSession: false,
+      }),
+    )
+    on("/api/chat/resume-2/stream", () =>
+      sseResponse([{ data: "Resumed answer." }]),
+    )
+
+    renderChatForm()
+
+    // The persisted user question shows up immediately as the in-flight
+    // turn, alongside whatever committed history was already there.
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-user")).toHaveTextContent(
+        "今日の株価は？",
+      )
+    })
+    // The watch loop resumes the GET stream against the persisted job_id
+    // and fills the assistant message from the replay.
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent(
+        "Resumed answer.",
+      )
+    })
+    // The originating tab is the one that committed the turn — this
+    // (hydrated) tab must NOT also append it to chatStore, otherwise we'd
+    // double-list the turn on next mount. The sessionStorage entry should
+    // also be cleared once the job terminates.
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem(CHAT_JOB_KEY)).toBeNull()
+    })
+    // Only one user message (the in-flight one) — the hydrated tab didn't
+    // commit a second copy.
+    expect(screen.getAllByTestId("chat-msg-user")).toHaveLength(1)
   })
 
   // ----- Up/Down history recall (Issue #117) ---------------------------
