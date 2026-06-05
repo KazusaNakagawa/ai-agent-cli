@@ -103,3 +103,65 @@ test("chat: an in-flight job survives a page reload via sessionStorage resume (I
   )
   expect(streamHits).toBeGreaterThanOrEqual(2)
 })
+
+test("chat: Cancel mid-stream terminates the job and restores the question (Issue #99)", async ({
+  page,
+  context,
+}) => {
+  // Mock the job POST, hold the stream open until the user cancels,
+  // and capture the DELETE so we can assert the backend cancel call
+  // actually fires with the right job id.
+  let deleteHits = 0
+  let deletedJobId: string | null = null
+  await context.route("**/api/chat", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback()
+    }
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ job_id: "e2e-cancel", status: "pending" }),
+    })
+  })
+  await context.route("**/api/chat/e2e-cancel/stream", async () => {
+    // Hold the stream open without ever sending a body. The watch loop
+    // sits at status="running" (busy=true → Cancel button visible),
+    // and the user click below aborts the fetch via the store's
+    // AbortController. Playwright cleans the handler up on navigation
+    // / context teardown; this promise intentionally never resolves.
+    // (Sending a one-shot body via route.fulfill would close the
+    // response, which flips status to "done" before cancel can fire.)
+    await new Promise<void>(() => {})
+  })
+  await context.route("**/api/chat/e2e-cancel", async (route) => {
+    if (route.request().method() !== "DELETE") {
+      return route.fallback()
+    }
+    deleteHits++
+    deletedJobId = "e2e-cancel"
+    await route.fulfill({ status: 204, body: "" })
+  })
+
+  await page.goto("/chat")
+  await page.getByTestId("chat-input").fill("draft to cancel")
+  await page.getByTestId("send-button").click()
+
+  // The Cancel button replaces Send once the POST returns 202 and the
+  // store flips into "running". The assistant bubble is mounted (the
+  // bouncing-dots indicator renders while busy) but content stays
+  // empty because the stream never emits.
+  await expect(page.getByTestId("cancel-button")).toBeVisible()
+  await expect(page.getByTestId("chat-msg-user")).toContainText(
+    "draft to cancel",
+  )
+
+  await page.getByTestId("cancel-button").click()
+
+  // Cancel turn is committed with the partial answer + Cancelled marker,
+  // textarea is repopulated for re-edit, Send is back.
+  await expect(page.getByTestId("chat-cancelled")).toBeVisible()
+  await expect(page.getByTestId("chat-input")).toHaveValue("draft to cancel")
+  await expect(page.getByTestId("send-button")).toBeVisible()
+  expect(deletedJobId).toBe("e2e-cancel")
+  expect(deleteHits).toBe(1)
+})
