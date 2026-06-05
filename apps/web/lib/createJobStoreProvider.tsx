@@ -24,7 +24,6 @@ import {
 export type JobStoreSetState<State> = (mapper: (prev: State) => State) => void
 
 export type StartCtx<State> = {
-  signal: AbortSignal
   setState: JobStoreSetState<State>
 }
 
@@ -68,6 +67,10 @@ export type JobStoreConfig<State, StartOpts> = {
    * Kicks the job off. Called from the consumer's startJob callback. Receives
    * a setState that's NOT jobId-bound (the loop hasn't started yet, and the
    * caller is the one assigning the new jobId via setState).
+   *
+   * No abort signal is provided — startJob is treated as fire-and-forget. If
+   * a caller needs cancellation for its initial POST, it owns an
+   * AbortController inside the callback.
    */
   start: (opts: StartOpts, ctx: StartCtx<State>) => Promise<void>
   /**
@@ -209,11 +212,10 @@ export function createJobStoreProvider<State, StartOpts>(
     }, [hydrated, jobId, inFlight])
 
     const startJob = useCallback(async (opts: StartOpts) => {
-      const ctl = new AbortController()
       const unboundSetState: JobStoreSetState<State> = (mapper) => {
         setStateRaw(mapper)
       }
-      await start(opts, { signal: ctl.signal, setState: unboundSetState })
+      await start(opts, { setState: unboundSetState })
     }, [])
 
     const reset = useCallback(() => {

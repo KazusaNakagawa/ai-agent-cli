@@ -32,7 +32,7 @@ function makeStore(opts: {
   ) => Promise<void>
   start?: (
     jobId: string,
-    ctx: { signal: AbortSignal; setState: (m: (s: FakeState) => FakeState) => void },
+    ctx: { setState: (m: (s: FakeState) => FakeState) => void },
   ) => Promise<void>
 }) {
   return createJobStoreProvider<FakeState, { jobId: string }>({
