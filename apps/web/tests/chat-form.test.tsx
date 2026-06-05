@@ -4,7 +4,10 @@ import { StrictMode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ChatForm } from "@/components/screens/ChatForm"
-import { ChatJobStateProvider } from "@/lib/chatJobStore"
+import {
+  CHAT_JOB_STORAGE_KEY,
+  ChatJobStateProvider,
+} from "@/lib/chatJobStore"
 import { ChatStateProvider } from "@/lib/chatStore"
 
 function renderChatForm() {
@@ -736,9 +739,8 @@ describe("ChatForm", () => {
   // ----- Resume in-flight job on mount (Issue #125) --------------------
 
   it("hydrates an in-flight job from sessionStorage and resumes the stream", async () => {
-    const CHAT_JOB_KEY = "ai-agent:chat-job:v1"
     window.sessionStorage.setItem(
-      CHAT_JOB_KEY,
+      CHAT_JOB_STORAGE_KEY,
       JSON.stringify({
         jobId: "resume-2",
         status: "running",
@@ -775,7 +777,7 @@ describe("ChatForm", () => {
     // double-list the turn on next mount. The sessionStorage entry should
     // also be cleared once the job terminates.
     await waitFor(() => {
-      expect(window.sessionStorage.getItem(CHAT_JOB_KEY)).toBeNull()
+      expect(window.sessionStorage.getItem(CHAT_JOB_STORAGE_KEY)).toBeNull()
     })
     // Only one user message (the in-flight one) — the hydrated tab didn't
     // commit a second copy.

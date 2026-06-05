@@ -3,11 +3,10 @@ import type { ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  CHAT_JOB_STORAGE_KEY as STORAGE_KEY,
   ChatJobStateProvider,
   useChatJobState,
 } from "@/lib/chatJobStore"
-
-const STORAGE_KEY = "ai-agent:chat-job:v1"
 
 type Handler = (init?: RequestInit) => Promise<Response> | Response
 
@@ -233,6 +232,33 @@ describe("chatJobStore", () => {
     expect(result.current.sessionExpired).toBe(true)
     expect(result.current.jobId).toBeNull()
     expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull()
+  })
+
+  it("surfaces 401 on the resume GET as sessionExpired", async () => {
+    // Backend tokens can expire mid-stream — different from the POST 401
+    // path (covered above) because the in-flight snapshot is in
+    // sessionStorage by the time auth dies. Make sure the resume GET
+    // 401 also lifts the SessionExpiredCard guard.
+    window.sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        jobId: "auth-gone",
+        status: "running",
+        question: "Q",
+        date: "2026-06-06",
+        assistantContent: "",
+        error: null,
+        sessionExpired: false,
+        staleSession: false,
+      }),
+    )
+    on("/api/chat/auth-gone/stream", () => new Response("", { status: 401 }))
+
+    const { result } = renderHook(() => useChatJobState(), { wrapper })
+    await waitFor(() => {
+      expect(result.current.sessionExpired).toBe(true)
+    })
+    expect(result.current.status).toBe("failed")
   })
 
   it("clears state cleanly on 404 from the resume GET", async () => {

@@ -42,8 +42,10 @@ export type ChatJobStateContextValue = ChatJobState & {
   reset: () => void
 }
 
-// Bumped if the persisted shape changes incompatibly.
-const STORAGE_KEY = "ai-agent:chat-job:v1"
+// Bumped if the persisted shape changes incompatibly. Exported so tests
+// and hand-rolled debugging tools read the same key — duplicating it
+// would silently break after a version bump.
+export const CHAT_JOB_STORAGE_KEY = "ai-agent:chat-job:v1"
 
 const initialState: ChatJobState = {
   jobId: null,
@@ -84,7 +86,7 @@ const { Provider, useStore } = createJobStoreProvider<
   ChatJobState,
   ChatJobStartOpts
 >({
-  storageKey: STORAGE_KEY,
+  storageKey: CHAT_JOB_STORAGE_KEY,
   initialState,
   getJobId: (s) => s.jobId,
   isInFlight: (s) => isInFlightStatus(s.status),
