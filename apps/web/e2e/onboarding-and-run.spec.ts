@@ -163,6 +163,7 @@ test("chat: Cancel mid-stream terminates the job and restores the question (Issu
     await expect(page.getByTestId("chat-cancelled")).toBeVisible()
     await expect(page.getByTestId("chat-input")).toHaveValue("draft to cancel")
     await expect(page.getByTestId("send-button")).toBeVisible()
+    await expect(page.getByTestId("chat-error")).toHaveCount(0)
     expect(deleteHits).toBe(1)
   } finally {
     await context.unrouteAll({ behavior: "ignoreErrors" })
