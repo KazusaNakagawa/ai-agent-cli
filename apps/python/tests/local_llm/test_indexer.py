@@ -147,8 +147,8 @@ def test_indexer_detects_modified_and_deleted(tmp_path):
 
     olm = FakeOllama()
     stats = Indexer(cfg, collection=coll, ollama_client=olm).run()
-    assert stats.added >= 1
-    assert stats.deleted >= 1
+    assert stats.updated >= 1  # a.py の chunk_id 差し替え
+    assert stats.deleted >= 1  # b.py がファイルごと消える
 
     remaining = [r["meta"]["source_path"] for r in coll.data.values()]
     assert "b.py" not in remaining

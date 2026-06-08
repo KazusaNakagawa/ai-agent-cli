@@ -144,12 +144,13 @@ class Indexer:
                         for c in new_chunks
                     ],
                 )
-                stats.added += len(new_chunks)
+                if existing:
+                    stats.updated += len(new_chunks)
+                else:
+                    stats.added += len(new_chunks)
 
             if stale_ids:
                 self.collection.delete(ids=stale_ids)
-                stats.updated += len(stale_ids)
-                stats.deleted += len(stale_ids)
 
         all_data = self.collection.get(include=["metadatas"])
         all_metas = all_data.get("metadatas", []) or []
