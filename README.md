@@ -228,6 +228,37 @@ uv pip sync requirements.txt
 
 ---
 
+## Local LLM (experimental)
+
+Optional fully-local RAG over this repository, powered by Ollama + Chroma. The existing Claude Code / briefing / XSS agents are unaffected.
+
+### Prerequisites
+
+```bash
+brew install ollama       # or follow https://ollama.com
+ollama serve &
+ollama pull qwen2.5:7b
+ollama pull nomic-embed-text
+```
+
+### Usage
+
+```bash
+bin/local_llm.sh --index                       # index ~/work/ai-agent into Chroma
+bin/local_llm.sh --status                      # show indexed chunk count & models
+bin/local_llm.sh --ask "認証はどう動く？"
+bin/local_llm.sh --sources "認証はどう動く？"  # retrieval-only debug
+bin/local_llm.sh --index --reset               # rebuild from scratch
+```
+
+Chroma data is stored in `apps/python/.chroma_db/` (gitignored).
+
+Override defaults via env: `LOCAL_LLM_MODEL`, `LOCAL_LLM_EMBED_MODEL`, `LOCAL_LLM_TOP_K`, `LOCAL_LLM_CHROMA_PATH`, `OLLAMA_HOST`.
+
+Tracked under [#140](https://github.com/KazusaNakagawa/ai-agent/issues/140) (Epic [#139](https://github.com/KazusaNakagawa/ai-agent/issues/139)). Quality improvements (#135 bge-m3, #136 reranker, #138 AST chunking, #137 generation model) ship as follow-up PRs.
+
+---
+
 ## License
 
 MIT
