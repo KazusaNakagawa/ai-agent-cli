@@ -140,12 +140,18 @@ class Indexer:
                             prompt=c.text,
                         )
                     except Exception as e:
-                        # Most likely the chunk exceeds the embed model's context
-                        # window. Skip rather than aborting the whole run; #138
-                        # (AST chunking) will reduce these cases.
+                        # Skip only when the error looks like a context-window
+                        # overflow; #138 (AST chunking) will reduce these cases.
+                        # Anything else (network/auth/etc.) re-raises so the run
+                        # fails loudly instead of silently dropping data.
+                        msg = str(e).lower()
+                        if not any(k in msg for k in (
+                            "context", "exceed", "token", "length", "too long"
+                        )):
+                            raise
                         print(
                             f"  skip {c.source_path}:{c.start_line}-{c.end_line} "
-                            f"({type(e).__name__})",
+                            f"({type(e).__name__}: {e})",
                             file=sys.stderr,
                         )
                         continue
@@ -172,15 +178,24 @@ class Indexer:
 
             if stale_ids:
                 self.collection.delete(ids=stale_ids)
+                stats.deleted += len(stale_ids)
 
+        # stats.deleted counts chunks (same unit as added/updated). For whole-file
+        # deletions we count every chunk that lived under that source_path.
         all_data = self.collection.get(include=["metadatas"])
+        all_ids = all_data.get("ids", [])
         all_metas = all_data.get("metadatas", []) or []
         deleted_paths: set[str] = set()
-        for meta in all_metas:
+        for cid, meta in zip(all_ids, all_metas, strict=True):
             sp = meta.get("source_path") if isinstance(meta, dict) else None
-            if sp and sp not in seen_files and sp not in deleted_paths:
-                self.collection.delete(where={"source_path": sp})
+            if sp and sp not in seen_files:
                 deleted_paths.add(sp)
-        stats.deleted += len(deleted_paths)
+        for sp in deleted_paths:
+            ids_for_path = [
+                cid for cid, m in zip(all_ids, all_metas, strict=True)
+                if isinstance(m, dict) and m.get("source_path") == sp
+            ]
+            self.collection.delete(where={"source_path": sp})
+            stats.deleted += len(ids_for_path)
 
         return stats

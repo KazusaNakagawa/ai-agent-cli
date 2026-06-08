@@ -81,7 +81,7 @@ class FakeCollection:
         return {"ids": ids_all}
 
     def upsert(self, ids, embeddings, documents, metadatas):
-        for i, e, d, m in zip(ids, embeddings, documents, metadatas):
+        for i, e, d, m in zip(ids, embeddings, documents, metadatas, strict=True):
             self.data[i] = {"embedding": e, "document": d, "meta": m}
 
     def delete(self, ids=None, where=None):

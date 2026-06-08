@@ -37,7 +37,7 @@ def main(argv: list[str]) -> int:
     cfg = load_config(repo_root=args.root)
     if args.model:
         cfg = cfg.__class__(**{**cfg.__dict__, "model": args.model})
-    if args.top_k:
+    if args.top_k is not None:
         cfg = cfg.__class__(**{**cfg.__dict__, "top_k": args.top_k})
 
     if args.status:

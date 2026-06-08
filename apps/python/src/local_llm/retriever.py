@@ -71,7 +71,7 @@ class Retriever:
                 text=d,
                 distance=float(dist),
             )
-            for d, m, dist in zip(docs, metas, dists)
+            for d, m, dist in zip(docs, metas, dists, strict=True)
         ]
 
     def generate(self, question: str, chunks: list[RetrievedChunk]) -> Iterator[str]:

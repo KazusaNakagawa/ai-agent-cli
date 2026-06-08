@@ -19,7 +19,7 @@ Scope: Bootstrap CLI のみ。embedding 切替 (#135) / reranker (#136) / AST ch
 
 ### パッケージ構成
 
-```
+```text
 apps/python/src/local_llm/
   __init__.py
   __main__.py     # `python -m local_llm` のエントリ → cli.main()
@@ -50,7 +50,7 @@ apps/python/tests/local_llm/
 
 ### 依存追加 (`apps/python/requirements.in`)
 
-```
+```text
 chromadb>=0.5
 ollama>=0.3
 ```
@@ -115,7 +115,7 @@ retrieval デバッグ用。
 
 ## CLI
 
-```
+```text
 python -m local_llm --index [--root PATH] [--reset]
 python -m local_llm --ask "質問" [--top-k 6] [--model qwen2.5:7b]
 python -m local_llm --sources "質問" [--top-k 6]

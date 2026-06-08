@@ -47,7 +47,7 @@
 
 `apps/python/requirements.in` の末尾に追記:
 
-```
+```text
 # Local LLM (experimental)
 chromadb>=0.5
 ollama>=0.3
@@ -57,7 +57,7 @@ ollama>=0.3
 
 `.gitignore` の末尾に追記:
 
-```
+```text
 # Local LLM RAG persistent store
 apps/python/.chroma_db/
 ```
@@ -1365,7 +1365,7 @@ brew install ollama       # or follow https://ollama.com
 ollama serve &
 ollama pull qwen2.5:7b
 ollama pull nomic-embed-text
-```
+```markdown
 
 ### Usage
 
@@ -1375,7 +1375,7 @@ bin/local_llm.sh --status                # show indexed chunk count & models
 bin/local_llm.sh --ask "認証はどう動く？"
 bin/local_llm.sh --sources "認証はどう動く？"   # retrieval-only debug
 bin/local_llm.sh --index --reset         # rebuild from scratch
-```
+```text
 
 Chroma data is stored in `apps/python/.chroma_db/` (gitignored).
 
@@ -1411,7 +1411,7 @@ bin/local_llm.sh --index
 ```
 
 期待出力例:
-```
+```text
 indexed N files, M chunks (added M, updated 0, deleted 0) in T.Ts
 ```
 
