@@ -34,3 +34,29 @@ def test_build_local_briefing_prompt_inserts_inputs():
     assert "NVDA" in out
     assert "PLTR +2.1%" in out
     assert "WebSearch" not in out  # local prompt removes the WebSearch instruction
+
+
+class FakeOllama:
+    def __init__(self, tokens, captured=None):
+        self._tokens = tokens
+        self._captured = captured if captured is not None else {}
+
+    def generate(self, model, prompt, stream):
+        assert stream is True
+        self._captured["model"] = model
+        self._captured["prompt"] = prompt
+        for t in self._tokens:
+            yield {"response": t, "done": False}
+        yield {"response": "", "done": True}
+
+
+def test_generate_local_briefing_collects_stream(capsys):
+    captured: dict = {}
+    olm = FakeOllama(tokens=["Hel", "lo ", "世界"], captured=captured)
+
+    full = generate_local_briefing("PROMPT", ollama_client=olm, model="qwen2.5:7b")
+
+    assert full == "Hello 世界"
+    assert captured["model"] == "qwen2.5:7b"
+    assert captured["prompt"] == "PROMPT"
+    assert "Hello 世界" in capsys.readouterr().out
