@@ -249,11 +249,15 @@ bin/local_llm.sh --status                      # show indexed chunk count & mode
 bin/local_llm.sh --ask "認証はどう動く？"
 bin/local_llm.sh --sources "認証はどう動く？"  # retrieval-only debug
 bin/local_llm.sh --index --reset               # rebuild from scratch
+bin/local_llm.sh --briefing                    # generate daily briefing locally (saves local_<date>.md)
+bin/local_llm.sh --briefing --notion           # ...and post to Notion alongside the Claude version
 ```
 
 Chroma data is stored in `apps/python/.chroma_db/` (gitignored).
 
 Override defaults via env: `LOCAL_LLM_MODEL`, `LOCAL_LLM_EMBED_MODEL`, `LOCAL_LLM_TOP_K`, `LOCAL_LLM_CHROMA_PATH`, `OLLAMA_HOST`.
+
+The `--briefing` path is experimental and does **not** use WebSearch — output is grounded only in the structured `briefing.json` input and the model's training knowledge. Tracked under [#142](https://github.com/KazusaNakagawa/ai-agent-cli/issues/142).
 
 Tracked under [#140](https://github.com/KazusaNakagawa/ai-agent/issues/140) (Epic [#139](https://github.com/KazusaNakagawa/ai-agent/issues/139)). Quality improvements (#135 bge-m3, #136 reranker, #138 AST chunking, #137 generation model) ship as follow-up PRs.
 
