@@ -45,7 +45,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.notion and not args.briefing:
+        parser.error("--notion requires --briefing")
     cfg = load_config(repo_root=args.root)
     if args.model:
         cfg = cfg.__class__(**{**cfg.__dict__, "model": args.model})

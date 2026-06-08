@@ -36,6 +36,8 @@ def test_build_local_briefing_prompt_inserts_inputs():
     assert "NVDA" in out
     assert "PLTR +2.1%" in out
     assert "WebSearch" not in out  # local prompt removes the WebSearch instruction
+    # watch_sectors is intentionally not rendered (Claude-only scope).
+    assert "AI & Cloud" not in out
 
 
 class FakeOllama:

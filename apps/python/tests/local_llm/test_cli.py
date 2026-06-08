@@ -48,3 +48,12 @@ def test_cli_sources_prints_top_k(monkeypatch, tmp_path, capsys):
 def test_cli_requires_one_action(tmp_path):
     with pytest.raises(SystemExit):
         cli.main([])
+
+
+def test_cli_notion_without_briefing_errors(tmp_path, capsys):
+    # --notion is meaningless without --briefing; argparse should reject it
+    # rather than silently ignore.
+    with pytest.raises(SystemExit):
+        cli.main(["--status", "--notion", "--root", str(tmp_path)])
+    err = capsys.readouterr().err
+    assert "--notion requires --briefing" in err
