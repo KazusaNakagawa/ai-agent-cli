@@ -60,3 +60,18 @@ def test_generate_local_briefing_collects_stream(capsys):
     assert captured["model"] == "qwen2.5:7b"
     assert captured["prompt"] == "PROMPT"
     assert "Hello 世界" in capsys.readouterr().out
+
+
+def test_compose_briefing_md_emits_caveat_then_body():
+    md = compose_briefing_md(
+        body="### 今日のサマリー\n本文\n",
+        model="qwen2.5:7b",
+        generated_at=datetime(2026, 6, 8, 9, 15, 0),
+    )
+
+    head, _, body = md.partition("\n\n---\n\n")
+    assert "ローカル LLM" in head
+    assert "qwen2.5:7b" in head
+    assert "WebSearch 未使用" in head
+    assert "2026-06-08T09:15:00" in head
+    assert body.startswith("### 今日のサマリー")
