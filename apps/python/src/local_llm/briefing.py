@@ -8,23 +8,27 @@ from typing import Iterable, Protocol
 
 from src.config import BriefingConfig
 from src.generator.briefing import (
-    _build_geopolitical_context,
-    _build_watch_events_context,
-    _join_safe,
+    build_geopolitical_context,
+    build_watch_events_context,
+    join_safe,
 )
 from src.generator.prompt import render
 
 
 def build_local_briefing_prompt(cfg: BriefingConfig, stocks: str) -> str:
-    """既存ヘルパを再利用して local_briefing.md テンプレートに入力を流し込む。"""
-    tickers = _join_safe(cfg.portfolio.tickers, sep=", ")
-    themes = _join_safe(cfg.portfolio.themes, sep=", ")
+    """既存ヘルパを再利用して local_briefing.md テンプレートに入力を流し込む。
+
+    Note: watch_sectors は意図的に渡していない。Claude 経路の並列セクタースイープに
+    相当する出力をローカル版では行わない方針 (#142 spec の non-goal)。
+    """
+    tickers = join_safe(cfg.portfolio.tickers, sep=", ")
+    themes = join_safe(cfg.portfolio.themes, sep=", ")
     return render(
         "local_briefing",
         tickers=tickers,
         themes=themes,
-        geopolitical=_build_geopolitical_context(cfg),
-        watch_events=_build_watch_events_context(cfg),
+        geopolitical=build_geopolitical_context(cfg),
+        watch_events=build_watch_events_context(cfg),
         stocks=stocks,
     )
 
