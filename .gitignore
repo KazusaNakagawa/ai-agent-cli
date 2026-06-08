@@ -38,3 +38,6 @@ htmlcov/
 
 # Superpowers brainstorming workspace
 .superpowers/
+
+# Local LLM RAG persistent store
+apps/python/.chroma_db/
