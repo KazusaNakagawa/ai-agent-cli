@@ -10,8 +10,8 @@ DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "qwen2.5:7b"
 DEFAULT_EMBED_MODEL = "nomic-embed-text"
 DEFAULT_TOP_K = 6
-DEFAULT_CHUNK_LINES = 60
-DEFAULT_CHUNK_OVERLAP = 10
+DEFAULT_CHUNK_LINES = 40
+DEFAULT_CHUNK_OVERLAP = 8
 DEFAULT_REPO_ROOT = Path.home() / "work" / "ai-agent"
 DEFAULT_CHROMA_REL = Path("apps/python/.chroma_db")
 COLLECTION_NAME = "ai_agent_repo"
@@ -23,6 +23,7 @@ EXTENSION_ALLOWLIST = {
 EXCLUDE_DIRS = {
     ".git", "__pycache__", "node_modules", ".chroma_db",
     ".venv", "dist", "build", ".next",
+    "output", "log",  # runtime artifacts, not part of the codebase
 }
 MAX_FILE_BYTES = 500 * 1024
 

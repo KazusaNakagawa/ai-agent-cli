@@ -22,8 +22,8 @@ def test_load_config_defaults(monkeypatch, tmp_path):
     assert cfg.embed_model == "nomic-embed-text"
     assert cfg.top_k == 6
     assert cfg.repo_root == tmp_path
-    assert cfg.chunk_lines == 60
-    assert cfg.chunk_overlap == 10
+    assert cfg.chunk_lines == 40
+    assert cfg.chunk_overlap == 8
     assert cfg.chroma_path.name == ".chroma_db"
 
 

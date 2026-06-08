@@ -31,11 +31,11 @@ def test_chunk_file_splits_with_overlap(tmp_path):
     chunks = chunk_file(f, cfg)
 
     assert all(isinstance(c, Chunk) for c in chunks)
-    # 60 lines / 10 overlap → starts at 1, 51, 101, ...
+    # 40 lines / 8 overlap → starts at 1, 33, 65, ...
     assert chunks[0].start_line == 1
-    assert chunks[0].end_line == 60
-    assert chunks[1].start_line == 51
-    assert chunks[1].end_line == 110
+    assert chunks[0].end_line == 40
+    assert chunks[1].start_line == 33
+    assert chunks[1].end_line == 72
     assert chunks[-1].end_line >= 150
     assert chunks[0].source_path == "x.py"
     assert "line0" in chunks[0].text
