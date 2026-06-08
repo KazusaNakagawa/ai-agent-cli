@@ -1,8 +1,10 @@
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
 from src.config import BriefingConfig, GeopoliticalConfig, PortfolioConfig, WatchSector
+from src.local_llm import cli
 from src.local_llm.briefing import (
     build_local_briefing_prompt,
     compose_briefing_md,
@@ -75,3 +77,82 @@ def test_compose_briefing_md_emits_caveat_then_body():
     assert "WebSearch 未使用" in head
     assert "2026-06-08T09:15:00" in head
     assert body.startswith("### 今日のサマリー")
+
+
+class _FakeRunCLI:
+    """Helper for cli._cmd_briefing tests: monkeypatches the four collaborators."""
+
+    def __init__(self, monkeypatch, tmp_path, *, briefing_text="### 今日\nbody\n"):
+        self.notion_calls: list[dict] = []
+        self.output_dir = tmp_path / "out"
+        self.output_dir.mkdir()
+
+        monkeypatch.setattr(cli, "BRIEFING_OUTPUT_DIR", self.output_dir)
+        monkeypatch.setattr(cli, "fetch_stock_moves", lambda tickers: "PLTR +1%")
+        monkeypatch.setattr(
+            cli, "load_briefing_config", lambda: _minimal_cfg()
+        )
+        monkeypatch.setattr(cli, "make_ollama_client", lambda cfg: object())
+        monkeypatch.setattr(cli, "ensure_models_available", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            cli,
+            "build_local_briefing_prompt",
+            lambda cfg, stocks: "PROMPT",
+        )
+        monkeypatch.setattr(
+            cli,
+            "generate_local_briefing",
+            lambda prompt, *, ollama_client, model: briefing_text,
+        )
+
+        def _fake_notion(text, api_key, db_id, *, title, tags=None, extra_properties=None):
+            self.notion_calls.append({"text": text, "title": title, "tags": tags})
+            return "https://www.notion.so/fake"
+
+        monkeypatch.setattr(cli, "send_to_notion", _fake_notion)
+
+
+def _cfg_with_notion() -> BriefingConfig:
+    return _minimal_cfg().model_copy(update={
+        "notion_api_key": "k",
+        "notion_database_id": "d",
+    })
+
+
+def test_cmd_briefing_writes_local_file_and_skips_notion(monkeypatch, tmp_path):
+    fake = _FakeRunCLI(monkeypatch, tmp_path)
+
+    rc = cli.main(["--briefing", "--root", str(tmp_path)])
+
+    assert rc == 0
+    files = list(fake.output_dir.glob("local_*.md"))
+    assert len(files) == 1
+    content = files[0].read_text()
+    assert "ローカル LLM" in content
+    assert "### 今日" in content
+    assert fake.notion_calls == []
+
+
+def test_cmd_briefing_posts_to_notion_when_flag(monkeypatch, tmp_path):
+    fake = _FakeRunCLI(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "load_briefing_config", _cfg_with_notion)
+
+    rc = cli.main(["--briefing", "--notion", "--root", str(tmp_path)])
+
+    assert rc == 0
+    assert len(fake.notion_calls) == 1
+    call = fake.notion_calls[0]
+    assert "ローカルブリーフィング" in call["title"]
+    assert "local" in (call["tags"] or [])
+    assert "agent" in (call["tags"] or [])
+
+
+def test_cmd_briefing_notion_without_flag_is_noop(monkeypatch, tmp_path):
+    """--notion 未指定なら NOTION_API_KEY が揃っていても投稿しない。"""
+    fake = _FakeRunCLI(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "load_briefing_config", _cfg_with_notion)
+
+    rc = cli.main(["--briefing", "--root", str(tmp_path)])
+
+    assert rc == 0
+    assert fake.notion_calls == []
