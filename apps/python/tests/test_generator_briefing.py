@@ -4,9 +4,9 @@ import pytest
 
 from src.config import BriefingConfig, Conflict, GeopoliticalConfig, PortfolioConfig, WatchEvent, WatchSector
 from src.generator.briefing import (
-    _build_geopolitical_context,
-    _build_watch_events_context,
-    _build_watch_sectors_context,
+    build_geopolitical_context,
+    build_watch_events_context,
+    build_watch_sectors_context,
     generate_briefing,
 )
 
@@ -24,7 +24,7 @@ def _make_config(**overrides):
 class TestBuildGeopoliticalContext:
     def test_empty_conflicts_returns_empty_string(self):
         config = _make_config(geopolitical=GeopoliticalConfig(conflicts=[]))
-        assert _build_geopolitical_context(config) == ""
+        assert build_geopolitical_context(config) == ""
 
     def test_includes_name_sectors_tickers_notes(self):
         conflict = Conflict(
@@ -34,7 +34,7 @@ class TestBuildGeopoliticalContext:
             notes="原油供給に影響",
         )
         config = _make_config(geopolitical=GeopoliticalConfig(conflicts=[conflict]))
-        result = _build_geopolitical_context(config)
+        result = build_geopolitical_context(config)
         assert "中東情勢" in result
         assert "エネルギー、防衛" in result
         assert "XOM、RTX" in result
@@ -43,7 +43,7 @@ class TestBuildGeopoliticalContext:
     def test_optional_fields_omitted_when_empty(self):
         conflict = Conflict(name="紛争A", affected_sectors=["金融"])
         config = _make_config(geopolitical=GeopoliticalConfig(conflicts=[conflict]))
-        result = _build_geopolitical_context(config)
+        result = build_geopolitical_context(config)
         assert "関連銘柄" not in result
         assert "背景" not in result
 
@@ -53,7 +53,7 @@ class TestBuildGeopoliticalContext:
             Conflict(name="紛争B", affected_sectors=["エネルギー"]),
         ]
         config = _make_config(geopolitical=GeopoliticalConfig(conflicts=conflicts))
-        result = _build_geopolitical_context(config)
+        result = build_geopolitical_context(config)
         assert "紛争A" in result
         assert "紛争B" in result
 
@@ -62,27 +62,27 @@ class TestBuildWatchSectorsContext:
     def test_includes_sector_and_tickers(self):
         sectors = [WatchSector(sector="AI半導体", tickers=["NVDA", "AMD"])]
         config = _make_config(watch_sectors=sectors)
-        result = _build_watch_sectors_context(config)
+        result = build_watch_sectors_context(config)
         assert "AI半導体" in result
         assert "NVDA、AMD" in result
 
     def test_notes_included_when_present(self):
         sectors = [WatchSector(sector="EV", tickers=["TSLA"], notes="充電インフラ動向注視")]
         config = _make_config(watch_sectors=sectors)
-        result = _build_watch_sectors_context(config)
+        result = build_watch_sectors_context(config)
         assert "充電インフラ動向注視" in result
 
     def test_notes_omitted_when_absent(self):
         sectors = [WatchSector(sector="EV", tickers=["TSLA"])]
         config = _make_config(watch_sectors=sectors)
-        result = _build_watch_sectors_context(config)
+        result = build_watch_sectors_context(config)
         assert "注目点" not in result
 
 
 class TestBuildWatchEventsContext:
     def test_empty_events_returns_empty_string(self):
         config = _make_config(watch_events=[])
-        assert _build_watch_events_context(config) == ""
+        assert build_watch_events_context(config) == ""
 
     def test_includes_name_trigger_sectors_tickers_notes(self):
         event = WatchEvent(
@@ -93,7 +93,7 @@ class TestBuildWatchEventsContext:
             notes="宇宙セクター再評価トリガー",
         )
         config = _make_config(watch_events=[event])
-        result = _build_watch_events_context(config)
+        result = build_watch_events_context(config)
         assert "SpaceX IPO" in result
         assert "SECへのS-1提出" in result
         assert "宇宙、テクノロジー" in result
@@ -103,14 +103,14 @@ class TestBuildWatchEventsContext:
     def test_optional_fields_omitted_when_empty(self):
         event = WatchEvent(name="IPO", trigger="上場申請", affected_sectors=["テクノロジー"])
         config = _make_config(watch_events=[event])
-        result = _build_watch_events_context(config)
+        result = build_watch_events_context(config)
         assert "関連銘柄" not in result
         assert "背景" not in result
 
     def test_affected_sectors_omitted_when_empty(self):
         event = WatchEvent(name="IPO", trigger="上場申請", affected_sectors=[])
         config = _make_config(watch_events=[event])
-        result = _build_watch_events_context(config)
+        result = build_watch_events_context(config)
         assert "影響セクター" not in result
 
 

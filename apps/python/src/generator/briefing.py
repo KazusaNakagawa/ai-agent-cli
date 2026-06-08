@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 # 並列実行のため実際の待機時間は max(MAIN, SECTORS) = 480s（合計ではない）
 
 
-def _join_safe(items: list[str], sep: str = "、") -> str:
+def join_safe(items: list[str], sep: str = "、") -> str:
     """Join user-supplied list items after neutralizing each element.
 
     Joining alone is not safe because an attacker who controls config can put
@@ -21,12 +21,12 @@ def _join_safe(items: list[str], sep: str = "、") -> str:
     return sep.join(neutralize_user_text(item) for item in items)
 
 
-def _build_geopolitical_context(config: BriefingConfig) -> str:
+def build_geopolitical_context(config: BriefingConfig) -> str:
     """Return Markdown-formatted geopolitical conflicts for prompt injection."""
     lines = []
     for c in config.geopolitical.conflicts:
-        sectors = _join_safe(c.affected_sectors)
-        tickers = _join_safe(c.related_tickers)
+        sectors = join_safe(c.affected_sectors)
+        tickers = join_safe(c.related_tickers)
         entry = f"### {neutralize_user_text(c.name)}\n- 影響セクター: {sectors}"
         if tickers:
             entry += f"\n- 関連銘柄: {tickers}"
@@ -36,11 +36,11 @@ def _build_geopolitical_context(config: BriefingConfig) -> str:
     return "\n\n".join(lines)
 
 
-def _build_watch_sectors_context(config: BriefingConfig) -> str:
+def build_watch_sectors_context(config: BriefingConfig) -> str:
     """Return Markdown-formatted watch sectors for prompt injection."""
     lines = []
     for s in config.watch_sectors:
-        tickers = _join_safe(s.tickers)
+        tickers = join_safe(s.tickers)
         entry = f"### {neutralize_user_text(s.sector)}\n- 銘柄: {tickers}"
         if s.notes:
             entry += f"\n- 注目点: {neutralize_user_text(s.notes)}"
@@ -48,7 +48,7 @@ def _build_watch_sectors_context(config: BriefingConfig) -> str:
     return "\n\n".join(lines)
 
 
-def _build_watch_events_context(config: BriefingConfig) -> str:
+def build_watch_events_context(config: BriefingConfig) -> str:
     """Return Markdown-formatted watch events for prompt injection; empty string when none configured."""
     if not config.watch_events:
         return ""
@@ -59,9 +59,9 @@ def _build_watch_events_context(config: BriefingConfig) -> str:
             f"- トリガー: {neutralize_user_text(event.trigger)}"
         )
         if event.affected_sectors:
-            entry += f"\n- 影響セクター: {_join_safe(event.affected_sectors)}"
+            entry += f"\n- 影響セクター: {join_safe(event.affected_sectors)}"
         if event.related_tickers:
-            entry += f"\n- 関連銘柄: {_join_safe(event.related_tickers)}"
+            entry += f"\n- 関連銘柄: {join_safe(event.related_tickers)}"
         if event.notes:
             entry += f"\n- 背景: {neutralize_user_text(event.notes)}"
         lines.append(entry)
@@ -70,20 +70,20 @@ def _build_watch_events_context(config: BriefingConfig) -> str:
 
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
     """メイン分析とセクタースイープを並列実行してブリーフィングを生成する。"""
-    tickers = _join_safe(config.portfolio.tickers, sep=", ")
-    themes = _join_safe(config.portfolio.themes, sep=", ")
+    tickers = join_safe(config.portfolio.tickers, sep=", ")
+    themes = join_safe(config.portfolio.themes, sep=", ")
 
     main_prompt = render(
         "briefing",
         tickers=tickers,
         themes=themes,
-        geopolitical=_build_geopolitical_context(config),
-        watch_events=_build_watch_events_context(config),
+        geopolitical=build_geopolitical_context(config),
+        watch_events=build_watch_events_context(config),
         stocks=stocks,
     )
     sectors_prompt = render(
         "briefing_sectors",
-        watch_sectors=_build_watch_sectors_context(config),
+        watch_sectors=build_watch_sectors_context(config),
         stocks=stocks,
     )
 
