@@ -19,7 +19,16 @@ def ensure_models_available(client, model: str, embed_model: str) -> None:
         ) from e
 
     available = {m["name"] for m in info.get("models", [])}
-    missing = [m for m in (model, embed_model) if m not in available]
+
+    def _present(name: str) -> bool:
+        if name in available:
+            return True
+        # Ollama tags untagged pulls as ":latest"; accept the implicit tag.
+        if ":" not in name and f"{name}:latest" in available:
+            return True
+        return False
+
+    missing = [m for m in (model, embed_model) if not _present(m)]
     if missing:
         cmds = "\n  ".join(f"ollama pull {m}" for m in missing)
         raise OllamaUnavailable(

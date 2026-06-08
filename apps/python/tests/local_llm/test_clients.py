@@ -15,6 +15,14 @@ def test_ensure_models_available_ok():
     ensure_models_available(StubClient(["qwen2.5:7b", "nomic-embed-text"]), "qwen2.5:7b", "nomic-embed-text")
 
 
+def test_ensure_models_available_accepts_implicit_latest_tag():
+    ensure_models_available(
+        StubClient(["qwen2.5:7b", "nomic-embed-text:latest"]),
+        "qwen2.5:7b",
+        "nomic-embed-text",
+    )
+
+
 def test_ensure_models_available_missing_model():
     with pytest.raises(OllamaUnavailable) as exc:
         ensure_models_available(StubClient(["nomic-embed-text"]), "qwen2.5:7b", "nomic-embed-text")
