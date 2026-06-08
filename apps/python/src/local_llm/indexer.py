@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Protocol
+
+
+def _extract_embedding(resp) -> list[float]:
+    """Accept both dict and Pydantic EmbeddingsResponse from ollama."""
+    if isinstance(resp, dict):
+        return list(resp["embedding"])
+    return list(getattr(resp, "embedding"))
 
 from .config import (
     EXCLUDE_DIRS,
@@ -124,30 +132,43 @@ class Indexer:
             stale_ids = [i for i in existing if i not in current_ids]
 
             if new_chunks:
-                embeddings = [
-                    self.ollama.embeddings(
-                        model=self.cfg.embed_model,
-                        prompt=c.text,
-                    )["embedding"]
-                    for c in new_chunks
-                ]
-                self.collection.upsert(
-                    ids=[c.chunk_id for c in new_chunks],
-                    embeddings=embeddings,
-                    documents=[c.text for c in new_chunks],
-                    metadatas=[
-                        {
-                            "source_path": c.source_path,
-                            "start_line": c.start_line,
-                            "end_line": c.end_line,
-                        }
-                        for c in new_chunks
-                    ],
-                )
-                if existing:
-                    stats.updated += len(new_chunks)
-                else:
-                    stats.added += len(new_chunks)
+                embedded: list[tuple[Chunk, list[float]]] = []
+                for c in new_chunks:
+                    try:
+                        resp = self.ollama.embeddings(
+                            model=self.cfg.embed_model,
+                            prompt=c.text,
+                        )
+                    except Exception as e:
+                        # Most likely the chunk exceeds the embed model's context
+                        # window. Skip rather than aborting the whole run; #138
+                        # (AST chunking) will reduce these cases.
+                        print(
+                            f"  skip {c.source_path}:{c.start_line}-{c.end_line} "
+                            f"({type(e).__name__})",
+                            file=sys.stderr,
+                        )
+                        continue
+                    embedded.append((c, _extract_embedding(resp)))
+
+                if embedded:
+                    self.collection.upsert(
+                        ids=[c.chunk_id for c, _ in embedded],
+                        embeddings=[v for _, v in embedded],
+                        documents=[c.text for c, _ in embedded],
+                        metadatas=[
+                            {
+                                "source_path": c.source_path,
+                                "start_line": c.start_line,
+                                "end_line": c.end_line,
+                            }
+                            for c, _ in embedded
+                        ],
+                    )
+                    if existing:
+                        stats.updated += len(embedded)
+                    else:
+                        stats.added += len(embedded)
 
             if stale_ids:
                 self.collection.delete(ids=stale_ids)
