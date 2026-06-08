@@ -18,7 +18,17 @@ def ensure_models_available(client, model: str, embed_model: str) -> None:
             f"(underlying error: {e})"
         ) from e
 
-    available = {m["name"] for m in info.get("models", [])}
+    # Support both dict-style (test stubs) and the ollama lib's Pydantic
+    # ListResponse, whose entries expose `.model` (not `.name`).
+    models = info["models"] if isinstance(info, dict) else info.models
+    available: set[str] = set()
+    for m in models:
+        if isinstance(m, dict):
+            name = m.get("name") or m.get("model")
+        else:
+            name = getattr(m, "model", None) or getattr(m, "name", None)
+        if name:
+            available.add(name)
 
     def _present(name: str) -> bool:
         if name in available:

@@ -23,6 +23,24 @@ def test_ensure_models_available_accepts_implicit_latest_tag():
     )
 
 
+def test_ensure_models_available_accepts_pydantic_model_objects():
+    """Real ollama client returns Pydantic ListResponse with `.model` attr."""
+
+    class FakeModel:
+        def __init__(self, name):
+            self.model = name
+
+    class FakeResp:
+        def __init__(self, names):
+            self.models = [FakeModel(n) for n in names]
+
+    class PydanticClient:
+        def list(self):
+            return FakeResp(["qwen2.5:7b", "nomic-embed-text:latest"])
+
+    ensure_models_available(PydanticClient(), "qwen2.5:7b", "nomic-embed-text")
+
+
 def test_ensure_models_available_missing_model():
     with pytest.raises(OllamaUnavailable) as exc:
         ensure_models_available(StubClient(["nomic-embed-text"]), "qwen2.5:7b", "nomic-embed-text")

@@ -16,3 +16,7 @@ pytest-asyncio>=0.23
 # Local LLM (experimental)
 chromadb>=0.5
 ollama>=0.3
+# Force opentelemetry proto deps to a modern version so chromadb's grpc exporter
+# is compatible with protobuf 5+ (uv otherwise resolves to ancient 1.11.x).
+opentelemetry-proto>=1.30
+opentelemetry-exporter-otlp-proto-grpc>=1.30
