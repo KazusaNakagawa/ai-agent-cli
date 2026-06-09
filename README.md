@@ -237,9 +237,12 @@ Optional fully-local RAG over this repository, powered by Ollama + Chroma. The e
 ```bash
 brew install ollama       # or follow https://ollama.com
 ollama serve &
-ollama pull qwen2.5:7b
+ollama pull qwen2.5:14b   # for --briefing: reliable tool calling (~8.5GB RAM with Q4)
+ollama pull qwen2.5:7b    # for --ask / --index: smaller, fits the RAG path
 ollama pull nomic-embed-text
 ```
+
+The default generation model is `qwen2.5:14b` for more stable instruction-following and citation quality in the `--briefing` path. If you only run `--ask` / `--index`, override with `LOCAL_LLM_MODEL=qwen2.5:7b`.
 
 ### Usage
 
@@ -257,7 +260,7 @@ Chroma data is stored in `apps/python/.chroma_db/` (gitignored).
 
 Override defaults via env: `LOCAL_LLM_MODEL`, `LOCAL_LLM_EMBED_MODEL`, `LOCAL_LLM_TOP_K`, `LOCAL_LLM_CHROMA_PATH`, `OLLAMA_HOST`.
 
-The `--briefing` path is experimental and does **not** use WebSearch — output is grounded only in the structured `briefing.json` input and the model's training knowledge. Tracked under [#142](https://github.com/KazusaNakagawa/ai-agent-cli/issues/142).
+`--briefing` requires `BRAVE_API_KEY` in `.env` (Free-plan key at https://api-dashboard.search.brave.com/ — see `.env.example`). The CLI pre-fetches Brave Search results for all portfolio tickers, macro news, and geopolitical topics, then injects them as context before local generation; without the key the command exits with an error. Tracked under [#142](https://github.com/KazusaNakagawa/ai-agent-cli/issues/142) (initial offline version) and [#144](https://github.com/KazusaNakagawa/ai-agent-cli/issues/144) (Brave Search integration).
 
 Tracked under [#140](https://github.com/KazusaNakagawa/ai-agent/issues/140) (Epic [#139](https://github.com/KazusaNakagawa/ai-agent/issues/139)). Quality improvements (#135 bge-m3, #136 reranker, #138 AST chunking, #137 generation model) ship as follow-up PRs.
 

@@ -32,7 +32,10 @@ def _ensure_allowed(name: str) -> None:
 
 def get_credential(name: str) -> str | None:
     _ensure_allowed(name)
-    value = _backend.get_password(SERVICE, name)
+    try:
+        value = _backend.get_password(SERVICE, name)
+    except keyring.errors.NoKeyringError:
+        value = None
     if value:
         return value
     return os.environ.get(name) or None
