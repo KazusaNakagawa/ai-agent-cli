@@ -22,6 +22,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from src.credentials import get_credential
+
 load_dotenv()
 
 CONFIG_PATH = Path(os.getenv("BRIEFING_CONFIG_PATH", str(Path(__file__).parents[1] / "config" / "briefing.json")))
@@ -97,10 +99,10 @@ def load_config() -> BriefingConfig:
     try:
         return BriefingConfig(
             **raw,
-            discord_token=os.getenv("DISCORD_TOKEN", ""),
-            discord_channel_id=os.getenv("CHANNEL_ID", ""),
-            notion_api_key=os.getenv("NOTION_API_KEY", ""),
-            notion_database_id=os.getenv("NOTION_DATABASE_ID", ""),
+            discord_token=get_credential("DISCORD_TOKEN") or "",
+            discord_channel_id=get_credential("CHANNEL_ID") or "",
+            notion_api_key=get_credential("NOTION_API_KEY") or "",
+            notion_database_id=get_credential("NOTION_DATABASE_ID") or "",
         )
     except ValidationError as e:
         first = e.errors()[0]
@@ -156,10 +158,10 @@ def load_xss_config() -> XssIntelConfig:
 
     return XssIntelConfig(
         targets=targets,
-        discord_token=os.getenv("DISCORD_TOKEN", ""),
-        discord_channel_id=os.getenv("CHANNEL_ID", ""),
-        notion_api_key=os.getenv("NOTION_API_KEY", ""),
-        notion_database_id=os.getenv("NOTION_DATABASE_ID", ""),
+        discord_token=get_credential("DISCORD_TOKEN") or "",
+        discord_channel_id=get_credential("CHANNEL_ID") or "",
+        notion_api_key=get_credential("NOTION_API_KEY") or "",
+        notion_database_id=get_credential("NOTION_DATABASE_ID") or "",
     )
 
 
