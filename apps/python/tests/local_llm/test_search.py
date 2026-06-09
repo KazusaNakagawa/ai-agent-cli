@@ -99,3 +99,32 @@ def test_search_handles_empty_web_block():
     http = _FakeHTTP(_FakeResp(200, {}))
     client = BraveSearchClient("k", http_client=http)
     assert client.search("q") == []
+
+
+def test_search_wraps_transport_error_as_brave_search_error():
+    class _BrokenHTTP:
+        def get(self, *a, **kw):
+            raise ConnectionError("network unreachable")
+
+    client = BraveSearchClient("k", http_client=_BrokenHTTP())
+    with pytest.raises(BraveSearchError) as ei:
+        client.search("q")
+    assert "network unreachable" in str(ei.value)
+
+
+def test_search_wraps_json_parse_error_as_brave_search_error():
+    class _BadJsonResp:
+        status_code = 200
+        text = "not json"
+
+        def json(self):
+            raise ValueError("not valid JSON")
+
+    class _BadJsonHTTP:
+        def get(self, *a, **kw):
+            return _BadJsonResp()
+
+    client = BraveSearchClient("k", http_client=_BadJsonHTTP())
+    with pytest.raises(BraveSearchError) as ei:
+        client.search("q")
+    assert "not valid JSON" in str(ei.value)

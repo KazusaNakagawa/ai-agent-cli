@@ -54,17 +54,23 @@ class BraveSearchClient:
             "Accept": "application/json",
             "X-Subscription-Token": self._api_key,
         }
-        if self._http is not None:
-            resp = self._http.get(self._endpoint, params=params, headers=headers)
-        else:
-            resp = httpx.get(
-                self._endpoint, params=params, headers=headers, timeout=self._timeout
-            )
+        try:
+            if self._http is not None:
+                resp = self._http.get(self._endpoint, params=params, headers=headers)
+            else:
+                resp = httpx.get(
+                    self._endpoint, params=params, headers=headers, timeout=self._timeout
+                )
+        except Exception as e:
+            raise BraveSearchError(f"Brave Search request failed: {e}") from e
         if resp.status_code != 200:
             raise BraveSearchError(
                 f"Brave Search returned HTTP {resp.status_code}: {resp.text[:200]}"
             )
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception as e:
+            raise BraveSearchError(f"Brave Search response is not valid JSON: {e}") from e
         items = (data.get("web") or {}).get("results") or []
         out: list[SearchResult] = []
         for it in items[:count]:
