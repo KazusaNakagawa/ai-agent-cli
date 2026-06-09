@@ -47,6 +47,18 @@ def test_ensure_models_available_missing_model():
     assert "qwen2.5:7b" in str(exc.value)
 
 
+def test_ensure_models_available_skips_embed_when_none():
+    # --briefing path only needs the generation model; embed_model=None should
+    # not trigger a "nomic-embed-text not found" failure.
+    ensure_models_available(StubClient(["qwen2.5:7b"]), "qwen2.5:7b", embed_model=None)
+
+
+def test_ensure_models_available_still_validates_generation_when_embed_none():
+    with pytest.raises(OllamaUnavailable) as exc:
+        ensure_models_available(StubClient([]), "qwen2.5:7b", embed_model=None)
+    assert "qwen2.5:7b" in str(exc.value)
+
+
 def test_ensure_models_available_connection_failure():
     class Broken:
         def list(self):

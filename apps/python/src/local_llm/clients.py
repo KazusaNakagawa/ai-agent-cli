@@ -9,7 +9,13 @@ class OllamaUnavailable(RuntimeError):
     pass
 
 
-def ensure_models_available(client, model: str, embed_model: str) -> None:
+def ensure_models_available(client, model: str, embed_model: str | None) -> None:
+    """Verify the generation model (and optionally an embed model) is pulled.
+
+    `embed_model=None` is for the --briefing path which only generates and
+    does not touch the embed model; otherwise users without nomic-embed-text
+    pulled would be blocked from briefing for no reason (#145).
+    """
     try:
         info = client.list()
     except Exception as e:
@@ -38,7 +44,8 @@ def ensure_models_available(client, model: str, embed_model: str) -> None:
             return True
         return False
 
-    missing = [m for m in (model, embed_model) if not _present(m)]
+    required = [model] + ([embed_model] if embed_model is not None else [])
+    missing = [m for m in required if not _present(m)]
     if missing:
         cmds = "\n  ".join(f"ollama pull {m}" for m in missing)
         raise OllamaUnavailable(

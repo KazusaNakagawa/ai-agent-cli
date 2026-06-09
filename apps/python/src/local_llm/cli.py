@@ -159,7 +159,8 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
 
     try:
         olm = make_ollama_client(cfg)
-        ensure_models_available(olm, cfg.model, cfg.embed_model)
+        # briefing は generation のみ。embed_model 未 pull で弾かれないよう None で渡す。
+        ensure_models_available(olm, cfg.model, embed_model=None)
     except OllamaUnavailable as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
