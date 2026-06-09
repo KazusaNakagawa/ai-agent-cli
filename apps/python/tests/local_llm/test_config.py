@@ -18,7 +18,7 @@ def test_load_config_defaults(monkeypatch, tmp_path):
 
     assert isinstance(cfg, LocalLLMConfig)
     assert cfg.ollama_host == "http://localhost:11434"
-    assert cfg.model == "qwen2.5:7b"
+    assert cfg.model == "qwen2.5:14b"
     assert cfg.embed_model == "nomic-embed-text"
     assert cfg.top_k == 6
     assert cfg.repo_root == tmp_path

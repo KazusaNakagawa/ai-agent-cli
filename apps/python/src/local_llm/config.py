@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
-DEFAULT_MODEL = "qwen2.5:7b"
+# qwen2.5:14b は qwen2.5:7b に比べて tool calling 追従が格段に良く、
+# `--briefing` 経路で web_search を確実に呼ぶために必要。Q4 量子化で ~8.5GB RAM。
+# 小さいモデルに戻したい場合は env LOCAL_LLM_MODEL=qwen2.5:7b で override 可能。
+DEFAULT_MODEL = "qwen2.5:14b"
 DEFAULT_EMBED_MODEL = "nomic-embed-text"
 DEFAULT_TOP_K = 6
 DEFAULT_CHUNK_LINES = 40

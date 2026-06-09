@@ -16,7 +16,7 @@ def test_cli_status_prints_summary(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "42" in out
-    assert "qwen2.5:7b" in out
+    assert "qwen2.5:14b" in out
     assert "nomic-embed-text" in out
 
 

@@ -3,19 +3,29 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
+import time
+from datetime import date, datetime
 from pathlib import Path
 
 from src.config import load_config as load_briefing_config
 from src.constants import BRIEFING_OUTPUT_DIR
 from src.fetcher.stocks import fetch_stock_moves
+from src.logger import get_logger
 from src.notifier.notion import send_to_notion
+
+logger = get_logger(__name__)
 
 from .briefing import (
     build_local_briefing_prompt,
     compose_briefing_md,
     generate_local_briefing,
+    load_local_briefing_system_prompt,
+    prefetch_briefing_context,
+    render_web_context_block,
+    validate_urls,
 )
 from .clients import (
     OllamaUnavailable,
@@ -26,6 +36,7 @@ from .clients import (
 from .config import load_config
 from .indexer import Indexer
 from .retriever import Retriever
+from .search import BraveSearchClient
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -95,7 +106,6 @@ def _cmd_index(cfg, *, reset: bool) -> int:
         return 1
 
     coll = make_chroma_collection(cfg)
-    import time
     t0 = time.time()
     stats = Indexer(cfg, collection=coll, ollama_client=olm).run()
     dt = time.time() - t0
@@ -155,46 +165,105 @@ def _cmd_ask(cfg, question: str) -> int:
 
 
 def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
-    from datetime import datetime, date
+    logger.info("=== ローカル LLM ブリーフィング開始 (model=%s) ===", cfg.model)
+
+    brave_api_key = os.environ.get("BRAVE_API_KEY", "").strip()
+    if not brave_api_key:
+        logger.error(
+            "BRAVE_API_KEY が未設定です — `.env` に BRAVE_API_KEY=... を追加してください "
+            "(https://api-dashboard.search.brave.com/ で Free プラン取得)"
+        )
+        return 1
 
     try:
+        logger.info("Ollama 接続確認中...")
         olm = make_ollama_client(cfg)
         # briefing は generation のみ。embed_model 未 pull で弾かれないよう None で渡す。
         ensure_models_available(olm, cfg.model, embed_model=None)
     except OllamaUnavailable as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error("Ollama に接続できません: %s", e)
         return 1
 
+    logger.info("briefing.json 読み込み中...")
     briefing_cfg = load_briefing_config()
+
+    logger.info(
+        "株価取得中 (tickers=%s)...", ", ".join(briefing_cfg.portfolio.tickers)
+    )
     stocks = fetch_stock_moves(briefing_cfg.portfolio.tickers)
 
-    prompt = build_local_briefing_prompt(briefing_cfg, stocks)
-    body = generate_local_briefing(prompt, ollama_client=olm, model=cfg.model)
-    md = compose_briefing_md(body, model=cfg.model, generated_at=datetime.now())
+    today = date.today().isoformat()  # YYYY-MM-DD — ファイル名・プロンプト両方で共用
+    search_client = BraveSearchClient(brave_api_key)
+
+    logger.info(
+        "Brave Search pre-fetch 開始 — 銘柄 %d 件 + マクロ + 地政学",
+        len(briefing_cfg.portfolio.tickers),
+    )
+    ctx = prefetch_briefing_context(
+        briefing_cfg, search_client=search_client, today=today
+    )
+    web_context = render_web_context_block(ctx)
+    logger.info("Brave Search pre-fetch 完了 — プロンプトに注入")
+
+    logger.info("プロンプト構築中...")
+    prompt = build_local_briefing_prompt(
+        briefing_cfg, stocks, today=today, web_context=web_context
+    )
+    system_prompt = load_local_briefing_system_prompt()
+
+    logger.info("ローカル LLM 生成開始 (単発 chat、tools 不使用)")
+    body = generate_local_briefing(
+        prompt,
+        ollama_client=olm,
+        model=cfg.model,
+        system_prompt=system_prompt,
+    )
+    logger.info("ローカル LLM 生成完了 (%d 文字)", len(body))
+
+    validation = validate_urls(body, ctx)
+    if validation.fabricated > 0:
+        logger.warning(
+            "[briefing] URL 捏造検出: %d/%d 件を <URL未検証> に置換しました",
+            validation.fabricated,
+            validation.total,
+        )
+    else:
+        logger.info(
+            "[briefing] URL 検証 OK: %d/%d 件が pre-fetch 由来",
+            validation.verified,
+            validation.total,
+        )
+
+    md = compose_briefing_md(
+        validation.body,
+        model=cfg.model,
+        generated_at=datetime.now(),
+        url_validation=validation,
+    )
 
     BRIEFING_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    today = date.today().strftime("%Y-%m-%d")
     out_path = BRIEFING_OUTPUT_DIR / f"local_{today}.md"
     out_path.write_text(md, encoding="utf-8")
-    print(f"\nsaved {out_path}", file=sys.stderr)
+    logger.info("ブリーフィング保存完了: %s", out_path)
 
     if post_to_notion:
         if not (briefing_cfg.notion_api_key and briefing_cfg.notion_database_id):
-            print(
-                "Error: --notion specified but NOTION_API_KEY / NOTION_DATABASE_ID not set",
-                file=sys.stderr,
+            logger.error(
+                "--notion 指定だが NOTION_API_KEY / NOTION_DATABASE_ID が未設定"
             )
             return 1
+        logger.info("Notion へ投稿中...")
         url = send_to_notion(
             md,
             briefing_cfg.notion_api_key,
             briefing_cfg.notion_database_id,
-            title=f"ローカルブリーフィング — {today}",
+            title=f"ローカルブリーフィング — {today}",  # today は YYYY-MM-DD
             tags=["agent", "local"],
         )
         if url:
-            print(f"notion: {url}", file=sys.stderr)
+            logger.info("Notion 投稿完了: %s", url)
         else:
-            print("Notion 投稿に失敗しました", file=sys.stderr)
+            logger.error("Notion 投稿に失敗しました")
 
+    logger.info("=== ローカル LLM ブリーフィング終了 ===")
     return 0
