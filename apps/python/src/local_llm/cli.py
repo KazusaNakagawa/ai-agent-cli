@@ -19,12 +19,18 @@ from src.notifier.notion import send_to_notion
 logger = get_logger(__name__)
 
 from .briefing import (
-    build_local_briefing_prompt,
+    build_section_geo_events_prompt,
+    build_section_insight_prompt,
+    build_section_portfolio_prompt,
+    build_section_topnews_prompt,
+    collect_references,
     compose_briefing_md,
+    ensure_portfolio_table_header,
     generate_local_briefing,
     load_local_briefing_system_prompt,
     prefetch_briefing_context,
-    render_web_context_block,
+    render_prefetch_debug_block,
+    summarize_prefetch_hits,
     validate_urls,
 )
 from .clients import (
@@ -202,23 +208,53 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     ctx = prefetch_briefing_context(
         briefing_cfg, search_client=search_client, today=today
     )
-    web_context = render_web_context_block(ctx)
     logger.info("Brave Search pre-fetch 完了 — プロンプトに注入")
 
-    logger.info("プロンプト構築中...")
-    prompt = build_local_briefing_prompt(
-        briefing_cfg, stocks, today=today, web_context=web_context
-    )
     system_prompt = load_local_briefing_system_prompt()
 
-    logger.info("ローカル LLM 生成開始 (単発 chat、tools 不使用)")
-    body = generate_local_briefing(
-        prompt,
-        ollama_client=olm,
-        model=cfg.model,
-        system_prompt=system_prompt,
+    # 4 段階のセクション分割生成。1 回 chat() で全 9 セクション書かせると
+    # attention が散って保有銘柄テーブルで URL 捏造が頻発したため (#後続)、
+    # 各段で渡す web_context をそのセクションに必要な分だけに絞る。
+    def _gen(label: str, prompt: str) -> str:
+        logger.info("[section] %s 生成開始", label)
+        out = generate_local_briefing(
+            prompt,
+            ollama_client=olm,
+            model=cfg.model,
+            system_prompt=system_prompt,
+        )
+        logger.info("[section] %s 生成完了 (%d 文字)", label, len(out))
+        return out
+
+    body_top = _gen(
+        "トップニュース", build_section_topnews_prompt(ctx, today=today)
     )
-    logger.info("ローカル LLM 生成完了 (%d 文字)", len(body))
+    body_port = _gen(
+        "保有銘柄テーブル",
+        build_section_portfolio_prompt(
+            briefing_cfg, stocks=stocks, today=today, ctx=ctx
+        ),
+    )
+    # qwen2.5:14b は portfolio セクションで見出し + ヘッダ + 区切り行を省略しがち。
+    # データ行だけだと Markdown 描画が壊れるので後処理で補強する。
+    body_port = ensure_portfolio_table_header(body_port)
+    body_geo = _gen(
+        "地政学+イベント",
+        build_section_geo_events_prompt(briefing_cfg, ctx=ctx, today=today),
+    )
+    prior_text = "\n\n".join([body_top, body_port, body_geo]).strip()
+    body_insight = _gen(
+        "自分への示唆",
+        build_section_insight_prompt(
+            briefing_cfg, prior_text=prior_text, today=today
+        ),
+    )
+
+    references_md = collect_references(ctx, prior_text)
+    debug_block = render_prefetch_debug_block(ctx)
+    body = "\n\n".join(
+        [body_top, body_port, body_geo, body_insight, references_md, debug_block]
+    )
 
     validation = validate_urls(body, ctx)
     if validation.fabricated > 0:
@@ -239,6 +275,7 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         model=cfg.model,
         generated_at=datetime.now(),
         url_validation=validation,
+        prefetch_summary=summarize_prefetch_hits(ctx),
     )
 
     BRIEFING_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
