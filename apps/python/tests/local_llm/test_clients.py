@@ -134,3 +134,22 @@ def test_make_chroma_collection_treats_pre_135_index_as_nomic(tmp_path):
     with pytest.raises(EmbedModelMismatch) as exc:
         make_chroma_collection(cfg)
     assert "nomic-embed-text" in str(exc.value)
+
+
+def test_make_chroma_collection_reuses_legacy_index_when_embed_unchanged(tmp_path):
+    """Pre-#135 collections (no embed_model metadata) must remain usable when
+    the operator keeps nomic-embed-text — legacy is treated as nomic, not
+    rejected with EmbedModelMismatch.
+    """
+    import chromadb
+
+    from src.local_llm.config import COLLECTION_NAME
+
+    chroma_path = tmp_path / "chroma"
+    chroma_path.mkdir()
+    client = chromadb.PersistentClient(path=str(chroma_path))
+    client.create_collection(COLLECTION_NAME)  # no metadata, like a legacy index
+
+    cfg = _make_cfg(chroma_path, "nomic-embed-text")
+    # Must not raise; legacy index is treated as nomic-embed-text.
+    make_chroma_collection(cfg)

@@ -84,6 +84,32 @@ def test_cli_sources_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys
     assert "--index --reset" in captured.err
 
 
+def test_cli_index_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("LOCAL_LLM_CHROMA_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setattr(cli, "make_ollama_client", lambda cfg: object())
+    monkeypatch.setattr(cli, "ensure_models_available", lambda *a, **kw: None)
+    monkeypatch.setattr(cli, "make_chroma_collection", _raise_mismatch)
+
+    rc = cli.main(["--index", "--root", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "--index --reset" in captured.err
+
+
+def test_cli_ask_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("LOCAL_LLM_CHROMA_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setattr(cli, "make_ollama_client", lambda cfg: object())
+    monkeypatch.setattr(cli, "ensure_models_available", lambda *a, **kw: None)
+    monkeypatch.setattr(cli, "make_chroma_collection", _raise_mismatch)
+
+    rc = cli.main(["--ask", "test", "--root", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "--index --reset" in captured.err
+
+
 def test_cli_notion_without_briefing_errors(tmp_path, capsys):
     # --notion is meaningless without --briefing; argparse should reject it
     # rather than silently ignore.
