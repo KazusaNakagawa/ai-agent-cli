@@ -15,12 +15,21 @@ from src.local_llm import cli
 from src.local_llm.briefing import (
     PrefetchedContext,
     UrlValidation,
-    build_local_briefing_prompt,
+    build_section_geo_events_prompt,
+    build_section_insight_prompt,
+    build_section_portfolio_prompt,
+    build_section_topnews_prompt,
+    collect_references,
     compose_briefing_md,
+    ensure_portfolio_table_header,
     generate_local_briefing,
     load_local_briefing_system_prompt,
     prefetch_briefing_context,
-    render_web_context_block,
+    render_geo_events_block,
+    render_macro_block,
+    render_portfolio_block,
+    render_prefetch_debug_block,
+    summarize_prefetch_hits,
     validate_urls,
 )
 from src.local_llm.search import BraveSearchError, SearchResult
@@ -64,37 +73,44 @@ class _StubSearch:
 def test_prefetch_searches_every_ticker_plus_macro_plus_geo():
     cfg = _minimal_cfg(
         tickers=["PLTR", "MSFT", "GOOGL"],
-        conflicts=[Conflict(name="米中技術覇権争い", affected_sectors=["半導体"])],
+        conflicts=[
+            Conflict(name="米中技術覇権争い", affected_sectors=["半導体"]),
+            Conflict(name="中東・ホルムズ封鎖", affected_sectors=["エネルギー"]),
+        ],
     )
     pltr_hit = SearchResult("PLTR Q2", "https://e.com/pltr", "earnings beat")
     macro_hit = SearchResult("Markets", "https://e.com/mkt", "rally")
-    geo_hit = SearchResult("China chips", "https://e.com/geo", "export rules")
+    geo_hit_1 = SearchResult("China chips", "https://e.com/geo1", "export rules")
+    geo_hit_2 = SearchResult("Hormuz", "https://e.com/geo2", "tanker")
     search = _StubSearch(
         responses={
             "stock market news 2026-06-09": [macro_hit],
-            "PLTR stock news today": [pltr_hit],
-            "MSFT stock news today": [],
-            "GOOGL stock news today": [],
-            "米中技術覇権争い today": [geo_hit],
+            "PLTR stock news 2026-06-09": [pltr_hit],
+            "MSFT stock news 2026-06-09": [],
+            "GOOGL stock news 2026-06-09": [],
+            "米中技術覇権争い today": [geo_hit_1],
+            "中東・ホルムズ封鎖 today": [geo_hit_2],
         }
     )
 
     ctx = prefetch_briefing_context(cfg, search_client=search, today="2026-06-09")
 
-    # Every ticker was searched, even if 0 hits
+    # Every ticker AND every conflict was searched, even if 0 hits
     queried = [c["query"] for c in search.calls]
     assert "stock market news 2026-06-09" in queried
-    assert "PLTR stock news today" in queried
-    assert "MSFT stock news today" in queried
-    assert "GOOGL stock news today" in queried
+    assert "PLTR stock news 2026-06-09" in queried
+    assert "MSFT stock news 2026-06-09" in queried
+    assert "GOOGL stock news 2026-06-09" in queried
     assert "米中技術覇権争い today" in queried
+    assert "中東・ホルムズ封鎖 today" in queried
 
     assert ctx.macro == [macro_hit]
     assert ctx.per_ticker["PLTR"] == [pltr_hit]
     assert ctx.per_ticker["MSFT"] == []
     assert ctx.per_ticker["GOOGL"] == []
-    assert ctx.geo_topic == "米中技術覇権争い"
-    assert ctx.geo_results == [geo_hit]
+    assert ctx.geo_by_topic["米中技術覇権争い"] == [geo_hit_1]
+    assert ctx.geo_by_topic["中東・ホルムズ封鎖"] == [geo_hit_2]
+    assert ctx.events_by_name == {}
 
 
 def test_prefetch_handles_brave_errors_per_query(caplog):
@@ -117,9 +133,9 @@ def test_prefetch_handles_brave_errors_per_query(caplog):
         )
     # Failure on the PLTR query did not abort the whole pre-fetch
     assert "stock market news 2026-06-09" in search.calls
-    assert "PLTR stock news today" in search.calls
+    assert "PLTR stock news 2026-06-09" in search.calls
     assert ctx.per_ticker["PLTR"] == []
-    assert any("PLTR stock news today" in r.message for r in caplog.records)
+    assert any("PLTR stock news 2026-06-09" in r.message for r in caplog.records)
 
 
 def test_prefetch_skips_geo_when_no_conflicts_configured():
@@ -128,31 +144,64 @@ def test_prefetch_skips_geo_when_no_conflicts_configured():
 
     ctx = prefetch_briefing_context(cfg, search_client=search, today="2026-06-09")
 
-    assert ctx.geo_topic is None
-    assert ctx.geo_results == []
+    assert ctx.geo_by_topic == {}
+    assert ctx.events_by_name == {}
     queried = [c["query"] for c in search.calls]
-    assert not any("today" in q and q != "stock market news 2026-06-09" and "stock news" not in q for q in queried)
+    geo_or_event_queries = [
+        q for q in queried
+        if "today" in q and q != "stock market news 2026-06-09" and "stock news" not in q
+    ]
+    assert geo_or_event_queries == []
 
 
-def test_render_web_context_block_contains_all_sections():
-    ctx = PrefetchedContext(
+def _full_ctx() -> PrefetchedContext:
+    return PrefetchedContext(
         macro=[SearchResult("M", "https://e.com/m", "d")],
         per_ticker={
             "PLTR": [SearchResult("P", "https://e.com/p", "dp")],
             "MSFT": [],
         },
-        geo_topic="米中",
-        geo_results=[SearchResult("G", "https://e.com/g", "dg")],
+        geo_by_topic={
+            "米中": [SearchResult("G", "https://e.com/g", "dg")],
+        },
+        events_by_name={
+            "Fed FOMC": [SearchResult("E", "https://e.com/e", "de")],
+        },
     )
 
-    block = render_web_context_block(ctx)
 
+def test_render_macro_block_only_contains_macro_hits():
+    block = render_macro_block(_full_ctx())
     assert "マクロ・市場全体" in block
     assert "https://e.com/m" in block
+    # 銘柄・地政学・イベントは出ない (各セクション専用ブロックなので)
+    assert "PLTR" not in block
+    assert "地政学" not in block
+    assert "監視イベント" not in block
+
+
+def test_render_portfolio_block_only_contains_ticker_hits():
+    block = render_portfolio_block(_full_ctx())
+    assert "### 銘柄別検索結果" in block
     assert "**PLTR**" in block and "https://e.com/p" in block
     assert "**MSFT**" in block and "(検索ヒットなし)" in block
-    assert "地政学トピック: 米中" in block
-    assert "https://e.com/g" in block
+    assert "マクロ" not in block
+    assert "地政学" not in block
+
+
+def test_render_geo_events_block_contains_both_sections():
+    block = render_geo_events_block(_full_ctx())
+    assert "### 地政学トピック" in block
+    assert "**米中**" in block and "https://e.com/g" in block
+    assert "### 監視イベント" in block
+    assert "**Fed FOMC**" in block and "https://e.com/e" in block
+
+
+def test_render_geo_events_block_empty_when_both_missing():
+    ctx = PrefetchedContext(
+        macro=[], per_ticker={}, geo_by_topic={}, events_by_name={}
+    )
+    assert render_geo_events_block(ctx) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -160,24 +209,168 @@ def test_render_web_context_block_contains_all_sections():
 # ---------------------------------------------------------------------------
 
 
-def test_build_local_briefing_prompt_injects_web_context():
-    cfg = _minimal_cfg()
-    out = build_local_briefing_prompt(
-        cfg,
-        stocks="PLTR +2.1%\nNVDA +0.5%",
-        today="2026-06-09",
-        web_context="### マクロ\n- foo",
-    )
+def test_build_section_topnews_prompt_only_passes_macro_hits():
+    ctx = _full_ctx()
+    out = build_section_topnews_prompt(ctx, today="2026-06-09")
+    assert "今日のトップニュース" in out
+    assert "2026-06-09" in out
+    assert "## 検索結果" in out
+    assert "https://e.com/m" in out
+    # 銘柄・地政学のブロックはこの段では渡さない
+    assert "PLTR" not in out
+    assert "地政学" not in out
 
+
+def test_build_section_portfolio_prompt_only_passes_ticker_hits():
+    cfg = _minimal_cfg(tickers=["PLTR", "MSFT"])
+    ctx = _full_ctx()
+    out = build_section_portfolio_prompt(
+        cfg, stocks="PLTR +2.1%\nMSFT -1.3%", today="2026-06-09", ctx=ctx
+    )
+    assert "保有銘柄テーブル" in out
+    assert "PLTR" in out and "MSFT" in out
+    assert "PLTR +2.1%" in out
+    assert "https://e.com/p" in out
+    # マクロ・地政学・イベントの URL はこの段では渡さない
+    assert "https://e.com/m" not in out
+    assert "https://e.com/g" not in out
+
+
+def test_build_section_geo_events_prompt_only_passes_geo_events():
+    cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
+    ctx = _full_ctx()
+    out = build_section_geo_events_prompt(cfg, ctx=ctx, today="2026-06-09")
+    assert "地政学トピック" in out
+    assert "監視イベント" in out
+    assert "https://e.com/g" in out
+    assert "https://e.com/e" in out
+    # tickers は影響判定用に渡る (本文には PLTR / NVDA が出る)
     assert "PLTR" in out
     assert "NVDA" in out
-    assert "PLTR +2.1%" in out
-    assert "2026-06-09" in out
-    # The injected web_context block is present and labelled as the only source
-    assert "### マクロ" in out
-    assert "## 検索結果" in out
-    # watch_sectors is intentionally not rendered (Claude-only scope).
-    assert "AI & Cloud" not in out
+    # 銘柄の URL ブロックは渡さない
+    assert "https://e.com/p" not in out
+    # マクロ URL も渡さない
+    assert "https://e.com/m" not in out
+
+
+def test_summarize_prefetch_hits_lists_all_buckets_with_counts():
+    ctx = PrefetchedContext(
+        macro=[SearchResult("m1", "https://e.com/m", "")],
+        per_ticker={
+            "PLTR": [SearchResult("p", "https://e.com/p", "")],
+            "MSFT": [],
+        },
+        geo_by_topic={
+            "米中": [
+                SearchResult("g1", "https://e.com/g1", ""),
+                SearchResult("g2", "https://e.com/g2", ""),
+            ],
+        },
+        events_by_name={"FOMC": []},
+    )
+    out = summarize_prefetch_hits(ctx)
+    assert "macro=1" in out
+    assert "PLTR:1" in out
+    assert "MSFT:0" in out
+    assert "米中:2" in out
+    assert "FOMC:0" in out
+
+
+def test_summarize_prefetch_hits_drops_empty_categories():
+    ctx = PrefetchedContext(
+        macro=[], per_ticker={}, geo_by_topic={}, events_by_name={}
+    )
+    out = summarize_prefetch_hits(ctx)
+    assert out == "macro=0"
+    assert "tickers" not in out
+    assert "geo" not in out
+    assert "events" not in out
+
+
+def test_render_prefetch_debug_block_includes_all_urls_inside_details():
+    ctx = PrefetchedContext(
+        macro=[SearchResult("M1", "https://e.com/m", "")],
+        per_ticker={
+            "PLTR": [SearchResult("P1", "https://e.com/p", "")],
+            "MSFT": [],
+        },
+        geo_by_topic={"米中": [SearchResult("G1", "https://e.com/g", "")]},
+        events_by_name={"FOMC": [SearchResult("E1", "https://e.com/e", "")]},
+    )
+    block = render_prefetch_debug_block(ctx)
+    assert block.startswith("<details>")
+    assert block.rstrip().endswith("</details>")
+    assert "Pre-fetch raw" in block
+    # 全 URL が含まれる
+    assert "https://e.com/m" in block
+    assert "https://e.com/p" in block
+    assert "https://e.com/g" in block
+    assert "https://e.com/e" in block
+    # 0 件のセクションは「検索ヒットなし」と明記
+    assert "**MSFT (0 件)**" in block
+    assert "(検索ヒットなし)" in block
+
+
+def test_compose_briefing_md_includes_prefetch_summary_line():
+    md = compose_briefing_md(
+        body="b",
+        model="qwen2.5:14b",
+        generated_at=datetime(2026, 6, 9, 9, 15, 0),
+        prefetch_summary="macro=3 / tickers=[PLTR:3, MSFT:0]",
+    )
+    assert "Brave hits: macro=3 / tickers=[PLTR:3, MSFT:0]" in md
+
+
+def test_ensure_portfolio_table_header_prepends_when_divider_missing():
+    body = (
+        "| PLTR | ↓0.9% | (確認できず) | - |\n"
+        "| NVDA | ↑1.2% | 新型 GPU 発表 | [Bloomberg](https://e.com/n) |\n"
+    )
+    out = ensure_portfolio_table_header(body)
+    assert out.startswith("## 保有銘柄テーブル")
+    assert "| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |" in out
+    assert "|---|---|---|---|" in out
+    # データ行は保持される
+    assert "| PLTR | ↓0.9% |" in out
+    assert "| NVDA | ↑1.2% |" in out
+
+
+def test_ensure_portfolio_table_header_noop_when_divider_present():
+    body = (
+        "## 保有銘柄テーブル\n\n"
+        "| 銘柄 | 値動き | 今日のトピック | 出典 |\n"
+        "|---|---|---|---|\n"
+        "| PLTR | ↓0.9% | 何か | - |\n"
+    )
+    assert ensure_portfolio_table_header(body) == body
+
+
+def test_ensure_portfolio_table_header_noop_when_no_table():
+    body = "本文だけでテーブル要素なし\n"
+    assert ensure_portfolio_table_header(body) == body
+
+
+def test_ensure_portfolio_table_header_inserts_divider_only_when_header_present():
+    body = (
+        "## 保有銘柄テーブル\n\n"
+        "| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |\n"
+        "| PLTR | ↓0.9% | (確認できず) | - |\n"
+    )
+    out = ensure_portfolio_table_header(body)
+    # Header line should appear exactly once (no duplication)
+    assert out.count("| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |") == 1
+    assert "|---|---|---|---|" in out
+    assert "| PLTR | ↓0.9% |" in out
+
+
+def test_build_section_insight_prompt_carries_prior_text_and_themes():
+    cfg = _minimal_cfg()
+    out = build_section_insight_prompt(
+        cfg, prior_text="### マクロ\n本文", today="2026-06-09"
+    )
+    assert "自分への示唆" in out
+    assert "AI" in out  # themes
+    assert "本文" in out
 
 
 def test_system_prompt_carries_citation_rules():
@@ -270,8 +463,8 @@ def _ctx_with_urls(*urls: str) -> PrefetchedContext:
     return PrefetchedContext(
         macro=[SearchResult(f"t{i}", u, "d") for i, u in enumerate(urls)],
         per_ticker={},
-        geo_topic=None,
-        geo_results=[],
+        geo_by_topic={},
+        events_by_name={},
     )
 
 
@@ -320,13 +513,16 @@ def test_validate_urls_collects_from_all_prefetch_buckets():
     ctx = PrefetchedContext(
         macro=[SearchResult("m", "https://e.com/macro", "")],
         per_ticker={"PLTR": [SearchResult("p", "https://e.com/pltr", "")]},
-        geo_topic="x",
-        geo_results=[SearchResult("g", "https://e.com/geo", "")],
+        geo_by_topic={"x": [SearchResult("g", "https://e.com/geo", "")]},
+        events_by_name={"e": [SearchResult("ev", "https://e.com/ev", "")]},
     )
-    body = "[m](https://e.com/macro) [p](https://e.com/pltr) [g](https://e.com/geo)"
+    body = (
+        "[m](https://e.com/macro) [p](https://e.com/pltr) "
+        "[g](https://e.com/geo) [ev](https://e.com/ev)"
+    )
     v = validate_urls(body, ctx)
     assert v.fabricated == 0
-    assert v.verified == 3
+    assert v.verified == 4
 
 
 def test_compose_briefing_md_search_disabled_caveat():
@@ -368,20 +564,37 @@ class _FakeRunCLI:
             return PrefetchedContext(
                 macro=[],
                 per_ticker={t: [] for t in cfg.portfolio.tickers},
-                geo_topic=None,
-                geo_results=[],
+                geo_by_topic={},
+                events_by_name={},
             )
 
         monkeypatch.setattr(cli, "prefetch_briefing_context", _fake_prefetch)
         monkeypatch.setattr(
-            cli, "render_web_context_block", lambda ctx: "WEB_CTX"
+            cli,
+            "build_section_topnews_prompt",
+            lambda ctx, *, today: f"PROMPT_TOP(today={today})",
         )
         monkeypatch.setattr(
             cli,
-            "build_local_briefing_prompt",
-            lambda cfg, stocks, today, web_context: (
-                f"PROMPT(today={today}, ctx={web_context})"
+            "build_section_portfolio_prompt",
+            lambda cfg, *, stocks, today, ctx: (
+                f"PROMPT_PORT(today={today}, stocks={stocks})"
             ),
+        )
+        monkeypatch.setattr(
+            cli,
+            "build_section_geo_events_prompt",
+            lambda cfg, *, ctx, today: f"PROMPT_GEO(today={today})",
+        )
+        monkeypatch.setattr(
+            cli,
+            "build_section_insight_prompt",
+            lambda cfg, *, prior_text, today: (
+                f"PROMPT_INS(today={today}, prior={prior_text})"
+            ),
+        )
+        monkeypatch.setattr(
+            cli, "collect_references", lambda ctx, body: "## 参考記事\n- (stub)"
         )
         monkeypatch.setattr(
             cli, "load_local_briefing_system_prompt", lambda: "SYS"
@@ -391,7 +604,19 @@ class _FakeRunCLI:
             self.generate_calls.append(
                 {"prompt": prompt, "system_prompt": system_prompt}
             )
-            return briefing_text
+            # CLI 側は 4 回 chat() を呼ぶ。テストごとに変えたい本文 (URL 捏造を
+            # 仕込む等) は 1 段目 (topnews) に集約し、他はラベルだけ返す。
+            if "PROMPT_TOP" in prompt:
+                return briefing_text
+            if "PROMPT_PORT" in prompt:
+                # わざと見出し + ヘッダ + 区切り行を省略して、CLI 側の補強関数で
+                # 復元されることを下のテストで検証する。
+                return "| PLTR | ↓0.9% | (確認できず) | - |"
+            if "PROMPT_GEO" in prompt:
+                return "## 地政学トピック"
+            if "PROMPT_INS" in prompt:
+                return "## 自分への示唆"
+            return ""
 
         monkeypatch.setattr(cli, "generate_local_briefing", _fake_generate)
 
@@ -418,16 +643,34 @@ def test_cmd_briefing_prefetches_and_writes_local_file(monkeypatch, tmp_path):
     assert len(files) == 1
     content = files[0].read_text()
     assert "ローカル LLM" in content
-    assert "### 今日" in content
+    assert "### 今日" in content  # topnews segment from briefing_text
     # Pre-fetch ran with the search client + tickers from briefing.json
     assert len(fake.prefetch_calls) == 1
     assert fake.prefetch_calls[0]["tickers"] == ["PLTR", "NVDA"]
     assert len(fake.search_clients) == 1
-    # The injected web context reached the prompt
-    assert "ctx=WEB_CTX" in fake.generate_calls[0]["prompt"]
-    assert fake.generate_calls[0]["system_prompt"] == "SYS"
+    # 4 段の chat() が順番に呼ばれている
+    assert len(fake.generate_calls) == 4
+    prompts = [c["prompt"] for c in fake.generate_calls]
+    assert "PROMPT_TOP" in prompts[0]
+    assert "PROMPT_PORT" in prompts[1]
+    assert "PROMPT_GEO" in prompts[2]
+    assert "PROMPT_INS" in prompts[3]
+    # insight 段には先行 3 段の本文が prior_text として渡る
+    assert "保有銘柄テーブル" in prompts[3]
+    # 全段に同じ system prompt が乗る
+    assert all(c["system_prompt"] == "SYS" for c in fake.generate_calls)
+    # 参考記事セクションが Python 側で追加されている
+    assert "## 参考記事" in content
+    # portfolio セグメントはモデルが見出し・区切り行を省略したが、CLI 側の
+    # ensure_portfolio_table_header で復元されている
+    assert "## 保有銘柄テーブル" in content
+    assert "|---|---|---|---|" in content
     # URL 検証行が caveat に入っている (今回は本文に URL なし → 0/0)
     assert "URL 検証" in content
+    # 取得件数サマリと折りたたみデバッグブロックが透明性のために含まれる
+    assert "Brave hits" in content
+    assert "<details>" in content
+    assert "Pre-fetch raw" in content
     assert fake.notion_calls == []
 
 

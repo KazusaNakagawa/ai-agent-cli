@@ -1,9 +1,12 @@
 """ローカル LLM 用ブリーフィング生成。プロンプト組立・検索 pre-fetch・Ollama 呼び出し・MD 組成。
 
-設計方針 (#144 pre-fetch 化):
-- qwen2.5:14b 程度の tool-calling 追従は不安定 (実測で 8 銘柄中 2 銘柄しか検索しなかった)。
-- CLI 側で全銘柄 + マクロ + 地政学 1 件の web_search を確実に実行してプロンプトに注入する。
-- モデルは検索結果を整形して文章にする責務だけ持つ。tool 経路は廃止。
+設計方針:
+- #144 pre-fetch 化: qwen2.5:14b の tool-calling は不安定 (8 銘柄中 2 銘柄しか検索しない)
+  ため Python 側で必ず全件 web_search し、プロンプトに注入する。tool 経路は廃止。
+- セクション分割 (#後続): 9 セクションを 1 回の chat() で生成させると attention が
+  分散し、保有銘柄テーブルなどで URL 捏造が頻発した。トップニュース / 保有銘柄 /
+  地政学+イベント / 示唆 の 4 段に分けて、各段で渡す web_context をそのセクション分
+  だけに絞ることで、引用追従を安定させる。
 """
 
 from __future__ import annotations
@@ -14,11 +17,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from src.config import BriefingConfig
-from src.generator.briefing import (
-    build_geopolitical_context,
-    build_watch_events_context,
-    join_safe,
-)
+from src.generator.briefing import join_safe
 from src.generator.prompt import render
 from src.logger import get_logger
 
@@ -27,19 +26,25 @@ from .search import BraveSearchClient, BraveSearchError, SearchResult
 logger = get_logger(__name__)
 
 
-PER_TICKER_RESULTS = 2
+PER_TICKER_RESULTS = 3
 PER_MACRO_RESULTS = 3
 PER_GEO_RESULTS = 2
+PER_EVENT_RESULTS = 2
 
 
 @dataclass(frozen=True)
 class PrefetchedContext:
-    """Pre-fetched web_search のまとめ。プロンプトへの注入用。"""
+    """Pre-fetched web_search のまとめ。プロンプトへの注入用。
+
+    geo_by_topic / events_by_name は briefing.json の全エントリを 1 件ずつ
+    クエリした結果。Claude 経路に対して網羅性が低かった点 (geo は先頭 1 件のみ、
+    events は未取得) を補うため #144 以降に複数化した。
+    """
 
     macro: list[SearchResult]
     per_ticker: dict[str, list[SearchResult]]
-    geo_topic: str | None
-    geo_results: list[SearchResult]
+    geo_by_topic: dict[str, list[SearchResult]]
+    events_by_name: dict[str, list[SearchResult]]
 
     @property
     def allowed_urls(self) -> set[str]:
@@ -50,21 +55,13 @@ class PrefetchedContext:
         for hits in self.per_ticker.values():
             for r in hits:
                 urls.add(r.url)
-        for r in self.geo_results:
-            urls.add(r.url)
+        for hits in self.geo_by_topic.values():
+            for r in hits:
+                urls.add(r.url)
+        for hits in self.events_by_name.values():
+            for r in hits:
+                urls.add(r.url)
         return urls
-
-
-def _pick_geo_topic(cfg: BriefingConfig) -> str | None:
-    """briefing.json の geopolitical.conflicts から 1 トピックを選ぶ。
-
-    保有銘柄に紐づく可能性が高そうな順に先頭から選ぶだけ。複雑な相関分析はせず、
-    pre-fetch のクエリ材料を 1 つ取れれば十分。
-    """
-    conflicts = getattr(cfg.geopolitical, "conflicts", None) or []
-    if not conflicts:
-        return None
-    return getattr(conflicts[0], "name", None) or None
 
 
 def _safe_search(
@@ -83,36 +80,52 @@ def prefetch_briefing_context(
     search_client: BraveSearchClient,
     today: str,
 ) -> PrefetchedContext:
-    """全銘柄 + マクロ + 地政学 1 件を確実に web_search する。
+    """マクロ + 全銘柄 + 全 conflicts + 全 watch_events を確実に web_search する。
 
     モデルに tool calling を任せると 8 銘柄中 2 銘柄しか検索しないなどの抜けが
     出るので、Python 側で網羅性を担保する。各クエリは Brave Free プランで安全な
-    回数 (上限 1 QPS, 月 2000) に収めている。
+    回数 (上限 1 QPS, 月 2000) に収めている。日次のクエリ数は ``1 + len(tickers)
+    + len(conflicts) + len(events)`` 程度で、典型的な briefing.json (10 銘柄 + 5
+    conflicts + 5 events) なら 21 クエリ/日 = 630/月 で枠内に収まる。
     """
     macro = _safe_search(search_client, f"stock market news {today}", PER_MACRO_RESULTS)
     logger.info("[prefetch] macro hits=%d", len(macro))
 
     per_ticker: dict[str, list[SearchResult]] = {}
     for ticker in cfg.portfolio.tickers:
+        # クエリに日付を明示すると Yahoo Finance / Robinhood のティッカー index
+        # ページ (汎用 SEO 上位) ではなく当日の市場記事がヒットしやすい。
         hits = _safe_search(
-            search_client, f"{ticker} stock news today", PER_TICKER_RESULTS
+            search_client, f"{ticker} stock news {today}", PER_TICKER_RESULTS
         )
         per_ticker[ticker] = hits
         logger.info("[prefetch] ticker=%s hits=%d", ticker, len(hits))
 
-    geo_topic = _pick_geo_topic(cfg)
-    geo_results: list[SearchResult] = []
-    if geo_topic:
-        geo_results = _safe_search(search_client, f"{geo_topic} today", PER_GEO_RESULTS)
-        logger.info(
-            "[prefetch] geo topic=%r hits=%d", geo_topic, len(geo_results)
-        )
+    geo_by_topic: dict[str, list[SearchResult]] = {}
+    for conflict in getattr(cfg.geopolitical, "conflicts", None) or []:
+        name = getattr(conflict, "name", None) or ""
+        if not name:
+            continue
+        hits = _safe_search(search_client, f"{name} today", PER_GEO_RESULTS)
+        geo_by_topic[name] = hits
+        logger.info("[prefetch] geo topic=%r hits=%d", name, len(hits))
+
+    events_by_name: dict[str, list[SearchResult]] = {}
+    for event in getattr(cfg, "watch_events", None) or []:
+        name = getattr(event, "name", None) or ""
+        if not name:
+            continue
+        trigger = getattr(event, "trigger", None) or ""
+        query = f"{name} {trigger}".strip() if trigger else f"{name} news"
+        hits = _safe_search(search_client, query, PER_EVENT_RESULTS)
+        events_by_name[name] = hits
+        logger.info("[prefetch] event=%r hits=%d", name, len(hits))
 
     return PrefetchedContext(
         macro=macro,
         per_ticker=per_ticker,
-        geo_topic=geo_topic,
-        geo_results=geo_results,
+        geo_by_topic=geo_by_topic,
+        events_by_name=events_by_name,
     )
 
 
@@ -128,55 +141,232 @@ def _format_results(results: list[SearchResult]) -> str:
     return "\n".join(out)
 
 
-def render_web_context_block(ctx: PrefetchedContext) -> str:
-    """PrefetchedContext を Markdown ブロックに整形してプロンプトに埋め込む。"""
-    parts: list[str] = []
+def render_macro_block(ctx: PrefetchedContext) -> str:
+    """マクロ・市場全体だけを抜き出した検索結果ブロック。"""
+    return "### マクロ・市場全体\n" + _format_results(ctx.macro)
 
-    parts.append("### マクロ・市場全体")
-    parts.append(_format_results(ctx.macro))
 
-    parts.append("\n### 銘柄別検索結果")
+def render_portfolio_block(ctx: PrefetchedContext) -> str:
+    """銘柄別検索結果だけを抜き出したブロック。"""
+    parts: list[str] = ["### 銘柄別検索結果"]
     for ticker, results in ctx.per_ticker.items():
         parts.append(f"\n**{ticker}**")
         parts.append(_format_results(results))
-
-    if ctx.geo_topic:
-        parts.append(f"\n### 地政学トピック: {ctx.geo_topic}")
-        parts.append(_format_results(ctx.geo_results))
-
-    block = "\n".join(parts)
-    logger.debug("[prefetch] web_context block injected into prompt:\n%s", block)
-    return block
+    return "\n".join(parts)
 
 
-def build_local_briefing_prompt(
-    cfg: BriefingConfig,
-    stocks: str,
-    today: str,
-    *,
-    web_context: str,
+def render_geo_events_block(ctx: PrefetchedContext) -> str:
+    """地政学トピックと監視イベントだけを抜き出したブロック。
+
+    両方とも空なら空文字を返す (プロンプトでセクションを丸ごと省略させる目印)。
+    """
+    parts: list[str] = []
+    if ctx.geo_by_topic:
+        parts.append("### 地政学トピック")
+        for topic, results in ctx.geo_by_topic.items():
+            parts.append(f"\n**{topic}**")
+            parts.append(_format_results(results))
+    if ctx.events_by_name:
+        if parts:
+            parts.append("")
+        parts.append("### 監視イベント")
+        for name, results in ctx.events_by_name.items():
+            parts.append(f"\n**{name}**")
+            parts.append(_format_results(results))
+    return "\n".join(parts)
+
+
+def build_section_topnews_prompt(ctx: PrefetchedContext, *, today: str) -> str:
+    return render(
+        "local_section_topnews",
+        today=today,
+        web_context=render_macro_block(ctx),
+    )
+
+
+def build_section_portfolio_prompt(
+    cfg: BriefingConfig, *, stocks: str, today: str, ctx: PrefetchedContext
 ) -> str:
-    """local_briefing.md テンプレートに入力 + 検索結果を流し込む。
+    tickers = join_safe(cfg.portfolio.tickers, sep=", ")
+    return render(
+        "local_section_portfolio",
+        today=today,
+        tickers=tickers,
+        stocks=stocks,
+        web_context=render_portfolio_block(ctx),
+    )
 
-    `web_context` は ``prefetch_briefing_context`` → ``render_web_context_block``
-    で生成した Markdown ブロックを想定。モデルは「この情報のみを使って書け」と
-    指示されており、本文中の URL は必ずこのブロックから引かれる。
 
-    Note: watch_sectors は意図的に渡していない。Claude 経路の並列セクタースイープに
-    相当する出力をローカル版では行わない方針 (#142 spec の non-goal)。
+def build_section_geo_events_prompt(
+    cfg: BriefingConfig, *, ctx: PrefetchedContext, today: str
+) -> str:
+    """地政学+イベントの生成プロンプト。
+
+    cfg を受けるのは「保有銘柄 ($tickers) への影響あり/なしを必ず判定せよ」と
+    いう指示を出すため。qwen2.5:14b は cfg なしだと全トピック「保有銘柄に影響なし」
+    で済ませる傾向がある。
     """
     tickers = join_safe(cfg.portfolio.tickers, sep=", ")
+    return render(
+        "local_section_geo_events",
+        today=today,
+        tickers=tickers,
+        web_context=render_geo_events_block(ctx),
+    )
+
+
+def build_section_insight_prompt(
+    cfg: BriefingConfig, *, prior_text: str, today: str
+) -> str:
+    """A-C の本文を踏まえた「自分への示唆」生成用プロンプト。
+
+    示唆セクションは URL 引用不要 (system prompt でも明示) なので web_context は
+    渡さない。代わりに 1-3 段の本文要約を `prior_text` に流し込んでモデルに参照
+    させる。
+    """
     themes = join_safe(cfg.portfolio.themes, sep=", ")
     return render(
-        "local_briefing",
-        tickers=tickers,
-        themes=themes,
-        geopolitical=build_geopolitical_context(cfg),
-        watch_events=build_watch_events_context(cfg),
-        stocks=stocks,
+        "local_section_insight",
         today=today,
-        web_context=web_context,
+        themes=themes,
+        prior_text=prior_text,
     )
+
+
+def summarize_prefetch_hits(ctx: PrefetchedContext) -> str:
+    """Brave Search で何件取れたかを 1 行に整形 (caveat 用)。
+
+    `local_*.md` の出典セルが `-` になっている銘柄について、運用者が「pre-fetch
+    で取れていないのか / 取れたが LLM が活用しなかったのか」を即判定できるよう
+    にする。`tickers=[PLTR:3, CBRS:0, ...]` の形式で 0 件かどうかが目視できる。
+    """
+    parts: list[str] = [f"macro={len(ctx.macro)}"]
+    if ctx.per_ticker:
+        body = ", ".join(f"{t}:{len(h)}" for t, h in ctx.per_ticker.items())
+        parts.append(f"tickers=[{body}]")
+    if ctx.geo_by_topic:
+        body = ", ".join(f"{t}:{len(h)}" for t, h in ctx.geo_by_topic.items())
+        parts.append(f"geo=[{body}]")
+    if ctx.events_by_name:
+        body = ", ".join(f"{n}:{len(h)}" for n, h in ctx.events_by_name.items())
+        parts.append(f"events=[{body}]")
+    return " / ".join(parts)
+
+
+def render_prefetch_debug_block(ctx: PrefetchedContext) -> str:
+    """pre-fetch の生 URL/タイトル一覧を `<details>` 折りたたみで返す。
+
+    caveat の件数サマリだけでは「具体的に何を取ってきたか」が分からないので、
+    本文末尾に「展開可能なデバッグブロック」として全件掲載する。GitHub /
+    GitLab Markdown では折りたたみ、Notion ではプレーンに展開される (大量だ
+    が崩れはしない)。
+    """
+
+    def _list(results: list[SearchResult]) -> list[str]:
+        if not results:
+            return ["- (検索ヒットなし)"]
+        return [f"- [{r.title}]({r.url})" for r in results]
+
+    lines: list[str] = []
+    lines.append("<details><summary>Pre-fetch raw (debug)</summary>")
+    lines.append("")
+    lines.append("### マクロ・市場全体")
+    lines.extend(_list(ctx.macro))
+
+    if ctx.per_ticker:
+        lines.append("")
+        lines.append("### 銘柄別")
+        for ticker, results in ctx.per_ticker.items():
+            lines.append("")
+            lines.append(f"**{ticker} ({len(results)} 件)**")
+            lines.extend(_list(results))
+
+    if ctx.geo_by_topic:
+        lines.append("")
+        lines.append("### 地政学")
+        for topic, results in ctx.geo_by_topic.items():
+            lines.append("")
+            lines.append(f"**{topic} ({len(results)} 件)**")
+            lines.extend(_list(results))
+
+    if ctx.events_by_name:
+        lines.append("")
+        lines.append("### 監視イベント")
+        for name, results in ctx.events_by_name.items():
+            lines.append("")
+            lines.append(f"**{name} ({len(results)} 件)**")
+            lines.extend(_list(results))
+
+    lines.append("")
+    lines.append("</details>")
+    return "\n".join(lines)
+
+
+_PORTFOLIO_TABLE_PREAMBLE = (
+    "## 保有銘柄テーブル\n"
+    "\n"
+    "| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |\n"
+    "|---|---|---|---|"
+)
+
+
+def ensure_portfolio_table_header(body: str) -> str:
+    """qwen2.5:14b は portfolio セクションで見出し + ヘッダ行 + 区切り行を省略しがち。
+
+    本文がデータ行 (`| PLTR | ↓0.9% | ... |`) だけになると Markdown としては
+    テーブル描画されない (区切り行がないため)。データ行があるのに区切り行が
+    無い場合は見出し + ヘッダ + 区切り行を前置して描画を救う。プロンプト側でも
+    強く指示しているが、後処理で確実に直すための保険。
+    """
+    if "|---" in body:
+        return body
+    lines = body.splitlines()
+    has_data_row = any(line.lstrip().startswith("|") for line in lines)
+    if not has_data_row:
+        return body
+    header_line = _PORTFOLIO_TABLE_PREAMBLE.splitlines()[2]
+    divider_line = _PORTFOLIO_TABLE_PREAMBLE.splitlines()[3]
+    if any(line.strip() == header_line for line in lines):
+        return body.replace(header_line, f"{header_line}\n{divider_line}", 1)
+    return f"{_PORTFOLIO_TABLE_PREAMBLE}\n{body.lstrip()}"
+
+
+def collect_references(ctx: PrefetchedContext, body: str) -> str:
+    """A-C の本文に実際に登場した allowed URL を `## 参考記事` として列挙する。
+
+    モデルに参考記事を書かせると重複・捏造・順序崩れが頻発する (qwen2.5:14b の
+    URL 引用追従限界)。Python 側で本文から URL を抜き、pre-fetch の (title, url)
+    と突き合わせて Markdown リンク化する方がはるかに信頼できる。
+    """
+    found = _URL_RE.findall(body)
+    if not found:
+        return "## 参考記事\n- (本文中に引用 URL なし)"
+
+    url_to_title: dict[str, str] = {}
+    for r in ctx.macro:
+        url_to_title.setdefault(r.url, r.title)
+    for hits in ctx.per_ticker.values():
+        for r in hits:
+            url_to_title.setdefault(r.url, r.title)
+    for hits in ctx.geo_by_topic.values():
+        for r in hits:
+            url_to_title.setdefault(r.url, r.title)
+    for hits in ctx.events_by_name.values():
+        for r in hits:
+            url_to_title.setdefault(r.url, r.title)
+
+    lines = ["## 参考記事"]
+    seen: set[str] = set()
+    for url in found:
+        if url in seen:
+            continue
+        seen.add(url)
+        title = url_to_title.get(url)
+        if title:
+            lines.append(f"- [{title}]({url})")
+    if len(lines) == 1:
+        lines.append("- (引用 URL は全て pre-fetch 外 — `<URL未検証>` に置換済み)")
+    return "\n".join(lines)
 
 
 def load_local_briefing_system_prompt() -> str:
@@ -272,17 +462,22 @@ def compose_briefing_md(
     generated_at: datetime,
     search_enabled: bool = True,
     url_validation: UrlValidation | None = None,
+    prefetch_summary: str | None = None,
 ) -> str:
     """Caveat ヘッダと本文を `---` で連結する。
 
     `url_validation` を渡すと caveat に「URL 検証: verified/total」を追記する。
-    捏造件数が 0 でなければ運用者がすぐ気付けるようにする目的。
+    `prefetch_summary` を渡すと「Brave hits: ...」の件数行を追記する。両方とも
+    `-` 出典セルの裏付けを取るための運用透明性。
     """
     search_line = (
         "> - Web 検索: Brave Search (pre-fetch)\n"
         if search_enabled
         else "> - Web 検索: 無効（BRAVE_API_KEY 未設定）\n"
     )
+    summary_line = ""
+    if prefetch_summary:
+        summary_line = f"> - Brave hits: {prefetch_summary}\n"
     validation_line = ""
     if url_validation is not None:
         validation_line = (
@@ -293,6 +488,7 @@ def compose_briefing_md(
         "> **※ ローカル LLM 生成（実験版）**\n"
         f"> - model: {model}\n"
         f"{search_line}"
+        f"{summary_line}"
         f"{validation_line}"
         f"> - generated_at: {generated_at.isoformat(timespec='seconds')}\n"
     )
