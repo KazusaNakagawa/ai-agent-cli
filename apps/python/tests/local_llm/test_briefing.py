@@ -147,7 +147,11 @@ def test_prefetch_skips_geo_when_no_conflicts_configured():
     assert ctx.geo_by_topic == {}
     assert ctx.events_by_name == {}
     queried = [c["query"] for c in search.calls]
-    assert not any("today" in q and q != "stock market news 2026-06-09" and "stock news" not in q for q in queried)
+    geo_or_event_queries = [
+        q for q in queried
+        if "today" in q and q != "stock market news 2026-06-09" and "stock news" not in q
+    ]
+    assert geo_or_event_queries == []
 
 
 def _full_ctx() -> PrefetchedContext:
@@ -344,6 +348,19 @@ def test_ensure_portfolio_table_header_noop_when_divider_present():
 def test_ensure_portfolio_table_header_noop_when_no_table():
     body = "本文だけでテーブル要素なし\n"
     assert ensure_portfolio_table_header(body) == body
+
+
+def test_ensure_portfolio_table_header_inserts_divider_only_when_header_present():
+    body = (
+        "## 保有銘柄テーブル\n\n"
+        "| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |\n"
+        "| PLTR | ↓0.9% | (確認できず) | - |\n"
+    )
+    out = ensure_portfolio_table_header(body)
+    # Header line should appear exactly once (no duplication)
+    assert out.count("| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |") == 1
+    assert "|---|---|---|---|" in out
+    assert "| PLTR | ↓0.9% |" in out
 
 
 def test_build_section_insight_prompt_carries_prior_text_and_themes():

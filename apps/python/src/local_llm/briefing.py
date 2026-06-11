@@ -320,9 +320,14 @@ def ensure_portfolio_table_header(body: str) -> str:
     """
     if "|---" in body:
         return body
-    has_data_row = any(line.lstrip().startswith("|") for line in body.splitlines())
+    lines = body.splitlines()
+    has_data_row = any(line.lstrip().startswith("|") for line in lines)
     if not has_data_row:
         return body
+    header_line = _PORTFOLIO_TABLE_PREAMBLE.splitlines()[2]
+    divider_line = _PORTFOLIO_TABLE_PREAMBLE.splitlines()[3]
+    if any(line.strip() == header_line for line in lines):
+        return body.replace(header_line, f"{header_line}\n{divider_line}", 1)
     return f"{_PORTFOLIO_TABLE_PREAMBLE}\n{body.lstrip()}"
 
 
@@ -333,7 +338,7 @@ def collect_references(ctx: PrefetchedContext, body: str) -> str:
     URL 引用追従限界)。Python 側で本文から URL を抜き、pre-fetch の (title, url)
     と突き合わせて Markdown リンク化する方がはるかに信頼できる。
     """
-    found = set(_URL_RE.findall(body))
+    found = _URL_RE.findall(body)
     if not found:
         return "## 参考記事\n- (本文中に引用 URL なし)"
 
