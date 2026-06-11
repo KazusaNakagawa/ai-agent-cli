@@ -117,7 +117,7 @@ def test_make_chroma_collection_raises_on_embed_model_mismatch(tmp_path):
     assert "--reset" in str(exc.value)
 
 
-def test_make_chroma_collection_treats_pre_135_index_as_nomic(tmp_path, monkeypatch):
+def test_make_chroma_collection_treats_pre_135_index_as_nomic(tmp_path):
     """Collections built before #135 carry no embed_model tag and must be
     treated as nomic-embed-text so a silent switch to bge-m3 is caught.
     """

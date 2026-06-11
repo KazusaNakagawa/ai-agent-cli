@@ -1,6 +1,7 @@
 import pytest
 
 from src.local_llm import cli
+from src.local_llm.clients import EmbedModelMismatch
 
 
 def test_cli_status_prints_summary(monkeypatch, tmp_path, capsys):
@@ -48,6 +49,39 @@ def test_cli_sources_prints_top_k(monkeypatch, tmp_path, capsys):
 def test_cli_requires_one_action(tmp_path):
     with pytest.raises(SystemExit):
         cli.main([])
+
+
+def _raise_mismatch(_cfg):
+    raise EmbedModelMismatch(
+        "embed_model='nomic-embed-text' vs 'bge-m3'. Rebuild with: "
+        "bin/local_llm.sh --index --reset"
+    )
+
+
+def test_cli_status_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("LOCAL_LLM_CHROMA_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setattr(cli, "make_chroma_collection", _raise_mismatch)
+
+    rc = cli.main(["--status", "--root", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "--index --reset" in captured.err
+    assert "nomic-embed-text" in captured.err
+    assert "bge-m3" in captured.err
+
+
+def test_cli_sources_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("LOCAL_LLM_CHROMA_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setattr(cli, "make_ollama_client", lambda cfg: object())
+    monkeypatch.setattr(cli, "ensure_models_available", lambda *a, **kw: None)
+    monkeypatch.setattr(cli, "make_chroma_collection", _raise_mismatch)
+
+    rc = cli.main(["--sources", "test", "--root", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "--index --reset" in captured.err
 
 
 def test_cli_notion_without_briefing_errors(tmp_path, capsys):
