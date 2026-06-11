@@ -9,6 +9,18 @@ class OllamaUnavailable(RuntimeError):
     pass
 
 
+class EmbedModelMismatch(RuntimeError):
+    """Existing Chroma collection was built with a different embed model.
+
+    Raised by ``make_chroma_collection`` when the current `cfg.embed_model`
+    does not match the embed model recorded in the persisted collection's
+    metadata. Different embed models produce vectors of different
+    dimensions (e.g. bge-m3=1024 vs nomic-embed-text=768), and mixing them
+    in one collection raises a dim-mismatch error on the first upsert; we
+    detect it up-front and tell the operator to ``--reset``.
+    """
+
+
 def ensure_models_available(client, model: str, embed_model: str | None) -> None:
     """Verify the generation model (and optionally an embed model) is pulled.
 
@@ -58,8 +70,26 @@ def make_ollama_client(cfg: LocalLLMConfig):
     return ollama.Client(host=cfg.ollama_host)
 
 
+_LEGACY_EMBED_MODEL = "nomic-embed-text"
+
+
 def make_chroma_collection(cfg: LocalLLMConfig):
     import chromadb
     cfg.chroma_path.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(cfg.chroma_path))
-    return client.get_or_create_collection(COLLECTION_NAME)
+    coll = client.get_or_create_collection(
+        COLLECTION_NAME,
+        metadata={"embed_model": cfg.embed_model},
+    )
+    # Pre-#135 collections have no embed_model tag; they were built with the
+    # previous default (nomic-embed-text). Fall back to that so the mismatch
+    # check still catches a silent dimension change.
+    prev_model = (coll.metadata or {}).get("embed_model") or _LEGACY_EMBED_MODEL
+    if prev_model != cfg.embed_model:
+        raise EmbedModelMismatch(
+            f"Existing Chroma collection at {cfg.chroma_path} was built with "
+            f"embed_model={prev_model!r}, but current config requests "
+            f"{cfg.embed_model!r}. Embedding dimensions differ. Rebuild with:\n"
+            f"  bin/local_llm.sh --index --reset"
+        )
+    return coll

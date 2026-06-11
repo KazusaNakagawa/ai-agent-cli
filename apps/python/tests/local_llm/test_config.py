@@ -19,7 +19,7 @@ def test_load_config_defaults(monkeypatch, tmp_path):
     assert isinstance(cfg, LocalLLMConfig)
     assert cfg.ollama_host == "http://localhost:11434"
     assert cfg.model == "qwen2.5:14b"
-    assert cfg.embed_model == "nomic-embed-text"
+    assert cfg.embed_model == "bge-m3"
     assert cfg.top_k == 6
     assert cfg.repo_root == tmp_path
     assert cfg.chunk_lines == 40
@@ -30,7 +30,7 @@ def test_load_config_defaults(monkeypatch, tmp_path):
 def test_load_config_env_overrides(monkeypatch, tmp_path):
     monkeypatch.setenv("OLLAMA_HOST", "http://example:11434")
     monkeypatch.setenv("LOCAL_LLM_MODEL", "qwen2.5:32b")
-    monkeypatch.setenv("LOCAL_LLM_EMBED_MODEL", "bge-m3")
+    monkeypatch.setenv("LOCAL_LLM_EMBED_MODEL", "nomic-embed-text")
     monkeypatch.setenv("LOCAL_LLM_TOP_K", "10")
     monkeypatch.setenv("LOCAL_LLM_CHROMA_PATH", str(tmp_path / "custom_chroma"))
 
@@ -38,6 +38,6 @@ def test_load_config_env_overrides(monkeypatch, tmp_path):
 
     assert cfg.ollama_host == "http://example:11434"
     assert cfg.model == "qwen2.5:32b"
-    assert cfg.embed_model == "bge-m3"
+    assert cfg.embed_model == "nomic-embed-text"
     assert cfg.top_k == 10
     assert cfg.chroma_path == tmp_path / "custom_chroma"

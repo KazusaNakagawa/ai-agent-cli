@@ -17,7 +17,7 @@ def test_cli_status_prints_summary(monkeypatch, tmp_path, capsys):
     assert rc == 0
     assert "42" in out
     assert "qwen2.5:14b" in out
-    assert "nomic-embed-text" in out
+    assert "bge-m3" in out
 
 
 def test_cli_sources_prints_top_k(monkeypatch, tmp_path, capsys):
