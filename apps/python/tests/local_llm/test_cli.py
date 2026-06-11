@@ -82,6 +82,8 @@ def test_cli_sources_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys
     captured = capsys.readouterr()
     assert rc == 1
     assert "--index --reset" in captured.err
+    assert "nomic-embed-text" in captured.err
+    assert "bge-m3" in captured.err
 
 
 def test_cli_index_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys):
@@ -95,6 +97,8 @@ def test_cli_index_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys):
     captured = capsys.readouterr()
     assert rc == 1
     assert "--index --reset" in captured.err
+    assert "nomic-embed-text" in captured.err
+    assert "bge-m3" in captured.err
 
 
 def test_cli_ask_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys):
@@ -108,6 +112,8 @@ def test_cli_ask_exits_on_embed_model_mismatch(monkeypatch, tmp_path, capsys):
     captured = capsys.readouterr()
     assert rc == 1
     assert "--index --reset" in captured.err
+    assert "nomic-embed-text" in captured.err
+    assert "bge-m3" in captured.err
 
 
 def test_cli_notion_without_briefing_errors(tmp_path, capsys):
