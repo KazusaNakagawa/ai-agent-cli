@@ -34,6 +34,8 @@ PER_EVENT_RESULTS = 2
 # Brave の鮮度フィルタ。日次ブリーフィングなので直近 1 週間に絞る (#153)。
 PREFETCH_FRESHNESS = "pw"
 # 索引ページフィルタで間引かれる分を見込んだ over-fetch の上乗せ件数。
+# Brave の count 上限は 10 (クライアント側で clamp)。現状の PER_* 最大は 3 なので
+# 3+3=6 で枠内だが、PER_* を増やす場合は 10 を超えないよう注意。
 OVERFETCH_EXTRA = 3
 
 # ニュース本文ではない常設の銘柄索引/クオートページ。スニペットに当日の事実が
@@ -47,7 +49,9 @@ _INDEX_PAGE_URL_PATTERNS = [
         r"investing\.com/equities/",
         r"stockanalysis\.com/stocks/",
         r"seekingalpha\.com/symbol/",
-        r"amazon\.(com|co\.jp)/",
+        # Amazon は商品詳細ページ (/dp/, /gp/product/ — 商品名スラッグ付きも可)
+        # のみ除外。記事系ページまで落とさないようドメイン全体は対象にしない。
+        r"amazon\.(com|co\.jp)/(.+/)?(gp/product|dp)/",
     )
 ]
 

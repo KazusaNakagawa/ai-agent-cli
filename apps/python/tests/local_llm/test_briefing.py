@@ -207,7 +207,12 @@ def test_prefetch_filters_index_pages_and_trims_to_count():
     assert ctx.per_ticker["PLTR"] == news[:PER_TICKER_RESULTS]
     for r in index_pages:
         assert _is_index_page(r.url), r.url
+    # 商品名スラッグ付きの Amazon 商品ページ (local_2026-06-11 で実際に汚染した形)
+    assert _is_index_page("https://www.amazon.co.jp/%E5%8F%B0%E6%B9%BE%E6%9C%89%E4%BA%8B-987/dp/4582859879")
     assert not _is_index_page("https://news.example.com/article-1")
+    # Amazon の記事系ページ (商品詳細以外) は除外しない
+    assert not _is_index_page("https://www.aboutamazon.com/news/company-news/q1-results")
+    assert not _is_index_page("https://www.amazon.com/press-release/some-news")
 
 
 def test_prefetch_uses_english_geo_query_when_query_en_set():
