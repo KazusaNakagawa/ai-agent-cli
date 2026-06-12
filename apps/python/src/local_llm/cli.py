@@ -12,7 +12,7 @@ from pathlib import Path
 
 from src.config import load_config as load_briefing_config
 from src.constants import BRIEFING_OUTPUT_DIR
-from src.fetcher.stocks import fetch_stock_moves
+from src.fetcher.stocks import fetch_stock_move_map
 from src.logger import get_logger
 from src.notifier.notion import send_to_notion
 
@@ -22,11 +22,9 @@ from .articles import count_article_fetches, enrich_with_article_text
 from .briefing import (
     build_section_geo_events_prompt,
     build_section_insight_prompt,
-    build_section_portfolio_prompt,
     build_section_topnews_prompt,
     collect_references,
     compose_briefing_md,
-    ensure_portfolio_table_header,
     generate_local_briefing,
     load_local_briefing_system_prompt,
     prefetch_briefing_context,
@@ -34,6 +32,7 @@ from .briefing import (
     summarize_prefetch_hits,
     validate_urls,
 )
+from .portfolio import generate_portfolio_table
 from .clients import (
     EmbedModelMismatch,
     OllamaUnavailable,
@@ -202,7 +201,7 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     logger.info(
         "株価取得中 (tickers=%s)...", ", ".join(briefing_cfg.portfolio.tickers)
     )
-    stocks = fetch_stock_moves(briefing_cfg.portfolio.tickers)
+    moves = fetch_stock_move_map(briefing_cfg.portfolio.tickers)
 
     today = date.today().isoformat()  # YYYY-MM-DD — ファイル名・プロンプト両方で共用
     search_client = BraveSearchClient(brave_api_key)
@@ -246,15 +245,19 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     body_top = _gen(
         "トップニュース", build_section_topnews_prompt(ctx, today=today)
     )
-    body_port = _gen(
-        "保有銘柄テーブル",
-        build_section_portfolio_prompt(
-            briefing_cfg, stocks=stocks, today=today, ctx=ctx
-        ),
+    # 保有銘柄テーブルは銘柄ごとの構造化出力 (#152)。モデルは {topic, source_index}
+    # の JSON しか書かず、URL・値動き・テーブル組成は Python 側で行う。
+    logger.info("[section] 保有銘柄テーブル 構造化生成開始")
+    body_port = generate_portfolio_table(
+        briefing_cfg.portfolio.tickers,
+        ctx=ctx,
+        moves=moves,
+        ollama_client=olm,
+        model=cfg.model,
+        options=gen_options,
+        today=today,
     )
-    # qwen2.5:14b は portfolio セクションで見出し + ヘッダ + 区切り行を省略しがち。
-    # データ行だけだと Markdown 描画が壊れるので後処理で補強する。
-    body_port = ensure_portfolio_table_header(body_port)
+    logger.info("[section] 保有銘柄テーブル 生成完了 (%d 文字)", len(body_port))
     body_geo = _gen(
         "地政学+イベント",
         build_section_geo_events_prompt(briefing_cfg, ctx=ctx, today=today),

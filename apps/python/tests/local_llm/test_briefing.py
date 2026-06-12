@@ -17,17 +17,14 @@ from src.local_llm.briefing import (
     UrlValidation,
     build_section_geo_events_prompt,
     build_section_insight_prompt,
-    build_section_portfolio_prompt,
     build_section_topnews_prompt,
     collect_references,
     compose_briefing_md,
-    ensure_portfolio_table_header,
     generate_local_briefing,
     load_local_briefing_system_prompt,
     prefetch_briefing_context,
     render_geo_events_block,
     render_macro_block,
-    render_portfolio_block,
     render_prefetch_debug_block,
     summarize_prefetch_hits,
     validate_urls,
@@ -180,13 +177,6 @@ def test_render_macro_block_only_contains_macro_hits():
     assert "監視イベント" not in block
 
 
-def test_render_portfolio_block_only_contains_ticker_hits():
-    block = render_portfolio_block(_full_ctx())
-    assert "### 銘柄別検索結果" in block
-    assert "**PLTR**" in block and "https://e.com/p" in block
-    assert "**MSFT**" in block and "(検索ヒットなし)" in block
-    assert "マクロ" not in block
-    assert "地政学" not in block
 
 
 def test_render_geo_events_block_contains_both_sections():
@@ -221,19 +211,6 @@ def test_build_section_topnews_prompt_only_passes_macro_hits():
     assert "地政学" not in out
 
 
-def test_build_section_portfolio_prompt_only_passes_ticker_hits():
-    cfg = _minimal_cfg(tickers=["PLTR", "MSFT"])
-    ctx = _full_ctx()
-    out = build_section_portfolio_prompt(
-        cfg, stocks="PLTR +2.1%\nMSFT -1.3%", today="2026-06-09", ctx=ctx
-    )
-    assert "保有銘柄テーブル" in out
-    assert "PLTR" in out and "MSFT" in out
-    assert "PLTR +2.1%" in out
-    assert "https://e.com/p" in out
-    # マクロ・地政学・イベントの URL はこの段では渡さない
-    assert "https://e.com/m" not in out
-    assert "https://e.com/g" not in out
 
 
 def test_build_section_geo_events_prompt_only_passes_geo_events():
@@ -331,46 +308,12 @@ def test_compose_briefing_md_includes_article_summary_line():
     assert "記事本文: 10/12 件取得" in md
 
 
-def test_ensure_portfolio_table_header_prepends_when_divider_missing():
-    body = (
-        "| PLTR | ↓0.9% | (確認できず) | - |\n"
-        "| NVDA | ↑1.2% | 新型 GPU 発表 | [Bloomberg](https://e.com/n) |\n"
-    )
-    out = ensure_portfolio_table_header(body)
-    assert out.startswith("## 保有銘柄テーブル")
-    assert "| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |" in out
-    assert "|---|---|---|---|" in out
-    # データ行は保持される
-    assert "| PLTR | ↓0.9% |" in out
-    assert "| NVDA | ↑1.2% |" in out
 
 
-def test_ensure_portfolio_table_header_noop_when_divider_present():
-    body = (
-        "## 保有銘柄テーブル\n\n"
-        "| 銘柄 | 値動き | 今日のトピック | 出典 |\n"
-        "|---|---|---|---|\n"
-        "| PLTR | ↓0.9% | 何か | - |\n"
-    )
-    assert ensure_portfolio_table_header(body) == body
 
 
-def test_ensure_portfolio_table_header_noop_when_no_table():
-    body = "本文だけでテーブル要素なし\n"
-    assert ensure_portfolio_table_header(body) == body
 
 
-def test_ensure_portfolio_table_header_inserts_divider_only_when_header_present():
-    body = (
-        "## 保有銘柄テーブル\n\n"
-        "| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |\n"
-        "| PLTR | ↓0.9% | (確認できず) | - |\n"
-    )
-    out = ensure_portfolio_table_header(body)
-    # Header line should appear exactly once (no duplication)
-    assert out.count("| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |") == 1
-    assert "|---|---|---|---|" in out
-    assert "| PLTR | ↓0.9% |" in out
 
 
 def test_build_section_insight_prompt_carries_prior_text_and_themes():
@@ -585,10 +528,15 @@ class _FakeRunCLI:
         self.search_clients: list = []
         self.prefetch_calls: list[dict] = []
         self.generate_calls: list[dict] = []
+        self.table_calls: list[dict] = []
 
         monkeypatch.setenv("BRAVE_API_KEY", "test-brave-key")
         monkeypatch.setattr(cli, "BRIEFING_OUTPUT_DIR", self.output_dir)
-        monkeypatch.setattr(cli, "fetch_stock_moves", lambda tickers: "PLTR +1%")
+        monkeypatch.setattr(
+            cli,
+            "fetch_stock_move_map",
+            lambda tickers: {t: "↑1.0%  ($100.00)" for t in tickers},
+        )
         monkeypatch.setattr(cli, "load_briefing_config", lambda: _minimal_cfg())
         monkeypatch.setattr(cli, "make_ollama_client", lambda cfg: object())
         monkeypatch.setattr(cli, "ensure_models_available", lambda *a, **kw: None)
@@ -611,13 +559,6 @@ class _FakeRunCLI:
         )
         monkeypatch.setattr(
             cli,
-            "build_section_portfolio_prompt",
-            lambda cfg, *, stocks, today, ctx: (
-                f"PROMPT_PORT(today={today}, stocks={stocks})"
-            ),
-        )
-        monkeypatch.setattr(
-            cli,
             "build_section_geo_events_prompt",
             lambda cfg, *, ctx, today: f"PROMPT_GEO(today={today})",
         )
@@ -635,18 +576,33 @@ class _FakeRunCLI:
             cli, "load_local_briefing_system_prompt", lambda: "SYS"
         )
 
+        def _fake_table(tickers, *, ctx, moves, ollama_client, model, options=None, today):
+            self.table_calls.append(
+                {
+                    "tickers": list(tickers),
+                    "moves": dict(moves),
+                    "options": options,
+                    "today": today,
+                }
+            )
+            return (
+                "## 保有銘柄テーブル\n\n"
+                "| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |\n"
+                "|---|---|---|---|\n"
+                "| PLTR | ↑1.0%  ($100.00) | (確認できず) | - |"
+            )
+
+        monkeypatch.setattr(cli, "generate_portfolio_table", _fake_table)
+
         def _fake_generate(prompt, *, ollama_client, model, system_prompt, options=None):
             self.generate_calls.append(
                 {"prompt": prompt, "system_prompt": system_prompt, "options": options}
             )
-            # CLI 側は 4 回 chat() を呼ぶ。テストごとに変えたい本文 (URL 捏造を
-            # 仕込む等) は 1 段目 (topnews) に集約し、他はラベルだけ返す。
+            # 自由生成は 3 段 (top / geo / insight)。保有銘柄テーブルは
+            # generate_portfolio_table の構造化経路 (#152) で別 stub。テストごとに
+            # 変えたい本文 (URL 捏造を仕込む等) は 1 段目 (topnews) に集約する。
             if "PROMPT_TOP" in prompt:
                 return briefing_text
-            if "PROMPT_PORT" in prompt:
-                # わざと見出し + ヘッダ + 区切り行を省略して、CLI 側の補強関数で
-                # 復元されることを下のテストで検証する。
-                return "| PLTR | ↓0.9% | (確認できず) | - |"
             if "PROMPT_GEO" in prompt:
                 return "## 地政学トピック"
             if "PROMPT_INS" in prompt:
@@ -683,15 +639,19 @@ def test_cmd_briefing_prefetches_and_writes_local_file(monkeypatch, tmp_path):
     assert len(fake.prefetch_calls) == 1
     assert fake.prefetch_calls[0]["tickers"] == ["PLTR", "NVDA"]
     assert len(fake.search_clients) == 1
-    # 4 段の chat() が順番に呼ばれている
-    assert len(fake.generate_calls) == 4
+    # 自由生成 3 段 + 構造化テーブル 1 回が順番に呼ばれている
+    assert len(fake.generate_calls) == 3
     prompts = [c["prompt"] for c in fake.generate_calls]
     assert "PROMPT_TOP" in prompts[0]
-    assert "PROMPT_PORT" in prompts[1]
-    assert "PROMPT_GEO" in prompts[2]
-    assert "PROMPT_INS" in prompts[3]
-    # insight 段には先行 3 段の本文が prior_text として渡る
-    assert "保有銘柄テーブル" in prompts[3]
+    assert "PROMPT_GEO" in prompts[1]
+    assert "PROMPT_INS" in prompts[2]
+    # insight 段には先行 3 段の本文 (テーブル含む) が prior_text として渡る
+    assert "保有銘柄テーブル" in prompts[2]
+    # テーブルは構造化経路 (#152) に全銘柄 + 実値動き + 生成オプションが渡る
+    assert len(fake.table_calls) == 1
+    assert fake.table_calls[0]["tickers"] == ["PLTR", "NVDA"]
+    assert fake.table_calls[0]["moves"]["PLTR"] == "↑1.0%  ($100.00)"
+    assert fake.table_calls[0]["options"]["num_ctx"] == 16384
     # 全段に同じ system prompt が乗る
     assert all(c["system_prompt"] == "SYS" for c in fake.generate_calls)
     # 全段に cfg 由来の生成オプションが乗る (#150 — Ollama 既定 num_ctx 回避)
@@ -701,8 +661,7 @@ def test_cmd_briefing_prefetches_and_writes_local_file(monkeypatch, tmp_path):
         assert c["options"]["temperature"] == 0.2
     # 参考記事セクションが Python 側で追加されている
     assert "## 参考記事" in content
-    # portfolio セグメントはモデルが見出し・区切り行を省略したが、CLI 側の
-    # ensure_portfolio_table_header で復元されている
+    # 構造化経路が組んだテーブルがそのまま本文に入る
     assert "## 保有銘柄テーブル" in content
     assert "|---|---|---|---|" in content
     # URL 検証行が caveat に入っている (今回は本文に URL なし → 0/0)

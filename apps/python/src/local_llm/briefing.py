@@ -4,9 +4,9 @@
 - #144 pre-fetch 化: qwen2.5:14b の tool-calling は不安定 (8 銘柄中 2 銘柄しか検索しない)
   ため Python 側で必ず全件 web_search し、プロンプトに注入する。tool 経路は廃止。
 - セクション分割 (#後続): 9 セクションを 1 回の chat() で生成させると attention が
-  分散し、保有銘柄テーブルなどで URL 捏造が頻発した。トップニュース / 保有銘柄 /
-  地政学+イベント / 示唆 の 4 段に分けて、各段で渡す web_context をそのセクション分
-  だけに絞ることで、引用追従を安定させる。
+  分散し、保有銘柄テーブルなどで URL 捏造が頻発した。トップニュース / 地政学+イベント /
+  示唆 の各段に分けて、各段で渡す web_context をそのセクション分だけに絞ることで、
+  引用追従を安定させる。保有銘柄テーブルは portfolio.py の構造化出力経路 (#152) に分離。
 """
 
 from __future__ import annotations
@@ -150,15 +150,6 @@ def render_macro_block(ctx: PrefetchedContext) -> str:
     return "### マクロ・市場全体\n" + _format_results(ctx.macro)
 
 
-def render_portfolio_block(ctx: PrefetchedContext) -> str:
-    """銘柄別検索結果だけを抜き出したブロック。"""
-    parts: list[str] = ["### 銘柄別検索結果"]
-    for ticker, results in ctx.per_ticker.items():
-        parts.append(f"\n**{ticker}**")
-        parts.append(_format_results(results))
-    return "\n".join(parts)
-
-
 def render_geo_events_block(ctx: PrefetchedContext) -> str:
     """地政学トピックと監視イベントだけを抜き出したブロック。
 
@@ -185,19 +176,6 @@ def build_section_topnews_prompt(ctx: PrefetchedContext, *, today: str) -> str:
         "local_section_topnews",
         today=today,
         web_context=render_macro_block(ctx),
-    )
-
-
-def build_section_portfolio_prompt(
-    cfg: BriefingConfig, *, stocks: str, today: str, ctx: PrefetchedContext
-) -> str:
-    tickers = join_safe(cfg.portfolio.tickers, sep=", ")
-    return render(
-        "local_section_portfolio",
-        today=today,
-        tickers=tickers,
-        stocks=stocks,
-        web_context=render_portfolio_block(ctx),
     )
 
 
@@ -304,35 +282,6 @@ def render_prefetch_debug_block(ctx: PrefetchedContext) -> str:
     lines.append("")
     lines.append("</details>")
     return "\n".join(lines)
-
-
-_PORTFOLIO_TABLE_PREAMBLE = (
-    "## 保有銘柄テーブル\n"
-    "\n"
-    "| 銘柄 | 値動き | 今日のトピック (1 行) | 出典 |\n"
-    "|---|---|---|---|"
-)
-
-
-def ensure_portfolio_table_header(body: str) -> str:
-    """qwen2.5:14b は portfolio セクションで見出し + ヘッダ行 + 区切り行を省略しがち。
-
-    本文がデータ行 (`| PLTR | ↓0.9% | ... |`) だけになると Markdown としては
-    テーブル描画されない (区切り行がないため)。データ行があるのに区切り行が
-    無い場合は見出し + ヘッダ + 区切り行を前置して描画を救う。プロンプト側でも
-    強く指示しているが、後処理で確実に直すための保険。
-    """
-    if "|---" in body:
-        return body
-    lines = body.splitlines()
-    has_data_row = any(line.lstrip().startswith("|") for line in lines)
-    if not has_data_row:
-        return body
-    header_line = _PORTFOLIO_TABLE_PREAMBLE.splitlines()[2]
-    divider_line = _PORTFOLIO_TABLE_PREAMBLE.splitlines()[3]
-    if any(line.strip() == header_line for line in lines):
-        return body.replace(header_line, f"{header_line}\n{divider_line}", 1)
-    return f"{_PORTFOLIO_TABLE_PREAMBLE}\n{body.lstrip()}"
 
 
 def collect_references(ctx: PrefetchedContext, body: str) -> str:
