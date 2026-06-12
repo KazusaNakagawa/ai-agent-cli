@@ -436,16 +436,30 @@ def test_generate_local_briefing_passes_options_to_chat():
     assert olm.calls[0]["options"] == {"num_ctx": 16384, "temperature": 0.2}
 
 
+def test_generate_local_briefing_defaults_to_no_options(caplog):
+    olm = _ScriptedOllama(reply={"message": {"content": "body"}})
+    with caplog.at_level(logging.INFO, logger="src.local_llm.briefing"):
+        generate_local_briefing("PROMPT", ollama_client=olm, model="m")
+    # options 未指定の既存呼び出しは chat() に None を渡す (後方互換)
+    assert olm.calls[0]["options"] is None
+    # num_ctx 不明時は警告ではなく info で「Ollama 既定」と記録する
+    assert not any(r.levelname == "WARNING" for r in caplog.records)
+    assert any("(Ollama 既定)" in r.getMessage() for r in caplog.records)
+
+
 def test_generate_local_briefing_warns_when_prompt_exceeds_num_ctx(caplog):
     olm = _ScriptedOllama(reply={"message": {"content": "body"}})
-    with caplog.at_level("WARNING"):
+    with caplog.at_level(logging.WARNING, logger="src.local_llm.briefing"):
         generate_local_briefing(
             "x" * 100,
             ollama_client=olm,
             model="m",
             options={"num_ctx": 10},
         )
-    assert any("num_ctx=10 を超過" in r.message for r in caplog.records)
+    assert any(
+        r.levelname == "WARNING" and "num_ctx=10" in r.getMessage()
+        for r in caplog.records
+    )
 
 
 # ---------------------------------------------------------------------------

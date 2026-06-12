@@ -6,6 +6,10 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.logger import get_logger
+
+logger = get_logger(__name__)
+
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 # qwen2.5:14b は qwen2.5:7b に比べて tool calling 追従が格段に良く、
 # `--briefing` 経路で web_search を確実に呼ぶために必要。Q4 量子化で ~8.5GB RAM。
@@ -53,6 +57,28 @@ class LocalLLMConfig:
     chunk_overlap: int
 
 
+def _env_number(name: str, default, cast):
+    """env を数値に変換する。不正値は warning を出して既定値にフォールバック。
+
+    バッチ (cron) 経路で typo った env のせいに起動ごと落とすより、既定値で
+    動かしてログに残す方が運用上安全 (Sourcery / CodeRabbit 指摘)。
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return cast(raw)
+    except ValueError:
+        logger.warning(
+            "env %s=%r を %s に変換できないため既定値 %r を使用",
+            name,
+            raw,
+            cast.__name__,
+            default,
+        )
+        return default
+
+
 def load_config(repo_root: Path | None = None) -> LocalLLMConfig:
     root = (repo_root or Path(os.environ.get("LOCAL_LLM_REPO_ROOT", DEFAULT_REPO_ROOT))).resolve()
     chroma_env = os.environ.get("LOCAL_LLM_CHROMA_PATH")
@@ -61,9 +87,9 @@ def load_config(repo_root: Path | None = None) -> LocalLLMConfig:
         ollama_host=os.environ.get("OLLAMA_HOST", DEFAULT_OLLAMA_HOST),
         model=os.environ.get("LOCAL_LLM_MODEL", DEFAULT_MODEL),
         embed_model=os.environ.get("LOCAL_LLM_EMBED_MODEL", DEFAULT_EMBED_MODEL),
-        num_ctx=int(os.environ.get("LOCAL_LLM_NUM_CTX", DEFAULT_NUM_CTX)),
-        temperature=float(os.environ.get("LOCAL_LLM_TEMPERATURE", DEFAULT_TEMPERATURE)),
-        top_k=int(os.environ.get("LOCAL_LLM_TOP_K", DEFAULT_TOP_K)),
+        num_ctx=_env_number("LOCAL_LLM_NUM_CTX", DEFAULT_NUM_CTX, int),
+        temperature=_env_number("LOCAL_LLM_TEMPERATURE", DEFAULT_TEMPERATURE, float),
+        top_k=_env_number("LOCAL_LLM_TOP_K", DEFAULT_TOP_K, int),
         repo_root=root,
         chroma_path=chroma_path,
         chunk_lines=DEFAULT_CHUNK_LINES,
