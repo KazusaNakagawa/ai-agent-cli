@@ -239,10 +239,12 @@ brew install ollama       # or follow https://ollama.com
 ollama serve &
 ollama pull qwen2.5:14b   # for --briefing: reliable tool calling (~8.5GB RAM with Q4)
 ollama pull qwen2.5:7b    # for --ask / --index: smaller, fits the RAG path
-ollama pull nomic-embed-text
+ollama pull bge-m3        # embedding model (#135): stronger JP + code retrieval than nomic-embed-text
 ```
 
 The default generation model is `qwen2.5:14b` for more stable instruction-following and citation quality in the `--briefing` path. If you only run `--ask` / `--index`, override with `LOCAL_LLM_MODEL=qwen2.5:7b`.
+
+> **Switching embed models requires a rebuild.** `bge-m3` (1024 dim) and the legacy `nomic-embed-text` (768 dim) produce incompatible vectors. If you change `LOCAL_LLM_EMBED_MODEL` (or are upgrading from a pre-#135 index), the CLI refuses with an `EmbedModelMismatch` error — rebuild with `bin/local_llm.sh --index --reset`.
 
 ### Usage
 

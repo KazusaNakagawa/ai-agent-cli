@@ -11,7 +11,10 @@ DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 # `--briefing` 経路で web_search を確実に呼ぶために必要。Q4 量子化で ~8.5GB RAM。
 # 小さいモデルに戻したい場合は env LOCAL_LLM_MODEL=qwen2.5:7b で override 可能。
 DEFAULT_MODEL = "qwen2.5:14b"
-DEFAULT_EMBED_MODEL = "nomic-embed-text"
+# bge-m3 (1024d) outperforms nomic-embed-text (768d) on Japanese + code retrieval
+# (#135). Switching changes embedding dimensions, so an existing .chroma_db built
+# with the previous default must be rebuilt: bin/local_llm.sh --index --reset.
+DEFAULT_EMBED_MODEL = "bge-m3"
 DEFAULT_TOP_K = 6
 DEFAULT_CHUNK_LINES = 40
 DEFAULT_CHUNK_OVERLAP = 8

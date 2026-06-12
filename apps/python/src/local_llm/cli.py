@@ -34,6 +34,7 @@ from .briefing import (
     validate_urls,
 )
 from .clients import (
+    EmbedModelMismatch,
     OllamaUnavailable,
     ensure_models_available,
     make_chroma_collection,
@@ -86,7 +87,11 @@ def main(argv: list[str]) -> int:
 
 
 def _cmd_status(cfg) -> int:
-    coll = make_chroma_collection(cfg)
+    try:
+        coll = make_chroma_collection(cfg)
+    except EmbedModelMismatch as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     count = coll.count() if hasattr(coll, "count") else 0
     print(f"chroma_path : {cfg.chroma_path}")
     print(f"model       : {cfg.model}")
@@ -107,11 +112,11 @@ def _cmd_index(cfg, *, reset: bool) -> int:
     try:
         olm = make_ollama_client(cfg)
         ensure_models_available(olm, cfg.model, cfg.embed_model)
-    except OllamaUnavailable as e:
+        coll = make_chroma_collection(cfg)
+    except (OllamaUnavailable, EmbedModelMismatch) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    coll = make_chroma_collection(cfg)
     t0 = time.time()
     stats = Indexer(cfg, collection=coll, ollama_client=olm).run()
     dt = time.time() - t0
@@ -127,10 +132,10 @@ def _cmd_sources(cfg, question: str) -> int:
     try:
         olm = make_ollama_client(cfg)
         ensure_models_available(olm, cfg.model, cfg.embed_model)
-    except OllamaUnavailable as e:
+        coll = make_chroma_collection(cfg)
+    except (OllamaUnavailable, EmbedModelMismatch) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
-    coll = make_chroma_collection(cfg)
     chunks = Retriever(cfg, collection=coll, ollama_client=olm).retrieve(question)
     if not chunks:
         print("該当する文脈が見つかりませんでした")
@@ -145,10 +150,10 @@ def _cmd_ask(cfg, question: str) -> int:
     try:
         olm = make_ollama_client(cfg)
         ensure_models_available(olm, cfg.model, cfg.embed_model)
-    except OllamaUnavailable as e:
+        coll = make_chroma_collection(cfg)
+    except (OllamaUnavailable, EmbedModelMismatch) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
-    coll = make_chroma_collection(cfg)
     retr = Retriever(cfg, collection=coll, ollama_client=olm)
     chunks = retr.retrieve(question)
     if not chunks:
