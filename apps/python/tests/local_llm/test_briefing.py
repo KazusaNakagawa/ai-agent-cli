@@ -390,8 +390,10 @@ class _ScriptedOllama:
         self._reply = reply
         self.calls: list[dict] = []
 
-    def chat(self, *, model, messages):
-        self.calls.append({"model": model, "messages": list(messages)})
+    def chat(self, *, model, messages, options=None):
+        self.calls.append(
+            {"model": model, "messages": list(messages), "options": options}
+        )
         return self._reply
 
 
@@ -421,6 +423,43 @@ def test_generate_local_briefing_omits_system_when_not_provided():
     )
     assert out == "body"
     assert olm.calls[0]["messages"] == [{"role": "user", "content": "PROMPT"}]
+
+
+def test_generate_local_briefing_passes_options_to_chat():
+    olm = _ScriptedOllama(reply={"message": {"content": "body"}})
+    generate_local_briefing(
+        "PROMPT",
+        ollama_client=olm,
+        model="m",
+        options={"num_ctx": 16384, "temperature": 0.2},
+    )
+    assert olm.calls[0]["options"] == {"num_ctx": 16384, "temperature": 0.2}
+
+
+def test_generate_local_briefing_defaults_to_no_options(caplog):
+    olm = _ScriptedOllama(reply={"message": {"content": "body"}})
+    with caplog.at_level(logging.INFO, logger="src.local_llm.briefing"):
+        generate_local_briefing("PROMPT", ollama_client=olm, model="m")
+    # options 未指定の既存呼び出しは chat() に None を渡す (後方互換)
+    assert olm.calls[0]["options"] is None
+    # num_ctx 不明時は警告ではなく info で「Ollama 既定」と記録する
+    assert not any(r.levelname == "WARNING" for r in caplog.records)
+    assert any("(Ollama 既定)" in r.getMessage() for r in caplog.records)
+
+
+def test_generate_local_briefing_warns_when_prompt_exceeds_num_ctx(caplog):
+    olm = _ScriptedOllama(reply={"message": {"content": "body"}})
+    with caplog.at_level(logging.WARNING, logger="src.local_llm.briefing"):
+        generate_local_briefing(
+            "x" * 100,
+            ollama_client=olm,
+            model="m",
+            options={"num_ctx": 10},
+        )
+    assert any(
+        r.levelname == "WARNING" and "num_ctx=10" in r.getMessage()
+        for r in caplog.records
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -600,9 +639,9 @@ class _FakeRunCLI:
             cli, "load_local_briefing_system_prompt", lambda: "SYS"
         )
 
-        def _fake_generate(prompt, *, ollama_client, model, system_prompt):
+        def _fake_generate(prompt, *, ollama_client, model, system_prompt, options=None):
             self.generate_calls.append(
-                {"prompt": prompt, "system_prompt": system_prompt}
+                {"prompt": prompt, "system_prompt": system_prompt, "options": options}
             )
             # CLI 側は 4 回 chat() を呼ぶ。テストごとに変えたい本文 (URL 捏造を
             # 仕込む等) は 1 段目 (topnews) に集約し、他はラベルだけ返す。
@@ -659,6 +698,11 @@ def test_cmd_briefing_prefetches_and_writes_local_file(monkeypatch, tmp_path):
     assert "保有銘柄テーブル" in prompts[3]
     # 全段に同じ system prompt が乗る
     assert all(c["system_prompt"] == "SYS" for c in fake.generate_calls)
+    # 全段に cfg 由来の生成オプションが乗る (#150 — Ollama 既定 num_ctx 回避)
+    for c in fake.generate_calls:
+        assert c["options"] is not None
+        assert c["options"]["num_ctx"] == 16384
+        assert c["options"]["temperature"] == 0.2
     # 参考記事セクションが Python 側で追加されている
     assert "## 参考記事" in content
     # portfolio セグメントはモデルが見出し・区切り行を省略したが、CLI 側の
