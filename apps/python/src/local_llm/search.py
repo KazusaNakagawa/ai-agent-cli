@@ -19,6 +19,10 @@ class SearchResult:
     title: str
     url: str
     description: str
+    # 記事本文の抜粋 (#151)。検索ヒット時は空で、articles.enrich_with_article_text
+    # が上位ヒットにだけ後から埋める。スニペット (description ≤200 字) だけでは
+    # モデルが具体的事実を書けないための追加コンテキスト。
+    content: str = ""
 
 
 class BraveSearchError(RuntimeError):

@@ -182,6 +182,10 @@ def _format_results(results: list[SearchResult]) -> str:
         if len(desc) > 200:
             desc = desc[:200] + "..."
         out.append(f"  - [{r.title}]({r.url}) — {desc}")
+        # 本文抜粋 (#151)。enrich_with_article_text が埋めた上位ヒットのみ持つ。
+        # スニペットより具体的な事実 (数値・日付・固有名詞) の唯一の供給源。
+        if r.content:
+            out.append(f"    - 本文抜粋: {r.content}")
     return "\n".join(out)
 
 
@@ -538,12 +542,14 @@ def compose_briefing_md(
     search_enabled: bool = True,
     url_validation: UrlValidation | None = None,
     prefetch_summary: str | None = None,
+    article_summary: str | None = None,
 ) -> str:
     """Caveat ヘッダと本文を `---` で連結する。
 
     `url_validation` を渡すと caveat に「URL 検証: verified/total」を追記する。
-    `prefetch_summary` を渡すと「Brave hits: ...」の件数行を追記する。両方とも
-    `-` 出典セルの裏付けを取るための運用透明性。
+    `prefetch_summary` を渡すと「Brave hits: ...」の件数行を追記する。
+    `article_summary` を渡すと「記事本文: ...」の取得状況行を追記する (#151)。
+    いずれも `-` 出典セルや曖昧な記述の裏付けを取るための運用透明性。
     """
     search_line = (
         "> - Web 検索: Brave Search (pre-fetch)\n"
@@ -553,6 +559,9 @@ def compose_briefing_md(
     summary_line = ""
     if prefetch_summary:
         summary_line = f"> - Brave hits: {prefetch_summary}\n"
+    article_line = ""
+    if article_summary:
+        article_line = f"> - 記事本文: {article_summary}\n"
     validation_line = ""
     if url_validation is not None:
         validation_line = (
@@ -564,6 +573,7 @@ def compose_briefing_md(
         f"> - model: {model}\n"
         f"{search_line}"
         f"{summary_line}"
+        f"{article_line}"
         f"{validation_line}"
         f"> - generated_at: {generated_at.isoformat(timespec='seconds')}\n"
     )
