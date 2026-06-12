@@ -18,6 +18,7 @@ from src.notifier.notion import send_to_notion
 
 logger = get_logger(__name__)
 
+from .articles import count_article_fetches, enrich_with_article_text
 from .briefing import (
     build_section_geo_events_prompt,
     build_section_insight_prompt,
@@ -213,7 +214,14 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     ctx = prefetch_briefing_context(
         briefing_cfg, search_client=search_client, today=today
     )
-    logger.info("Brave Search pre-fetch 完了 — プロンプトに注入")
+    logger.info("Brave Search pre-fetch 完了 — 上位ヒットの記事本文を取得")
+
+    # スニペットだけではモデルが具体的事実を書けないため、上位ヒットの本文を
+    # 抽出してプロンプトに注入する (#151)。失敗分はスニペットにフォールバック。
+    ctx = enrich_with_article_text(ctx)
+    attempted, fetched = count_article_fetches(ctx)
+    article_summary = f"{fetched}/{attempted} 件取得 (上位ヒットのみ・失敗はスニペットで代替)"
+    logger.info("記事本文取得完了 — プロンプトに注入")
 
     system_prompt = load_local_briefing_system_prompt()
 
@@ -285,6 +293,7 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         generated_at=datetime.now(),
         url_validation=validation,
         prefetch_summary=summarize_prefetch_hits(ctx),
+        article_summary=article_summary,
     )
 
     BRIEFING_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

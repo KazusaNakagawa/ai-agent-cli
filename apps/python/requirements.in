@@ -20,3 +20,6 @@ ollama>=0.3
 # is compatible with protobuf 5+ (uv otherwise resolves to ancient 1.11.x).
 opentelemetry-proto>=1.30
 opentelemetry-exporter-otlp-proto-grpc>=1.30
+
+# Article body extraction for local-LLM briefing (#151)
+trafilatura>=1.12

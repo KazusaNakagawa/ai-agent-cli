@@ -321,6 +321,16 @@ def test_compose_briefing_md_includes_prefetch_summary_line():
     assert "Brave hits: macro=3 / tickers=[PLTR:3, MSFT:0]" in md
 
 
+def test_compose_briefing_md_includes_article_summary_line():
+    md = compose_briefing_md(
+        body="b",
+        model="qwen2.5:14b",
+        generated_at=datetime(2026, 6, 9, 9, 15, 0),
+        article_summary="10/12 件取得",
+    )
+    assert "記事本文: 10/12 件取得" in md
+
+
 def test_ensure_portfolio_table_header_prepends_when_divider_missing():
     body = (
         "| PLTR | ↓0.9% | (確認できず) | - |\n"
