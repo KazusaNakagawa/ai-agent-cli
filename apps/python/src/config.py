@@ -35,6 +35,9 @@ class Conflict(BaseModel):
     affected_sectors: list[str]
     related_tickers: list[str] = Field(default_factory=list)
     notes: str | None = None
+    # ローカル LLM 経路の pre-fetch 用英語検索クエリ (#153)。日本語トピック名の
+    # 検索は常設の索引ページを引きがちなので、設定があればこちらを優先する。
+    query_en: str | None = None
 
 
 class GeopoliticalConfig(BaseModel):

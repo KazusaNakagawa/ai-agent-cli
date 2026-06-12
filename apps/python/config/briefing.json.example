@@ -1,102 +1,266 @@
 {
   "portfolio": {
-    "tickers": ["PLTR", "NVDA", "CBRS"],
-    "themes": ["AI規制", "米中関係", "半導体", "関税・貿易戦争", "FRB金融政策", "脱炭素・エネルギー転換", "食料安全保障・農業テック", "サイバーセキュリティ", "バイオ・ゲノム編集"]
+    "tickers": [
+      "PLTR",
+      "NVDA",
+      "CBRS"
+    ],
+    "themes": [
+      "AI規制",
+      "米中関係",
+      "半導体",
+      "関税・貿易戦争",
+      "FRB金融政策",
+      "脱炭素・エネルギー転換",
+      "食料安全保障・農業テック",
+      "サイバーセキュリティ",
+      "バイオ・ゲノム編集"
+    ]
   },
   "watch_sectors": [
     {
       "sector": "AI・クラウド",
-      "tickers": ["NVDA", "MSFT", "GOOGL", "META", "AMZN", "ORCL", "CRM", "SNOW", "PLTR"],
+      "tickers": [
+        "NVDA",
+        "MSFT",
+        "GOOGL",
+        "META",
+        "AMZN",
+        "ORCL",
+        "CRM",
+        "SNOW",
+        "PLTR"
+      ],
       "notes": "AI設備投資サイクル・モデル競争・規制動向が株価ドライバー"
     },
     {
       "sector": "半導体・製造装置",
-      "tickers": ["NVDA", "AMD", "INTC", "QCOM", "ARM", "TSM", "ASML", "AMAT", "LRCX", "MU"],
+      "tickers": [
+        "NVDA",
+        "AMD",
+        "INTC",
+        "QCOM",
+        "ARM",
+        "TSM",
+        "ASML",
+        "AMAT",
+        "LRCX",
+        "MU"
+      ],
       "notes": "米中輸出規制・台湾リスク・データセンター向け需要が焦点。ASMLは欧州規制の影響大"
     },
     {
       "sector": "サイバーセキュリティ",
-      "tickers": ["CRWD", "PANW", "ZS", "FTNT", "S", "OKTA", "CYBR"],
+      "tickers": [
+        "CRWD",
+        "PANW",
+        "ZS",
+        "FTNT",
+        "S",
+        "OKTA",
+        "CYBR"
+      ],
       "notes": "ランサムウェア・国家支援型攻撃の増加で政府・企業需要が底堅い。AI活用による脅威検知が次の競争軸"
     },
     {
       "sector": "防衛・宇宙",
-      "tickers": ["LMT", "RTX", "NOC", "GD", "BA", "HII"],
+      "tickers": [
+        "LMT",
+        "RTX",
+        "NOC",
+        "GD",
+        "BA",
+        "HII"
+      ],
       "notes": "NATO防衛費増加・地政学緊張が追い風。継続的な増勢予算で長期受注残が積み上がる構図"
     },
     {
       "sector": "エネルギー（石油・ガス）",
-      "tickers": ["XOM", "CVX", "COP", "BP", "SHEL", "EOG", "SLB"],
+      "tickers": [
+        "XOM",
+        "CVX",
+        "COP",
+        "BP",
+        "SHEL",
+        "EOG",
+        "SLB"
+      ],
       "notes": "原油価格・OPEC+産量・中東リスクが直結。SLBは探掘サービスで景気敏感性高い"
     },
     {
       "sector": "再生可能エネルギー・電力",
-      "tickers": ["NEE", "ENPH", "FSLR", "BE", "GEV"],
+      "tickers": [
+        "NEE",
+        "ENPH",
+        "FSLR",
+        "BE",
+        "GEV"
+      ],
       "notes": "IRA補助金・金利動向・電力需要急増（データセンター）が変数。金利低下局面で追い風"
     },
     {
       "sector": "ヘルスケア・製薬",
-      "tickers": ["LLY", "UNH", "JNJ", "PFE", "MRK", "ABBV", "BMY", "AMGN", "GILD", "MRNA"],
+      "tickers": [
+        "LLY",
+        "UNH",
+        "JNJ",
+        "PFE",
+        "MRK",
+        "ABBV",
+        "BMY",
+        "AMGN",
+        "GILD",
+        "MRNA"
+      ],
       "notes": "GLP-1肥満治療薬（LLY）・薬価規制（IRA）・特許崖がセクター全体の焦点"
     },
     {
       "sector": "バイオテク・ゲノム編集",
-      "tickers": ["REGN", "VRTX", "BIIB", "ILMN", "CRSP", "EDIT", "NTLA", "BEAM"],
+      "tickers": [
+        "REGN",
+        "VRTX",
+        "BIIB",
+        "ILMN",
+        "CRSP",
+        "EDIT",
+        "NTLA",
+        "BEAM"
+      ],
       "notes": "CRISPR・mRNA・細胞療法が次世代パイプラインの柱。FDA承認タイミングが株価の急騰・急落トリガー"
     },
     {
       "sector": "農業・農業テック",
-      "tickers": ["DE", "MOS", "CF", "CTVA", "FMC", "ADM", "BG"],
+      "tickers": [
+        "DE",
+        "MOS",
+        "CF",
+        "CTVA",
+        "FMC",
+        "ADM",
+        "BG"
+      ],
       "notes": "食料安全保障・肥料価格（天然ガス連動）・気候変動対応が需要ドライバー。ウクライナ紛争による穀物供給不安が継続リスク"
     },
     {
       "sector": "金融・銀行",
-      "tickers": ["JPM", "BAC", "GS", "MS", "C", "WFC", "V", "MA", "BLK"],
+      "tickers": [
+        "JPM",
+        "BAC",
+        "GS",
+        "MS",
+        "C",
+        "WFC",
+        "V",
+        "MA",
+        "BLK"
+      ],
       "notes": "FRB利下げペース・信用コスト・規制緩和（バーゼルIII最終化）が業績に直結"
     },
     {
       "sector": "フィンテック・暗号資産",
-      "tickers": ["SQ", "PYPL", "COIN", "NU", "HOOD"],
+      "tickers": [
+        "SQ",
+        "PYPL",
+        "COIN",
+        "NU",
+        "HOOD"
+      ],
       "notes": "暗号資産規制・金利水準・決済競争が変数。COINはBTC価格との連動性が高い"
     },
     {
       "sector": "消費者・小売・EC",
-      "tickers": ["AMZN", "WMT", "COST", "TGT", "HD", "MCD", "SBUX", "NKE"],
+      "tickers": [
+        "AMZN",
+        "WMT",
+        "COST",
+        "TGT",
+        "HD",
+        "MCD",
+        "SBUX",
+        "NKE"
+      ],
       "notes": "消費者信頼感・関税（輸入コスト）・雇用統計が先行指標。HDは住宅ローン金利に敏感"
     },
     {
       "sector": "EV・自動車",
-      "tickers": ["TSLA", "GM", "F", "TM", "RIVN", "ON"],
+      "tickers": [
+        "TSLA",
+        "GM",
+        "F",
+        "TM",
+        "RIVN",
+        "ON"
+      ],
       "notes": "EV補助金見直し・中国EV関税・バッテリーコストが業績左右。TSLAはAI・ロボット期待も含む"
     },
     {
       "sector": "産業・重工業・機械",
-      "tickers": ["CAT", "HON", "GE", "ETN", "EMR", "ITW"],
+      "tickers": [
+        "CAT",
+        "HON",
+        "GE",
+        "ETN",
+        "EMR",
+        "ITW"
+      ],
       "notes": "インフラ投資・製造業PMI・設備投資サイクルが需要ドライバー。GEはエアロエンジンで超過需要"
     },
     {
       "sector": "ロボティクス・産業オートメーション",
-      "tickers": ["ABB", "ROK", "ISRG", "FANUC", "TER", "BRKS"],
+      "tickers": [
+        "ABB",
+        "ROK",
+        "ISRG",
+        "FANUC",
+        "TER",
+        "BRKS"
+      ],
       "notes": "人件費高騰・製造業の国内回帰（ニアショアリング）が自動化投資を加速。外科ロボット（ISRG）は医療費圧縮の切り札"
     },
     {
       "sector": "海運・物流",
-      "tickers": ["ZIM", "FDX", "UPS", "XPO", "CHRW", "EXPD"],
+      "tickers": [
+        "ZIM",
+        "FDX",
+        "UPS",
+        "XPO",
+        "CHRW",
+        "EXPD"
+      ],
       "notes": "紅海・ホルムズ海峡の地政学リスクが運賃に直結。eコマース需要と過剰船腹の需給バランスが焦点"
     },
     {
       "sector": "素材・資源・鉱業",
-      "tickers": ["FCX", "NEM", "AA", "NUE", "LIN"],
+      "tickers": [
+        "FCX",
+        "NEM",
+        "AA",
+        "NUE",
+        "LIN"
+      ],
       "notes": "中国需要・ドル高・脱炭素向け素材（銅：FCX）需要増が注目点。金（NEM）は地政学ヘッジ"
     },
     {
       "sector": "通信・メディア・エンタメ",
-      "tickers": ["DIS", "NFLX", "CMCSA", "T", "VZ", "TMUS"],
+      "tickers": [
+        "DIS",
+        "NFLX",
+        "CMCSA",
+        "T",
+        "VZ",
+        "TMUS"
+      ],
       "notes": "ストリーミング競争・5G設備投資・広告市場の回復度合いがカタリスト"
     },
     {
       "sector": "不動産・REIT",
-      "tickers": ["PLD", "AMT", "EQIX", "SPG", "O"],
+      "tickers": [
+        "PLD",
+        "AMT",
+        "EQIX",
+        "SPG",
+        "O"
+      ],
       "notes": "金利低下がバリュエーション直撃。データセンターREIT（EQIX）はAI需要で別格の強さ"
     }
   ],
@@ -104,8 +268,17 @@
     {
       "name": "SpaceX IPO",
       "trigger": "SECへのS-1正式申請",
-      "affected_sectors": ["防衛・宇宙", "テクノロジー", "AI・クラウド"],
-      "related_tickers": ["RKLB", "ASTS", "MNTS", "LUNR"],
+      "affected_sectors": [
+        "防衛・宇宙",
+        "テクノロジー",
+        "AI・クラウド"
+      ],
+      "related_tickers": [
+        "RKLB",
+        "ASTS",
+        "MNTS",
+        "LUNR"
+      ],
       "notes": "SpaceX上場時は宇宙セクター全体の再評価が起きやすい。競合のRKLB・ASTSへの影響（バリュエーション圧縮 or 注目集中）に注目。Starlink分離上場シナリオも要ウォッチ"
     }
   ],
@@ -113,39 +286,113 @@
     "conflicts": [
       {
         "name": "ロシア・ウクライナ戦争",
-        "affected_sectors": ["エネルギー", "防衛産業", "穀物・農業", "欧州株"],
-        "related_tickers": ["LMT", "RTX", "NOC", "XOM", "BP", "SHEL"],
-        "notes": "欧州のエネルギー依存・穀物供給不安が継続。NATO加盟国の防衛費増加でLMT/RTXに追い風"
+        "affected_sectors": [
+          "エネルギー",
+          "防衛産業",
+          "穀物・農業",
+          "欧州株"
+        ],
+        "related_tickers": [
+          "LMT",
+          "RTX",
+          "NOC",
+          "XOM",
+          "BP",
+          "SHEL"
+        ],
+        "notes": "欧州のエネルギー依存・穀物供給不安が継続。NATO加盟国の防衛費増加でLMT/RTXに追い風",
+        "query_en": "Russia Ukraine war"
       },
       {
         "name": "中東紛争（イスラエル・ガザ・イラン）",
-        "affected_sectors": ["エネルギー", "防衛産業", "海運・物流"],
-        "related_tickers": ["XOM", "CVX", "COP", "LMT", "NOC", "SLB"],
-        "notes": "ホルムズ海峡リスクが原油価格に直結。イラン核合意の行方次第で原油±10%の変動リスク"
+        "affected_sectors": [
+          "エネルギー",
+          "防衛産業",
+          "海運・物流"
+        ],
+        "related_tickers": [
+          "XOM",
+          "CVX",
+          "COP",
+          "LMT",
+          "NOC",
+          "SLB"
+        ],
+        "notes": "ホルムズ海峡リスクが原油価格に直結。イラン核合意の行方次第で原油±10%の変動リスク",
+        "query_en": "Israel Iran Middle East conflict"
       },
       {
         "name": "米中技術覇権争い・台湾リスク",
-        "affected_sectors": ["半導体", "AI・クラウド", "防衛産業", "EV・バッテリー"],
-        "related_tickers": ["NVDA", "TSM", "AMAT", "ASML", "PLTR", "AMD", "LRCX"],
-        "notes": "台湾有事シナリオはTSM・NVDAに直撃。輸出規制の強化・緩和がNVDA株価の短期ドライバー"
+        "affected_sectors": [
+          "半導体",
+          "AI・クラウド",
+          "防衛産業",
+          "EV・バッテリー"
+        ],
+        "related_tickers": [
+          "NVDA",
+          "TSM",
+          "AMAT",
+          "ASML",
+          "PLTR",
+          "AMD",
+          "LRCX"
+        ],
+        "notes": "台湾有事シナリオはTSM・NVDAに直撃。輸出規制の強化・緩和がNVDA株価の短期ドライバー",
+        "query_en": "US China chip export controls Taiwan"
       },
       {
         "name": "米国関税・貿易戦争（トランプ政権）",
-        "affected_sectors": ["製造業", "消費財", "半導体", "EV・自動車", "素材"],
-        "related_tickers": ["TSLA", "GM", "F", "AAPL", "NKE", "CAT", "FCX", "AA"],
-        "notes": "相互関税・中国製品への高関税がサプライチェーン再編を加速。ニアショアリング恩恵はCAT・ETN"
+        "affected_sectors": [
+          "製造業",
+          "消費財",
+          "半導体",
+          "EV・自動車",
+          "素材"
+        ],
+        "related_tickers": [
+          "TSLA",
+          "GM",
+          "F",
+          "AAPL",
+          "NKE",
+          "CAT",
+          "FCX",
+          "AA"
+        ],
+        "notes": "相互関税・中国製品への高関税がサプライチェーン再編を加速。ニアショアリング恩恵はCAT・ETN",
+        "query_en": "Trump tariffs trade war"
       },
       {
         "name": "インド・パキスタン緊張",
-        "affected_sectors": ["防衛産業", "エネルギー", "新興国株"],
-        "related_tickers": ["LMT", "RTX", "NOC", "XOM"],
-        "notes": "核保有国同士の衝突リスク。エスカレーション時はリスクオフでゴールド・原油上昇圧力"
+        "affected_sectors": [
+          "防衛産業",
+          "エネルギー",
+          "新興国株"
+        ],
+        "related_tickers": [
+          "LMT",
+          "RTX",
+          "NOC",
+          "XOM"
+        ],
+        "notes": "核保有国同士の衝突リスク。エスカレーション時はリスクオフでゴールド・原油上昇圧力",
+        "query_en": "India Pakistan tensions"
       },
       {
         "name": "北朝鮮・朝鮮半島リスク",
-        "affected_sectors": ["防衛産業", "半導体（韓国）"],
-        "related_tickers": ["LMT", "RTX", "NOC", "AMAT"],
-        "notes": "有事時はSamsungやSKハイニックスの供給網に打撃。DRAMスポット価格急騰リスク"
+        "affected_sectors": [
+          "防衛産業",
+          "半導体（韓国）"
+        ],
+        "related_tickers": [
+          "LMT",
+          "RTX",
+          "NOC",
+          "AMAT"
+        ],
+        "notes": "有事時はSamsungやSKハイニックスの供給網に打撃。DRAMスポット価格急騰リスク",
+        "query_en": "North Korea missile Korean peninsula"
       }
     ]
   }
