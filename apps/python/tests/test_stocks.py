@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from src.fetcher.stocks import fetch_stock_moves
+from src.fetcher.stocks import fetch_stock_move_map, fetch_stock_moves
 
 
 class TestFetchStockMoves:
@@ -41,3 +41,26 @@ class TestFetchStockMoves:
     def test_empty_tickers_returns_empty_string(self):
         result = fetch_stock_moves([])
         assert result == ""
+
+
+class TestFetchStockMoveMap:
+    def _make_fast_info(self, last_price, previous_close):
+        info = MagicMock()
+        info.last_price = last_price
+        info.previous_close = previous_close
+        return info
+
+    def test_returns_per_ticker_move_strings(self):
+        with patch("src.fetcher.stocks.yf.Ticker") as MockTicker:
+            MockTicker.return_value.fast_info = self._make_fast_info(110, 100)
+            moves = fetch_stock_move_map(["PLTR", "NVDA"])
+        assert moves["PLTR"] == "↑10.0%  ($110.00)"
+        assert moves["NVDA"] == "↑10.0%  ($110.00)"
+
+    def test_error_ticker_gets_error_string(self):
+        with patch("src.fetcher.stocks.yf.Ticker", side_effect=Exception("API down")):
+            moves = fetch_stock_move_map(["PLTR"])
+        assert "取得エラー" in moves["PLTR"]
+
+    def test_empty_tickers_returns_empty_dict(self):
+        assert fetch_stock_move_map([]) == {}
