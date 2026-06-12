@@ -70,6 +70,11 @@ def make_ollama_client(cfg: LocalLLMConfig):
     return ollama.Client(host=cfg.ollama_host)
 
 
+# Frozen historical value: the embed model that pre-#135 collections were
+# built with (when collections carried no embed_model metadata). Do NOT
+# update this when DEFAULT_EMBED_MODEL changes — it must remain the model
+# that legacy on-disk indexes actually used, or the mismatch check below
+# will silently miss a dimension change.
 _LEGACY_EMBED_MODEL = "nomic-embed-text"
 
 
