@@ -15,6 +15,11 @@ DEFAULT_MODEL = "qwen2.5:14b"
 # (#135). Switching changes embedding dimensions, so an existing .chroma_db built
 # with the previous default must be rebuilt: bin/local_llm.sh --index --reset.
 DEFAULT_EMBED_MODEL = "bge-m3"
+# Ollama 既定の num_ctx (4096) では pre-fetch 注入済みプロンプトの末尾が黙って
+# 切り捨てられる (#150)。qwen2.5:14b Q4 + 16K ctx は 24GB RAM で問題なく動く。
+DEFAULT_NUM_CTX = 16384
+# 事実の転記・要約タスクなので低温度で引用追従を優先する。
+DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TOP_K = 6
 DEFAULT_CHUNK_LINES = 40
 DEFAULT_CHUNK_OVERLAP = 8
@@ -39,6 +44,8 @@ class LocalLLMConfig:
     ollama_host: str
     model: str
     embed_model: str
+    num_ctx: int
+    temperature: float
     top_k: int
     repo_root: Path
     chroma_path: Path
@@ -54,6 +61,8 @@ def load_config(repo_root: Path | None = None) -> LocalLLMConfig:
         ollama_host=os.environ.get("OLLAMA_HOST", DEFAULT_OLLAMA_HOST),
         model=os.environ.get("LOCAL_LLM_MODEL", DEFAULT_MODEL),
         embed_model=os.environ.get("LOCAL_LLM_EMBED_MODEL", DEFAULT_EMBED_MODEL),
+        num_ctx=int(os.environ.get("LOCAL_LLM_NUM_CTX", DEFAULT_NUM_CTX)),
+        temperature=float(os.environ.get("LOCAL_LLM_TEMPERATURE", DEFAULT_TEMPERATURE)),
         top_k=int(os.environ.get("LOCAL_LLM_TOP_K", DEFAULT_TOP_K)),
         repo_root=root,
         chroma_path=chroma_path,

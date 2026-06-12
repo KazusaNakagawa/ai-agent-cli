@@ -375,7 +375,9 @@ def load_local_briefing_system_prompt() -> str:
 
 
 class _OllamaChatLike(Protocol):
-    def chat(self, *, model: str, messages: list[dict]) -> Any: ...
+    def chat(
+        self, *, model: str, messages: list[dict], options: dict | None = None
+    ) -> Any: ...
 
 
 def _msg_field(msg: Any, key: str, default: Any = None) -> Any:
@@ -384,26 +386,55 @@ def _msg_field(msg: Any, key: str, default: Any = None) -> Any:
     return getattr(msg, key, default)
 
 
+# 日本語混じりテキストの 1 token ≒ 2-3 文字。控えめに 2 で割って過大側に見積もり、
+# 取りこぼしより誤警告を許容する (#150)。
+_CHARS_PER_TOKEN_ESTIMATE = 2
+
+
 def generate_local_briefing(
     prompt: str,
     *,
     ollama_client: _OllamaChatLike,
     model: str,
     system_prompt: str | None = None,
+    options: dict | None = None,
 ) -> str:
     """Single-turn chat()。tool calling は廃止 (pre-fetch でコンテキストは注入済み)。
 
     `system_prompt` を渡したら role=system を先頭に積む。qwen2.5 系は system
     指示への追従が強いので「与えられた検索結果のみを使って書け」等の制約は
     ここに置く。
+
+    `options` は Ollama の生成オプション (num_ctx / temperature 等)。未指定だと
+    Ollama 既定の num_ctx (4096) でプロンプト末尾が黙って切り捨てられるため、
+    本番経路 (cli) は必ず cfg 由来の値を渡す (#150)。
     """
     messages: list[dict] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
+    total_chars = sum(len(m["content"]) for m in messages)
+    est_tokens = total_chars // _CHARS_PER_TOKEN_ESTIMATE
+    num_ctx = (options or {}).get("num_ctx")
+    if num_ctx and est_tokens > num_ctx:
+        logger.warning(
+            "[briefing] プロンプト概算 %d tokens (%d 文字) が num_ctx=%d を超過 — "
+            "末尾が切り捨てられる可能性",
+            est_tokens,
+            total_chars,
+            num_ctx,
+        )
+    else:
+        logger.info(
+            "[briefing] プロンプト概算 %d tokens (%d 文字) / num_ctx=%s",
+            est_tokens,
+            total_chars,
+            num_ctx if num_ctx else "(Ollama 既定)",
+        )
+
     logger.info("[briefing] ollama.chat — 単発生成 (tools 不使用)")
-    resp = ollama_client.chat(model=model, messages=messages)
+    resp = ollama_client.chat(model=model, messages=messages, options=options)
     msg = _msg_field(resp, "message")
     if msg is None:
         msg = resp

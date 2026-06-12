@@ -220,6 +220,9 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     # 4 段階のセクション分割生成。1 回 chat() で全 9 セクション書かせると
     # attention が散って保有銘柄テーブルで URL 捏造が頻発したため (#後続)、
     # 各段で渡す web_context をそのセクションに必要な分だけに絞る。
+    # Ollama 既定 num_ctx (4096) はセクションプロンプトでも溢れ得るため明示 (#150)。
+    gen_options = {"num_ctx": cfg.num_ctx, "temperature": cfg.temperature}
+
     def _gen(label: str, prompt: str) -> str:
         logger.info("[section] %s 生成開始", label)
         out = generate_local_briefing(
@@ -227,6 +230,7 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
             ollama_client=olm,
             model=cfg.model,
             system_prompt=system_prompt,
+            options=gen_options,
         )
         logger.info("[section] %s 生成完了 (%d 文字)", label, len(out))
         return out
