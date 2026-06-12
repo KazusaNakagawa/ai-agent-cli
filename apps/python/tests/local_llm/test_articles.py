@@ -111,7 +111,7 @@ def _ctx() -> PrefetchedContext:
             "MSFT": [],
         },
         geo_by_topic={"米中": [SearchResult("G1", "https://e.com/g1", "dg1")]},
-        events_by_name={},
+        events_by_name={"SpaceX IPO": [SearchResult("E1", "https://e.com/e1", "de1")]},
     )
 
 
@@ -123,13 +123,15 @@ def test_enrich_fills_content_only_for_top_hits():
             "https://e.com/m2": ok,
             "https://e.com/p1": ok,
             "https://e.com/g1": ok,
+            "https://e.com/e1": ok,
         }
     )
 
     out = enrich_with_article_text(_ctx(), http_client=http, per_macro=2, per_group=1)
 
-    # macro は上位 2 件、ticker/geo は上位 1 件だけ fetch される
+    # macro は上位 2 件、ticker/geo/event は上位 1 件だけ fetch される
     assert sorted(http.calls) == [
+        "https://e.com/e1",
         "https://e.com/g1",
         "https://e.com/m1",
         "https://e.com/m2",
@@ -141,6 +143,7 @@ def test_enrich_fills_content_only_for_top_hits():
     assert "$480 million" in out.per_ticker["PLTR"][0].content
     assert out.per_ticker["PLTR"][1].content == ""
     assert "$480 million" in out.geo_by_topic["米中"][0].content
+    assert "$480 million" in out.events_by_name["SpaceX IPO"][0].content
     # 元の ctx は不変 (frozen dataclass の新インスタンスを返す)
     assert _ctx().macro[0].content == ""
 
@@ -164,8 +167,8 @@ def test_count_article_fetches_reports_attempted_and_fetched():
 
     attempted, fetched = count_article_fetches(out, per_macro=2, per_group=1)
 
-    # m1, m2, p1, g1 の 4 件試行、成功は m1 のみ
-    assert attempted == 4
+    # m1, m2, p1, g1, e1 の 5 件試行、成功は m1 のみ
+    assert attempted == 5
     assert fetched == 1
 
 

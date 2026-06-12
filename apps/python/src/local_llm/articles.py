@@ -8,8 +8,9 @@ URL を実際に fetch して trafilatura で本文抽出し、切り詰めて�
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import replace
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
@@ -19,6 +20,13 @@ from .briefing import PrefetchedContext
 from .search import SearchResult
 
 logger = get_logger(__name__)
+
+
+class _HttpGetLike(Protocol):
+    """テスト注入用の最小 HTTP インターフェース (httpx 互換の get のみ)。"""
+
+    def get(self, url: str, headers: dict | None = None) -> Any: ...
+
 
 # 1 記事あたりの本文上限。8 銘柄 × 1 記事 × 1800 字 ≒ 7K tokens で、セクション
 # 分割プロンプト + num_ctx 16K (#150) に収まる予算。
@@ -38,7 +46,7 @@ _FETCH_HEADERS = {
 
 
 def _fetch_article_text(
-    url: str, *, http_client: Any | None = None, max_chars: int = MAX_ARTICLE_CHARS
+    url: str, *, http_client: _HttpGetLike | None = None, max_chars: int = MAX_ARTICLE_CHARS
 ) -> str:
     """URL を fetch して本文をプレーンテキストで返す。失敗は空文字 (呼び出し側でスニペットにフォールバック)。"""
     try:
@@ -76,7 +84,7 @@ def _enrich_results(
     results: list[SearchResult],
     n: int,
     *,
-    http_client: Any | None,
+    http_client: _HttpGetLike | None,
     max_chars: int,
 ) -> list[SearchResult]:
     out: list[SearchResult] = []
@@ -94,7 +102,7 @@ def _enrich_results(
 def enrich_with_article_text(
     ctx: PrefetchedContext,
     *,
-    http_client: Any | None = None,
+    http_client: _HttpGetLike | None = None,
     per_macro: int = PER_MACRO_ARTICLES,
     per_group: int = PER_GROUP_ARTICLES,
     max_chars: int = MAX_ARTICLE_CHARS,
@@ -104,7 +112,10 @@ def enrich_with_article_text(
     fetch/抽出に失敗したヒットはスニペットのまま残す (全体は止めない)。
     `http_client` はテスト用注入ポイント (get(url, headers=...) を持つこと)。
     """
-    enriched = PrefetchedContext(
+    # PrefetchedContext にフィールドが増えても黙って欠落しないよう
+    # dataclasses.replace で再構築する (Sourcery 指摘)。
+    enriched = dataclasses.replace(
+        ctx,
         macro=_enrich_results(
             ctx.macro, per_macro, http_client=http_client, max_chars=max_chars
         ),
