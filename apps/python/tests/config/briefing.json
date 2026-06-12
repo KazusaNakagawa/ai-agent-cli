@@ -25,7 +25,8 @@
         "name": "地政学リスク名",
         "affected_sectors": ["影響セクター1"],
         "related_tickers": ["TICKER1"],
-        "notes": "背景メモ（任意）"
+        "notes": "背景メモ（任意）",
+        "query_en": "english search query for local-LLM pre-fetch (optional)"
       }
     ]
   }

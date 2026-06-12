@@ -81,6 +81,22 @@ def test_search_clamps_count_into_1_to_10():
     assert http.calls[-1]["params"]["count"] == 1
 
 
+def test_search_passes_freshness_param_when_given():
+    http = _FakeHTTP(_FakeResp(200, {"web": {"results": []}}))
+    client = BraveSearchClient("k", http_client=http)
+
+    client.search("q", count=3, freshness="pw")
+    assert http.calls[-1]["params"]["freshness"] == "pw"
+
+
+def test_search_omits_freshness_param_by_default():
+    http = _FakeHTTP(_FakeResp(200, {"web": {"results": []}}))
+    client = BraveSearchClient("k", http_client=http)
+
+    client.search("q", count=3)
+    assert "freshness" not in http.calls[-1]["params"]
+
+
 def test_search_raises_on_non_200():
     http = _FakeHTTP(_FakeResp(429, text="rate limited"))
     client = BraveSearchClient("k", http_client=http)

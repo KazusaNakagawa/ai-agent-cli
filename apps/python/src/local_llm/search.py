@@ -51,9 +51,18 @@ class BraveSearchClient:
         self._http = http_client
         self._timeout = timeout
 
-    def search(self, query: str, count: int = 5) -> list[SearchResult]:
+    def search(
+        self, query: str, count: int = 5, freshness: str | None = None
+    ) -> list[SearchResult]:
+        """`freshness` は Brave の鮮度フィルタ (pd=24h / pw=1週間 / pm=1ヶ月)。
+
+        日次ブリーフィングの pre-fetch はトピック索引ページ (SEO 上位の常設
+        ページ) を引きがちなので、呼び出し側は基本 "pw" を渡す (#153)。
+        """
         count = max(1, min(int(count), 10))
-        params = {"q": query, "count": count}
+        params: dict[str, Any] = {"q": query, "count": count}
+        if freshness:
+            params["freshness"] = freshness
         headers = {
             "Accept": "application/json",
             "X-Subscription-Token": self._api_key,

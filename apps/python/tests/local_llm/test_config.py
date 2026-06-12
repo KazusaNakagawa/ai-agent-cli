@@ -49,3 +49,18 @@ def test_load_config_env_overrides(monkeypatch, tmp_path):
     assert cfg.temperature == 0.7
     assert cfg.top_k == 10
     assert cfg.chroma_path == tmp_path / "custom_chroma"
+
+
+def test_load_config_falls_back_on_malformed_numeric_env(monkeypatch, tmp_path, caplog):
+    monkeypatch.setenv("LOCAL_LLM_NUM_CTX", "abc")
+    monkeypatch.setenv("LOCAL_LLM_TEMPERATURE", "warm")
+
+    with caplog.at_level("WARNING", logger="src.local_llm.config"):
+        cfg = load_config(repo_root=tmp_path)
+
+    # 不正値はクラッシュせず既定値にフォールバックし、warning に残す
+    assert cfg.num_ctx == 16384
+    assert cfg.temperature == 0.2
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("LOCAL_LLM_NUM_CTX" in m for m in messages)
+    assert any("LOCAL_LLM_TEMPERATURE" in m for m in messages)
