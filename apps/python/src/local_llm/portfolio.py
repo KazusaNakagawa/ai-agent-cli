@@ -36,6 +36,11 @@ PORTFOLIO_ROW_FORMAT: dict = {
     "required": ["topic", "source_index"],
 }
 
+# 行プロンプトに載せる本文抜粋の上限。タスクは「1 行のトピック + 出典番号」の
+# 抽出なので、セクション生成用の全文 (articles.MAX_ARTICLE_CHARS=1800) は不要。
+# 銘柄ごとに chat() を回すため、短くするほどレイテンシ削減が効く。
+MAX_ROW_CONTENT_CHARS = 600
+
 NO_NEWS_TOPIC = "(具体的なニュースは検索でも確認できず)"
 GENERATION_ERROR_TOPIC = "(生成エラー — 構造化出力の解析に失敗)"
 
@@ -71,7 +76,10 @@ def render_numbered_hits(hits: list[SearchResult]) -> str:
             desc = desc[:200] + "..."
         lines.append(f"{i}. {r.title} — {desc}")
         if r.content:
-            lines.append(f"   本文抜粋: {r.content}")
+            content = r.content.strip().replace("\n", " ")
+            if len(content) > MAX_ROW_CONTENT_CHARS:
+                content = content[:MAX_ROW_CONTENT_CHARS] + "..."
+            lines.append(f"   本文抜粋: {content}")
     return "\n".join(lines)
 
 

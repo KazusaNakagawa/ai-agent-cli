@@ -4,6 +4,7 @@ import logging
 from src.local_llm.briefing import PrefetchedContext
 from src.local_llm.portfolio import (
     GENERATION_ERROR_TOPIC,
+    MAX_ROW_CONTENT_CHARS,
     NO_NEWS_TOPIC,
     PORTFOLIO_ROW_FORMAT,
     build_row_prompt,
@@ -70,6 +71,17 @@ def test_render_numbered_hits_includes_article_content_when_present():
     block = render_numbered_hits(hits)
     assert "本文抜粋: 本文 $480M 契約" in block
     assert "https://" not in block
+
+
+def test_render_numbered_hits_truncates_long_article_content():
+    hits = [
+        SearchResult("T", "https://e.com/1", "desc", content="x" * 5000)
+    ]
+    block = render_numbered_hits(hits)
+    content_line = [l for l in block.splitlines() if "本文抜粋" in l][0]
+    # 1 行トピック抽出タスクに全文 (1800 字) は不要 — 行プロンプトでは短く切る
+    assert len(content_line) < MAX_ROW_CONTENT_CHARS + 50
+    assert content_line.endswith("...")
 
 
 def test_build_row_prompt_contains_ticker_and_hits():
@@ -191,6 +203,28 @@ def test_generate_portfolio_table_sanitizes_pipes_in_topic_and_title():
     # セルは 4 列 (縦棒 5 本) を維持 — topic / title 内の | は空白に置換される
     assert row.count("|") == 5
     assert "PLTR   analyst view" in row
+
+
+def test_generate_portfolio_table_sanitizes_newlines_in_cells():
+    olm = _ScriptedOllama(
+        {"PLTR": {"topic": "契約\n拡大", "source_index": 1}}  # topic に改行
+    )
+
+    table = generate_portfolio_table(
+        ["PLTR"],
+        ctx=_ctx({"PLTR": _PLTR_HITS}),
+        moves={"PLTR": "↑1.0%\n続伸"},  # 値動きにも改行
+        ollama_client=olm,
+        model="m",
+        today="2026-06-13",
+    )
+
+    row = [l for l in table.splitlines() if l.startswith("| PLTR")][0]
+    # 改行は空白に畳まれ、行は 4 列 (縦棒 5 本) のまま
+    assert "\n" not in row
+    assert row.count("|") == 5
+    assert "契約 拡大" in row
+    assert "↑1.0% 続伸" in row
 
 
 def test_generate_portfolio_table_covers_all_tickers_independently():
