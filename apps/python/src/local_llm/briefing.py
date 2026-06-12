@@ -31,6 +31,34 @@ PER_MACRO_RESULTS = 3
 PER_GEO_RESULTS = 2
 PER_EVENT_RESULTS = 2
 
+# Brave の鮮度フィルタ。日次ブリーフィングなので直近 1 週間に絞る (#153)。
+PREFETCH_FRESHNESS = "pw"
+# 索引ページフィルタで間引かれる分を見込んだ over-fetch の上乗せ件数。
+# Brave の count 上限は 10 (クライアント側で clamp)。現状の PER_* 最大は 3 なので
+# 3+3=6 で枠内だが、PER_* を増やす場合は 10 を超えないよう注意。
+OVERFETCH_EXTRA = 3
+
+# ニュース本文ではない常設の銘柄索引/クオートページ。スニペットに当日の事実が
+# 含まれず、プロンプトを汚すだけなので注入前に間引く (#153)。
+_INDEX_PAGE_URL_PATTERNS = [
+    re.compile(p)
+    for p in (
+        r"finance\.yahoo\.com/quote/",
+        r"robinhood\.com/.*/stocks/",
+        r"google\.com/finance",
+        r"investing\.com/equities/",
+        r"stockanalysis\.com/stocks/",
+        r"seekingalpha\.com/symbol/",
+        # Amazon は商品詳細ページ (/dp/, /gp/product/ — 商品名スラッグ付きも可)
+        # のみ除外。記事系ページまで落とさないようドメイン全体は対象にしない。
+        r"amazon\.(com|co\.jp)/(.+/)?(gp/product|dp)/",
+    )
+]
+
+
+def _is_index_page(url: str) -> bool:
+    return any(p.search(url) for p in _INDEX_PAGE_URL_PATTERNS)
+
 
 @dataclass(frozen=True)
 class PrefetchedContext:
@@ -67,11 +95,23 @@ class PrefetchedContext:
 def _safe_search(
     client: BraveSearchClient, query: str, count: int
 ) -> list[SearchResult]:
+    """freshness=pw + 索引ページフィルタ付きの web_search (#153)。
+
+    フィルタで間引かれても count 件残るよう OVERFETCH_EXTRA 件多めに取り、
+    フィルタ後に count 件へ切り詰める。失敗は空リスト (他クエリは継続)。
+    """
     try:
-        return client.search(query, count=count)
+        hits = client.search(
+            query, count=count + OVERFETCH_EXTRA, freshness=PREFETCH_FRESHNESS
+        )
     except BraveSearchError as e:
         logger.warning("[prefetch] web_search failed for %r: %s", query, e)
         return []
+    kept = [r for r in hits if not _is_index_page(r.url)]
+    dropped = len(hits) - len(kept)
+    if dropped:
+        logger.info("[prefetch] %r: 索引ページ %d 件を除外", query, dropped)
+    return kept[:count]
 
 
 def prefetch_briefing_context(
@@ -106,9 +146,13 @@ def prefetch_briefing_context(
         name = getattr(conflict, "name", None) or ""
         if not name:
             continue
-        hits = _safe_search(search_client, f"{name} today", PER_GEO_RESULTS)
+        # 日本語トピック名のままだと常設のトピック索引ページや書籍ページが上位に
+        # 来る。briefing.json に query_en があれば英語ニュースクエリを使う (#153)。
+        query_en = getattr(conflict, "query_en", None) or ""
+        query = f"{query_en} latest news" if query_en else f"{name} today"
+        hits = _safe_search(search_client, query, PER_GEO_RESULTS)
         geo_by_topic[name] = hits
-        logger.info("[prefetch] geo topic=%r hits=%d", name, len(hits))
+        logger.info("[prefetch] geo topic=%r query=%r hits=%d", name, query, len(hits))
 
     events_by_name: dict[str, list[SearchResult]] = {}
     for event in getattr(cfg, "watch_events", None) or []:

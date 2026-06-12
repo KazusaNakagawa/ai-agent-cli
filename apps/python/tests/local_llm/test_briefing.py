@@ -13,8 +13,13 @@ from src.config import (
 )
 from src.local_llm import cli
 from src.local_llm.briefing import (
+    OVERFETCH_EXTRA,
+    PER_GEO_RESULTS,
+    PER_MACRO_RESULTS,
+    PER_TICKER_RESULTS,
     PrefetchedContext,
     UrlValidation,
+    _is_index_page,
     build_section_geo_events_prompt,
     build_section_insight_prompt,
     build_section_portfolio_prompt,
@@ -65,8 +70,8 @@ class _StubSearch:
         self.responses = responses or {}
         self.calls: list[dict] = []
 
-    def search(self, query, count=5):
-        self.calls.append({"query": query, "count": count})
+    def search(self, query, count=5, freshness=None):
+        self.calls.append({"query": query, "count": count, "freshness": freshness})
         return self.responses.get(query, [])
 
 
@@ -120,7 +125,7 @@ def test_prefetch_handles_brave_errors_per_query(caplog):
         def __init__(self):
             self.calls: list[str] = []
 
-        def search(self, query, count=5):
+        def search(self, query, count=5, freshness=None):
             self.calls.append(query)
             if "PLTR" in query:
                 raise BraveSearchError("HTTP 429: rate limited")
@@ -152,6 +157,88 @@ def test_prefetch_skips_geo_when_no_conflicts_configured():
         if "today" in q and q != "stock market news 2026-06-09" and "stock news" not in q
     ]
     assert geo_or_event_queries == []
+
+
+def test_prefetch_requests_freshness_and_overfetch_on_every_query():
+    cfg = _minimal_cfg(
+        tickers=["PLTR"],
+        conflicts=[Conflict(name="米中", affected_sectors=["半導体"])],
+    )
+    search = _StubSearch()
+
+    prefetch_briefing_context(cfg, search_client=search, today="2026-06-09")
+
+    assert search.calls, "search が呼ばれていない"
+    # 直近 1 週間に絞り、索引ページフィルタの間引き分を over-fetch する (#153)
+    for call in search.calls:
+        assert call["freshness"] == "pw"
+    by_query = {c["query"]: c for c in search.calls}
+    assert by_query["stock market news 2026-06-09"]["count"] == (
+        PER_MACRO_RESULTS + OVERFETCH_EXTRA
+    )
+    assert by_query["PLTR stock news 2026-06-09"]["count"] == (
+        PER_TICKER_RESULTS + OVERFETCH_EXTRA
+    )
+    assert by_query["米中 today"]["count"] == PER_GEO_RESULTS + OVERFETCH_EXTRA
+
+
+def test_prefetch_filters_index_pages_and_trims_to_count():
+    cfg = _minimal_cfg(tickers=["PLTR"], conflicts=[])
+    news = [
+        SearchResult(f"News {i}", f"https://news.example.com/{i}", "d")
+        for i in range(PER_TICKER_RESULTS + 1)
+    ]
+    index_pages = [
+        SearchResult("Quote", "https://finance.yahoo.com/quote/PLTR/", "d"),
+        SearchResult("RH", "https://robinhood.com/us/en/stocks/PLTR/", "d"),
+        SearchResult("GF", "https://www.google.com/finance/beta/quote/PLTR:NASDAQ", "d"),
+        SearchResult("Inv", "https://www.investing.com/equities/palantir", "d"),
+        SearchResult("SA", "https://stockanalysis.com/stocks/pltr/", "d"),
+        SearchResult("SeekA", "https://seekingalpha.com/symbol/PLTR", "d"),
+        SearchResult("Book", "https://www.amazon.co.jp/dp/4582859879", "d"),
+    ]
+    search = _StubSearch(
+        responses={"PLTR stock news 2026-06-09": index_pages[:2] + news}
+    )
+
+    ctx = prefetch_briefing_context(cfg, search_client=search, today="2026-06-09")
+
+    # 索引ページは除外され、残りが PER_TICKER_RESULTS 件に切り詰められる
+    assert ctx.per_ticker["PLTR"] == news[:PER_TICKER_RESULTS]
+    for r in index_pages:
+        assert _is_index_page(r.url), r.url
+    # 商品名スラッグ付きの Amazon 商品ページ (local_2026-06-11 で実際に汚染した形)
+    assert _is_index_page("https://www.amazon.co.jp/%E5%8F%B0%E6%B9%BE%E6%9C%89%E4%BA%8B-987/dp/4582859879")
+    assert not _is_index_page("https://news.example.com/article-1")
+    # Amazon の記事系ページ (商品詳細以外) は除外しない
+    assert not _is_index_page("https://www.aboutamazon.com/news/company-news/q1-results")
+    assert not _is_index_page("https://www.amazon.com/press-release/some-news")
+
+
+def test_prefetch_uses_english_geo_query_when_query_en_set():
+    cfg = _minimal_cfg(
+        tickers=["PLTR"],
+        conflicts=[
+            Conflict(
+                name="ロシア・ウクライナ戦争",
+                affected_sectors=["エネルギー"],
+                query_en="Russia Ukraine war",
+            ),
+            Conflict(name="米中", affected_sectors=["半導体"]),
+        ],
+    )
+    geo_hit = SearchResult("RU war", "https://e.com/ru", "d")
+    search = _StubSearch(responses={"Russia Ukraine war latest news": [geo_hit]})
+
+    ctx = prefetch_briefing_context(cfg, search_client=search, today="2026-06-09")
+
+    queried = [c["query"] for c in search.calls]
+    # query_en があれば英語ニュースクエリ、なければ従来の日本語クエリ
+    assert "Russia Ukraine war latest news" in queried
+    assert "ロシア・ウクライナ戦争 today" not in queried
+    assert "米中 today" in queried
+    # 結果のキーは表示用に日本語トピック名のまま
+    assert ctx.geo_by_topic["ロシア・ウクライナ戦争"] == [geo_hit]
 
 
 def _full_ctx() -> PrefetchedContext:
