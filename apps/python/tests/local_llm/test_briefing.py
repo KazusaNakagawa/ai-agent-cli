@@ -237,6 +237,9 @@ def test_is_index_page_filters_forecast_and_rating_sites():
         "https://weissratings.com/en/instant-news-alerts/dexcom-inc-dxcm-up-5-9",
         "https://www.timothysykes.com/news/leverage-shares-2x-long-cbrs-2026_06_10/",
         "https://stockstotrade.com/news/cerebras-systems-inc-cbrs-news-2026_06_08-3/",
+        # クオート/ライブ株価の索引ページ & バリュエーション予想サイト (#176)
+        "https://www.indmoney.com/us-stocks/alphabet-inc-class-a-shares-share-price-googl",
+        "https://www.trefis.com/stock/googl/articles/602686/does-google-stock-have-more-upside/2026-06-12",
     ]
     for url in forecast_pages:
         assert _is_index_page(url), url
@@ -254,6 +257,9 @@ def test_is_index_page_filters_forecast_and_rating_sites():
     assert not _is_index_page(
         "https://247wallst.com/investing/2026/06/10/microsoft-stock-prediction/"
     )
+    # indmoney / trefis はパス限定 — クオート/予想ページ以外の記事は残す
+    assert not _is_index_page("https://www.indmoney.com/blog/how-to-invest-in-us-stocks")
+    assert not _is_index_page("https://www.trefis.com/insights/some-market-commentary")
 
 
 def test_prefetch_uses_english_geo_query_when_query_en_set():
