@@ -241,6 +241,7 @@ def test_is_index_page_filters_forecast_and_rating_sites():
         "https://www.indmoney.com/us-stocks/alphabet-inc-class-a-shares-share-price-googl",
         "https://www.trefis.com/stock/googl/articles/602686/does-google-stock-have-more-upside/2026-06-12",
         # 13F スパム・/instant-alerts/ は /stocks/ 限定フィルタを回避していたため全ドメイン除外 (#180)
+        "https://www.marketbeat.com/",
         "https://www.marketbeat.com/instant-alerts/filing-macquarie-group-ltd-raises-stock-holdings-in-palantir/",
         "https://www.marketbeat.com/originals/some-news-article/",
     ]
