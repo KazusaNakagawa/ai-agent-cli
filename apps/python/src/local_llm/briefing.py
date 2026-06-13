@@ -241,6 +241,23 @@ def build_section_topnews_prompt(
     )
 
 
+def build_section_sector_prompt(
+    cfg: BriefingConfig, *, prior_text: str, today: str
+) -> str:
+    """トップニュース本文から波及セクターを抽出し保有銘柄へ接続するプロンプト (#162)。
+
+    世界 → セクター → 銘柄 のナラティブの中間層。出典はトップニュース本文側に
+    既出なので新しい URL は書かせない (insight と同様に prior_text を参照させる)。
+    """
+    tickers = join_safe(cfg.portfolio.tickers, sep=", ")
+    return render(
+        "local_section_sector",
+        today=today,
+        tickers=tickers,
+        prior_text=prior_text,
+    )
+
+
 def build_section_geo_events_prompt(
     cfg: BriefingConfig, *, ctx: PrefetchedContext, today: str
 ) -> str:
