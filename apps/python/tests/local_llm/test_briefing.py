@@ -20,7 +20,7 @@ from src.local_llm.briefing import (
     PrefetchedContext,
     UrlValidation,
     _is_index_page,
-    _is_valid_url,
+    _url_has_no_spaces,
     build_section_geo_events_prompt,
     build_section_insight_prompt,
     build_section_sector_prompt,
@@ -273,8 +273,8 @@ def test_prefetch_drops_urls_with_spaces():
     ctx = prefetch_briefing_context(cfg, search_client=search, today="2026-06-09")
 
     assert ctx.per_ticker["PLTR"] == [good]
-    assert not _is_valid_url(bad.url)
-    assert _is_valid_url(good.url)
+    assert not _url_has_no_spaces(bad.url)
+    assert _url_has_no_spaces(good.url)
 
 
 def test_prefetch_uses_english_geo_query_when_query_en_set():

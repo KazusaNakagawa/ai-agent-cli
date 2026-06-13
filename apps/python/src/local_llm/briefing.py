@@ -83,8 +83,8 @@ def _is_index_page(url: str) -> bool:
     return any(p.search(url) for p in _INDEX_PAGE_URL_PATTERNS)
 
 
-def _is_valid_url(url: str) -> bool:
-    """スペースを含む不正 URL を弾く。Markdown リンク崩壊 → <URL未検証> 防止 (#181)。"""
+def _url_has_no_spaces(url: str) -> bool:
+    """URL にスペースが含まれないか確認（空白チェックのみ）。Markdown リンク崩壊防止 (#181)。"""
     return " " not in url
 
 
@@ -135,10 +135,19 @@ def _safe_search(
     except BraveSearchError as e:
         logger.warning("[prefetch] web_search failed for %r: %s", query, e)
         return []
-    kept = [r for r in hits if not _is_index_page(r.url) and _is_valid_url(r.url)]
-    dropped = len(hits) - len(kept)
-    if dropped:
-        logger.info("[prefetch] %r: 索引ページ/不正URL %d 件を除外", query, dropped)
+    kept = []
+    n_index = n_malformed = 0
+    for r in hits:
+        if _is_index_page(r.url):
+            n_index += 1
+        elif not _url_has_no_spaces(r.url):
+            n_malformed += 1
+        else:
+            kept.append(r)
+    if n_index:
+        logger.info("[prefetch] %r: 索引ページ %d 件を除外", query, n_index)
+    if n_malformed:
+        logger.info("[prefetch] %r: 不正URL(スペース含む) %d 件を除外", query, n_malformed)
     return kept[:count]
 
 
