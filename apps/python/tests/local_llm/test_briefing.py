@@ -317,6 +317,18 @@ def test_build_section_geo_events_prompt_only_passes_geo_events():
     assert "https://e.com/m" not in out
 
 
+def test_geo_events_prompt_drops_topics_without_investable_channel():
+    # 投資チャネル (原油/金/半導体/防衛/AI/金融制裁/サプライチェーン) で波及を
+    # 説明できないトピックは要約せず落とす指示を出す (#160)。波及判定行は維持。
+    cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
+    ctx = _full_ctx()
+    out = build_section_geo_events_prompt(cfg, ctx=ctx, today="2026-06-09")
+    assert "投資チャネル" in out
+    assert "除外" in out
+    # 既存の保有銘柄波及判定の指示は残っている
+    assert "保有銘柄への波及" in out
+
+
 def test_summarize_prefetch_hits_lists_all_buckets_with_counts():
     ctx = PrefetchedContext(
         macro=[SearchResult("m1", "https://e.com/m", "")],
