@@ -871,10 +871,11 @@ def test_cmd_briefing_prefetches_and_writes_local_file(monkeypatch, tmp_path):
     assert "## 保有銘柄テーブル" in content
     assert "|---|---|---|---|" in content
     # 本文は 世界(トップニュース) → セクター → 地政学 → 銘柄(テーブル) → 示唆 の順 (#162)
-    order = [
-        content.index(s)
-        for s in ["### 今日", "セクター影響", "地政学トピック", "保有銘柄テーブル", "自分への示唆"]
-    ]
+    markers = ["### 今日", "セクター影響", "地政学トピック", "保有銘柄テーブル", "自分への示唆"]
+    # 各見出しは 1 回だけ出る (重複だと .index ベースの順序判定が偽陽性になりうる)
+    for m in markers:
+        assert content.count(m) == 1, m
+    order = [content.index(m) for m in markers]
     assert order == sorted(order)
     # URL 検証行が caveat に入っている (今回は本文に URL なし → 0/0)
     assert "URL 検証" in content
