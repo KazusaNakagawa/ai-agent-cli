@@ -422,6 +422,28 @@ def test_ensure_geo_topics_covered_noop_when_all_present():
     assert ensure_geo_topics_covered(body, ctx) == body
 
 
+def test_ensure_geo_topics_covered_marks_topic_without_hits():
+    # 検索ヒット 0 件のトピックも見出し付きで残し、「検索でも確認できず」を出す。
+    ctx = PrefetchedContext(
+        macro=[],
+        per_ticker={},
+        geo_by_topic={"インド・パキスタン": []},
+        events_by_name={},
+    )
+    out = ensure_geo_topics_covered("## 地政学トピック", ctx)
+    assert "### インド・パキスタン" in out
+    assert "検索でも確認できず" in out
+
+
+def test_ensure_geo_topics_covered_noop_when_no_geo_topics():
+    # geo_by_topic が空なら何も補完しない (early return)。
+    ctx = PrefetchedContext(
+        macro=[], per_ticker={}, geo_by_topic={}, events_by_name={}
+    )
+    body = "## 地政学トピック\n\n### 米中\n要約"
+    assert ensure_geo_topics_covered(body, ctx) == body
+
+
 def test_summarize_prefetch_hits_lists_all_buckets_with_counts():
     ctx = PrefetchedContext(
         macro=[SearchResult("m1", "https://e.com/m", "")],

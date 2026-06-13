@@ -244,7 +244,9 @@ def ensure_geo_topics_covered(body: str, ctx: PrefetchedContext) -> str:
     """
     if not ctx.geo_by_topic:
         return body
-    missing = [topic for topic in ctx.geo_by_topic if topic not in body]
+    # 見出し `### {topic}` の有無で判定する。素朴な部分一致だと URL や他トピック名の
+    # 一部に含まれた場合に誤って「カバー済み」と見なす恐れがある。
+    missing = [topic for topic in ctx.geo_by_topic if f"### {topic}" not in body]
     if not missing:
         return body
     parts = [body.rstrip(), ""]
