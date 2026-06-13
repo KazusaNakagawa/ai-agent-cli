@@ -212,6 +212,29 @@ def test_prefetch_filters_index_pages_and_trims_to_count():
     assert not _is_index_page("https://www.amazon.com/press-release/some-news")
 
 
+def test_is_index_page_filters_forecast_and_rating_sites():
+    # 株価予想・アナリストレーティングの集約ページは当日のニュースではなく
+    # 常設の目標株価/予想ページ。投資判断価値が低く注入コンテキストを汚すため
+    # 除外する (#158)。パスを `/stocks/` 等に絞り、各サイトの記事系ページは残す。
+    forecast_pages = [
+        "https://www.marketbeat.com/stocks/NASDAQ/PLTR/price-target/",
+        "https://www.marketbeat.com/stocks/NASDAQ/PLTR/forecast/",
+        "https://simplywall.st/stocks/us/tech/nyse-pltr/palantir-technologies",
+        "https://www.tipranks.com/stocks/pltr/forecast",
+        "https://www.wallstreetzen.com/stocks/us/nasdaq/pltr/stock-forecast",
+        "https://www.cnn.com/markets/stocks/PLTR",
+    ]
+    for url in forecast_pages:
+        assert _is_index_page(url), url
+
+    # 同じサイトでも記事系ページ (/originals/, /news/) は一次情報を含むので残す
+    assert not _is_index_page("https://www.marketbeat.com/originals/some-news-article/")
+    assert not _is_index_page("https://www.tipranks.com/news/some-article")
+    # 一次情報メディアの記事は当然残す
+    assert not _is_index_page("https://www.reuters.com/markets/us/article-1")
+    assert not _is_index_page("https://www.cnbc.com/2026/06/13/some-news.html")
+
+
 def test_prefetch_uses_english_geo_query_when_query_en_set():
     cfg = _minimal_cfg(
         tickers=["PLTR"],
