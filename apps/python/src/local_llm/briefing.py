@@ -62,6 +62,15 @@ _INDEX_PAGE_URL_PATTERNS = [
         r"tipranks\.com/stocks/",
         r"wallstreetzen\.com/stocks/",
         r"cnn\.com/markets/stocks/",
+        # 13F 保有変動の自動量産スパム & レーティング/煽り系 (実機検証で表を汚した)。
+        # 記事本文に当日の一次情報がほぼ無いためドメインごと除外。fool.com /
+        # 247wallst は良質記事も混じるため対象にしない。
+        r"americanbankingnews\.com",
+        r"dailypolitical\.com",
+        r"themarketsdaily\.com",
+        r"weissratings\.com",
+        r"timothysykes\.com",
+        r"stockstotrade\.com",
     )
 ]
 

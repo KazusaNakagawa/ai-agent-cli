@@ -229,6 +229,13 @@ def test_is_index_page_filters_forecast_and_rating_sites():
         "https://www.tipranks.com/stocks/pltr/forecast",
         "https://www.wallstreetzen.com/stocks/us/nasdaq/pltr/stock-forecast",
         "https://www.cnn.com/markets/stocks/PLTR",
+        # 13F 保有変動の自動量産スパム & レーティング/煽り系 (実機検証で表を汚した)
+        "https://www.americanbankingnews.com/2026/06/12/isrg-stake-lifted.html",
+        "https://www.dailypolitical.com/2026/06/10/raises-stake-in-dexcom-dxcm.html",
+        "https://www.themarketsdaily.com/2026/06/10/increases-stock-position-dxcm.html",
+        "https://weissratings.com/en/instant-news-alerts/dexcom-inc-dxcm-up-5-9",
+        "https://www.timothysykes.com/news/leverage-shares-2x-long-cbrs-2026_06_10/",
+        "https://stockstotrade.com/news/cerebras-systems-inc-cbrs-news-2026_06_08-3/",
     ]
     for url in forecast_pages:
         assert _is_index_page(url), url
@@ -239,6 +246,13 @@ def test_is_index_page_filters_forecast_and_rating_sites():
     # 一次情報メディアの記事は当然残す
     assert not _is_index_page("https://www.reuters.com/markets/us/article-1")
     assert not _is_index_page("https://www.cnbc.com/2026/06/13/some-news.html")
+    # fool.com / 247wallst は良質記事も混じるため除外しない (意図的に残す)
+    assert not _is_index_page(
+        "https://www.fool.com/investing/2026/06/08/prediction-palantir-stock-5-years/"
+    )
+    assert not _is_index_page(
+        "https://247wallst.com/investing/2026/06/10/microsoft-stock-prediction/"
+    )
 
 
 def test_prefetch_uses_english_geo_query_when_query_en_set():
@@ -368,6 +382,8 @@ def test_geo_events_prompt_drops_topics_without_investable_channel():
     out = build_section_geo_events_prompt(cfg, ctx=ctx, today="2026-06-09")
     assert "投資チャネル" in out
     assert "除外" in out
+    # 関税・貿易戦争は供給網チャネル直結として除外しない指示 (#173 後の検証)
+    assert "関税" in out
     # 既存の保有銘柄波及判定の指示は残っている
     assert "保有銘柄への波及" in out
 
