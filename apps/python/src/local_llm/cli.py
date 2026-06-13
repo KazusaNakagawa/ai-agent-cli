@@ -28,6 +28,7 @@ from .briefing import (
     compose_briefing_md,
     ensure_geo_topics_covered,
     generate_local_briefing,
+    has_chinese_text,
     load_local_briefing_system_prompt,
     prefetch_briefing_context,
     render_prefetch_debug_block,
@@ -242,6 +243,15 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
             system_prompt=system_prompt,
             options=gen_options,
         )
+        if has_chinese_text(out):
+            logger.warning("[section] %s に中国語を検出 — 再生成します", label)
+            out = generate_local_briefing(
+                prompt,
+                ollama_client=olm,
+                model=cfg.model,
+                system_prompt=system_prompt,
+                options=gen_options,
+            )
         logger.info("[section] %s 生成完了 (%d 文字)", label, len(out))
         return out
 

@@ -88,6 +88,18 @@ def _url_has_no_spaces(url: str) -> bool:
     return " " not in url
 
 
+# 簡体字固有の文字セット。日本語テキストには出現しないコードポイントのみを含む。
+# Traditional/Japanese が別コードポイントを使う文字（为→為, 标→標, 对→対, 创→創,
+# 历→歴, 发→発, 说→説, 变→変, 实→実, 响→響）と、日本語に対応字がない文字
+# （么/这/们/该）を列挙 (#179)。
+_SC_CHARS = re.compile(r"[么这们该为标对创历发说变实响]")
+
+
+def has_chinese_text(text: str) -> bool:
+    """簡体字固有コードポイントを含む場合 True（SC 固有字のみ） (#179)。"""
+    return bool(_SC_CHARS.search(text))
+
+
 @dataclass(frozen=True)
 class PrefetchedContext:
     """Pre-fetched web_search のまとめ。プロンプトへの注入用。
