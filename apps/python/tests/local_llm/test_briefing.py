@@ -462,6 +462,24 @@ def test_build_section_insight_prompt_carries_prior_text_and_themes():
     assert "本文" in out
 
 
+def test_insight_prompt_uses_pm_buy_watch_event_blocks():
+    # PM 視点の構造化: 買い増し候補 → 注意銘柄 → 監視イベント を
+    # この順序で要求する (#161)。
+    cfg = _minimal_cfg()
+    out = build_section_insight_prompt(
+        cfg, prior_text="### マクロ\n本文", today="2026-06-09"
+    )
+    # 3 ブロックが揃い、買い増し候補 → 注意銘柄 → 監視イベント の順で並ぶ
+    # (.index は未検出で ValueError を投げるので存在確認も兼ねる)
+    i_buy = out.index("買い増し候補")
+    i_watch = out.index("注意銘柄")
+    i_event = out.index("監視イベント")
+    assert i_buy < i_watch < i_event
+    # 学習知識可・URL 不可 (捏造防止): 指示が明記され、テンプレ自体に URL を含まない
+    assert "URL は書かないこと" in out
+    assert "http" not in out
+
+
 def test_system_prompt_carries_citation_rules():
     sys_prompt = load_local_briefing_system_prompt()
     assert "検索結果" in sys_prompt
