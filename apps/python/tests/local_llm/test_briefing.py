@@ -21,7 +21,7 @@ from src.local_llm.briefing import (
     UrlValidation,
     _is_index_page,
     _url_has_no_spaces,
-    has_chinese_text,
+    has_simplified_chinese_text,
     build_section_geo_events_prompt,
     build_section_insight_prompt,
     build_section_sector_prompt,
@@ -279,25 +279,25 @@ def test_prefetch_drops_urls_with_spaces():
     assert _url_has_no_spaces(good.url)
 
 
-def test_has_chinese_text_detects_simplified_chinese():
+def test_has_simplified_chinese_text_detects_simplified_chinese():
     # 002 実行で実際に出力された簡体字行 (#179)
-    assert has_chinese_text("什么变了：标普500指数创下历史新高")
-    assert has_chinese_text("对持有股票的影响：PLTR はリスク")
-    assert has_chinese_text("为什么发生：AIチップ輸出規制")
+    assert has_simplified_chinese_text("什么变了：标普500指数创下历史新高")
+    assert has_simplified_chinese_text("对持有股票的影响：PLTR はリスク")
+    assert has_simplified_chinese_text("为什么发生：AIチップ輸出規制")
     # 簡体字固有文字の単独チェック
     for ch in "么这们该为标对创历发说变实响":
-        assert has_chinese_text(ch), f"Expected to detect Chinese char: {ch}"
+        assert has_simplified_chinese_text(ch), f"Expected to detect Chinese char: {ch}"
 
 
-def test_has_chinese_text_passes_japanese():
+def test_has_simplified_chinese_text_passes_japanese():
     # 日本語テキストは誤検出しない
-    assert not has_chinese_text("なぜ起きたか: S&P 500 が過去最高値を更新した")
-    assert not has_chinese_text("何が変わったか: テクノロジー株全体が上昇した")
-    assert not has_chinese_text("保有銘柄への影響: MSFT・GOOGL に追い風")
-    assert not has_chinese_text("半導体輸出規制の強化により台湾リスクが高まった")
-    assert not has_chinese_text("Palantir Technologies の時価総額が記録を更新")
+    assert not has_simplified_chinese_text("なぜ起きたか: S&P 500 が過去最高値を更新した")
+    assert not has_simplified_chinese_text("何が変わったか: テクノロジー株全体が上昇した")
+    assert not has_simplified_chinese_text("保有銘柄への影響: MSFT・GOOGL に追い風")
+    assert not has_simplified_chinese_text("半導体輸出規制の強化により台湾リスクが高まった")
+    assert not has_simplified_chinese_text("Palantir Technologies の時価総額が記録を更新")
     # 漢字のみの行でも日本語で使う文字なら検出しない
-    assert not has_chinese_text("米中技術覇権争い・台湾リスク")
+    assert not has_simplified_chinese_text("米中技術覇権争い・台湾リスク")
 
 
 def test_prefetch_uses_english_geo_query_when_query_en_set():

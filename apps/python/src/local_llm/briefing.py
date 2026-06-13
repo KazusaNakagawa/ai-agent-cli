@@ -95,8 +95,8 @@ def _url_has_no_spaces(url: str) -> bool:
 _SC_CHARS = re.compile(r"[么这们该为标对创历发说变实响]")
 
 
-def has_chinese_text(text: str) -> bool:
-    """簡体字固有コードポイントを含む場合 True（SC 固有字のみ） (#179)。"""
+def has_simplified_chinese_text(text: str) -> bool:
+    """簡体字固有コードポイントを含む場合 True（全中国語検出ではなく SC 固有字のみ） (#179)。"""
     return bool(_SC_CHARS.search(text))
 
 
