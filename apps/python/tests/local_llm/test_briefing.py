@@ -257,6 +257,9 @@ def test_is_index_page_filters_forecast_and_rating_sites():
     assert not _is_index_page(
         "https://247wallst.com/investing/2026/06/10/microsoft-stock-prediction/"
     )
+    # indmoney / trefis はパス限定 — クオート/予想ページ以外の記事は残す
+    assert not _is_index_page("https://www.indmoney.com/blog/how-to-invest-in-us-stocks")
+    assert not _is_index_page("https://www.trefis.com/insights/some-market-commentary")
 
 
 def test_prefetch_uses_english_geo_query_when_query_en_set():
