@@ -20,6 +20,7 @@ from src.local_llm.briefing import (
     PrefetchedContext,
     UrlValidation,
     _is_index_page,
+    _url_has_no_spaces,
     build_section_geo_events_prompt,
     build_section_insight_prompt,
     build_section_sector_prompt,
@@ -261,6 +262,20 @@ def test_is_index_page_filters_forecast_and_rating_sites():
     # indmoney / trefis はパス限定 — クオート/予想ページ以外の記事は残す
     assert not _is_index_page("https://www.indmoney.com/blog/how-to-invest-in-us-stocks")
     assert not _is_index_page("https://www.trefis.com/insights/some-market-commentary")
+
+
+def test_prefetch_drops_urls_with_spaces():
+    # スペースを含む URL は不正形式。Markdown リンク崩壊 → <URL未検証> の原因 (#181)。
+    cfg = _minimal_cfg(tickers=["PLTR"])
+    bad = SearchResult("Bad", "https://example.com/Some Article Title", "d")
+    good = SearchResult("Good", "https://example.com/valid-article-123", "d")
+    search = _StubSearch(responses={"PLTR stock news 2026-06-09": [bad, good]})
+
+    ctx = prefetch_briefing_context(cfg, search_client=search, today="2026-06-09")
+
+    assert ctx.per_ticker["PLTR"] == [good]
+    assert not _url_has_no_spaces(bad.url)
+    assert _url_has_no_spaces(good.url)
 
 
 def test_prefetch_uses_english_geo_query_when_query_en_set():
