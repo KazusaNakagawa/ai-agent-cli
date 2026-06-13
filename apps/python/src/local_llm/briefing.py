@@ -83,6 +83,11 @@ def _is_index_page(url: str) -> bool:
     return any(p.search(url) for p in _INDEX_PAGE_URL_PATTERNS)
 
 
+def _is_valid_url(url: str) -> bool:
+    """スペースを含む不正 URL を弾く。Markdown リンク崩壊 → <URL未検証> 防止 (#181)。"""
+    return " " not in url
+
+
 @dataclass(frozen=True)
 class PrefetchedContext:
     """Pre-fetched web_search のまとめ。プロンプトへの注入用。
@@ -130,10 +135,10 @@ def _safe_search(
     except BraveSearchError as e:
         logger.warning("[prefetch] web_search failed for %r: %s", query, e)
         return []
-    kept = [r for r in hits if not _is_index_page(r.url)]
+    kept = [r for r in hits if not _is_index_page(r.url) and _is_valid_url(r.url)]
     dropped = len(hits) - len(kept)
     if dropped:
-        logger.info("[prefetch] %r: 索引ページ %d 件を除外", query, dropped)
+        logger.info("[prefetch] %r: 索引ページ/不正URL %d 件を除外", query, dropped)
     return kept[:count]
 
 
