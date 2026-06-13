@@ -243,7 +243,8 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         return out
 
     body_top = _gen(
-        "トップニュース", build_section_topnews_prompt(ctx, today=today)
+        "トップニュース",
+        build_section_topnews_prompt(briefing_cfg, ctx=ctx, today=today),
     )
     # 保有銘柄テーブルは銘柄ごとの構造化出力 (#152)。モデルは {topic, source_index}
     # の JSON しか書かず、URL・値動き・テーブル組成は Python 側で行う。

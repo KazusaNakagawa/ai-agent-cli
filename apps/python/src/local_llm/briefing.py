@@ -223,10 +223,20 @@ def render_geo_events_block(ctx: PrefetchedContext) -> str:
     return "\n".join(parts)
 
 
-def build_section_topnews_prompt(ctx: PrefetchedContext, *, today: str) -> str:
+def build_section_topnews_prompt(
+    cfg: BriefingConfig, *, ctx: PrefetchedContext, today: str
+) -> str:
+    """トップニュースの生成プロンプト。
+
+    cfg を受けるのは「各ニュースの保有銘柄 ($tickers) への影響」を因果 3 行の
+    一部として必ず判定させるため (#159)。出典は macro ブロックのみで、銘柄別・
+    地政学のヒットはこの段では渡さない。
+    """
+    tickers = join_safe(cfg.portfolio.tickers, sep=", ")
     return render(
         "local_section_topnews",
         today=today,
+        tickers=tickers,
         web_context=render_macro_block(ctx),
     )
 

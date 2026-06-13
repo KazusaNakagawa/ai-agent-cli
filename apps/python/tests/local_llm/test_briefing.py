@@ -310,15 +310,29 @@ def test_render_geo_events_block_empty_when_both_missing():
 
 
 def test_build_section_topnews_prompt_only_passes_macro_hits():
+    cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
     ctx = _full_ctx()
-    out = build_section_topnews_prompt(ctx, today="2026-06-09")
+    out = build_section_topnews_prompt(cfg, ctx=ctx, today="2026-06-09")
     assert "今日のトップニュース" in out
     assert "2026-06-09" in out
     assert "## 検索結果" in out
     assert "https://e.com/m" in out
-    # 銘柄・地政学のブロックはこの段では渡さない
-    assert "PLTR" not in out
+    # 出典は macro ブロックのみ — 銘柄別 URL・地政学ブロックはこの段では渡さない
+    assert "https://e.com/p" not in out
     assert "地政学" not in out
+
+
+def test_topnews_prompt_drives_causal_holding_analysis():
+    # 各トップニュースに「なぜ / 何が変わった / 保有銘柄への影響」の因果 3 行を
+    # 要求し、影響判定用に保有銘柄リストを渡す (#159)。
+    cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
+    ctx = _full_ctx()
+    out = build_section_topnews_prompt(cfg, ctx=ctx, today="2026-06-09")
+    assert "なぜ" in out
+    assert "何が変わった" in out
+    assert "保有銘柄" in out
+    assert "PLTR" in out
+    assert "NVDA" in out
 
 
 
@@ -653,6 +667,7 @@ class _FakeRunCLI:
         self.prefetch_calls: list[dict] = []
         self.generate_calls: list[dict] = []
         self.table_calls: list[dict] = []
+        self.topnews_cfg = None
 
         monkeypatch.setenv("BRAVE_API_KEY", "test-brave-key")
         monkeypatch.setattr(cli, "BRIEFING_OUTPUT_DIR", self.output_dir)
@@ -676,11 +691,13 @@ class _FakeRunCLI:
             )
 
         monkeypatch.setattr(cli, "prefetch_briefing_context", _fake_prefetch)
-        monkeypatch.setattr(
-            cli,
-            "build_section_topnews_prompt",
-            lambda ctx, *, today: f"PROMPT_TOP(today={today})",
-        )
+
+        def _fake_topnews(cfg, *, ctx, today):
+            # CLI が briefing_cfg (tickers 込み) をそのまま渡しているか検証用に捕捉
+            self.topnews_cfg = cfg
+            return f"PROMPT_TOP(today={today})"
+
+        monkeypatch.setattr(cli, "build_section_topnews_prompt", _fake_topnews)
         monkeypatch.setattr(
             cli,
             "build_section_geo_events_prompt",
@@ -762,6 +779,9 @@ def test_cmd_briefing_prefetches_and_writes_local_file(monkeypatch, tmp_path):
     # Pre-fetch ran with the search client + tickers from briefing.json
     assert len(fake.prefetch_calls) == 1
     assert fake.prefetch_calls[0]["tickers"] == ["PLTR", "NVDA"]
+    # CLI が briefing_cfg (tickers 込み) を topnews builder に渡している (#159)
+    assert fake.topnews_cfg is not None
+    assert fake.topnews_cfg.portfolio.tickers == ["PLTR", "NVDA"]
     assert len(fake.search_clients) == 1
     # 自由生成 3 段 + 構造化テーブル 1 回が順番に呼ばれている
     assert len(fake.generate_calls) == 3
