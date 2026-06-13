@@ -54,10 +54,10 @@ _INDEX_PAGE_URL_PATTERNS = [
         # Amazon は商品詳細ページ (/dp/, /gp/product/ — 商品名スラッグ付きも可)
         # のみ除外。記事系ページまで落とさないようドメイン全体は対象にしない。
         r"amazon\.(com|co\.jp)/(.+/)?(gp/product|dp)/",
-        # 株価予想・アナリストレーティングの集約ページ (#158)。常設の目標株価/
-        # 予想ページで当日の事実を含まず、投資判断価値が低い。各サイトの記事系
-        # (/originals/, /news/ 等) は残すため、予想ページのパスに絞って除外する。
-        r"marketbeat\.com/stocks/",
+        # 株価予想・アナリストレーティング・13F スパムを配信する集約サイト (#158, #180)。
+        # marketbeat は /stocks/ だけでなく /instant-alerts/ 等も 13F 量産スパムのため
+        # ドメイン全体を除外する。
+        r"marketbeat\.com",
         r"simplywall\.st/stocks/",
         r"tipranks\.com/stocks/",
         r"wallstreetzen\.com/stocks/",
