@@ -52,6 +52,14 @@ _INDEX_PAGE_URL_PATTERNS = [
         # Amazon は商品詳細ページ (/dp/, /gp/product/ — 商品名スラッグ付きも可)
         # のみ除外。記事系ページまで落とさないようドメイン全体は対象にしない。
         r"amazon\.(com|co\.jp)/(.+/)?(gp/product|dp)/",
+        # 株価予想・アナリストレーティングの集約ページ (#158)。常設の目標株価/
+        # 予想ページで当日の事実を含まず、投資判断価値が低い。各サイトの記事系
+        # (/originals/, /news/ 等) は残すため、予想ページのパスに絞って除外する。
+        r"marketbeat\.com/stocks/",
+        r"simplywall\.st/stocks/",
+        r"tipranks\.com/stocks/",
+        r"wallstreetzen\.com/stocks/",
+        r"cnn\.com/markets/stocks/",
     )
 ]
 
@@ -215,10 +223,20 @@ def render_geo_events_block(ctx: PrefetchedContext) -> str:
     return "\n".join(parts)
 
 
-def build_section_topnews_prompt(ctx: PrefetchedContext, *, today: str) -> str:
+def build_section_topnews_prompt(
+    cfg: BriefingConfig, *, ctx: PrefetchedContext, today: str
+) -> str:
+    """トップニュースの生成プロンプト。
+
+    cfg を受けるのは「各ニュースの保有銘柄 ($tickers) への影響」を因果 3 行の
+    一部として必ず判定させるため (#159)。出典は macro ブロックのみで、銘柄別・
+    地政学のヒットはこの段では渡さない。
+    """
+    tickers = join_safe(cfg.portfolio.tickers, sep=", ")
     return render(
         "local_section_topnews",
         today=today,
+        tickers=tickers,
         web_context=render_macro_block(ctx),
     )
 

@@ -212,6 +212,29 @@ def test_prefetch_filters_index_pages_and_trims_to_count():
     assert not _is_index_page("https://www.amazon.com/press-release/some-news")
 
 
+def test_is_index_page_filters_forecast_and_rating_sites():
+    # 株価予想・アナリストレーティングの集約ページは当日のニュースではなく
+    # 常設の目標株価/予想ページ。投資判断価値が低く注入コンテキストを汚すため
+    # 除外する (#158)。パスを `/stocks/` 等に絞り、各サイトの記事系ページは残す。
+    forecast_pages = [
+        "https://www.marketbeat.com/stocks/NASDAQ/PLTR/price-target/",
+        "https://www.marketbeat.com/stocks/NASDAQ/PLTR/forecast/",
+        "https://simplywall.st/stocks/us/tech/nyse-pltr/palantir-technologies",
+        "https://www.tipranks.com/stocks/pltr/forecast",
+        "https://www.wallstreetzen.com/stocks/us/nasdaq/pltr/stock-forecast",
+        "https://www.cnn.com/markets/stocks/PLTR",
+    ]
+    for url in forecast_pages:
+        assert _is_index_page(url), url
+
+    # 同じサイトでも記事系ページ (/originals/, /news/) は一次情報を含むので残す
+    assert not _is_index_page("https://www.marketbeat.com/originals/some-news-article/")
+    assert not _is_index_page("https://www.tipranks.com/news/some-article")
+    # 一次情報メディアの記事は当然残す
+    assert not _is_index_page("https://www.reuters.com/markets/us/article-1")
+    assert not _is_index_page("https://www.cnbc.com/2026/06/13/some-news.html")
+
+
 def test_prefetch_uses_english_geo_query_when_query_en_set():
     cfg = _minimal_cfg(
         tickers=["PLTR"],
@@ -287,15 +310,29 @@ def test_render_geo_events_block_empty_when_both_missing():
 
 
 def test_build_section_topnews_prompt_only_passes_macro_hits():
+    cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
     ctx = _full_ctx()
-    out = build_section_topnews_prompt(ctx, today="2026-06-09")
+    out = build_section_topnews_prompt(cfg, ctx=ctx, today="2026-06-09")
     assert "今日のトップニュース" in out
     assert "2026-06-09" in out
     assert "## 検索結果" in out
     assert "https://e.com/m" in out
-    # 銘柄・地政学のブロックはこの段では渡さない
-    assert "PLTR" not in out
+    # 出典は macro ブロックのみ — 銘柄別 URL・地政学ブロックはこの段では渡さない
+    assert "https://e.com/p" not in out
     assert "地政学" not in out
+
+
+def test_topnews_prompt_drives_causal_holding_analysis():
+    # 各トップニュースに「なぜ / 何が変わった / 保有銘柄への影響」の因果 3 行を
+    # 要求し、影響判定用に保有銘柄リストを渡す (#159)。
+    cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
+    ctx = _full_ctx()
+    out = build_section_topnews_prompt(cfg, ctx=ctx, today="2026-06-09")
+    assert "なぜ" in out
+    assert "何が変わった" in out
+    assert "保有銘柄" in out
+    assert "PLTR" in out
+    assert "NVDA" in out
 
 
 
@@ -315,6 +352,18 @@ def test_build_section_geo_events_prompt_only_passes_geo_events():
     assert "https://e.com/p" not in out
     # マクロ URL も渡さない
     assert "https://e.com/m" not in out
+
+
+def test_geo_events_prompt_drops_topics_without_investable_channel():
+    # 投資チャネル (原油/金/半導体/防衛/AI/金融制裁/サプライチェーン) で波及を
+    # 説明できないトピックは要約せず落とす指示を出す (#160)。波及判定行は維持。
+    cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
+    ctx = _full_ctx()
+    out = build_section_geo_events_prompt(cfg, ctx=ctx, today="2026-06-09")
+    assert "投資チャネル" in out
+    assert "除外" in out
+    # 既存の保有銘柄波及判定の指示は残っている
+    assert "保有銘柄への波及" in out
 
 
 def test_summarize_prefetch_hits_lists_all_buckets_with_counts():
@@ -648,6 +697,7 @@ class _FakeRunCLI:
         self.prefetch_calls: list[dict] = []
         self.generate_calls: list[dict] = []
         self.table_calls: list[dict] = []
+        self.topnews_cfg = None
 
         monkeypatch.setenv("BRAVE_API_KEY", "test-brave-key")
         monkeypatch.setattr(cli, "BRIEFING_OUTPUT_DIR", self.output_dir)
@@ -671,11 +721,13 @@ class _FakeRunCLI:
             )
 
         monkeypatch.setattr(cli, "prefetch_briefing_context", _fake_prefetch)
-        monkeypatch.setattr(
-            cli,
-            "build_section_topnews_prompt",
-            lambda ctx, *, today: f"PROMPT_TOP(today={today})",
-        )
+
+        def _fake_topnews(cfg, *, ctx, today):
+            # CLI が briefing_cfg (tickers 込み) をそのまま渡しているか検証用に捕捉
+            self.topnews_cfg = cfg
+            return f"PROMPT_TOP(today={today})"
+
+        monkeypatch.setattr(cli, "build_section_topnews_prompt", _fake_topnews)
         monkeypatch.setattr(
             cli,
             "build_section_geo_events_prompt",
@@ -757,6 +809,9 @@ def test_cmd_briefing_prefetches_and_writes_local_file(monkeypatch, tmp_path):
     # Pre-fetch ran with the search client + tickers from briefing.json
     assert len(fake.prefetch_calls) == 1
     assert fake.prefetch_calls[0]["tickers"] == ["PLTR", "NVDA"]
+    # CLI が briefing_cfg (tickers 込み) を topnews builder に渡している (#159)
+    assert fake.topnews_cfg is not None
+    assert fake.topnews_cfg.portfolio.tickers == ["PLTR", "NVDA"]
     assert len(fake.search_clients) == 1
     # 自由生成 3 段 + 構造化テーブル 1 回が順番に呼ばれている
     assert len(fake.generate_calls) == 3
