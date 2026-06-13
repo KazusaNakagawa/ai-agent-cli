@@ -49,6 +49,8 @@ _INDEX_PAGE_URL_PATTERNS = [
         r"investing\.com/equities/",
         r"stockanalysis\.com/stocks/",
         r"seekingalpha\.com/symbol/",
+        # CNBC のクオート/銘柄ページ (/quotes/SYMBOL)。記事 (/YYYY/MM/DD/...) は残す。
+        r"cnbc\.com/quotes/",
         # Amazon は商品詳細ページ (/dp/, /gp/product/ — 商品名スラッグ付きも可)
         # のみ除外。記事系ページまで落とさないようドメイン全体は対象にしない。
         r"amazon\.(com|co\.jp)/(.+/)?(gp/product|dp)/",

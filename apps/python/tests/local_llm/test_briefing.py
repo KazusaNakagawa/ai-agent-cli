@@ -194,6 +194,7 @@ def test_prefetch_filters_index_pages_and_trims_to_count():
         SearchResult("SA", "https://stockanalysis.com/stocks/pltr/", "d"),
         SearchResult("SeekA", "https://seekingalpha.com/symbol/PLTR", "d"),
         SearchResult("Book", "https://www.amazon.co.jp/dp/4582859879", "d"),
+        SearchResult("CNBCq", "https://www.cnbc.com/quotes/PLTR", "d"),
     ]
     search = _StubSearch(
         responses={"PLTR stock news 2026-06-09": index_pages[:2] + news}
@@ -211,6 +212,10 @@ def test_prefetch_filters_index_pages_and_trims_to_count():
     # Amazon の記事系ページ (商品詳細以外) は除外しない
     assert not _is_index_page("https://www.aboutamazon.com/news/company-news/q1-results")
     assert not _is_index_page("https://www.amazon.com/press-release/some-news")
+    # CNBC の記事 (/YYYY/MM/DD/...) は残す — クオートページ (/quotes/) のみ除外
+    assert not _is_index_page(
+        "https://www.cnbc.com/2026/06/02/stock-market-today-live-updates.html"
+    )
 
 
 def test_is_index_page_filters_forecast_and_rating_sites():
