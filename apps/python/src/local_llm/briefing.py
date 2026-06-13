@@ -71,6 +71,10 @@ _INDEX_PAGE_URL_PATTERNS = [
         r"weissratings\.com",
         r"timothysykes\.com",
         r"stockstotrade\.com",
+        # クオート/ライブ株価の索引ページ & バリュエーション予想サイト (#176)。
+        # indmoney は銘柄のライブ株価ページ、trefis は予想/バリュエーション記事。
+        r"indmoney\.com/us-stocks/",
+        r"trefis\.com/stock/",
     )
 ]
 
