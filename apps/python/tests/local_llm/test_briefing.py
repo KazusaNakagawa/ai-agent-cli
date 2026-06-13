@@ -26,6 +26,7 @@ from src.local_llm.briefing import (
     build_section_topnews_prompt,
     collect_references,
     compose_briefing_md,
+    ensure_geo_topics_covered,
     generate_local_briefing,
     load_local_briefing_system_prompt,
     prefetch_briefing_context,
@@ -386,6 +387,61 @@ def test_geo_events_prompt_drops_topics_without_investable_channel():
     assert "関税" in out
     # 既存の保有銘柄波及判定の指示は残っている
     assert "保有銘柄への波及" in out
+
+
+def test_ensure_geo_topics_covered_appends_omitted_topics():
+    # モデルが投資影響あるトピック (中東=原油) を黙って省略しても、Python 側で
+    # `### {topic}` 見出しと pre-fetch リンクを補完する (#175)。
+    ctx = PrefetchedContext(
+        macro=[],
+        per_ticker={},
+        geo_by_topic={
+            "中東紛争": [SearchResult("Iran-Israel", "https://e.com/mid", "d")],
+            "米中": [SearchResult("Chips", "https://e.com/cn", "d")],
+        },
+        events_by_name={},
+    )
+    # モデル出力は米中だけ。中東は省略されている。
+    body = "## 地政学トピック\n\n### 米中\n要約 [出典](https://e.com/cn)"
+    out = ensure_geo_topics_covered(body, ctx)
+    # 省略された中東が見出し付きで補完され、リンクも残る
+    assert "### 中東紛争" in out
+    assert "https://e.com/mid" in out
+    # 既に出ている米中は重複追記しない
+    assert out.count("### 米中") == 1
+
+
+def test_ensure_geo_topics_covered_noop_when_all_present():
+    ctx = PrefetchedContext(
+        macro=[],
+        per_ticker={},
+        geo_by_topic={"米中": [SearchResult("Chips", "https://e.com/cn", "d")]},
+        events_by_name={},
+    )
+    body = "### 米中\n要約"
+    assert ensure_geo_topics_covered(body, ctx) == body
+
+
+def test_ensure_geo_topics_covered_marks_topic_without_hits():
+    # 検索ヒット 0 件のトピックも見出し付きで残し、「検索でも確認できず」を出す。
+    ctx = PrefetchedContext(
+        macro=[],
+        per_ticker={},
+        geo_by_topic={"インド・パキスタン": []},
+        events_by_name={},
+    )
+    out = ensure_geo_topics_covered("## 地政学トピック", ctx)
+    assert "### インド・パキスタン" in out
+    assert "検索でも確認できず" in out
+
+
+def test_ensure_geo_topics_covered_noop_when_no_geo_topics():
+    # geo_by_topic が空なら何も補完しない (early return)。
+    ctx = PrefetchedContext(
+        macro=[], per_ticker={}, geo_by_topic={}, events_by_name={}
+    )
+    body = "## 地政学トピック\n\n### 米中\n要約"
+    assert ensure_geo_topics_covered(body, ctx) == body
 
 
 def test_summarize_prefetch_hits_lists_all_buckets_with_counts():
