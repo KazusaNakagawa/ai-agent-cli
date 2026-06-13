@@ -234,6 +234,32 @@ def render_geo_events_block(ctx: PrefetchedContext) -> str:
     return "\n".join(parts)
 
 
+def ensure_geo_topics_covered(body: str, ctx: PrefetchedContext) -> str:
+    """設定済みの地政学トピックがモデル出力から黙って抜け落ちるのを防ぐ安全網 (#175)。
+
+    qwen2.5:14b は「投資チャネルで選別」指示の下で、原油チャネル直結の中東情勢など
+    投資影響の大きいトピックまで省略することがある。body にトピック名が現れない
+    場合、`### {topic}` 見出しと pre-fetch のリンクを末尾に補完し、最低限トピックと
+    出典が残るようにする (要約はモデルが省略した旨を明示)。
+    """
+    if not ctx.geo_by_topic:
+        return body
+    missing = [topic for topic in ctx.geo_by_topic if topic not in body]
+    if not missing:
+        return body
+    parts = [body.rstrip(), ""]
+    for topic in missing:
+        parts.append(f"### {topic}")
+        hits = ctx.geo_by_topic[topic]
+        if hits:
+            parts.append("（モデルが要約を省略 — 以下の検索結果を参照）")
+            parts.extend(f"- [{r.title}]({r.url})" for r in hits)
+        else:
+            parts.append("（検索でも確認できず）")
+        parts.append("")
+    return "\n".join(parts).rstrip()
+
+
 def build_section_topnews_prompt(
     cfg: BriefingConfig, *, ctx: PrefetchedContext, today: str
 ) -> str:

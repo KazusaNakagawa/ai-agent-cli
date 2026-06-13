@@ -26,6 +26,7 @@ from .briefing import (
     build_section_topnews_prompt,
     collect_references,
     compose_briefing_md,
+    ensure_geo_topics_covered,
     generate_local_briefing,
     load_local_briefing_system_prompt,
     prefetch_briefing_context,
@@ -271,6 +272,9 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         "地政学+イベント",
         build_section_geo_events_prompt(briefing_cfg, ctx=ctx, today=today),
     )
+    # モデルが投資影響あるトピック (中東=原油 等) を黙って省略しても、設定済み
+    # トピックの見出しと出典を Python 側で必ず残す安全網 (#175)。
+    body_geo = ensure_geo_topics_covered(body_geo, ctx)
     # 世界(トップニュース) → セクター → 地政学 → 銘柄(テーブル) の順に積んで
     # 示唆段へ渡す (#162)。
     prior_text = "\n\n".join([body_top, body_sector, body_geo, body_port]).strip()
