@@ -22,6 +22,7 @@ from .articles import count_article_fetches, enrich_with_article_text
 from .briefing import (
     build_section_geo_events_prompt,
     build_section_insight_prompt,
+    build_section_sector_prompt,
     build_section_topnews_prompt,
     collect_references,
     compose_briefing_md,
@@ -224,9 +225,10 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
 
     system_prompt = load_local_briefing_system_prompt()
 
-    # 4 段階のセクション分割生成。1 回 chat() で全 9 セクション書かせると
-    # attention が散って保有銘柄テーブルで URL 捏造が頻発したため (#後続)、
-    # 各段で渡す web_context をそのセクションに必要な分だけに絞る。
+    # 5 段階のセクション分割生成 (トップニュース / セクター / 地政学 / 保有銘柄
+    # テーブル / 示唆)。1 回 chat() で全セクション書かせると attention が散って
+    # 保有銘柄テーブルで URL 捏造が頻発したため (#後続)、各段で渡す web_context を
+    # そのセクションに必要な分だけに絞る。
     # Ollama 既定 num_ctx (4096) はセクションプロンプトでも溢れ得るため明示 (#150)。
     gen_options = {"num_ctx": cfg.num_ctx, "temperature": cfg.temperature}
 
@@ -246,6 +248,12 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         "トップニュース",
         build_section_topnews_prompt(briefing_cfg, ctx=ctx, today=today),
     )
+    # 世界 → セクター → 銘柄 のナラティブ中間層。トップニュース本文から波及
+    # セクターを抽出し保有銘柄へ接続する (#162)。
+    body_sector = _gen(
+        "セクター影響",
+        build_section_sector_prompt(briefing_cfg, prior_text=body_top, today=today),
+    )
     # 保有銘柄テーブルは銘柄ごとの構造化出力 (#152)。モデルは {topic, source_index}
     # の JSON しか書かず、URL・値動き・テーブル組成は Python 側で行う。
     logger.info("[section] 保有銘柄テーブル 構造化生成開始")
@@ -263,7 +271,9 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         "地政学+イベント",
         build_section_geo_events_prompt(briefing_cfg, ctx=ctx, today=today),
     )
-    prior_text = "\n\n".join([body_top, body_port, body_geo]).strip()
+    # 世界(トップニュース) → セクター → 地政学 → 銘柄(テーブル) の順に積んで
+    # 示唆段へ渡す (#162)。
+    prior_text = "\n\n".join([body_top, body_sector, body_geo, body_port]).strip()
     body_insight = _gen(
         "自分への示唆",
         build_section_insight_prompt(
@@ -273,8 +283,17 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
 
     references_md = collect_references(ctx, prior_text)
     debug_block = render_prefetch_debug_block(ctx)
+    # 出力順: 世界(トップニュース) → セクター → 地政学 → 銘柄(テーブル) → 示唆 (#162)
     body = "\n\n".join(
-        [body_top, body_port, body_geo, body_insight, references_md, debug_block]
+        [
+            body_top,
+            body_sector,
+            body_geo,
+            body_port,
+            body_insight,
+            references_md,
+            debug_block,
+        ]
     )
 
     validation = validate_urls(body, ctx)

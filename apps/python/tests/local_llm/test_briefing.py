@@ -22,6 +22,7 @@ from src.local_llm.briefing import (
     _is_index_page,
     build_section_geo_events_prompt,
     build_section_insight_prompt,
+    build_section_sector_prompt,
     build_section_topnews_prompt,
     collect_references,
     compose_briefing_md,
@@ -480,6 +481,22 @@ def test_insight_prompt_uses_pm_buy_watch_event_blocks():
     assert "http" not in out
 
 
+def test_build_section_sector_prompt_maps_news_to_holdings():
+    # トップニュース本文 (prior_text) から波及セクターを導出し、保有銘柄へ接続する (#162)。
+    cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
+    out = build_section_sector_prompt(
+        cfg, prior_text="## 今日のトップニュース\nNVDA 決算", today="2026-06-09"
+    )
+    assert "セクター影響" in out
+    assert "該当する保有" in out  # 保有銘柄への接続を必須化
+    assert "PLTR" in out
+    assert "NVDA" in out
+    # prior_text (トップニュース本文) が注入される
+    assert "NVDA 決算" in out
+    # 新規 URL は書かない制約 (出典はトップニュース側に既出)
+    assert "URL" in out
+
+
 def test_system_prompt_carries_citation_rules():
     sys_prompt = load_local_briefing_system_prompt()
     assert "検索結果" in sys_prompt
@@ -698,6 +715,7 @@ class _FakeRunCLI:
         self.generate_calls: list[dict] = []
         self.table_calls: list[dict] = []
         self.topnews_cfg = None
+        self.sector_prior = None
 
         monkeypatch.setenv("BRAVE_API_KEY", "test-brave-key")
         monkeypatch.setattr(cli, "BRIEFING_OUTPUT_DIR", self.output_dir)
@@ -728,6 +746,13 @@ class _FakeRunCLI:
             return f"PROMPT_TOP(today={today})"
 
         monkeypatch.setattr(cli, "build_section_topnews_prompt", _fake_topnews)
+
+        def _fake_sector(cfg, *, prior_text, today):
+            # セクター段がトップニュース本文を prior_text として受けているか捕捉
+            self.sector_prior = prior_text
+            return f"PROMPT_SECTOR(today={today})"
+
+        monkeypatch.setattr(cli, "build_section_sector_prompt", _fake_sector)
         monkeypatch.setattr(
             cli,
             "build_section_geo_events_prompt",
@@ -774,6 +799,8 @@ class _FakeRunCLI:
             # 変えたい本文 (URL 捏造を仕込む等) は 1 段目 (topnews) に集約する。
             if "PROMPT_TOP" in prompt:
                 return briefing_text
+            if "PROMPT_SECTOR" in prompt:
+                return "## セクター影響"
             if "PROMPT_GEO" in prompt:
                 return "## 地政学トピック"
             if "PROMPT_INS" in prompt:
@@ -813,14 +840,19 @@ def test_cmd_briefing_prefetches_and_writes_local_file(monkeypatch, tmp_path):
     assert fake.topnews_cfg is not None
     assert fake.topnews_cfg.portfolio.tickers == ["PLTR", "NVDA"]
     assert len(fake.search_clients) == 1
-    # 自由生成 3 段 + 構造化テーブル 1 回が順番に呼ばれている
-    assert len(fake.generate_calls) == 3
+    # 自由生成 4 段 (top → sector → geo → insight) + 構造化テーブル 1 回 (#162)
+    assert len(fake.generate_calls) == 4
     prompts = [c["prompt"] for c in fake.generate_calls]
     assert "PROMPT_TOP" in prompts[0]
-    assert "PROMPT_GEO" in prompts[1]
-    assert "PROMPT_INS" in prompts[2]
-    # insight 段には先行 3 段の本文 (テーブル含む) が prior_text として渡る
-    assert "保有銘柄テーブル" in prompts[2]
+    assert "PROMPT_SECTOR" in prompts[1]
+    assert "PROMPT_GEO" in prompts[2]
+    assert "PROMPT_INS" in prompts[3]
+    # セクター段はトップニュース本文を prior_text として受ける (#162)
+    assert fake.sector_prior is not None
+    assert "### 今日" in fake.sector_prior
+    # insight 段には先行段の本文 (セクター・テーブル含む) が prior_text として渡る
+    assert "保有銘柄テーブル" in prompts[3]
+    assert "セクター影響" in prompts[3]
     # テーブルは構造化経路 (#152) に全銘柄 + 実値動き + 生成オプションが渡る
     assert len(fake.table_calls) == 1
     assert fake.table_calls[0]["tickers"] == ["PLTR", "NVDA"]
@@ -838,6 +870,13 @@ def test_cmd_briefing_prefetches_and_writes_local_file(monkeypatch, tmp_path):
     # 構造化経路が組んだテーブルがそのまま本文に入る
     assert "## 保有銘柄テーブル" in content
     assert "|---|---|---|---|" in content
+    # 本文は 世界(トップニュース) → セクター → 地政学 → 銘柄(テーブル) → 示唆 の順 (#162)
+    markers = ["### 今日", "セクター影響", "地政学トピック", "保有銘柄テーブル", "自分への示唆"]
+    # 各見出しは 1 回だけ出る (重複だと .index ベースの順序判定が偽陽性になりうる)
+    for m in markers:
+        assert content.count(m) == 1, m
+    order = [content.index(m) for m in markers]
+    assert order == sorted(order)
     # URL 検証行が caveat に入っている (今回は本文に URL なし → 0/0)
     assert "URL 検証" in content
     # 取得件数サマリと折りたたみデバッグブロックが透明性のために含まれる
