@@ -413,6 +413,19 @@ def test_build_section_insight_prompt_carries_prior_text_and_themes():
     assert "本文" in out
 
 
+def test_insight_prompt_uses_pm_buy_watch_event_blocks():
+    # PM 視点の構造化: 買い増し候補 / 注意銘柄 / 監視イベント の 3 ブロック (#161)。
+    cfg = _minimal_cfg()
+    out = build_section_insight_prompt(
+        cfg, prior_text="### マクロ\n本文", today="2026-06-09"
+    )
+    assert "買い増し候補" in out
+    assert "注意銘柄" in out
+    assert "監視イベント" in out
+    # 学習知識可・URL 不可 (捏造防止) の制約は維持
+    assert "URL" in out
+
+
 def test_system_prompt_carries_citation_rules():
     sys_prompt = load_local_briefing_system_prompt()
     assert "検索結果" in sys_prompt
