@@ -14,11 +14,13 @@ from src.config import (
 from src.local_llm import cli
 from src.local_llm.briefing import (
     OVERFETCH_EXTRA,
+    STALE_ARTICLE_DAYS,
     PER_GEO_RESULTS,
     PER_MACRO_RESULTS,
     PER_TICKER_RESULTS,
     PrefetchedContext,
     UrlValidation,
+    _extract_url_date,
     _is_index_page,
     _url_has_no_spaces,
     has_simplified_chinese_text,
@@ -277,6 +279,34 @@ def test_prefetch_drops_urls_with_spaces():
     assert ctx.per_ticker["PLTR"] == [good]
     assert not _url_has_no_spaces(bad.url)
     assert _url_has_no_spaces(good.url)
+
+
+def test_extract_url_date_common_patterns():
+    from datetime import date
+    # CNBC style: /YYYY/MM/DD/
+    assert _extract_url_date("https://www.cnbc.com/2026/06/01/stock-market-today.html") == date(2026, 6, 1)
+    # Bloomberg style: /YYYY-MM-DD/
+    assert _extract_url_date("https://www.bloomberg.com/news/articles/2026-06-14/story") == date(2026, 6, 14)
+    # Investopedia style: -MMDDYYYY-
+    assert _extract_url_date("https://www.investopedia.com/news-06092026-11993707") == date(2026, 6, 9)
+    # No date in URL
+    assert _extract_url_date("https://www.reuters.com/world/ukraine-russia-war/") is None
+
+
+def test_prefetch_drops_stale_articles():
+    from datetime import date
+    cfg = _minimal_cfg(tickers=["PLTR"])
+    stale = SearchResult("Old", "https://www.cnbc.com/2026/06/01/old-news.html", "d")
+    fresh = SearchResult("New", "https://www.cnbc.com/2026/06/13/new-news.html", "d")
+    no_date = SearchResult("NoDt", "https://www.reuters.com/world/some-story/", "d")
+    search = _StubSearch(responses={"PLTR stock news 2026-06-14": [stale, fresh, no_date]})
+
+    ctx = prefetch_briefing_context(cfg, search_client=search, today="2026-06-14")
+
+    pltr_urls = [r.url for r in ctx.per_ticker["PLTR"]]
+    assert stale.url not in pltr_urls, "stale article (12 days old) should be filtered"
+    assert fresh.url in pltr_urls, "fresh article (1 day old) should pass"
+    assert no_date.url in pltr_urls, "no-date URL should pass (can't determine age)"
 
 
 def test_has_simplified_chinese_text_detects_simplified_chinese():
