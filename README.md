@@ -228,6 +228,46 @@ uv pip sync requirements.txt
 
 ---
 
+## Local LLM (experimental)
+
+Optional fully-local RAG over this repository, powered by Ollama + Chroma. The existing Claude Code / briefing / XSS agents are unaffected.
+
+### Prerequisites
+
+```bash
+brew install ollama       # or follow https://ollama.com
+ollama serve &
+ollama pull qwen2.5:14b   # for --briefing: reliable tool calling (~8.5GB RAM with Q4)
+ollama pull qwen2.5:7b    # for --ask / --index: smaller, fits the RAG path
+ollama pull bge-m3        # embedding model (#135): stronger JP + code retrieval than nomic-embed-text
+```
+
+The default generation model is `qwen2.5:14b` for more stable instruction-following and citation quality in the `--briefing` path. If you only run `--ask` / `--index`, override with `LOCAL_LLM_MODEL=qwen2.5:7b`.
+
+> **Switching embed models requires a rebuild.** `bge-m3` (1024 dim) and the legacy `nomic-embed-text` (768 dim) produce incompatible vectors. If you change `LOCAL_LLM_EMBED_MODEL` (or are upgrading from a pre-#135 index), the CLI refuses with an `EmbedModelMismatch` error — rebuild with `bin/local_llm.sh --index --reset`.
+
+### Usage
+
+```bash
+bin/local_llm.sh --index                       # index ~/work/ai-agent into Chroma
+bin/local_llm.sh --status                      # show indexed chunk count & models
+bin/local_llm.sh --ask "認証はどう動く？"
+bin/local_llm.sh --sources "認証はどう動く？"  # retrieval-only debug
+bin/local_llm.sh --index --reset               # rebuild from scratch
+bin/local_llm.sh --briefing                    # generate daily briefing locally (saves local_<date>.md)
+bin/local_llm.sh --briefing --notion           # ...and post to Notion alongside the Claude version
+```
+
+Chroma data is stored in `apps/python/.chroma_db/` (gitignored).
+
+Override defaults via env: `LOCAL_LLM_MODEL`, `LOCAL_LLM_EMBED_MODEL`, `LOCAL_LLM_TOP_K`, `LOCAL_LLM_CHROMA_PATH`, `OLLAMA_HOST`.
+
+`--briefing` requires `BRAVE_API_KEY` in `.env` (Free-plan key at https://api-dashboard.search.brave.com/ — see `.env.example`). The CLI pre-fetches Brave Search results for all portfolio tickers, macro news, and geopolitical topics, then injects them as context before local generation; without the key the command exits with an error. Tracked under [#142](https://github.com/KazusaNakagawa/ai-agent-cli/issues/142) (initial offline version) and [#144](https://github.com/KazusaNakagawa/ai-agent-cli/issues/144) (Brave Search integration).
+
+Tracked under [#140](https://github.com/KazusaNakagawa/ai-agent/issues/140) (Epic [#139](https://github.com/KazusaNakagawa/ai-agent/issues/139)). Quality improvements (#135 bge-m3, #136 reranker, #138 AST chunking, #137 generation model) ship as follow-up PRs.
+
+---
+
 ## License
 
 MIT

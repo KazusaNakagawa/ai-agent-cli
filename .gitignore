@@ -2,19 +2,23 @@
 .env
 
 # ローカル設定（個人用）
-config/briefing.json
+apps/python/config/briefing.json
 
 # Claude Code
-.claude/
+.claude/*
+!.claude/skills/
 
 # 仮想環境
 .venv/
+apps/python/.venv/
 
 # ログ
 log/
+apps/python/log/
 
 # 出力
 output/
+apps/python/output/
 
 # Python
 __pycache__/
@@ -26,7 +30,14 @@ build/
 htmlcov/
 
 # Editor
-.vscode/
+.vscode/*
+!.vscode/settings.json
 
 # OS
 .DS_Store
+
+# Superpowers brainstorming workspace
+.superpowers/
+
+# Local LLM RAG persistent store
+apps/python/.chroma_db/

@@ -1,6 +1,6 @@
 # Scheduled Execution — macOS launchd Setup
 
-macOS uses **launchd** instead of cron. `bin/run.sh` sources `.env` automatically so API credentials are available in non-interactive shells.
+macOS uses **launchd** instead of cron. `bin/run.sh` (root-level wrapper) sources `.env` and delegates to `apps/python/bin/run.sh`, so API credentials are available in non-interactive shells.
 
 **Schedule behaviour:**
 
@@ -26,7 +26,7 @@ PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 ```bash
 cd "$PROJECT"
 source .env
-.venv/bin/python bin/briefing.py --dry-run
+apps/python/.venv/bin/python apps/python/bin/briefing.py --dry-run
 ```
 
 No WARNING lines → credentials are set correctly.
@@ -66,9 +66,9 @@ Save the following to `$PLIST`:
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/path/to/ai-agent/log/launchd.stdout.log</string>
+    <string>/path/to/ai-agent/apps/python/log/launchd.stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/path/to/ai-agent/log/launchd.stderr.log</string>
+    <string>/path/to/ai-agent/apps/python/log/launchd.stderr.log</string>
 
     <key>RunAtLoad</key>
     <false/>
@@ -100,7 +100,7 @@ launchctl list | grep "$(whoami)"
 launchctl start "$LABEL"
 
 # Watch logs
-tail -f "$PROJECT/log/launchd.stderr.log"
+tail -f "$PROJECT/apps/python/log/launchd.stderr.log"
 ```
 
 ## 4. Unregister (if needed)
@@ -113,13 +113,13 @@ launchctl unload "$PLIST"
 
 | Item | Why |
 |---|---|
-| `.env` at project root | `bin/run.sh` sources it for API tokens |
+| `.env` at project root | Root `bin/run.sh` sources it for API tokens |
 | `~/.claude/` accessible | Claude Code CLI reads its OAuth token from here |
-| `log/` directory exists | Output target for launchd stdout/stderr |
+| `apps/python/log/` directory exists | Output target for launchd stdout/stderr |
 | `/opt/homebrew/bin` in PATH | Required for `claude` CLI installed via Homebrew |
 
 ```bash
-mkdir -p "$PROJECT/log"
+mkdir -p "$PROJECT/apps/python/log"
 ```
 
-If credentials are missing at runtime, the agent logs a WARNING per missing credential and writes output to `output/briefing_YYYY-MM-DD.md` instead of sending to Discord/Notion.
+If credentials are missing at runtime, the agent logs a WARNING per missing credential and writes output to `apps/python/output/briefing/briefing_YYYY-MM-DD.md` instead of sending to Discord/Notion.
