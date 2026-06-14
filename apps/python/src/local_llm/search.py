@@ -1,4 +1,4 @@
-"""Brave Search API クライアント。ローカル LLM のツールコールから呼ばれる。"""
+"""Brave Search API client. Called from the local LLM's tool calls."""
 
 from __future__ import annotations
 
@@ -19,9 +19,10 @@ class SearchResult:
     title: str
     url: str
     description: str
-    # 記事本文の抜粋 (#151)。検索ヒット時は空で、articles.enrich_with_article_text
-    # が上位ヒットにだけ後から埋める。スニペット (description ≤200 字) だけでは
-    # モデルが具体的事実を書けないための追加コンテキスト。
+    # Article body excerpt (#151). Empty at search time;
+    # articles.enrich_with_article_text fills it in later for top hits only.
+    # Extra context, because the model cannot write concrete facts from the
+    # snippet (description ≤200 chars) alone.
     content: str = ""
 
 
@@ -30,10 +31,10 @@ class BraveSearchError(RuntimeError):
 
 
 class BraveSearchClient:
-    """Brave Search Web API の薄いラッパ。
+    """Thin wrapper around the Brave Search Web API.
 
-    `api_key` は呼び出し側 (CLI) が env から読んで渡す。`http_client` は
-    テストでスタブできるよう注入可能。
+    `api_key` is read from env by the caller (CLI) and passed in. `http_client`
+    is injectable so it can be stubbed in tests.
     """
 
     def __init__(
@@ -54,10 +55,10 @@ class BraveSearchClient:
     def search(
         self, query: str, count: int = 5, freshness: str | None = None
     ) -> list[SearchResult]:
-        """`freshness` は Brave の鮮度フィルタ (pd=24h / pw=1週間 / pm=1ヶ月)。
+        """`freshness` is Brave's recency filter (pd=24h / pw=1 week / pm=1 month).
 
-        日次ブリーフィングの pre-fetch はトピック索引ページ (SEO 上位の常設
-        ページ) を引きがちなので、呼び出し側は基本 "pw" を渡す (#153)。
+        The daily briefing pre-fetch tends to surface topic index pages
+        (evergreen SEO-ranked pages), so callers generally pass "pw" (#153).
         """
         count = max(1, min(int(count), 10))
         params: dict[str, Any] = {"q": query, "count": count}

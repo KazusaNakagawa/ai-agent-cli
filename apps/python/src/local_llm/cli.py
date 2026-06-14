@@ -1,4 +1,4 @@
-"""local_llm CLI エントリ。"""
+"""local_llm CLI entry point."""
 
 from __future__ import annotations
 
@@ -192,7 +192,7 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     try:
         logger.info("Ollama 接続確認中...")
         olm = make_ollama_client(cfg)
-        # briefing は generation のみ。embed_model 未 pull で弾かれないよう None で渡す。
+        # briefing only generates; pass None so an un-pulled embed_model does not block it.
         ensure_models_available(olm, cfg.model, embed_model=None)
     except OllamaUnavailable as e:
         logger.error("Ollama に接続できません: %s", e)
@@ -206,7 +206,7 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     )
     moves = fetch_stock_move_map(briefing_cfg.portfolio.tickers)
 
-    today = date.today().isoformat()  # YYYY-MM-DD — ファイル名・プロンプト両方で共用
+    today = date.today().isoformat()  # YYYY-MM-DD — shared by both the filename and the prompt
     search_client = BraveSearchClient(brave_api_key)
 
     logger.info(
@@ -218,8 +218,9 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     )
     logger.info("Brave Search pre-fetch 完了 — 上位ヒットの記事本文を取得")
 
-    # スニペットだけではモデルが具体的事実を書けないため、上位ヒットの本文を
-    # 抽出してプロンプトに注入する (#151)。失敗分はスニペットにフォールバック。
+    # The model cannot write concrete facts from snippets alone, so extract the
+    # bodies of the top hits and inject them into the prompt (#151). Failures
+    # fall back to the snippet.
     ctx = enrich_with_article_text(ctx)
     attempted, fetched = count_article_fetches(ctx)
     article_summary = f"{fetched}/{attempted} 件取得 (上位ヒットのみ・失敗はスニペットで代替)"
@@ -227,11 +228,11 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
 
     system_prompt = load_local_briefing_system_prompt()
 
-    # 5 段階のセクション分割生成 (トップニュース / セクター / 地政学 / 保有銘柄
-    # テーブル / 示唆)。1 回 chat() で全セクション書かせると attention が散って
-    # 保有銘柄テーブルで URL 捏造が頻発したため (#後続)、各段で渡す web_context を
-    # そのセクションに必要な分だけに絞る。
-    # Ollama 既定 num_ctx (4096) はセクションプロンプトでも溢れ得るため明示 (#150)。
+    # Five-stage section-split generation (top news / sector / geopolitics /
+    # holdings table / insight). Writing every section in a single chat() scatters
+    # attention and caused frequent URL fabrication in the holdings table, so the
+    # web_context passed to each stage is narrowed to just what that section needs.
+    # Ollama's default num_ctx (4096) can still overflow on a section prompt, so set it explicitly (#150).
     gen_options = {"num_ctx": cfg.num_ctx, "temperature": cfg.temperature}
 
     def _gen(label: str, prompt: str) -> str:
@@ -255,14 +256,15 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         "トップニュース",
         build_section_topnews_prompt(briefing_cfg, ctx=ctx, today=today),
     )
-    # 世界 → セクター → 銘柄 のナラティブ中間層。トップニュース本文から波及
-    # セクターを抽出し保有銘柄へ接続する (#162)。
+    # The world → sector → ticker narrative's middle layer. Extract the affected
+    # sectors from the top-news body and connect them to the holdings (#162).
     body_sector = _gen(
         "セクター影響",
         build_section_sector_prompt(briefing_cfg, prior_text=body_top, today=today),
     )
-    # 保有銘柄テーブルは銘柄ごとの構造化出力 (#152)。モデルは {topic, source_index}
-    # の JSON しか書かず、URL・値動き・テーブル組成は Python 側で行う。
+    # The holdings table uses per-ticker structured output (#152). The model only
+    # writes {topic, source_index} JSON; URLs, price moves, and table assembly are
+    # done on the Python side.
     logger.info("[section] 保有銘柄テーブル 構造化生成開始")
     body_port = generate_portfolio_table(
         briefing_cfg.portfolio.tickers,
@@ -278,11 +280,12 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         "地政学+イベント",
         build_section_geo_events_prompt(briefing_cfg, ctx=ctx, today=today),
     )
-    # モデルが投資影響あるトピック (中東=原油 等) を黙って省略しても、設定済み
-    # トピックの見出しと出典を Python 側で必ず残す安全網 (#175)。
+    # Safety net so that even if the model silently omits an investment-relevant
+    # topic (e.g. Middle East = oil), the configured topic's heading and sources
+    # are always preserved on the Python side (#175).
     body_geo = ensure_geo_topics_covered(body_geo, ctx)
-    # 世界(トップニュース) → セクター → 地政学 → 銘柄(テーブル) の順に積んで
-    # 示唆段へ渡す (#162)。
+    # Stack in the order world (top news) → sector → geopolitics → tickers (table)
+    # and pass it to the insight stage (#162).
     prior_text = "\n\n".join([body_top, body_sector, body_geo, body_port]).strip()
     body_insight = _gen(
         "自分への示唆",
@@ -293,7 +296,7 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
 
     references_md = collect_references(ctx, prior_text)
     debug_block = render_prefetch_debug_block(ctx)
-    # 出力順: 世界(トップニュース) → セクター → 地政学 → 銘柄(テーブル) → 示唆 (#162)
+    # Output order: world (top news) → sector → geopolitics → tickers (table) → insight (#162)
     body = "\n\n".join(
         [
             body_top,
@@ -345,7 +348,7 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
             md,
             briefing_cfg.notion_api_key,
             briefing_cfg.notion_database_id,
-            title=f"ローカルブリーフィング — {today}",  # today は YYYY-MM-DD
+            title=f"ローカルブリーフィング — {today}",  # today is YYYY-MM-DD
             tags=["agent", "local"],
         )
         if url:

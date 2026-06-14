@@ -1,4 +1,4 @@
-"""Ollama / Chroma クライアントのファクトリと起動時チェック。"""
+"""Factories for the Ollama / Chroma clients and startup checks."""
 
 from __future__ import annotations
 

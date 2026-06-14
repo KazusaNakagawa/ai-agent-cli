@@ -1,4 +1,4 @@
-"""既定値 + env override の構成。"""
+"""Defaults + env-override configuration."""
 
 from __future__ import annotations
 
@@ -11,18 +11,19 @@ from src.logger import get_logger
 logger = get_logger(__name__)
 
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
-# qwen2.5:14b は qwen2.5:7b に比べて tool calling 追従が格段に良く、
-# `--briefing` 経路で web_search を確実に呼ぶために必要。Q4 量子化で ~8.5GB RAM。
-# 小さいモデルに戻したい場合は env LOCAL_LLM_MODEL=qwen2.5:7b で override 可能。
+# qwen2.5:14b follows tool calling far better than qwen2.5:7b, which is needed
+# to reliably trigger web_search on the `--briefing` path. ~8.5GB RAM at Q4.
+# To go back to a smaller model, override with env LOCAL_LLM_MODEL=qwen2.5:7b.
 DEFAULT_MODEL = "qwen2.5:14b"
 # bge-m3 (1024d) outperforms nomic-embed-text (768d) on Japanese + code retrieval
 # (#135). Switching changes embedding dimensions, so an existing .chroma_db built
 # with the previous default must be rebuilt: bin/local_llm.sh --index --reset.
 DEFAULT_EMBED_MODEL = "bge-m3"
-# Ollama 既定の num_ctx (4096) では pre-fetch 注入済みプロンプトの末尾が黙って
-# 切り捨てられる (#150)。qwen2.5:14b Q4 + 16K ctx は 24GB RAM で問題なく動く。
+# Ollama's default num_ctx (4096) silently truncates the tail of the prompt once
+# pre-fetched context is injected (#150). qwen2.5:14b Q4 + 16K ctx runs fine on 24GB RAM.
 DEFAULT_NUM_CTX = 16384
-# 事実の転記・要約タスクなので低温度で引用追従を優先する。
+# Fact-transcription / summarization task, so a low temperature is used to
+# prioritize faithful citation.
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TOP_K = 6
 DEFAULT_CHUNK_LINES = 40
@@ -58,10 +59,11 @@ class LocalLLMConfig:
 
 
 def _env_number(name: str, default, cast):
-    """env を数値に変換する。不正値は warning を出して既定値にフォールバック。
+    """Convert an env var to a number. On an invalid value, warn and fall back to the default.
 
-    バッチ (cron) 経路で typo った env のせいに起動ごと落とすより、既定値で
-    動かしてログに残す方が運用上安全 (Sourcery / CodeRabbit 指摘)。
+    For the batch (cron) path it is operationally safer to keep running with the
+    default and log it than to crash on every startup because of a typo'd env var
+    (Sourcery / CodeRabbit feedback).
     """
     raw = os.environ.get(name)
     if raw is None:

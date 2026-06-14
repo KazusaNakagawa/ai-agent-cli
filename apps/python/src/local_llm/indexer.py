@@ -1,4 +1,4 @@
-"""リポジトリ走査 / chunk / 埋め込み / Chroma upsert。"""
+"""Repository walk / chunk / embed / Chroma upsert."""
 
 from __future__ import annotations
 
