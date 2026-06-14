@@ -809,6 +809,17 @@ def test_validate_urls_collects_from_all_prefetch_buckets():
     assert v.verified == 4
 
 
+def test_validate_urls_url_with_close_paren_does_not_leave_garbage():
+    """Brave Search returns URLs containing ) — validate_urls must not leave trailing garbage."""
+    ctx = _ctx_with_urls("https://e.com/real")
+    # URL contains ) in the middle (as seen with PLTR Brave hit in 003)
+    body = "[title](https://fabricated.com/path)+Opinions+on+Recent) あと [real](https://e.com/real)"
+    v = validate_urls(body, ctx)
+    assert ")+Opinions" not in v.body
+    assert v.fabricated == 1
+    assert "https://e.com/real" in v.body
+
+
 def test_compose_briefing_md_search_disabled_caveat():
     md = compose_briefing_md(
         body="body",
