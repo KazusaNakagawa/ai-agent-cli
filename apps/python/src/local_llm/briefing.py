@@ -547,9 +547,16 @@ def generate_local_briefing(
     return content
 
 
-# Markdown リンク `[title](url)` と裸の URL の両方を拾う。
-# URL 部分のみキャプチャ。終端 `)` は escape 不要 (group の内部なので)。
-_URL_RE = re.compile(r"https?://[^\s)\]]+")
+# ) を除外しないことで URL 中の ) を正しくキャプチャする (#003 regression)。
+# Markdown リンク closer の ) は _trim_md_link_closer で除去する。
+_URL_RE = re.compile(r"https?://[^\s\]]+")
+
+
+def _trim_md_link_closer(url: str) -> str:
+    """URL 末尾の不均衡な ) を除去する (Markdown リンク `](url)` の closer 混入防止)。"""
+    while url.endswith(")") and url.count("(") < url.count(")"):
+        url = url[:-1]
+    return url
 
 
 @dataclass(frozen=True)
@@ -571,17 +578,19 @@ def validate_urls(body: str, ctx: PrefetchedContext) -> UrlValidation:
     信頼性を担保するため、Python 側でホワイトリスト照合して捏造分を可視化する。
     """
     allowed = ctx.allowed_urls
-    found = _URL_RE.findall(body)
-    total = len(found)
+    total = 0
     fabricated = 0
 
     def _replace(match: re.Match[str]) -> str:
-        nonlocal fabricated
-        url = match.group(0)
+        nonlocal total, fabricated
+        total += 1
+        raw = match.group(0)
+        url = _trim_md_link_closer(raw)
+        suffix = raw[len(url):]
         if url in allowed:
-            return url
+            return raw
         fabricated += 1
-        return "<URL未検証>"
+        return "<URL未検証>" + suffix
 
     cleaned = _URL_RE.sub(_replace, body)
     return UrlValidation(body=cleaned, total=total, fabricated=fabricated)
