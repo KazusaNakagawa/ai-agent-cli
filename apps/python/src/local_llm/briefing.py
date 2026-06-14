@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Protocol
 
 from src.config import BriefingConfig
@@ -33,6 +33,9 @@ PER_EVENT_RESULTS = 2
 
 # Brave の鮮度フィルタ。日次ブリーフィングなので直近 1 週間に絞る (#153)。
 PREFETCH_FRESHNESS = "pw"
+# Brave の freshness は hint であり、これより古い記事も返ることがある。
+# URL 日付が取れる場合は Python 側でこの日数より古い記事を除外する。
+STALE_ARTICLE_DAYS = 7
 # 索引ページフィルタで間引かれる分を見込んだ over-fetch の上乗せ件数。
 # Brave の count 上限は 10 (クライアント側で clamp)。現状の PER_* 最大は 3 なので
 # 3+3=6 で枠内だが、PER_* を増やす場合は 10 を超えないよう注意。
@@ -88,6 +91,29 @@ def _url_has_no_spaces(url: str) -> bool:
     return " " not in url
 
 
+# URL から記事日付を抽出するパターン。
+# Brave の freshness はヒントであり古い記事を返すことがあるため Python 側で補完する。
+_URL_DATE_YMD = re.compile(r"/(\d{4})[/-](\d{2})[/-](\d{2})(?:/|[-_])")  # /YYYY/MM/DD/ or /YYYY-MM-DD/
+_URL_DATE_MDY = re.compile(r"-(\d{2})(\d{2})(\d{4})-")  # -MMDDYYYY- (Investopedia)
+
+
+def _extract_url_date(url: str) -> date | None:
+    """URL に含まれる日付を返す。パターン不一致または無効日付は None。"""
+    m = _URL_DATE_YMD.search(url)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+    m = _URL_DATE_MDY.search(url)
+    if m:
+        try:
+            return date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            pass
+    return None
+
+
 # 簡体字固有の文字セット。日本語テキストには出現しないコードポイントのみを含む。
 # Traditional/Japanese が別コードポイントを使う文字（为→為, 标→標, 对→対, 创→創,
 # 历→歴, 发→発, 说→説, 变→変, 实→実, 响→響）と、日本語に対応字がない文字
@@ -133,10 +159,16 @@ class PrefetchedContext:
 
 
 def _safe_search(
-    client: BraveSearchClient, query: str, count: int
+    client: BraveSearchClient,
+    query: str,
+    count: int,
+    *,
+    reference_date: date | None = None,
 ) -> list[SearchResult]:
-    """freshness=pw + 索引ページフィルタ付きの web_search (#153)。
+    """freshness=pw + 索引ページ/stale 記事フィルタ付きの web_search (#153)。
 
+    Brave の freshness はランキングヒントであり古い記事を返すことがある。
+    reference_date を渡すと URL 日付が抽出できる記事は STALE_ARTICLE_DAYS 超で除外する。
     フィルタで間引かれても count 件残るよう OVERFETCH_EXTRA 件多めに取り、
     フィルタ後に count 件へ切り詰める。失敗は空リスト (他クエリは継続)。
     """
@@ -148,18 +180,26 @@ def _safe_search(
         logger.warning("[prefetch] web_search failed for %r: %s", query, e)
         return []
     kept = []
-    n_index = n_malformed = 0
+    n_index = n_malformed = n_stale = 0
     for r in hits:
         if _is_index_page(r.url):
             n_index += 1
         elif not _url_has_no_spaces(r.url):
             n_malformed += 1
+        elif reference_date is not None:
+            article_date = _extract_url_date(r.url)
+            if article_date is not None and (reference_date - article_date).days > STALE_ARTICLE_DAYS:
+                n_stale += 1
+            else:
+                kept.append(r)
         else:
             kept.append(r)
     if n_index:
         logger.info("[prefetch] %r: 索引ページ %d 件を除外", query, n_index)
     if n_malformed:
         logger.info("[prefetch] %r: 不正URL(スペース含む) %d 件を除外", query, n_malformed)
+    if n_stale:
+        logger.info("[prefetch] %r: 古い記事 %d 件を除外 (>%d 日)", query, n_stale, STALE_ARTICLE_DAYS)
     return kept[:count]
 
 
@@ -177,7 +217,10 @@ def prefetch_briefing_context(
     + len(conflicts) + len(events)`` 程度で、典型的な briefing.json (10 銘柄 + 5
     conflicts + 5 events) なら 21 クエリ/日 = 630/月 で枠内に収まる。
     """
-    macro = _safe_search(search_client, f"stock market news {today}", PER_MACRO_RESULTS)
+    ref_date = date.fromisoformat(today)
+    macro = _safe_search(
+        search_client, f"stock market news {today}", PER_MACRO_RESULTS, reference_date=ref_date
+    )
     logger.info("[prefetch] macro hits=%d", len(macro))
 
     per_ticker: dict[str, list[SearchResult]] = {}
@@ -185,7 +228,8 @@ def prefetch_briefing_context(
         # クエリに日付を明示すると Yahoo Finance / Robinhood のティッカー index
         # ページ (汎用 SEO 上位) ではなく当日の市場記事がヒットしやすい。
         hits = _safe_search(
-            search_client, f"{ticker} stock news {today}", PER_TICKER_RESULTS
+            search_client, f"{ticker} stock news {today}", PER_TICKER_RESULTS,
+            reference_date=ref_date,
         )
         per_ticker[ticker] = hits
         logger.info("[prefetch] ticker=%s hits=%d", ticker, len(hits))
@@ -199,7 +243,7 @@ def prefetch_briefing_context(
         # 来る。briefing.json に query_en があれば英語ニュースクエリを使う (#153)。
         query_en = getattr(conflict, "query_en", None) or ""
         query = f"{query_en} latest news" if query_en else f"{name} today"
-        hits = _safe_search(search_client, query, PER_GEO_RESULTS)
+        hits = _safe_search(search_client, query, PER_GEO_RESULTS, reference_date=ref_date)
         geo_by_topic[name] = hits
         logger.info("[prefetch] geo topic=%r query=%r hits=%d", name, query, len(hits))
 
@@ -210,7 +254,7 @@ def prefetch_briefing_context(
             continue
         trigger = getattr(event, "trigger", None) or ""
         query = f"{name} {trigger}".strip() if trigger else f"{name} news"
-        hits = _safe_search(search_client, query, PER_EVENT_RESULTS)
+        hits = _safe_search(search_client, query, PER_EVENT_RESULTS, reference_date=ref_date)
         events_by_name[name] = hits
         logger.info("[prefetch] event=%r hits=%d", name, len(hits))
 
@@ -279,17 +323,23 @@ def ensure_geo_topics_covered(body: str, ctx: PrefetchedContext) -> str:
     missing = [topic for topic in ctx.geo_by_topic if f"### {topic}" not in body]
     if not missing:
         return body
-    parts = [body.rstrip(), ""]
+    supplement_lines: list[str] = []
     for topic in missing:
-        parts.append(f"### {topic}")
+        supplement_lines.append(f"### {topic}")
         hits = ctx.geo_by_topic[topic]
         if hits:
-            parts.append("（モデルが要約を省略 — 以下の検索結果を参照）")
-            parts.extend(f"- [{r.title}]({r.url})" for r in hits)
+            supplement_lines.append("（モデルが要約を省略 — 以下の検索結果を参照）")
+            supplement_lines.extend(f"- [{r.title}]({r.url})" for r in hits)
         else:
-            parts.append("（検索でも確認できず）")
-        parts.append("")
-    return "\n".join(parts).rstrip()
+            supplement_lines.append("（検索でも確認できず）")
+        supplement_lines.append("")
+    supplement = "\n".join(supplement_lines).rstrip()
+    # 監視イベントセクションがある場合はその直前に挿入する (#006 regression)。
+    events_marker = "\n## 監視イベント"
+    if events_marker in body:
+        idx = body.index(events_marker)
+        return body[:idx].rstrip() + "\n\n" + supplement + "\n" + body[idx:]
+    return body.rstrip() + "\n\n" + supplement
 
 
 def build_section_topnews_prompt(
