@@ -135,7 +135,7 @@ def test_prefetch_handles_brave_errors_per_query(caplog):
             return []
 
     search = _FailingSearch()
-    with caplog.at_level(logging.WARNING, logger="src.local_llm.briefing"):
+    with caplog.at_level(logging.WARNING, logger="src.local_llm.briefing.prefetch"):
         ctx = prefetch_briefing_context(
             cfg, search_client=search, today="2026-06-09"
         )
@@ -736,7 +736,7 @@ def test_generate_local_briefing_passes_options_to_chat():
 
 def test_generate_local_briefing_defaults_to_no_options(caplog):
     olm = _ScriptedOllama(reply={"message": {"content": "body"}})
-    with caplog.at_level(logging.INFO, logger="src.local_llm.briefing"):
+    with caplog.at_level(logging.INFO, logger="src.local_llm.briefing.generate"):
         generate_local_briefing("PROMPT", ollama_client=olm, model="m")
     # options 未指定の既存呼び出しは chat() に None を渡す (後方互換)
     assert olm.calls[0]["options"] is None
@@ -747,7 +747,7 @@ def test_generate_local_briefing_defaults_to_no_options(caplog):
 
 def test_generate_local_briefing_warns_when_prompt_exceeds_num_ctx(caplog):
     olm = _ScriptedOllama(reply={"message": {"content": "body"}})
-    with caplog.at_level(logging.WARNING, logger="src.local_llm.briefing"):
+    with caplog.at_level(logging.WARNING, logger="src.local_llm.briefing.generate"):
         generate_local_briefing(
             "x" * 100,
             ollama_client=olm,
