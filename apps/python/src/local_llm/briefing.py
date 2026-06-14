@@ -439,8 +439,8 @@ def collect_references(ctx: PrefetchedContext, body: str) -> str:
     URL 引用追従限界)。Python 側で本文から URL を抜き、pre-fetch の (title, url)
     と突き合わせて Markdown リンク化する方がはるかに信頼できる。
     """
-    found = _URL_RE.findall(body)
-    if not found:
+    found_raw = _URL_RE.findall(body)
+    if not found_raw:
         return "## 参考記事\n- (本文中に引用 URL なし)"
 
     url_to_title: dict[str, str] = {}
@@ -458,7 +458,7 @@ def collect_references(ctx: PrefetchedContext, body: str) -> str:
 
     lines = ["## 参考記事"]
     seen: set[str] = set()
-    for url in found:
+    for url in (_trim_md_link_closer(u) for u in found_raw):
         if url in seen:
             continue
         seen.add(url)
