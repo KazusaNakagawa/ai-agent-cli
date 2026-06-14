@@ -1,4 +1,4 @@
-"""Chroma での top-k 取得と Ollama での生成。"""
+"""Top-k retrieval from Chroma and generation with Ollama."""
 
 from __future__ import annotations
 

@@ -1,15 +1,17 @@
-"""保有銘柄テーブルの構造化生成 (#152)。
+"""Structured generation of the holdings table (#152).
 
-従来はテーブル全体を 1 回の chat() で Markdown 生成させていたが、qwen2.5:14b は
-- もっともらしい URL を 50% 超の確率で捏造する
-- 行をまたいで出典を取り違える (NOC 行に MSFT の記事など)
-- 見出し・ヘッダ・区切り行を省略してテーブル描画を壊す
+Previously the entire table was generated as Markdown in a single chat() call,
+but qwen2.5:14b would:
+- fabricate plausible-looking URLs more than 50% of the time
+- mix up sources across rows (e.g. an MSFT article on the NOC row)
+- omit the heading / header / separator rows and break the table rendering
 
-ため、銘柄ごとに 1 コールずつ Ollama の structured outputs (format=JSON schema)
-で {topic, source_index} だけを出力させる。モデルは URL を一切書かず (プロンプト
-にも番号付きタイトルしか渡さない)、出典は Python 側で pre-fetch の (title, url)
-に解決する。値動きセルも fetch_stock_move_map の実値で埋める。捏造・混線・
-テーブル崩れが構造的に起きない。
+so instead we make one call per ticker using Ollama's structured outputs
+(format=JSON schema) and have it emit only {topic, source_index}. The model
+never writes a URL (the prompt only passes numbered titles), and sources are
+resolved on the Python side against the pre-fetch (title, url). The price-move
+cell is also filled from the real values in fetch_stock_move_map. Fabrication,
+cross-contamination, and broken tables become structurally impossible.
 """
 
 from __future__ import annotations
@@ -25,8 +27,8 @@ from .search import SearchResult
 
 logger = get_logger(__name__)
 
-# Ollama structured outputs に渡す JSON schema。source_index は「根拠にした
-# 検索結果の番号 (1 始まり)」で、該当なしは null。
+# JSON schema passed to Ollama structured outputs. source_index is "the number
+# (1-based) of the search result it relied on"; null if none applies.
 PORTFOLIO_ROW_FORMAT: dict = {
     "type": "object",
     "properties": {
@@ -36,9 +38,10 @@ PORTFOLIO_ROW_FORMAT: dict = {
     "required": ["topic", "source_index"],
 }
 
-# 行プロンプトに載せる本文抜粋の上限。タスクは「1 行のトピック + 出典番号」の
-# 抽出なので、セクション生成用の全文 (articles.MAX_ARTICLE_CHARS=1800) は不要。
-# 銘柄ごとに chat() を回すため、短くするほどレイテンシ削減が効く。
+# Cap on the body excerpt put in the row prompt. The task is extracting "a
+# one-line topic + source number", so the full text used for section generation
+# (articles.MAX_ARTICLE_CHARS=1800) is unnecessary. Since chat() runs per ticker,
+# the shorter it is the more latency is saved.
 MAX_ROW_CONTENT_CHARS = 600
 
 NO_NEWS_TOPIC = "(具体的なニュースは検索でも確認できず)"
@@ -64,10 +67,10 @@ class _OllamaStructuredChatLike(Protocol):
 
 
 def render_numbered_hits(hits: list[SearchResult]) -> str:
-    """検索結果を番号付きで整形する。**URL は意図的に含めない** (#152)。
+    """Format search results with numbers. **URLs are intentionally omitted** (#152).
 
-    モデルには番号で引用させ、URL への解決は Python 側で行う。URL を見せない
-    ことが捏造を構造的に不可能にする要。
+    The model cites by number, and resolution to URLs happens on the Python side.
+    Not showing URLs is the key to making fabrication structurally impossible.
     """
     lines: list[str] = []
     for i, r in enumerate(hits, start=1):
@@ -101,7 +104,7 @@ def _generate_row(
     options: dict | None,
     today: str,
 ) -> tuple[str, int | None]:
-    """(topic, source_index) を返す。解析失敗・範囲外 index は安全側に倒す。"""
+    """Return (topic, source_index). Parse failures / out-of-range indexes fail safe."""
     prompt = build_row_prompt(ticker, hits, today=today)
     resp = ollama_client.chat(
         model=model,
@@ -138,7 +141,7 @@ def _generate_row(
 
 
 def _sanitize_cell(text: str) -> str:
-    """Markdown テーブルを壊す `|` と改行を畳む。"""
+    """Collapse `|` and newlines that would break the Markdown table."""
     return text.replace("|", " ").replace("\n", " ").strip()
 
 
@@ -152,11 +155,12 @@ def generate_portfolio_table(
     options: dict | None = None,
     today: str,
 ) -> str:
-    """全銘柄分の保有銘柄テーブルを Markdown で返す。
+    """Return the holdings table for all tickers as Markdown.
 
-    検索ヒット 0 件の銘柄は LLM を呼ばずに即「確認できず」行を出す (コール節約)。
-    出典セルは source_index を pre-fetch の (title, url) に解決して Python 側で
-    リンク化するため、URL 捏造は起こり得ない。
+    Tickers with 0 search hits skip the LLM and immediately emit a "not
+    confirmed" row (saving calls). The source cell resolves source_index to the
+    pre-fetch (title, url) and links it on the Python side, so URL fabrication
+    cannot occur.
     """
     rows = [TABLE_HEADER]
     for ticker in tickers:

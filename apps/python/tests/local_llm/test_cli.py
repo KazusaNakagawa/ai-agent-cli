@@ -4,6 +4,18 @@ from src.local_llm import cli
 from src.local_llm.clients import EmbedModelMismatch
 
 
+@pytest.fixture(autouse=True)
+def _isolate_local_llm_env(monkeypatch):
+    """ambient な LOCAL_LLM_* env (運用者の .env 等) を消してデフォルト挙動を検証する。
+
+    運用者が LOCAL_LLM_MODEL=gemma2:9b 等を設定していると --status の出力が変わり
+    アサーションが env 依存で揺れる。CLI の既定値経路をテストするため隔離する。
+    """
+    for key in ("LOCAL_LLM_MODEL", "LOCAL_LLM_EMBED_MODEL", "LOCAL_LLM_NUM_CTX",
+                "LOCAL_LLM_TEMPERATURE", "LOCAL_LLM_TOP_K"):
+        monkeypatch.delenv(key, raising=False)
+
+
 def test_cli_status_prints_summary(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("LOCAL_LLM_CHROMA_PATH", str(tmp_path / "chroma"))
 

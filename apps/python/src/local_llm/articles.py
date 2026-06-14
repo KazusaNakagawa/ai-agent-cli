@@ -1,9 +1,10 @@
-"""記事本文の取得と抽出 (#151)。
+"""Article body fetching and extraction (#151).
 
-pre-fetch のスニペット (タイトル + ≤200 字) だけでは 14B クラスのモデルは
-具体的事実を書けず、曖昧な作文や出典ズレが起きる。各トピック上位ヒットの
-URL を実際に fetch して trafilatura で本文抽出し、切り詰めてプロンプトに
-注入することで、タスクを「見出しからの創作」から「本文の要約」に変える。
+With only the pre-fetch snippet (title + ≤200 chars), a 14B-class model cannot
+write concrete facts and ends up vaguely making things up or misattributing
+sources. By actually fetching the URL of each topic's top hit, extracting the
+body with trafilatura, truncating it, and injecting it into the prompt, the task
+shifts from "inventing from a headline" to "summarizing the body".
 """
 
 from __future__ import annotations
@@ -23,20 +24,21 @@ logger = get_logger(__name__)
 
 
 class _HttpGetLike(Protocol):
-    """テスト注入用の最小 HTTP インターフェース (httpx 互換の get のみ)。"""
+    """Minimal HTTP interface for test injection (httpx-compatible get only)."""
 
     def get(self, url: str, headers: dict | None = None) -> Any: ...
 
 
-# 1 記事あたりの本文上限。8 銘柄 × 1 記事 × 1800 字 ≒ 7K tokens で、セクション
-# 分割プロンプト + num_ctx 16K (#150) に収まる予算。
+# Body cap per article. 8 tickers × 1 article × 1800 chars ≈ 7K tokens, a budget
+# that fits within the section-split prompt + num_ctx 16K (#150).
 MAX_ARTICLE_CHARS = 1800
-# マクロは全セクションの土台になるので 2 件、その他はトピックごと上位 1 件。
+# Macro is the foundation for every section, so 2 articles; everything else uses
+# the top 1 hit per topic.
 PER_MACRO_ARTICLES = 2
 PER_GROUP_ARTICLES = 1
 
 FETCH_TIMEOUT = 10.0
-# 一部のニュースサイトはデフォルト UA (python-httpx/...) を 403 で弾く。
+# Some news sites reject the default UA (python-httpx/...) with a 403.
 _FETCH_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -48,7 +50,7 @@ _FETCH_HEADERS = {
 def _fetch_article_text(
     url: str, *, http_client: _HttpGetLike | None = None, max_chars: int = MAX_ARTICLE_CHARS
 ) -> str:
-    """URL を fetch して本文をプレーンテキストで返す。失敗は空文字 (呼び出し側でスニペットにフォールバック)。"""
+    """Fetch the URL and return the body as plain text. Empty string on failure (caller falls back to the snippet)."""
     try:
         if http_client is not None:
             resp = http_client.get(url, headers=_FETCH_HEADERS)
@@ -74,7 +76,7 @@ def _fetch_article_text(
         logger.warning("[articles] extract failed for %s: %s", url, e)
         return ""
 
-    text = " ".join(text.split())  # 改行・連続空白を畳んで 1 行に
+    text = " ".join(text.split())  # collapse newlines / runs of whitespace into one line
     if len(text) > max_chars:
         text = text[:max_chars] + "..."
     return text
@@ -107,13 +109,14 @@ def enrich_with_article_text(
     per_group: int = PER_GROUP_ARTICLES,
     max_chars: int = MAX_ARTICLE_CHARS,
 ) -> PrefetchedContext:
-    """各グループ上位ヒットの記事本文を取得して content に埋めた新 ctx を返す。
+    """Return a new ctx with each group's top hits' article bodies fetched into content.
 
-    fetch/抽出に失敗したヒットはスニペットのまま残す (全体は止めない)。
-    `http_client` はテスト用注入ポイント (get(url, headers=...) を持つこと)。
+    Hits whose fetch/extraction fails are left with their snippet (the whole run
+    is not aborted). `http_client` is the test injection point (must have
+    get(url, headers=...)).
     """
-    # PrefetchedContext にフィールドが増えても黙って欠落しないよう
-    # dataclasses.replace で再構築する (Sourcery 指摘)。
+    # Rebuild via dataclasses.replace so that new PrefetchedContext fields are not
+    # silently dropped (Sourcery feedback).
     enriched = dataclasses.replace(
         ctx,
         macro=_enrich_results(
@@ -149,7 +152,7 @@ def count_article_fetches(
     per_macro: int = PER_MACRO_ARTICLES,
     per_group: int = PER_GROUP_ARTICLES,
 ) -> tuple[int, int]:
-    """(試行件数, content が埋まった件数) を返す。caveat 行の透明性用。"""
+    """Return (attempted count, count with content filled). For caveat-line transparency."""
     attempted = 0
     fetched = 0
 
