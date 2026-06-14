@@ -850,6 +850,22 @@ def test_validate_urls_url_with_close_paren_does_not_leave_garbage():
     assert "https://e.com/real" in v.body
 
 
+def test_collect_references_matches_url_inside_markdown_link():
+    """collect_references must match pre-fetch URLs even when body wraps them in [title](url)."""
+    ctx = _ctx_with_urls(
+        "https://www.reuters.com/world/ukraine-russia-war/",
+        "https://e.com/other",
+    )
+    body = (
+        "[Reuters](https://www.reuters.com/world/ukraine-russia-war/) "
+        "と [Other](https://e.com/other)"
+    )
+    md = collect_references(ctx, body)
+    assert "reuters.com" in md
+    assert "e.com/other" in md
+    assert "pre-fetch 外" not in md
+
+
 def test_compose_briefing_md_search_disabled_caveat():
     md = compose_briefing_md(
         body="body",
