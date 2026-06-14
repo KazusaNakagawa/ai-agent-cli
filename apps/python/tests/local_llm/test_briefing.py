@@ -509,6 +509,29 @@ def test_ensure_geo_topics_covered_marks_topic_without_hits():
     assert "検索でも確認できず" in out
 
 
+def test_ensure_geo_topics_covered_inserts_before_events_section():
+    """省略トピックは ## 監視イベント の前に挿入すること (006 regression: 後ろに出てしまった)。"""
+    ctx = PrefetchedContext(
+        macro=[],
+        per_ticker={},
+        geo_by_topic={
+            "米中": [SearchResult("Chips", "https://e.com/cn", "d")],
+            "インド・パキスタン": [SearchResult("India", "https://e.com/in", "d")],
+        },
+        events_by_name={},
+    )
+    body = (
+        "## 地政学トピック\n\n### 米中\n要約\n\n"
+        "## 監視イベント\n- SpaceX IPO"
+    )
+    out = ensure_geo_topics_covered(body, ctx)
+    # インド・パキスタンが ## 監視イベント より前にあること
+    assert "### インド・パキスタン" in out
+    events_pos = out.index("## 監視イベント")
+    india_pos = out.index("### インド・パキスタン")
+    assert india_pos < events_pos, "missing topic must be inserted BEFORE ## 監視イベント"
+
+
 def test_ensure_geo_topics_covered_noop_when_no_geo_topics():
     # geo_by_topic が空なら何も補完しない (early return)。
     ctx = PrefetchedContext(

@@ -323,17 +323,23 @@ def ensure_geo_topics_covered(body: str, ctx: PrefetchedContext) -> str:
     missing = [topic for topic in ctx.geo_by_topic if f"### {topic}" not in body]
     if not missing:
         return body
-    parts = [body.rstrip(), ""]
+    supplement_lines: list[str] = []
     for topic in missing:
-        parts.append(f"### {topic}")
+        supplement_lines.append(f"### {topic}")
         hits = ctx.geo_by_topic[topic]
         if hits:
-            parts.append("（モデルが要約を省略 — 以下の検索結果を参照）")
-            parts.extend(f"- [{r.title}]({r.url})" for r in hits)
+            supplement_lines.append("（モデルが要約を省略 — 以下の検索結果を参照）")
+            supplement_lines.extend(f"- [{r.title}]({r.url})" for r in hits)
         else:
-            parts.append("（検索でも確認できず）")
-        parts.append("")
-    return "\n".join(parts).rstrip()
+            supplement_lines.append("（検索でも確認できず）")
+        supplement_lines.append("")
+    supplement = "\n".join(supplement_lines).rstrip()
+    # 監視イベントセクションがある場合はその直前に挿入する (#006 regression)。
+    events_marker = "\n## 監視イベント"
+    if events_marker in body:
+        idx = body.index(events_marker)
+        return body[:idx].rstrip() + "\n\n" + supplement + "\n" + body[idx:]
+    return body.rstrip() + "\n\n" + supplement
 
 
 def build_section_topnews_prompt(
