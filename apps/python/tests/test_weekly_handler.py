@@ -115,16 +115,67 @@ class TestFormatBriefings:
 
 
 class TestGenerateWeeklySummary:
+    def _fake_cfg(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(model="qwen2.5:14b", num_ctx=16384, temperature=0.2)
+
     def test_empty_pages_raises(self):
         with pytest.raises(ValueError, match="見つかりませんでした"):
             generate_weekly_summary([])
 
-    def test_calls_run_claude(self):
+    def test_delegates_to_local_ollama_with_cfg_options(self):
+        """週次サマリーはローカル Ollama 経路 (generate_local_briefing) に委譲し、
+        cfg 由来の model/options と注入クライアントを渡す (#193)。"""
         pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
-        with patch("src.generator.weekly_summary.run_claude", return_value="summary") as mock_run:
+        fake_client = MagicMock()
+        cfg = self._fake_cfg()
+
+        with patch(
+            "src.generator.weekly_summary.generate_local_briefing",
+            return_value="週次サマリー本文",
+        ) as mock_gen:
+            result = generate_weekly_summary(pages, ollama_client=fake_client, cfg=cfg)
+
+        assert result == "週次サマリー本文"
+        mock_gen.assert_called_once()
+        args, kwargs = mock_gen.call_args
+        prompt = args[0] if args else kwargs["prompt"]
+        assert "content" in prompt  # 前週ブリーフィング本文がプロンプトに反映
+        assert kwargs["ollama_client"] is fake_client
+        assert kwargs["model"] == cfg.model
+        assert kwargs["options"]["num_ctx"] == cfg.num_ctx
+        assert kwargs["options"]["temperature"] == cfg.temperature
+
+    def test_default_path_wires_local_config_and_ollama_client(self):
+        """cfg/client 未注入時は load_local_config → make_ollama_client →
+        generate_local_briefing の順で配線される（ライブ I/O なし）。"""
+        pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
+        cfg = self._fake_cfg()
+        fake_client = object()
+        order = []
+
+        with (
+            patch(
+                "src.generator.weekly_summary.load_local_config",
+                side_effect=lambda: order.append("cfg") or cfg,
+            ) as mock_cfg,
+            patch(
+                "src.generator.weekly_summary.make_ollama_client",
+                side_effect=lambda c: order.append("client") or fake_client,
+            ) as mock_client,
+            patch(
+                "src.generator.weekly_summary.generate_local_briefing",
+                side_effect=lambda *a, **k: order.append("gen") or "summary",
+            ) as mock_gen,
+        ):
             result = generate_weekly_summary(pages)
+
         assert result == "summary"
-        mock_run.assert_called_once()
+        mock_cfg.assert_called_once_with()
+        mock_client.assert_called_once_with(cfg)
+        assert mock_gen.call_args.kwargs["ollama_client"] is fake_client
+        assert order == ["cfg", "client", "gen"]
 
 
 # ---------------------------------------------------------------------------
