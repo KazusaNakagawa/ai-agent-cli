@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from unittest.mock import MagicMock, patch
@@ -98,6 +99,77 @@ class TestRunClaude:
                 run_claude("prompt", "test")
 
         assert captured["stdin"] == subprocess.DEVNULL
+
+
+class TestRunClaudeUsageLogging:
+    def test_json_output_returns_result_text_and_logs_usage(self):
+        """--output-format json の stdout から result を取り出して返し、
+        usage を usage_logger に渡す。"""
+        payload = json.dumps({
+            "result": "  the answer  ",
+            "total_cost_usd": 0.05,
+            "duration_ms": 1200,
+            "usage": {
+                "input_tokens": 11,
+                "output_tokens": 22,
+                "cache_read_input_tokens": 3,
+                "cache_creation_input_tokens": 4,
+            },
+        })
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "briefing")
+
+        assert result == "the answer"
+        mock_log.assert_called_once()
+        kwargs = mock_log.call_args.kwargs
+        assert kwargs["label"] == "briefing"
+        assert kwargs["usage"]["input_tokens"] == 11
+        assert kwargs["cost_usd"] == 0.05
+        assert kwargs["duration_ms"] == 1200
+
+    def test_malformed_output_falls_back_to_stdout_without_logging(self):
+        """JSON でない stdout はそのまま（strip して）返し、例外を出さず使用量も記録しない。"""
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout="  plain text  ")):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == "plain text"
+        mock_log.assert_not_called()
+
+    def test_json_without_usage_returns_result_and_skips_logging(self):
+        payload = json.dumps({"result": "ok"})
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == "ok"
+        mock_log.assert_not_called()
+
+    def test_json_without_result_field_falls_back_to_stdout(self):
+        """result フィールドの無い JSON は raw stdout にフォールバックし、使用量も記録しない。"""
+        payload = json.dumps({"foo": 1})
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == payload
+        mock_log.assert_not_called()
+
+    def test_non_string_result_is_stringified_and_usage_logged(self):
+        """result が文字列以外でも str() 化して返し、usage は記録する。"""
+        payload = json.dumps({"result": ["x", "y"], "usage": {"input_tokens": 5, "output_tokens": 6}})
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == str(["x", "y"])
+        mock_log.assert_called_once()
 
 
 class TestRunClaudeRetry:
