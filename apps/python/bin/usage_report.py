@@ -59,13 +59,17 @@ def build_summary(usage_dir: Path, days: int | None) -> dict:
 def format_summary(summary: dict) -> str:
     if not summary:
         return "No usage records found."
-    header = f"{'DATE':<10}  {'LABEL':<24}  {'CALLS':>5}  {'IN':>8}  {'OUT':>8}  {'CACHE_R':>8}  {'COST_USD':>9}"
+    header = (
+        f"{'DATE':<10}  {'LABEL':<24}  {'CALLS':>5}  {'IN':>8}  {'OUT':>8}  "
+        f"{'CACHE_R':>8}  {'CACHE_C':>8}  {'COST_USD':>9}"
+    )
     lines = [header, "-" * len(header)]
     for (day, label), agg in sorted(summary.items()):
         lines.append(
             f"{day:<10}  {label[:24]:<24}  {agg['calls']:>5}  "
             f"{agg['input_tokens']:>8}  {agg['output_tokens']:>8}  "
-            f"{agg['cache_read_tokens']:>8}  {agg['cost_usd']:>9.4f}"
+            f"{agg['cache_read_tokens']:>8}  {agg['cache_creation_tokens']:>8}  "
+            f"{agg['cost_usd']:>9.4f}"
         )
     return "\n".join(lines)
 

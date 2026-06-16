@@ -20,7 +20,7 @@ def _purge_old_logs(usage_dir: Path) -> None:
     for path in usage_dir.glob("*-usage.jsonl"):
         try:
             file_date = datetime.strptime(path.stem.replace("-usage", ""), "%Y%m%d")
-            if file_date < cutoff:
+            if file_date.date() < cutoff.date():
                 path.unlink()
         except (ValueError, OSError):
             pass

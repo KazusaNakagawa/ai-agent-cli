@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 
 from src import usage_logger
 
@@ -33,6 +34,27 @@ def test_log_usage_appends_one_jsonl_line(monkeypatch, tmp_path):
     assert rec["cost_usd"] == 0.0123
     assert rec["duration_ms"] == 1500
     assert "timestamp" in rec
+
+
+def test_log_usage_purges_files_older_than_retention(monkeypatch, tmp_path):
+    """LOG_RETENTION_DAYS より古い *-usage.jsonl は log_usage 呼び出し時に削除される。"""
+    usage_dir = tmp_path / "usage"
+    usage_dir.mkdir()
+    monkeypatch.setattr(usage_logger, "USAGE_DIR", usage_dir)
+
+    retention = usage_logger.LOG_RETENTION_DAYS
+    old_day = (datetime.now() - timedelta(days=retention + 2)).strftime("%Y%m%d")
+    recent_day = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+    old_file = usage_dir / f"{old_day}-usage.jsonl"
+    recent_file = usage_dir / f"{recent_day}-usage.jsonl"
+    old_file.write_text("{}\n", encoding="utf-8")
+    recent_file.write_text("{}\n", encoding="utf-8")
+
+    usage_logger.log_usage(label="x", usage={}, cost_usd=None, duration_ms=None)
+
+    remaining = {p.name for p in usage_dir.glob("*-usage.jsonl")}
+    assert old_file.name not in remaining
+    assert recent_file.name in remaining
 
 
 def test_log_usage_swallows_errors(monkeypatch, tmp_path):
