@@ -47,11 +47,29 @@ class TestExistingTemplates:
             geopolitical="GEO",
             watch_events="EVT",
             stocks="STK",
+            few_shot="FEWSHOT",
         )
-        for marker in ("THM", "TKR", "GEO", "EVT", "STK"):
+        for marker in ("THM", "TKR", "GEO", "EVT", "STK", "FEWSHOT"):
             assert marker in out
-        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks"):
+        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$few_shot"):
             assert placeholder not in out
+
+    def test_briefing_few_shot_value_dollar_is_not_reinterpreted(self):
+        """few_shot 値内の $name は再置換されない（単一パス置換の回帰ガード）。
+
+        load_briefing_few_shot() が値として渡すため、例の本文に $ が含まれても
+        他のプレースホルダとして解釈されてはならない。
+        """
+        out = render(
+            "briefing",
+            themes="THM",
+            tickers="TKR",
+            geopolitical="GEO",
+            watch_events="EVT",
+            stocks="STK",
+            few_shot="INSIDE $themes NOT REPLACED",
+        )
+        assert "INSIDE $themes NOT REPLACED" in out
 
     def test_briefing_sectors_renders_all_placeholders(self):
         out = render("briefing_sectors", watch_sectors="SECT", stocks="STK")
