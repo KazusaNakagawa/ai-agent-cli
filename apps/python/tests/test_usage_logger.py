@@ -41,6 +41,7 @@ def test_log_usage_purges_files_older_than_retention(monkeypatch, tmp_path):
     usage_dir = tmp_path / "usage"
     usage_dir.mkdir()
     monkeypatch.setattr(usage_logger, "USAGE_DIR", usage_dir)
+    monkeypatch.setattr(usage_logger, "_last_purge_date", None)  # 同日 memo をリセット
 
     retention = usage_logger.LOG_RETENTION_DAYS
     old_day = (datetime.now() - timedelta(days=retention + 2)).strftime("%Y%m%d")
@@ -55,6 +56,27 @@ def test_log_usage_purges_files_older_than_retention(monkeypatch, tmp_path):
     remaining = {p.name for p in usage_dir.glob("*-usage.jsonl")}
     assert old_file.name not in remaining
     assert recent_file.name in remaining
+
+
+def test_purge_runs_at_most_once_per_day(monkeypatch, tmp_path):
+    """同日内の 2 回目以降の log_usage では _purge_old_logs を再実行しない。"""
+    usage_dir = tmp_path / "usage"
+    monkeypatch.setattr(usage_logger, "USAGE_DIR", usage_dir)
+    monkeypatch.setattr(usage_logger, "_last_purge_date", None)
+
+    calls = {"n": 0}
+    real_purge = usage_logger._purge_old_logs
+
+    def counting_purge(d):
+        calls["n"] += 1
+        real_purge(d)
+
+    monkeypatch.setattr(usage_logger, "_purge_old_logs", counting_purge)
+
+    usage_logger.log_usage(label="a", usage={}, cost_usd=None, duration_ms=None)
+    usage_logger.log_usage(label="b", usage={}, cost_usd=None, duration_ms=None)
+
+    assert calls["n"] == 1
 
 
 def test_log_usage_swallows_errors(monkeypatch, tmp_path):

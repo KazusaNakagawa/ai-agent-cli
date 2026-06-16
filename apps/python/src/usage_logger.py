@@ -30,6 +30,22 @@ def parse_usage_file_date(path: Path):
         return None
 
 
+_last_purge_date = None
+
+
+def _maybe_purge(usage_dir: Path) -> None:
+    """同日内の重複 purge を避けるため、1 日 1 回だけ ``_purge_old_logs`` を呼ぶ。
+
+    高頻度呼び出し時にディレクトリ全 glob を毎回走らせる無駄を省く。
+    """
+    global _last_purge_date
+    today = datetime.now().date()
+    if _last_purge_date == today:
+        return
+    _purge_old_logs(usage_dir)
+    _last_purge_date = today
+
+
 def _purge_old_logs(usage_dir: Path) -> None:
     cutoff = (datetime.now() - timedelta(days=LOG_RETENTION_DAYS)).date()
     for path in usage_dir.glob(USAGE_FILE_GLOB):
@@ -50,7 +66,7 @@ def log_usage(label: str, usage: dict, cost_usd: float | None, duration_ms: int 
     """
     try:
         USAGE_DIR.mkdir(parents=True, exist_ok=True)
-        _purge_old_logs(USAGE_DIR)
+        _maybe_purge(USAGE_DIR)
 
         record = {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
