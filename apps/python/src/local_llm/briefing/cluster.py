@@ -39,6 +39,35 @@ DEFAULT_SIMILARITY_THRESHOLD = 0.5
 _MAX_DESC_CHARS = 200
 _MAX_CONTENT_CHARS = 500
 
+# Default number of top-scoring clusters fed to the top-news section. The model
+# scatters attention over long lists, so lead with the most material stories (#170).
+TOP_NEWS_CLUSTER_LIMIT = 6
+
+# Investment-importance keyword weights (#170). Matched against the cluster's
+# title+description tokens (lowercased). Material catalysts (earnings, guidance,
+# M&A, policy) outrank routine product/partnership noise. Japanese terms are
+# included because pre-fetched titles are often localized.
+_IMPORTANCE_KEYWORDS: dict[str, float] = {
+    # Earnings / guidance — the strongest routine catalyst.
+    "earnings": 3.0, "guidance": 3.0, "forecast": 2.0, "outlook": 2.0,
+    "revenue": 2.0, "profit": 2.0, "決算": 3.0, "業績": 2.0, "ガイダンス": 3.0,
+    # M&A.
+    "acquisition": 3.0, "acquire": 3.0, "merger": 3.0, "buyout": 3.0,
+    "takeover": 3.0, "買収": 3.0, "合併": 3.0,
+    # Policy / regulation.
+    "regulation": 2.5, "sanction": 2.5, "tariff": 2.5, "ban": 2.5,
+    "antitrust": 2.5, "lawsuit": 1.5, "investigation": 1.5, "sec": 1.5,
+    "規制": 2.5, "制裁": 2.5, "関税": 2.5, "提訴": 1.5,
+    # Analyst actions.
+    "upgrade": 1.5, "downgrade": 1.5, "rating": 1.0, "格上げ": 1.5, "格下げ": 1.5,
+}
+
+# Each additional source (a story surfaced under several tickers/macro) signals
+# broader materiality.
+_SOURCE_BREADTH_WEIGHT = 1.0
+# Enriched body excerpt present (top hits only) — small boost for substance.
+_CONTENT_BOOST = 0.5
+
 EmbedFn = Callable[[list[str]], list[list[float]]]
 
 
@@ -53,6 +82,8 @@ class NewsCluster:
 
     results: list[SearchResult] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
+    # Investment-importance score, set by rank_clusters (#170). 0.0 until scored.
+    score: float = 0.0
 
     @property
     def primary(self) -> SearchResult:
@@ -193,6 +224,40 @@ def cluster_news_hits(
     return result_clusters
 
 
+def score_cluster(cluster: NewsCluster) -> float:
+    """Investment-importance score for a single cluster (#170).
+
+    Combines (a) material-catalyst keyword weights over every member hit's
+    title+description, (b) source breadth (a story surfaced under several
+    tickers/macro is more material), and (c) a small boost when an enriched body
+    excerpt is present. Higher = lead with it.
+    """
+    keyword_score = 0.0
+    for r in cluster.results:
+        toks = _tokens(_text_of(r))
+        for kw, weight in _IMPORTANCE_KEYWORDS.items():
+            if kw in toks:
+                keyword_score += weight
+    breadth = _SOURCE_BREADTH_WEIGHT * max(0, len(cluster.sources) - 1)
+    content = _CONTENT_BOOST if any(r.content for r in cluster.results) else 0.0
+    return keyword_score + breadth + content
+
+
+def rank_clusters(
+    clusters: list[NewsCluster], *, limit: int | None = None
+) -> list[NewsCluster]:
+    """Score each cluster, then return them ordered by importance (desc).
+
+    Sets ``cluster.score`` in place. The sort is stable, so clusters with equal
+    score keep their original (pre-fetch) order. ``limit`` caps the result to the
+    top-N most material clusters.
+    """
+    for c in clusters:
+        c.score = score_cluster(c)
+    ranked = sorted(clusters, key=lambda c: c.score, reverse=True)
+    return ranked[:limit] if limit is not None else ranked
+
+
 def render_clusters_block(clusters: list[NewsCluster]) -> str:
     """Render clustered stories as the top-news search-result block.
 
@@ -202,13 +267,13 @@ def render_clusters_block(clusters: list[NewsCluster]) -> str:
     """
     if not clusters:
         return "### クラスタ済みニュース\n  - (検索ヒットなし)"
-    lines = ["### クラスタ済みニュース"]
-    for c in clusters:
+    lines = ["### クラスタ済みニュース（重要度順）"]
+    for rank, c in enumerate(clusters, start=1):
         primary = c.primary
         desc = _clip(primary.description, _MAX_DESC_CHARS)
         srcs = "、".join(c.sources) if c.sources else "-"
         lines.append(f"  - [{primary.title}]({primary.url}) — {desc}")
-        lines.append(f"    - 関連: {srcs}")
+        lines.append(f"    - 関連: {srcs} / 重要度: {c.score:.1f} (#{rank})")
         if primary.content:
             lines.append(f"    - 本文抜粋: {_clip(primary.content, _MAX_CONTENT_CHARS)}")
         for extra in c.results[1:]:

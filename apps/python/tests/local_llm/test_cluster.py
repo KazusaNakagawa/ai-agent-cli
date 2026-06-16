@@ -3,7 +3,9 @@
 from src.local_llm.briefing.cluster import (
     NewsCluster,
     cluster_news_hits,
+    rank_clusters,
     render_clusters_block,
+    score_cluster,
 )
 from src.local_llm.briefing.prefetch import PrefetchedContext
 from src.local_llm.search import SearchResult
@@ -171,6 +173,69 @@ def test_embed_fn_returning_wrong_count_raises():
 
     with pytest.raises(ValueError, match="one vector per text"):
         cluster_news_hits(ctx, embed_fn=short_embed)
+
+
+# ---------------------------------------------------------------------------
+# Importance scoring / ranking (#170)
+# ---------------------------------------------------------------------------
+
+
+def _cluster(title, desc, *, sources=("macro",), content=""):
+    c = NewsCluster()
+    c.add(SearchResult(title, "https://e.com/x", desc, content=content), sources[0])
+    for s in sources[1:]:
+        c.sources.append(s)
+    return c
+
+
+def test_score_rewards_material_catalyst_keywords():
+    earnings = _cluster("NVDA earnings beat", "guidance raised")
+    noise = _cluster("NVDA new logo unveiled", "branding refresh")
+    assert score_cluster(earnings) > score_cluster(noise)
+
+
+def test_score_rewards_source_breadth():
+    broad = _cluster("Chip rule", "policy", sources=("macro", "NVDA", "PLTR"))
+    narrow = _cluster("Chip rule", "policy", sources=("macro",))
+    assert score_cluster(broad) > score_cluster(narrow)
+
+
+def test_score_rewards_enriched_content():
+    with_body = _cluster("story", "desc", content="本文抜粋あり")
+    without = _cluster("story", "desc")
+    assert score_cluster(with_body) > score_cluster(without)
+
+
+def test_rank_orders_by_score_and_limits():
+    noise = _cluster("logo refresh", "branding")
+    earnings = _cluster("Q2 earnings beat", "guidance raised, revenue up")
+    mna = _cluster("acquisition announced", "merger buyout")
+
+    ranked = rank_clusters([noise, earnings, mna], limit=2)
+
+    assert len(ranked) == 2
+    # 最重要 2 件（決算・M&A）がノイズより上位に来る
+    assert noise not in ranked
+    assert ranked[0].score >= ranked[1].score
+    # スコアが各クラスタに設定される
+    assert earnings.score > 0
+
+
+def test_rank_is_stable_for_equal_scores():
+    a = _cluster("neutral one", "xx")
+    b = _cluster("neutral two", "yy")
+    # 同点なら元の順序を保つ（安定ソート）
+    ranked = rank_clusters([a, b])
+    assert ranked == [a, b]
+
+
+def test_render_clusters_block_shows_score_and_rank():
+    c = _cluster("Q2 earnings beat", "guidance raised")
+    ranked = rank_clusters([c])
+    block = render_clusters_block(ranked)
+    assert "重要度順" in block
+    assert "重要度:" in block
+    assert "(#1)" in block
 
 
 def test_render_clusters_block_empty():
