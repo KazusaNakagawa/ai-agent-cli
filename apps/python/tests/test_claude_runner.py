@@ -149,6 +149,28 @@ class TestRunClaudeUsageLogging:
         assert result == "ok"
         mock_log.assert_not_called()
 
+    def test_json_without_result_field_falls_back_to_stdout(self):
+        """result フィールドの無い JSON は raw stdout にフォールバックし、使用量も記録しない。"""
+        payload = json.dumps({"foo": 1})
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == payload
+        mock_log.assert_not_called()
+
+    def test_non_string_result_is_stringified_and_usage_logged(self):
+        """result が文字列以外でも str() 化して返し、usage は記録する。"""
+        payload = json.dumps({"result": ["x", "y"], "usage": {"input_tokens": 5, "output_tokens": 6}})
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == str(["x", "y"])
+        mock_log.assert_called_once()
+
 
 class TestRunClaudeRetry:
     def test_retries_on_529_overloaded_and_succeeds(self):
