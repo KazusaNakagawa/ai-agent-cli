@@ -7,6 +7,7 @@ import pytest
 
 from src import claude_runner, credentials, state as state_mod
 from src.claude_runner import run_claude
+from src.constants import DEFAULT_MODEL
 
 
 @pytest.fixture(autouse=True)
@@ -365,6 +366,47 @@ class TestRunClaudeRetry:
                     run_claude("prompt", "test", timeout=300)
 
         assert mock_run.call_count == 1
+
+
+class TestGetModel:
+    def test_env_var_takes_precedence_over_config(self, monkeypatch):
+        monkeypatch.setenv("CLAUDE_MODEL", "env-model")
+        monkeypatch.setattr(claude_runner, "_config_model", lambda: "config-model")
+        assert claude_runner.get_model() == "env-model"
+
+    def test_config_model_used_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("CLAUDE_MODEL", raising=False)
+        monkeypatch.setattr(claude_runner, "_config_model", lambda: "config-model")
+        assert claude_runner.get_model() == "config-model"
+
+    def test_falls_back_to_default_when_neither_set(self, monkeypatch):
+        monkeypatch.delenv("CLAUDE_MODEL", raising=False)
+        monkeypatch.setattr(claude_runner, "_config_model", lambda: None)
+        assert claude_runner.get_model() == DEFAULT_MODEL
+
+    def test_blank_env_var_is_ignored(self, monkeypatch):
+        monkeypatch.setenv("CLAUDE_MODEL", "   ")
+        monkeypatch.setattr(claude_runner, "_config_model", lambda: None)
+        assert claude_runner.get_model() == DEFAULT_MODEL
+
+    def test_config_model_reads_config_field(self, monkeypatch):
+        """briefing.json の model フィールドが解決に反映される。"""
+        monkeypatch.delenv("CLAUDE_MODEL", raising=False)
+        fake_config = MagicMock()
+        fake_config.model = "claude-sonnet-4-6"
+        monkeypatch.setattr("src.config.CONFIG", fake_config, raising=False)
+        assert claude_runner._config_model() == "claude-sonnet-4-6"
+
+    def test_config_model_returns_none_on_load_failure(self, monkeypatch):
+        """config 読み込みが失敗してもモデル解決を止めず None を返す。"""
+        import src.config as config_mod
+
+        def boom():
+            raise FileNotFoundError("no briefing.json")
+
+        monkeypatch.setattr(config_mod, "load_config", boom)
+        monkeypatch.setattr(config_mod, "_CONFIG_CACHE", None)
+        assert claude_runner._config_model() is None
 
 
 class TestBuildEnv:
