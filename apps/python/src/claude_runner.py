@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -13,8 +14,38 @@ from src.constants import (
 )
 from src.logger import get_logger
 from src.transient_errors import is_transient
+from src.usage_logger import log_usage
 
 logger = get_logger(__name__)
+
+
+def _parse_and_log_usage(stdout: str, label: str) -> str:
+    """``--output-format json`` の stdout を解析し使用量を記録、テキスト結果を返す。
+
+    JSON でない / ``result`` フィールドが無い場合は警告を出して raw stdout を
+    そのまま返す（使用量ログはスキップ）— 使用量計測のために本処理を壊さない。
+    """
+    try:
+        parsed = json.loads(stdout)
+        result_text = parsed["result"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        logger.warning(
+            "claude CLI 出力を JSON として解析できませんでした、使用量ログをスキップ [%s]", label,
+        )
+        return stdout.strip()
+
+    usage = parsed.get("usage")
+    if isinstance(usage, dict):
+        log_usage(
+            label=label,
+            usage=usage,
+            cost_usd=parsed.get("total_cost_usd"),
+            duration_ms=parsed.get("duration_ms"),
+        )
+    else:
+        logger.warning("claude CLI 出力に usage が無いため使用量ログをスキップ [%s]", label)
+
+    return result_text.strip() if isinstance(result_text, str) else str(result_text)
 
 
 def get_model() -> str:
@@ -70,7 +101,12 @@ def run_claude(
 
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
     model = get_model()
-    cmd = [claude_path, "-p", prompt, "--allowedTools", "WebSearch", "--model", model]
+    cmd = [
+        claude_path, "-p", prompt,
+        "--output-format", "json",
+        "--allowedTools", "WebSearch",
+        "--model", model,
+    ]
 
     last_returncode = 0
     last_detail = ""
@@ -94,7 +130,7 @@ def run_claude(
 
         if result.returncode == 0:
             logger.info("claude CLI 完了: %s (%d文字)", label, len(result.stdout))
-            return result.stdout.strip()
+            return _parse_and_log_usage(result.stdout, label)
 
         logger.error(
             "claude CLI エラー [%s] rc=%d attempt=%d/%d\nstdout=%s\nstderr=%s",
