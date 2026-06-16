@@ -72,6 +72,9 @@ class BriefingFileConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # claude CLI に渡すモデル ID（任意）。未設定なら DEFAULT_MODEL。
+    # 優先順位は CLAUDE_MODEL env > この config 値 > DEFAULT_MODEL（claude_runner.get_model 参照）。
+    model: str | None = None
     portfolio: PortfolioConfig
     geopolitical: GeopoliticalConfig = Field(default_factory=GeopoliticalConfig)
     watch_sectors: list[WatchSector] = Field(min_length=1)

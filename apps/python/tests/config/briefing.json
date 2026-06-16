@@ -1,4 +1,5 @@
 {
+  "model": null,
   "portfolio": {
     "tickers": ["TICKER1", "TICKER2"],
     "themes": ["theme1", "theme2", "theme3"]

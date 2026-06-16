@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import time
 
+from src import config as config_mod
 from src import credentials as cred_mod
 from src import state as state_mod
 from src.constants import (
@@ -49,10 +50,33 @@ def _parse_and_log_usage(stdout: str, label: str) -> str:
     return result_text.strip() if isinstance(result_text, str) else str(result_text)
 
 
+def _config_model() -> str | None:
+    """briefing.json の ``model`` フィールドを返す。読めなければ None。
+
+    briefing.json が無い / 壊れている場合でもモデル解決を止めないため、
+    例外は握りつぶして None を返す（呼び出し側で DEFAULT_MODEL にフォールバック）。
+    """
+    try:
+        model = config_mod.CONFIG.model
+    except FileNotFoundError:
+        # briefing.json 未作成（例: web 起動直後）は想定内なので静かに無視。
+        return None
+    except Exception:  # noqa: BLE001 — 予期しない config エラーでもモデル解決は止めない
+        logger.warning("config からのモデル取得に失敗、DEFAULT_MODEL を使用", exc_info=True)
+        return None
+    return model.strip() if model and model.strip() else None
+
+
 def get_model() -> str:
-    """環境変数 CLAUDE_MODEL を読み、空・空白の場合はデフォルトを返す。"""
+    """claude CLI に渡すモデル ID を解決する。
+
+    優先順位: ``CLAUDE_MODEL`` env > briefing.json の ``model`` > ``DEFAULT_MODEL``。
+    env はアドホックな上書き用に最優先のまま。
+    """
     env_model = os.environ.get("CLAUDE_MODEL", "").strip()
-    return env_model if env_model else DEFAULT_MODEL
+    if env_model:
+        return env_model
+    return _config_model() or DEFAULT_MODEL
 
 
 def _backoff_delay(attempt: int) -> float:
