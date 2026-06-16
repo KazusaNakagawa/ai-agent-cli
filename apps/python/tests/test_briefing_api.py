@@ -106,6 +106,21 @@ def test_generate_section_calls_sonnet_without_tools():
     assert call["system"] == "sys"
 
 
+def test_generate_section_concatenates_multiple_text_blocks():
+    class _MultiBlockMessages:
+        def create(self, **kwargs):
+            msg = _FakeMessage()
+            msg.content = [
+                type("B", (), {"text": "前半"})(),
+                type("B", (), {"text": "後半"})(),
+            ]
+            return msg
+
+    client = type("C", (), {"messages": _MultiBlockMessages()})()
+    text, _ = briefing_api.generate_section(client, system="s", prompt="p")
+    assert text == "前半後半"
+
+
 def test_log_section_usage_logs_with_api_label(monkeypatch):
     recorded = {}
 

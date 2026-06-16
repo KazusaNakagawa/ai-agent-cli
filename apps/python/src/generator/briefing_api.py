@@ -106,7 +106,9 @@ def generate_section(client, *, system: str, prompt: str) -> tuple[str, dict]:
         system=system,
         messages=[{"role": "user", "content": prompt}],
     )
-    text = msg.content[0].text if msg.content else ""
+    # Concatenate every text block; a multi-block response would otherwise be
+    # silently truncated to the first block (CodeRabbit feedback).
+    text = "".join(getattr(b, "text", "") for b in (msg.content or []))
     u = msg.usage
     usage = {
         "input_tokens": getattr(u, "input_tokens", 0),
