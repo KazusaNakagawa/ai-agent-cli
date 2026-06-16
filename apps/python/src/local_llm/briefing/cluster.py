@@ -234,9 +234,14 @@ def score_cluster(cluster: NewsCluster) -> float:
     """
     keyword_score = 0.0
     for r in cluster.results:
-        toks = _tokens(_text_of(r))
+        text = _text_of(r).lower()
+        # ASCII keywords match on whole tokens (so "ban" doesn't hit "Lebanon");
+        # Japanese keywords match on substring because _TOKEN_RE only tokenizes
+        # ASCII runs and would otherwise never match 決算/買収/規制 etc.
+        ascii_tokens = set(_TOKEN_RE.findall(text))
         for kw, weight in _IMPORTANCE_KEYWORDS.items():
-            if kw in toks:
+            hit = kw in ascii_tokens if kw.isascii() else kw in text
+            if hit:
                 keyword_score += weight
     breadth = _SOURCE_BREADTH_WEIGHT * max(0, len(cluster.sources) - 1)
     content = _CONTENT_BOOST if any(r.content for r in cluster.results) else 0.0
@@ -264,6 +269,12 @@ def render_clusters_block(clusters: list[NewsCluster]) -> str:
     Each cluster is one bullet (representative title/url + which tickers/macro it
     touches), with any additional member links and body excerpts nested below, so
     the model sees one deduplicated story instead of per-query repeats.
+
+    Precondition (#170): ``clusters`` is expected to be already ranked via
+    ``rank_clusters`` — the block is labeled "重要度順" and prints each cluster's
+    ``score`` and 1-based position. Passing unranked clusters renders them in the
+    given order with ``score=0.0``; callers that want the importance ordering must
+    call ``rank_clusters`` first.
     """
     if not clusters:
         return "### クラスタ済みニュース\n  - (検索ヒットなし)"

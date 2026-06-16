@@ -194,6 +194,28 @@ def test_score_rewards_material_catalyst_keywords():
     assert score_cluster(earnings) > score_cluster(noise)
 
 
+def test_score_rewards_japanese_catalyst_keywords():
+    # 決算 / 買収 等の日本語キーワードもスコアに効く（_TOKEN_RE は ASCII のみ
+    # なので部分一致でマッチさせている）。
+    catalyst = _cluster("トヨタ 決算 発表", "通期ガイダンス据え置き、買収も検討")
+    neutral = _cluster("トヨタ 新モデル発表", "デザイン刷新")
+    assert score_cluster(catalyst) > score_cluster(neutral)
+
+
+def test_score_is_additive_over_multiple_keywords():
+    multi = _cluster("earnings beat and guidance raised", "acquisition announced")
+    single = _cluster("earnings beat", "strong quarter")
+    assert score_cluster(multi) > score_cluster(single)
+
+
+def test_ascii_keyword_matches_whole_token_only():
+    # "ban" は "Lebanon" の部分一致でヒットしてはいけない（トークン一致）。
+    false_match = _cluster("Lebanon update", "regional news")
+    real_match = _cluster("export ban imposed", "policy")
+    assert score_cluster(false_match) == 0.0
+    assert score_cluster(real_match) > 0.0
+
+
 def test_score_rewards_source_breadth():
     broad = _cluster("Chip rule", "policy", sources=("macro", "NVDA", "PLTR"))
     narrow = _cluster("Chip rule", "policy", sources=("macro",))
