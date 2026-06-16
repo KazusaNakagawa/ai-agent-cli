@@ -264,6 +264,22 @@ LOCAL_LLM_MODEL=qwen2.5:32b bin/local_llm.sh --ask "..."   # one-off override
 bin/local_llm.sh --briefing --model qwen2.5:7b             # per-invocation flag
 ```
 
+#### Dual-model briefing (reasoning final stage)
+
+For `--briefing`, the final synthesis stage (自分への示唆 / insight) can run on a
+stronger reasoning model while the cheaper main model handles the
+extraction/summary stages (#171). Set `LOCAL_LLM_SYNTHESIS_MODEL`:
+
+```bash
+LOCAL_LLM_MODEL=qwen2.5:14b \
+LOCAL_LLM_SYNTHESIS_MODEL=qwen2.5:32b \
+  bin/local_llm.sh --briefing
+```
+
+When unset, the synthesis stage uses `LOCAL_LLM_MODEL`, so behavior is unchanged.
+On 24 GB RAM, Ollama swaps models between stages — keep the two models within the
+memory budget (e.g. 14b + 32b run sequentially, not concurrently).
+
 > **Switching embed models requires a rebuild.** `bge-m3` (1024 dim) and the legacy `nomic-embed-text` (768 dim) produce incompatible vectors. If you change `LOCAL_LLM_EMBED_MODEL` (or are upgrading from a pre-#135 index), the CLI refuses with an `EmbedModelMismatch` error — rebuild with `bin/local_llm.sh --index --reset`.
 
 ### Usage
@@ -280,7 +296,7 @@ bin/local_llm.sh --briefing --notion           # ...and post to Notion alongside
 
 Chroma data is stored in `apps/python/.chroma_db/` (gitignored).
 
-Override defaults via env: `LOCAL_LLM_MODEL`, `LOCAL_LLM_EMBED_MODEL`, `LOCAL_LLM_TOP_K`, `LOCAL_LLM_CHROMA_PATH`, `OLLAMA_HOST`.
+Override defaults via env: `LOCAL_LLM_MODEL`, `LOCAL_LLM_SYNTHESIS_MODEL`, `LOCAL_LLM_EMBED_MODEL`, `LOCAL_LLM_TOP_K`, `LOCAL_LLM_CHROMA_PATH`, `OLLAMA_HOST`.
 
 `--briefing` requires `BRAVE_API_KEY` in `.env` (Free-plan key at https://api-dashboard.search.brave.com/ — see `.env.example`). The CLI pre-fetches Brave Search results for all portfolio tickers, macro news, and geopolitical topics, then injects them as context before local generation; without the key the command exits with an error. Tracked under [#142](https://github.com/KazusaNakagawa/ai-agent-cli/issues/142) (initial offline version) and [#144](https://github.com/KazusaNakagawa/ai-agent-cli/issues/144) (Brave Search integration).
 

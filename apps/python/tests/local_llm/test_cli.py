@@ -11,8 +11,8 @@ def _isolate_local_llm_env(monkeypatch):
     運用者が LOCAL_LLM_MODEL=gemma2:9b 等を設定していると --status の出力が変わり
     アサーションが env 依存で揺れる。CLI の既定値経路をテストするため隔離する。
     """
-    for key in ("LOCAL_LLM_MODEL", "LOCAL_LLM_EMBED_MODEL", "LOCAL_LLM_NUM_CTX",
-                "LOCAL_LLM_TEMPERATURE", "LOCAL_LLM_TOP_K"):
+    for key in ("LOCAL_LLM_MODEL", "LOCAL_LLM_SYNTHESIS_MODEL", "LOCAL_LLM_EMBED_MODEL",
+                "LOCAL_LLM_NUM_CTX", "LOCAL_LLM_TEMPERATURE", "LOCAL_LLM_TOP_K"):
         monkeypatch.delenv(key, raising=False)
 
 
@@ -135,3 +135,99 @@ def test_cli_notion_without_briefing_errors(tmp_path, capsys):
         cli.main(["--status", "--notion", "--root", str(tmp_path)])
     err = capsys.readouterr().err
     assert "--notion requires --briefing" in err
+
+
+def _stub_briefing_pipeline(monkeypatch, cli_mod, tmp_path, gen_calls, ensured):
+    """Patch out the heavy --briefing collaborators, recording the model used per
+    section generation so the dual-model routing (#171) can be asserted."""
+    import types
+
+    monkeypatch.setenv("BRAVE_API_KEY", "test-key")
+
+    monkeypatch.setattr(cli_mod, "make_ollama_client", lambda cfg: object())
+    monkeypatch.setattr(
+        cli_mod,
+        "ensure_models_available",
+        lambda client, model, embed_model=None: ensured.append(model),
+    )
+
+    briefing_cfg = types.SimpleNamespace(
+        portfolio=types.SimpleNamespace(tickers=["AAA"]),
+        notion_api_key=None,
+        notion_database_id=None,
+    )
+    monkeypatch.setattr(cli_mod, "load_briefing_config", lambda: briefing_cfg)
+    monkeypatch.setattr(cli_mod, "fetch_stock_move_map", lambda tickers: {})
+    monkeypatch.setattr(cli_mod, "BraveSearchClient", lambda key: object())
+    monkeypatch.setattr(cli_mod, "prefetch_briefing_context", lambda *a, **k: object())
+    monkeypatch.setattr(cli_mod, "enrich_with_article_text", lambda ctx: ctx)
+    monkeypatch.setattr(cli_mod, "count_article_fetches", lambda ctx: (0, 0))
+    monkeypatch.setattr(cli_mod, "load_local_briefing_system_prompt", lambda: "sys")
+    for name in (
+        "build_section_topnews_prompt",
+        "build_section_sector_prompt",
+        "build_section_geo_events_prompt",
+        "build_section_insight_prompt",
+    ):
+        monkeypatch.setattr(cli_mod, name, lambda *a, **k: "prompt")
+    monkeypatch.setattr(cli_mod, "generate_portfolio_table", lambda *a, **k: "PORT")
+    monkeypatch.setattr(cli_mod, "ensure_geo_topics_covered", lambda body, ctx: body)
+    monkeypatch.setattr(cli_mod, "collect_references", lambda ctx, prior: "REF")
+    monkeypatch.setattr(cli_mod, "render_prefetch_debug_block", lambda ctx: "DBG")
+    monkeypatch.setattr(cli_mod, "summarize_prefetch_hits", lambda ctx: "SUM")
+    monkeypatch.setattr(
+        cli_mod,
+        "validate_urls",
+        lambda body, ctx: types.SimpleNamespace(
+            body=body, fabricated=0, total=0, verified=0
+        ),
+    )
+    monkeypatch.setattr(cli_mod, "compose_briefing_md", lambda *a, **k: "MD")
+    monkeypatch.setattr(cli_mod, "BRIEFING_OUTPUT_DIR", tmp_path / "out")
+
+    def _fake_generate(prompt, *, ollama_client, model, system_prompt, options):
+        gen_calls.append(model)
+        return "section"
+
+    monkeypatch.setattr(cli_mod, "generate_local_briefing", _fake_generate)
+
+
+def test_briefing_routes_only_insight_to_synthesis_model(monkeypatch, tmp_path):
+    # Extraction/summary stages use the main model; only the final synthesis
+    # (insight) stage routes to the separate reasoning model (#171).
+    monkeypatch.setenv("LOCAL_LLM_MODEL", "qwen2.5:14b")
+    monkeypatch.setenv("LOCAL_LLM_SYNTHESIS_MODEL", "qwen2.5:32b")
+
+    gen_calls: list[str] = []
+    ensured: list[str] = []
+    _stub_briefing_pipeline(monkeypatch, cli, tmp_path, gen_calls, ensured)
+
+    rc = cli.main(["--briefing", "--root", str(tmp_path)])
+
+    assert rc == 0
+    # top / sector / geo / insight — only the last (insight) uses the synthesis model.
+    assert gen_calls == [
+        "qwen2.5:14b",
+        "qwen2.5:14b",
+        "qwen2.5:14b",
+        "qwen2.5:32b",
+    ]
+    # Both models are verified as pulled before generation.
+    assert "qwen2.5:14b" in ensured
+    assert "qwen2.5:32b" in ensured
+
+
+def test_briefing_synthesis_model_defaults_to_main_model(monkeypatch, tmp_path):
+    # With no separate synthesis model configured, every stage uses the main
+    # model and the extra availability check is skipped.
+    monkeypatch.setenv("LOCAL_LLM_MODEL", "qwen2.5:14b")
+
+    gen_calls: list[str] = []
+    ensured: list[str] = []
+    _stub_briefing_pipeline(monkeypatch, cli, tmp_path, gen_calls, ensured)
+
+    rc = cli.main(["--briefing", "--root", str(tmp_path)])
+
+    assert rc == 0
+    assert gen_calls == ["qwen2.5:14b"] * 4
+    assert ensured == ["qwen2.5:14b"]

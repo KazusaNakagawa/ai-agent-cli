@@ -79,6 +79,7 @@ def _make_cfg(chroma_path, embed_model):
     return LocalLLMConfig(
         ollama_host="http://localhost:11434",
         model="qwen2.5:14b",
+        synthesis_model="qwen2.5:14b",
         embed_model=embed_model,
         num_ctx=16384,
         temperature=0.2,

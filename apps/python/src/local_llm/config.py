@@ -15,6 +15,10 @@ DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 # to reliably trigger web_search on the `--briefing` path. ~8.5GB RAM at Q4.
 # To go back to a smaller model, override with env LOCAL_LLM_MODEL=qwen2.5:7b.
 DEFAULT_MODEL = "qwen2.5:14b"
+# Only the final synthesis stage (insight) routes to this model, so a stronger
+# reasoning model (e.g. qwen2.5:32b / DeepSeek R1) can be used there while the
+# cheaper DEFAULT_MODEL handles extraction/summary stages (#171). Unset means
+# "same as LOCAL_LLM_MODEL", so behavior is unchanged until it is configured.
 # bge-m3 (1024d) outperforms nomic-embed-text (768d) on Japanese + code retrieval
 # (#135). Switching changes embedding dimensions, so an existing .chroma_db built
 # with the previous default must be rebuilt: bin/local_llm.sh --index --reset.
@@ -48,6 +52,7 @@ MAX_FILE_BYTES = 500 * 1024
 class LocalLLMConfig:
     ollama_host: str
     model: str
+    synthesis_model: str
     embed_model: str
     num_ctx: int
     temperature: float
@@ -85,9 +90,13 @@ def load_config(repo_root: Path | None = None) -> LocalLLMConfig:
     root = (repo_root or Path(os.environ.get("LOCAL_LLM_REPO_ROOT", DEFAULT_REPO_ROOT))).resolve()
     chroma_env = os.environ.get("LOCAL_LLM_CHROMA_PATH")
     chroma_path = Path(chroma_env) if chroma_env else root / DEFAULT_CHROMA_REL
+    model = os.environ.get("LOCAL_LLM_MODEL", DEFAULT_MODEL)
     return LocalLLMConfig(
         ollama_host=os.environ.get("OLLAMA_HOST", DEFAULT_OLLAMA_HOST),
-        model=os.environ.get("LOCAL_LLM_MODEL", DEFAULT_MODEL),
+        model=model,
+        # Defaults to the main model so the synthesis stage is unchanged until
+        # LOCAL_LLM_SYNTHESIS_MODEL is set to a stronger reasoning model (#171).
+        synthesis_model=os.environ.get("LOCAL_LLM_SYNTHESIS_MODEL", model),
         embed_model=os.environ.get("LOCAL_LLM_EMBED_MODEL", DEFAULT_EMBED_MODEL),
         num_ctx=_env_number("LOCAL_LLM_NUM_CTX", DEFAULT_NUM_CTX, int),
         temperature=_env_number("LOCAL_LLM_TEMPERATURE", DEFAULT_TEMPERATURE, float),
