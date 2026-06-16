@@ -75,6 +75,17 @@ def test_load_config_synthesis_model_follows_main_model(monkeypatch, tmp_path):
     assert cfg.synthesis_model == "gemma2:9b"
 
 
+def test_load_config_treats_empty_model_env_as_unset(monkeypatch, tmp_path):
+    # `export LOCAL_LLM_MODEL=` must not reach Ollama as an empty model name.
+    monkeypatch.setenv("LOCAL_LLM_MODEL", "")
+    monkeypatch.setenv("LOCAL_LLM_SYNTHESIS_MODEL", "   ")
+
+    cfg = load_config(repo_root=tmp_path)
+
+    assert cfg.model == "qwen2.5:14b"
+    assert cfg.synthesis_model == "qwen2.5:14b"
+
+
 def test_load_config_falls_back_on_malformed_numeric_env(monkeypatch, tmp_path, caplog):
     monkeypatch.setenv("LOCAL_LLM_NUM_CTX", "abc")
     monkeypatch.setenv("LOCAL_LLM_TEMPERATURE", "warm")
