@@ -124,30 +124,58 @@ class TestGenerateWeeklySummary:
         with pytest.raises(ValueError, match="見つかりませんでした"):
             generate_weekly_summary([])
 
-    def test_runs_on_local_ollama_not_claude(self):
-        """週次サマリーはローカル Ollama 経路で生成され、Claude API を呼ばない (#193)。"""
+    def test_delegates_to_local_ollama_with_cfg_options(self):
+        """週次サマリーはローカル Ollama 経路 (generate_local_briefing) に委譲し、
+        cfg 由来の model/options と注入クライアントを渡す (#193)。"""
         pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
         fake_client = MagicMock()
-        fake_client.chat.return_value = {"message": {"content": "週次サマリー本文"}}
+        cfg = self._fake_cfg()
 
-        result = generate_weekly_summary(
-            pages, ollama_client=fake_client, cfg=self._fake_cfg()
-        )
+        with patch(
+            "src.generator.weekly_summary.generate_local_briefing",
+            return_value="週次サマリー本文",
+        ) as mock_gen:
+            result = generate_weekly_summary(pages, ollama_client=fake_client, cfg=cfg)
 
         assert result == "週次サマリー本文"
-        # ローカル Ollama の chat が呼ばれ、cfg のモデル/オプションが渡る
-        fake_client.chat.assert_called_once()
-        kwargs = fake_client.chat.call_args.kwargs
-        assert kwargs["model"] == "qwen2.5:14b"
-        assert kwargs["options"]["num_ctx"] == 16384
-        # 前週ブリーフィングの本文がプロンプトに含まれる
-        assert "content" in kwargs["messages"][-1]["content"]
+        mock_gen.assert_called_once()
+        args, kwargs = mock_gen.call_args
+        prompt = args[0] if args else kwargs["prompt"]
+        assert "content" in prompt  # 前週ブリーフィング本文がプロンプトに反映
+        assert kwargs["ollama_client"] is fake_client
+        assert kwargs["model"] == cfg.model
+        assert kwargs["options"]["num_ctx"] == cfg.num_ctx
+        assert kwargs["options"]["temperature"] == cfg.temperature
 
-    def test_does_not_import_or_call_run_claude(self):
-        """weekly_summary モジュールは run_claude へ依存しない（オフロード完了の回帰ガード）。"""
-        import src.generator.weekly_summary as mod
+    def test_default_path_wires_local_config_and_ollama_client(self):
+        """cfg/client 未注入時は load_local_config → make_ollama_client →
+        generate_local_briefing の順で配線される（ライブ I/O なし）。"""
+        pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
+        cfg = self._fake_cfg()
+        fake_client = object()
+        order = []
 
-        assert not hasattr(mod, "run_claude")
+        with (
+            patch(
+                "src.generator.weekly_summary.load_local_config",
+                side_effect=lambda: order.append("cfg") or cfg,
+            ) as mock_cfg,
+            patch(
+                "src.generator.weekly_summary.make_ollama_client",
+                side_effect=lambda c: order.append("client") or fake_client,
+            ) as mock_client,
+            patch(
+                "src.generator.weekly_summary.generate_local_briefing",
+                side_effect=lambda *a, **k: order.append("gen") or "summary",
+            ) as mock_gen,
+        ):
+            result = generate_weekly_summary(pages)
+
+        assert result == "summary"
+        mock_cfg.assert_called_once_with()
+        mock_client.assert_called_once_with(cfg)
+        assert mock_gen.call_args.kwargs["ollama_client"] is fake_client
+        assert order == ["cfg", "client", "gen"]
 
 
 # ---------------------------------------------------------------------------

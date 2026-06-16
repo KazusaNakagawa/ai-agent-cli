@@ -48,8 +48,11 @@ def generate_weekly_summary(pages: list[dict], *, ollama_client=None, cfg=None) 
     if not pages:
         raise ValueError("週次サマリー生成に必要なページが見つかりませんでした")
 
-    cfg = cfg or load_local_config()
-    client = ollama_client or make_ollama_client(cfg)
+    # 明示的な None 判定: falsy だが有効な cfg/client（テスト用スタブ等）を
+    # 取りこぼさないため、`or` ではなく省略時のみフォールバックする。
+    if cfg is None:
+        cfg = load_local_config()
+    client = ollama_client if ollama_client is not None else make_ollama_client(cfg)
 
     prompt = render("weekly_summary", briefings=_format_briefings(pages), week_label=week_label())
 
