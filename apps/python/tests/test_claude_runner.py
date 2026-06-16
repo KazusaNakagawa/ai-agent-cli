@@ -391,22 +391,34 @@ class TestGetModel:
 
     def test_config_model_reads_config_field(self, monkeypatch):
         """briefing.json の model フィールドが解決に反映される。"""
-        monkeypatch.delenv("CLAUDE_MODEL", raising=False)
-        fake_config = MagicMock()
-        fake_config.model = "claude-sonnet-4-6"
-        monkeypatch.setattr("src.config.CONFIG", fake_config, raising=False)
+        fake_config_mod = MagicMock()
+        fake_config_mod.CONFIG.model = "claude-sonnet-4-6"
+        monkeypatch.setattr(claude_runner, "config_mod", fake_config_mod)
         assert claude_runner._config_model() == "claude-sonnet-4-6"
 
-    def test_config_model_returns_none_on_load_failure(self, monkeypatch):
-        """config 読み込みが失敗してもモデル解決を止めず None を返す。"""
-        import src.config as config_mod
+    def test_config_model_returns_none_when_missing_file(self, monkeypatch):
+        """briefing.json 未作成 (FileNotFoundError) は静かに None を返す。"""
+        class _Missing:
+            @property
+            def CONFIG(self):
+                raise FileNotFoundError("no briefing.json")
 
-        def boom():
-            raise FileNotFoundError("no briefing.json")
+        monkeypatch.setattr(claude_runner, "config_mod", _Missing())
+        with patch.object(claude_runner.logger, "warning") as mock_warn:
+            assert claude_runner._config_model() is None
+        mock_warn.assert_not_called()  # 想定内なので警告は出さない
 
-        monkeypatch.setattr(config_mod, "load_config", boom)
-        monkeypatch.setattr(config_mod, "_CONFIG_CACHE", None)
-        assert claude_runner._config_model() is None
+    def test_config_model_logs_and_returns_none_on_unexpected_error(self, monkeypatch):
+        """想定外の config エラーは握りつぶしつつ警告ログを出して None を返す。"""
+        class _Broken:
+            @property
+            def CONFIG(self):
+                raise ValueError("broken config")
+
+        monkeypatch.setattr(claude_runner, "config_mod", _Broken())
+        with patch.object(claude_runner.logger, "warning") as mock_warn:
+            assert claude_runner._config_model() is None
+        mock_warn.assert_called_once()
 
 
 class TestBuildEnv:

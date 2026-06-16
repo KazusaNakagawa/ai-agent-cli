@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import time
 
+from src import config as config_mod
 from src import credentials as cred_mod
 from src import state as state_mod
 from src.constants import (
@@ -56,10 +57,12 @@ def _config_model() -> str | None:
     例外は握りつぶして None を返す（呼び出し側で DEFAULT_MODEL にフォールバック）。
     """
     try:
-        from src import config as config_mod
-
         model = config_mod.CONFIG.model
-    except Exception:  # noqa: BLE001 — config 不在でもモデル解決を止めない
+    except FileNotFoundError:
+        # briefing.json 未作成（例: web 起動直後）は想定内なので静かに無視。
+        return None
+    except Exception:  # noqa: BLE001 — 予期しない config エラーでもモデル解決は止めない
+        logger.warning("config からのモデル取得に失敗、DEFAULT_MODEL を使用", exc_info=True)
         return None
     return model.strip() if model and model.strip() else None
 
