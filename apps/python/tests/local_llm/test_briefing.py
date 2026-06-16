@@ -404,17 +404,21 @@ def test_render_geo_events_block_empty_when_both_missing():
 # ---------------------------------------------------------------------------
 
 
-def test_build_section_topnews_prompt_only_passes_macro_hits():
+def test_build_section_topnews_prompt_passes_clustered_macro_and_ticker_hits():
+    # #169: top-news now receives clustered macro + per-ticker context (geo/events
+    # still route to their own section).
     cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
     ctx = _full_ctx()
     out = build_section_topnews_prompt(cfg, ctx=ctx, today="2026-06-09")
     assert "今日のトップニュース" in out
     assert "2026-06-09" in out
     assert "## 検索結果" in out
+    # macro と銘柄別ヒットの両方がクラスタ済みブロックに含まれる
     assert "https://e.com/m" in out
-    # 出典は macro ブロックのみ — 銘柄別 URL・地政学ブロックはこの段では渡さない
-    assert "https://e.com/p" not in out
-    assert "地政学" not in out
+    assert "https://e.com/p" in out
+    # 地政学/イベントはこの段では渡さない
+    assert "https://e.com/g" not in out
+    assert "https://e.com/e" not in out
 
 
 def test_topnews_prompt_drives_causal_holding_analysis():
