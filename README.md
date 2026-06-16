@@ -240,6 +240,10 @@ ollama serve &
 ollama pull qwen2.5:14b   # for --briefing: reliable tool calling (~8.5GB RAM with Q4)
 ollama pull qwen2.5:7b    # for --ask / --index: smaller, fits the RAG path
 ollama pull bge-m3        # embedding model (#135): stronger JP + code retrieval than nomic-embed-text
+
+# optional alternatives — see the Model options table below
+ollama pull qwen2.5-coder:14b  # code-heavy --ask queries
+ollama pull qwen2.5:32b        # deepest explanations / final synthesis (~20GB RAM)
 ```
 
 The default generation model is `qwen2.5:14b` for more stable instruction-following and citation quality in the `--briefing` path. If you only run `--ask` / `--index`, override with `LOCAL_LLM_MODEL=qwen2.5:7b`.
