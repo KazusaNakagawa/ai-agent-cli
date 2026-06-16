@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 from pathlib import Path
 from src.claude_runner import run_claude
 from src.config import BriefingConfig
@@ -17,11 +18,15 @@ logger = get_logger(__name__)
 _FEW_SHOT_PATH = Path(__file__).parents[2] / "prompts" / "examples" / "briefing_few_shot.md"
 
 
+@lru_cache(maxsize=1)
 def load_briefing_few_shot() -> str:
     """メインブリーフィングの few-shot 例を読み込んで返す。
 
     few-shot は ``render()`` の **値** として渡るため、本文中の ``$`` が
     プレースホルダとして再解釈されることはない（単一パス置換）。
+
+    アセットはリポジトリ同梱で実行中に変わらないため ``lru_cache`` で
+    1 回だけ読み、``generate_briefing()`` 呼び出しごとのディスク I/O を避ける。
     """
     return _FEW_SHOT_PATH.read_text(encoding="utf-8")
 
