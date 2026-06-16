@@ -34,6 +34,10 @@ _TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
 # stories that merely share a company name.
 DEFAULT_SIMILARITY_THRESHOLD = 0.5
 
+# Caps for the rendered block so a verbose article body doesn't bloat the prompt.
+_MAX_DESC_CHARS = 200
+_MAX_CONTENT_CHARS = 500
+
 EmbedFn = Callable[[list[str]], list[list[float]]]
 
 
@@ -58,6 +62,19 @@ class NewsCluster:
         if source not in self.sources:
             self.sources.append(source)
 
+    def merge_from(self, other: "NewsCluster") -> None:
+        """Absorb another cluster's member hits and source tags."""
+        self.results.extend(other.results)
+        for source in other.sources:
+            if source not in self.sources:
+                self.sources.append(source)
+
+
+def _clip(text: str, limit: int) -> str:
+    """Flatten newlines and truncate to ``limit`` chars (with an ellipsis)."""
+    flat = text.strip().replace("\n", " ")
+    return flat[:limit] + "..." if len(flat) > limit else flat
+
 
 def _text_of(result: SearchResult) -> str:
     return f"{result.title} {result.description}".strip()
@@ -76,6 +93,11 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b):
+        raise ValueError(
+            f"cosine similarity requires equal-length vectors, got {len(a)} and {len(b)} "
+            "(check embed_fn output dimensionality)"
+        )
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
@@ -161,14 +183,7 @@ def cluster_news_hits(
         result_clusters.append(clusters[i])
     for absorbed, survivor in parent.items():
         target = result_clusters[index_of_survivor[survivor]]
-        for r in clusters[absorbed].results:
-            target.add(r, "")  # merge member hits
-        for s in clusters[absorbed].sources:
-            if s and s not in target.sources:
-                target.sources.append(s)
-    # Drop the empty-string source artifact from merges.
-    for c in result_clusters:
-        c.sources = [s for s in c.sources if s]
+        target.merge_from(clusters[absorbed])
     return result_clusters
 
 
@@ -184,14 +199,12 @@ def render_clusters_block(clusters: list[NewsCluster]) -> str:
     lines = ["### クラスタ済みニュース"]
     for c in clusters:
         primary = c.primary
-        desc = primary.description.strip().replace("\n", " ")
-        if len(desc) > 200:
-            desc = desc[:200] + "..."
+        desc = _clip(primary.description, _MAX_DESC_CHARS)
         srcs = "、".join(c.sources) if c.sources else "-"
         lines.append(f"  - [{primary.title}]({primary.url}) — {desc}")
         lines.append(f"    - 関連: {srcs}")
         if primary.content:
-            lines.append(f"    - 本文抜粋: {primary.content}")
+            lines.append(f"    - 本文抜粋: {_clip(primary.content, _MAX_CONTENT_CHARS)}")
         for extra in c.results[1:]:
             lines.append(f"    - 関連記事: [{extra.title}]({extra.url})")
     return "\n".join(lines)

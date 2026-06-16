@@ -113,5 +113,51 @@ def test_render_clusters_block_shows_story_sources_and_extra_links():
     assert "関連記事: [Chip rule restated](https://e.com/b)" in block
 
 
+def test_render_clusters_block_flattens_newlines_in_description():
+    hit = SearchResult("T", "https://e.com/t", "line1\nline2")
+    cluster = NewsCluster()
+    cluster.add(hit, "macro")
+
+    block = render_clusters_block([cluster])
+    assert "line1 line2" in block  # 改行はスペースへ平坦化
+
+
+def test_render_clusters_block_truncates_long_description():
+    hit = SearchResult("T", "https://e.com/t", "x" * 300)
+    cluster = NewsCluster()
+    cluster.add(hit, "macro")
+
+    block = render_clusters_block([cluster])
+    assert "x" * 200 in block  # 200 文字までは残る
+    assert "x" * 210 not in block  # 上限超過は切り詰め
+    assert "..." in block
+
+
+def test_render_clusters_block_truncates_long_content():
+    hit = SearchResult("T", "https://e.com/t", "d", content="y" * 600)
+    cluster = NewsCluster()
+    cluster.add(hit, "macro")
+
+    block = render_clusters_block([cluster])
+
+    assert "y" * 500 in block
+    assert "y" * 510 not in block
+    assert "..." in block
+
+
+def test_cosine_rejects_mismatched_vector_lengths():
+    import pytest
+
+    a = SearchResult("a", "https://e.com/a", "x")
+    b = SearchResult("b", "https://e.com/b", "y")
+    ctx = _ctx(macro=[a, b])
+
+    def bad_embed(texts):
+        return [[1.0, 0.0], [1.0]]  # 次元不一致
+
+    with pytest.raises(ValueError, match="equal-length"):
+        cluster_news_hits(ctx, embed_fn=bad_embed, threshold=0.5)
+
+
 def test_render_clusters_block_empty():
     assert "検索ヒットなし" in render_clusters_block([])

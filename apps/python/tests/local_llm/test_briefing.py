@@ -421,6 +421,24 @@ def test_build_section_topnews_prompt_passes_clustered_macro_and_ticker_hits():
     assert "https://e.com/e" not in out
 
 
+def test_build_section_topnews_prompt_uses_embed_fn_for_clustering():
+    # #169: embed_fn must be wired through to cluster_news_hits. A constant-vector
+    # embed_fn collapses macro + ticker hits into a single clustered story.
+    cfg = _minimal_cfg(tickers=["PLTR", "NVDA"])
+    ctx = _full_ctx()
+    calls: list[list[str]] = []
+
+    def embed_fn(texts):
+        calls.append(list(texts))
+        return [[1.0, 0.0] for _ in texts]
+
+    out = build_section_topnews_prompt(cfg, ctx=ctx, today="2026-06-09", embed_fn=embed_fn)
+
+    assert calls and calls[0], "embed_fn was not invoked with the news texts"
+    # macro と PLTR が同一ベクトルで 1 クラスタに集約され、関連に両ソースが並ぶ
+    assert "関連: macro、PLTR" in out
+
+
 def test_topnews_prompt_drives_causal_holding_analysis():
     # 各トップニュースに「なぜ / 何が変わった / 保有銘柄への影響」の因果 3 行を
     # 要求し、影響判定用に保有銘柄リストを渡す (#159)。
