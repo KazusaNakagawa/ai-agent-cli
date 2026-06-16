@@ -298,6 +298,21 @@ Chroma data is stored in `apps/python/.chroma_db/` (gitignored).
 
 Override defaults via env: `LOCAL_LLM_MODEL`, `LOCAL_LLM_SYNTHESIS_MODEL`, `LOCAL_LLM_EMBED_MODEL`, `LOCAL_LLM_TOP_K`, `LOCAL_LLM_CHROMA_PATH`, `OLLAMA_HOST`.
 
+#### Pre-fetch context budget (cost tuning)
+
+For `--briefing`, the injected article bodies are the dominant prompt-cache write cost (see `docs/cost-analysis/`). Trim them via env to cut cost at some quality risk:
+
+| Env | Default | Effect |
+|---|---|---|
+| `LOCAL_LLM_ARTICLE_MAX_CHARS` | `1800` | Body cap per article |
+| `LOCAL_LLM_ARTICLE_PER_MACRO` | `2` | Macro articles injected |
+| `LOCAL_LLM_ARTICLE_PER_GROUP` | `1` | Articles per ticker/geo/event |
+
+```bash
+LOCAL_LLM_ARTICLE_MAX_CHARS=1200 LOCAL_LLM_ARTICLE_PER_MACRO=1 \
+  bin/local_llm.sh --briefing   # lower-cost preset
+```
+
 `--briefing` requires `BRAVE_API_KEY` in `.env` (Free-plan key at https://api-dashboard.search.brave.com/ — see `.env.example`). The CLI pre-fetches Brave Search results for all portfolio tickers, macro news, and geopolitical topics, then injects them as context before local generation; without the key the command exits with an error. Tracked under [#142](https://github.com/KazusaNakagawa/ai-agent-cli/issues/142) (initial offline version) and [#144](https://github.com/KazusaNakagawa/ai-agent-cli/issues/144) (Brave Search integration).
 
 Tracked under [#140](https://github.com/KazusaNakagawa/ai-agent/issues/140) (Epic [#139](https://github.com/KazusaNakagawa/ai-agent/issues/139)). Quality improvements (#135 bge-m3, #136 reranker, #138 AST chunking, #137 generation model) ship as follow-up PRs.

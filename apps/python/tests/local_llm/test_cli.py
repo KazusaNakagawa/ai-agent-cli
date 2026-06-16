@@ -160,8 +160,8 @@ def _stub_briefing_pipeline(monkeypatch, cli_mod, tmp_path, gen_calls, ensured):
     monkeypatch.setattr(cli_mod, "fetch_stock_move_map", lambda tickers: {})
     monkeypatch.setattr(cli_mod, "BraveSearchClient", lambda key: object())
     monkeypatch.setattr(cli_mod, "prefetch_briefing_context", lambda *a, **k: object())
-    monkeypatch.setattr(cli_mod, "enrich_with_article_text", lambda ctx: ctx)
-    monkeypatch.setattr(cli_mod, "count_article_fetches", lambda ctx: (0, 0))
+    monkeypatch.setattr(cli_mod, "enrich_with_article_text", lambda ctx, **k: ctx)
+    monkeypatch.setattr(cli_mod, "count_article_fetches", lambda ctx, **k: (0, 0))
     monkeypatch.setattr(cli_mod, "load_local_briefing_system_prompt", lambda: "sys")
     for name in (
         "build_section_topnews_prompt",

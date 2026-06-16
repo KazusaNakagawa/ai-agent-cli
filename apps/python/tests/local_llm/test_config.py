@@ -13,6 +13,9 @@ def test_load_config_defaults(monkeypatch, tmp_path):
         "LOCAL_LLM_NUM_CTX",
         "LOCAL_LLM_TEMPERATURE",
         "LOCAL_LLM_TOP_K",
+        "LOCAL_LLM_ARTICLE_MAX_CHARS",
+        "LOCAL_LLM_ARTICLE_PER_MACRO",
+        "LOCAL_LLM_ARTICLE_PER_GROUP",
         "LOCAL_LLM_CHROMA_PATH",
     ]:
         monkeypatch.delenv(key, raising=False)
@@ -28,6 +31,9 @@ def test_load_config_defaults(monkeypatch, tmp_path):
     assert cfg.num_ctx == 16384
     assert cfg.temperature == 0.2
     assert cfg.top_k == 6
+    assert cfg.article_max_chars == 1800
+    assert cfg.article_per_macro == 2
+    assert cfg.article_per_group == 1
     assert cfg.repo_root == tmp_path
     assert cfg.chunk_lines == 40
     assert cfg.chunk_overlap == 8
@@ -73,6 +79,19 @@ def test_load_config_synthesis_model_follows_main_model(monkeypatch, tmp_path):
     cfg = load_config(repo_root=tmp_path)
 
     assert cfg.synthesis_model == "gemma2:9b"
+
+
+def test_load_config_article_budget_overrides(monkeypatch, tmp_path):
+    # The pre-fetch injection budget is tunable to cut cache_creation cost.
+    monkeypatch.setenv("LOCAL_LLM_ARTICLE_MAX_CHARS", "1200")
+    monkeypatch.setenv("LOCAL_LLM_ARTICLE_PER_MACRO", "1")
+    monkeypatch.setenv("LOCAL_LLM_ARTICLE_PER_GROUP", "1")
+
+    cfg = load_config(repo_root=tmp_path)
+
+    assert cfg.article_max_chars == 1200
+    assert cfg.article_per_macro == 1
+    assert cfg.article_per_group == 1
 
 
 def test_load_config_treats_empty_model_env_as_unset(monkeypatch, tmp_path):

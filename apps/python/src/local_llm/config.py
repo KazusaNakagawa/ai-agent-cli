@@ -30,6 +30,13 @@ DEFAULT_NUM_CTX = 16384
 # prioritize faithful citation.
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TOP_K = 6
+# Pre-fetch article injection budget. These bound cache_creation cost: each
+# section generation re-writes the injected article bodies to the prompt cache,
+# so trimming them is the highest-ROI cost lever (docs/cost-analysis). Defaults
+# preserve current behavior; tune down via env to cut cost at some quality risk.
+DEFAULT_ARTICLE_MAX_CHARS = 1800
+DEFAULT_ARTICLE_PER_MACRO = 2
+DEFAULT_ARTICLE_PER_GROUP = 1
 DEFAULT_CHUNK_LINES = 40
 DEFAULT_CHUNK_OVERLAP = 8
 DEFAULT_REPO_ROOT = Path.home() / "work" / "ai-agent"
@@ -57,6 +64,9 @@ class LocalLLMConfig:
     num_ctx: int
     temperature: float
     top_k: int
+    article_max_chars: int
+    article_per_macro: int
+    article_per_group: int
     repo_root: Path
     chroma_path: Path
     chunk_lines: int
@@ -113,6 +123,15 @@ def load_config(repo_root: Path | None = None) -> LocalLLMConfig:
         num_ctx=_env_number("LOCAL_LLM_NUM_CTX", DEFAULT_NUM_CTX, int),
         temperature=_env_number("LOCAL_LLM_TEMPERATURE", DEFAULT_TEMPERATURE, float),
         top_k=_env_number("LOCAL_LLM_TOP_K", DEFAULT_TOP_K, int),
+        article_max_chars=_env_number(
+            "LOCAL_LLM_ARTICLE_MAX_CHARS", DEFAULT_ARTICLE_MAX_CHARS, int
+        ),
+        article_per_macro=_env_number(
+            "LOCAL_LLM_ARTICLE_PER_MACRO", DEFAULT_ARTICLE_PER_MACRO, int
+        ),
+        article_per_group=_env_number(
+            "LOCAL_LLM_ARTICLE_PER_GROUP", DEFAULT_ARTICLE_PER_GROUP, int
+        ),
         repo_root=root,
         chroma_path=chroma_path,
         chunk_lines=DEFAULT_CHUNK_LINES,

@@ -227,9 +227,17 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
 
     # The model cannot write concrete facts from snippets alone, so extract the
     # bodies of the top hits and inject them into the prompt (#151). Failures
-    # fall back to the snippet.
-    ctx = enrich_with_article_text(ctx)
-    attempted, fetched = count_article_fetches(ctx)
+    # fall back to the snippet. The injection budget is configurable because it
+    # is the dominant cache_creation cost lever (docs/cost-analysis).
+    ctx = enrich_with_article_text(
+        ctx,
+        per_macro=cfg.article_per_macro,
+        per_group=cfg.article_per_group,
+        max_chars=cfg.article_max_chars,
+    )
+    attempted, fetched = count_article_fetches(
+        ctx, per_macro=cfg.article_per_macro, per_group=cfg.article_per_group
+    )
     article_summary = f"{fetched}/{attempted} 件取得 (上位ヒットのみ・失敗はスニペットで代替)"
     logger.info("記事本文取得完了 — プロンプトに注入")
 
