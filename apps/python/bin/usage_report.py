@@ -8,6 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
+from src.usage_logger import USAGE_FILE_GLOB, parse_usage_file_date
+
 USAGE_DIR = Path(__file__).parents[1] / "log" / "usage"
 
 
@@ -15,10 +17,9 @@ def _iter_records(usage_dir: Path, days: int | None):
     cutoff = None
     if days is not None:
         cutoff = (datetime.now() - timedelta(days=days)).date()
-    for path in sorted(usage_dir.glob("*-usage.jsonl")):
-        try:
-            file_date = datetime.strptime(path.stem.replace("-usage", ""), "%Y%m%d").date()
-        except ValueError:
+    for path in sorted(usage_dir.glob(USAGE_FILE_GLOB)):
+        file_date = parse_usage_file_date(path)
+        if file_date is None:
             continue
         if cutoff is not None and file_date < cutoff:
             continue

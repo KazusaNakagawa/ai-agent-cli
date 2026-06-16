@@ -15,14 +15,31 @@ logger = get_logger(__name__)
 USAGE_DIR = Path(__file__).parents[1] / "log" / "usage"
 
 
+USAGE_FILE_GLOB = "*-usage.jsonl"
+
+
+def parse_usage_file_date(path: Path):
+    """``YYYYMMDD-usage.jsonl`` のファイル名から日付 (date) を取り出す。
+
+    ``usage_logger`` と ``bin/usage_report.py`` で共有し、ファイル名規約の
+    ドリフトを防ぐ。解析できなければ ``None`` を返す。
+    """
+    try:
+        return datetime.strptime(path.stem.replace("-usage", ""), "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
 def _purge_old_logs(usage_dir: Path) -> None:
-    cutoff = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
-    for path in usage_dir.glob("*-usage.jsonl"):
+    cutoff = (datetime.now() - timedelta(days=LOG_RETENTION_DAYS)).date()
+    for path in usage_dir.glob(USAGE_FILE_GLOB):
+        file_date = parse_usage_file_date(path)
+        if file_date is None:
+            continue
         try:
-            file_date = datetime.strptime(path.stem.replace("-usage", ""), "%Y%m%d")
-            if file_date.date() < cutoff.date():
+            if file_date < cutoff:
                 path.unlink()
-        except (ValueError, OSError):
+        except OSError:
             pass
 
 

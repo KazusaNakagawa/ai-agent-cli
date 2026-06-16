@@ -43,7 +43,8 @@ def _parse_and_log_usage(stdout: str, label: str) -> str:
             duration_ms=parsed.get("duration_ms"),
         )
     else:
-        logger.warning("claude CLI 出力に usage が無いため使用量ログをスキップ [%s]", label)
+        # usage を出さない呼び出しは正常運用でもありうるため debug に留める（ノイズ回避）
+        logger.debug("claude CLI 出力に usage が無いため使用量ログをスキップ [%s]", label)
 
     return result_text.strip() if isinstance(result_text, str) else str(result_text)
 
