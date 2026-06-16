@@ -37,7 +37,9 @@ from src.local_llm.search import BraveSearchClient
 logger = get_logger(__name__)
 
 SONNET_MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 4096
+# The CLI briefing emits ~4.4K–5.8K output tokens per section (usage logs), so a
+# 4096 cap would truncate the sector sweep. 8192 leaves headroom.
+MAX_TOKENS = 8192
 SYSTEM_PROMPT = (
     "あなたは投資家向けの世界情勢アナリストです。必ず日本語で、与えられた取得済み記事だけを"
     "根拠に、捏造せず簡潔に記述してください。"
@@ -189,7 +191,8 @@ def _require_brave_key() -> str:
 def main(argv: list[str] | None = None) -> int:
     logger.info("=== Claude API ブリーフィング（検証スパイク）開始 ===")
     config = load_config()
-    client = _make_client()
+    client = _make_client()  # validates ANTHROPIC_API_KEY
+    _require_brave_key()  # fail fast before any fetching
     md = run_briefing_api(config, client)
 
     today = date.today().isoformat()
