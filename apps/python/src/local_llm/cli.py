@@ -179,7 +179,11 @@ def _cmd_ask(cfg, question: str) -> int:
 
 
 def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
-    logger.info("=== ローカル LLM ブリーフィング開始 (model=%s) ===", cfg.model)
+    logger.info(
+        "=== ローカル LLM ブリーフィング開始 (model=%s, synthesis_model=%s) ===",
+        cfg.model,
+        cfg.synthesis_model,
+    )
 
     brave_api_key = os.environ.get("BRAVE_API_KEY", "").strip()
     if not brave_api_key:
@@ -194,6 +198,9 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         olm = make_ollama_client(cfg)
         # briefing only generates; pass None so an un-pulled embed_model does not block it.
         ensure_models_available(olm, cfg.model, embed_model=None)
+        # The insight stage routes to a (possibly stronger) reasoning model (#171).
+        if cfg.synthesis_model != cfg.model:
+            ensure_models_available(olm, cfg.synthesis_model, embed_model=None)
     except OllamaUnavailable as e:
         logger.error("Ollama に接続できません: %s", e)
         return 1
@@ -235,13 +242,14 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     # Ollama's default num_ctx (4096) can still overflow on a section prompt, so set it explicitly (#150).
     gen_options = {"num_ctx": cfg.num_ctx, "temperature": cfg.temperature}
 
-    def _gen(label: str, prompt: str) -> str:
-        logger.info("[section] %s 生成開始", label)
+    def _gen(label: str, prompt: str, *, model: str | None = None) -> str:
+        gen_model = model or cfg.model
+        logger.info("[section] %s 生成開始 (model=%s)", label, gen_model)
         for attempt in range(2):
             out = generate_local_briefing(
                 prompt,
                 ollama_client=olm,
-                model=cfg.model,
+                model=gen_model,
                 system_prompt=system_prompt,
                 options=gen_options,
             )
@@ -287,11 +295,14 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     # Stack in the order world (top news) → sector → geopolitics → tickers (table)
     # and pass it to the insight stage (#162).
     prior_text = "\n\n".join([body_top, body_sector, body_geo, body_port]).strip()
+    # Final synthesis stage — route to the (possibly stronger) reasoning model
+    # while the cheaper main model handled the extraction/summary stages (#171).
     body_insight = _gen(
         "自分への示唆",
         build_section_insight_prompt(
             briefing_cfg, prior_text=prior_text, today=today
         ),
+        model=cfg.synthesis_model,
     )
 
     references_md = collect_references(ctx, prior_text)
