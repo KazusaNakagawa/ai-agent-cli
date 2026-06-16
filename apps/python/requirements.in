@@ -23,3 +23,6 @@ opentelemetry-exporter-otlp-proto-grpc>=1.30
 
 # Article body extraction for local-LLM briefing (#151)
 trafilatura>=1.12
+
+# Claude API briefing cost-verification spike (#204)
+anthropic>=0.40
