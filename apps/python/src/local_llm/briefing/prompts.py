@@ -14,7 +14,13 @@ from src.config import BriefingConfig
 from src.generator.briefing import join_safe
 from src.generator.prompt import render
 
-from .cluster import EmbedFn, cluster_news_hits, render_clusters_block
+from .cluster import (
+    TOP_NEWS_CLUSTER_LIMIT,
+    EmbedFn,
+    cluster_news_hits,
+    rank_clusters,
+    render_clusters_block,
+)
 from .prefetch import PrefetchedContext
 from .render import render_geo_events_block
 
@@ -29,12 +35,15 @@ def build_section_topnews_prompt(
 
     Sources are macro + per-ticker hits, clustered into deduplicated stories
     (#169) so the same event surfaced under several tickers/macro is presented
-    once. ``embed_fn`` optionally supplies bge-m3 embeddings for clustering;
+    once. Clusters are then ranked by investment importance and capped to the
+    top ``TOP_NEWS_CLUSTER_LIMIT`` so the section leads with material catalysts
+    (#170). ``embed_fn`` optionally supplies bge-m3 embeddings for clustering;
     omitted, a deterministic offline heuristic is used. Geopolitical/event hits
     are still routed to their own section, not here.
     """
     tickers = join_safe(cfg.portfolio.tickers, sep=", ")
     clusters = cluster_news_hits(ctx, embed_fn=embed_fn)
+    clusters = rank_clusters(clusters, limit=TOP_NEWS_CLUSTER_LIMIT)
     return render(
         "local_section_topnews",
         today=today,
