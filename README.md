@@ -244,6 +244,22 @@ ollama pull bge-m3        # embedding model (#135): stronger JP + code retrieval
 
 The default generation model is `qwen2.5:14b` for more stable instruction-following and citation quality in the `--briefing` path. If you only run `--ask` / `--index`, override with `LOCAL_LLM_MODEL=qwen2.5:7b`.
 
+#### Model options
+
+Swap the generation model without code edits via `LOCAL_LLM_MODEL` (env) or `--model` (CLI flag). RAM figures are approximate for Q4 quantization; leave headroom for the embedding model and OS.
+
+| Model | Approx. RAM (Q4) | Best for | Trade-offs |
+|---|---|---|---|
+| `qwen2.5:7b` | ~5 GB | `--ask` / `--index` on the RAG path | Fastest; weaker tool calling, so less reliable for `--briefing` web_search |
+| `qwen2.5-coder:14b` | ~9 GB | Code-heavy `--ask` queries over this repo | Stronger on code, but tuned less for general JP briefing prose |
+| `qwen2.5:14b` (default) | ~8.5 GB | `--briefing`: reliable tool calling + citation quality | Balanced; fits comfortably on 24 GB RAM with 16K ctx |
+| `qwen2.5:32b` | ~20 GB | Deepest explanations / final synthesis stage | Slow; tight on 24 GB RAM — close other apps |
+
+```bash
+LOCAL_LLM_MODEL=qwen2.5:32b bin/local_llm.sh --ask "..."   # one-off override
+bin/local_llm.sh --briefing --model qwen2.5:7b             # per-invocation flag
+```
+
 > **Switching embed models requires a rebuild.** `bge-m3` (1024 dim) and the legacy `nomic-embed-text` (768 dim) produce incompatible vectors. If you change `LOCAL_LLM_EMBED_MODEL` (or are upgrading from a pre-#135 index), the CLI refuses with an `EmbedModelMismatch` error — rebuild with `bin/local_llm.sh --index --reset`.
 
 ### Usage
