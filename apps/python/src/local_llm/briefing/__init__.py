@@ -26,6 +26,12 @@ Module layout:
 
 from __future__ import annotations
 
+from .cluster import (
+    DEFAULT_SIMILARITY_THRESHOLD,
+    NewsCluster,
+    cluster_news_hits,
+    render_clusters_block,
+)
 from .compose import compose_briefing_md
 from .filters import (
     _extract_url_date,
@@ -72,6 +78,8 @@ from .render import (
 from .validate import UrlValidation, validate_urls
 
 __all__ = [
+    "DEFAULT_SIMILARITY_THRESHOLD",
+    "NewsCluster",
     "OVERFETCH_EXTRA",
     "PER_EVENT_RESULTS",
     "PER_GEO_RESULTS",
@@ -85,8 +93,10 @@ __all__ = [
     "build_section_insight_prompt",
     "build_section_sector_prompt",
     "build_section_topnews_prompt",
+    "cluster_news_hits",
     "collect_references",
     "compose_briefing_md",
+    "render_clusters_block",
     "ensure_geo_topics_covered",
     "generate_local_briefing",
     "has_simplified_chinese_text",
