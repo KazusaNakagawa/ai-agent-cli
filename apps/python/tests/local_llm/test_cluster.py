@@ -159,5 +159,19 @@ def test_cosine_rejects_mismatched_vector_lengths():
         cluster_news_hits(ctx, embed_fn=bad_embed, threshold=0.5)
 
 
+def test_embed_fn_returning_wrong_count_raises():
+    import pytest
+
+    a = SearchResult("a", "https://e.com/a", "x")
+    b = SearchResult("b", "https://e.com/b", "y")
+    ctx = _ctx(macro=[a, b])
+
+    def short_embed(texts):
+        return [[1.0, 0.0]]  # 入力 2 件に対し 1 件しか返さない
+
+    with pytest.raises(ValueError, match="one vector per text"):
+        cluster_news_hits(ctx, embed_fn=short_embed)
+
+
 def test_render_clusters_block_empty():
     assert "検索ヒットなし" in render_clusters_block([])

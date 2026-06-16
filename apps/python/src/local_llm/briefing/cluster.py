@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from ..search import SearchResult
+from .prefetch import PrefetchedContext
 
 # Tokenizer for the heuristic similarity: lowercase alnum runs, length >= 2 so
 # single-char noise and most punctuation drop out.
@@ -70,9 +71,9 @@ class NewsCluster:
                 self.sources.append(source)
 
 
-def _clip(text: str, limit: int) -> str:
+def _clip(text: str | None, limit: int) -> str:
     """Flatten newlines and truncate to ``limit`` chars (with an ellipsis)."""
-    flat = text.strip().replace("\n", " ")
+    flat = (text or "").strip().replace("\n", " ")
     return flat[:limit] + "..." if len(flat) > limit else flat
 
 
@@ -106,7 +107,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
-def _iter_tagged_hits(ctx) -> list[tuple[str, SearchResult]]:
+def _iter_tagged_hits(ctx: PrefetchedContext) -> list[tuple[str, SearchResult]]:
     """macro + per_ticker hits as (source_tag, result), in a stable order.
 
     geo/events are intentionally excluded: they are already distinct per-topic and
@@ -120,7 +121,7 @@ def _iter_tagged_hits(ctx) -> list[tuple[str, SearchResult]]:
 
 
 def cluster_news_hits(
-    ctx,
+    ctx: PrefetchedContext,
     *,
     embed_fn: EmbedFn | None = None,
     threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
@@ -154,6 +155,11 @@ def cluster_news_hits(
     # Pass 2: similarity grouping over the URL-unique representatives.
     if embed_fn is not None:
         vectors = embed_fn([_text_of(r) for _, r in deduped])
+        if len(vectors) != len(deduped):
+            raise ValueError(
+                f"embed_fn must return one vector per text, got {len(vectors)} "
+                f"for {len(deduped)} inputs"
+            )
 
         def sim(i: int, j: int) -> float:
             return _cosine(vectors[i], vectors[j])
