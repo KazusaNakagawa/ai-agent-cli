@@ -34,6 +34,7 @@ from src.local_llm.briefing import (
     generate_local_briefing,
     load_local_briefing_system_prompt,
     prefetch_briefing_context,
+    render_context_block,
     render_geo_events_block,
     render_macro_block,
     render_prefetch_debug_block,
@@ -382,6 +383,16 @@ def test_render_macro_block_only_contains_macro_hits():
     assert "監視イベント" not in block
 
 
+
+
+def test_render_context_block_covers_all_buckets():
+    # The shared full-context block (used by the Claude API spike, #204) spans
+    # macro + tickers + geo + events in one string.
+    block = render_context_block(_full_ctx())
+    assert "マクロ・市場全体" in block and "https://e.com/m" in block
+    assert "PLTR" in block
+    assert "### 地政学トピック" in block and "https://e.com/g" in block
+    assert "### 監視イベント" in block and "https://e.com/e" in block
 
 
 def test_render_geo_events_block_contains_both_sections():

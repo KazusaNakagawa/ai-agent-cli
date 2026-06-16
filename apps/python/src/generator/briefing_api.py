@@ -31,8 +31,8 @@ from src.generator.prompt import render
 from src.logger import get_logger
 from src.usage_logger import log_usage
 from src.local_llm.articles import enrich_with_article_text
-from src.local_llm.briefing import prefetch_briefing_context
-from src.local_llm.search import BraveSearchClient, SearchResult
+from src.local_llm.briefing import prefetch_briefing_context, render_context_block
+from src.local_llm.search import BraveSearchClient
 
 logger = get_logger(__name__)
 
@@ -61,29 +61,10 @@ def compute_cost_usd(usage: dict) -> float:
     )
 
 
-def _render_hits(label: str, hits: list[SearchResult]) -> str:
-    lines = [f"### {label}"]
-    for h in hits:
-        body = h.content or h.description
-        lines.append(f"- [{h.title}]({h.url})\n  {body}")
-    return "\n".join(lines)
-
-
-def build_context_block(ctx) -> str:
-    """Flatten the pre-fetched context into a plain-text block for the prompt."""
-    blocks: list[str] = []
-    if ctx.macro:
-        blocks.append(_render_hits("マクロ", ctx.macro))
-    for ticker, hits in ctx.per_ticker.items():
-        if hits:
-            blocks.append(_render_hits(f"銘柄: {ticker}", hits))
-    for topic, hits in ctx.geo_by_topic.items():
-        if hits:
-            blocks.append(_render_hits(f"地政学: {topic}", hits))
-    for name, hits in ctx.events_by_name.items():
-        if hits:
-            blocks.append(_render_hits(f"イベント: {name}", hits))
-    return "\n\n".join(blocks) if blocks else "(取得済み記事なし)"
+# Context formatting is shared with the local-LLM path; see
+# local_llm.briefing.render_context_block. Re-exported under the name used by the
+# spike's tests / orchestration.
+build_context_block = render_context_block
 
 
 def build_api_prompts(
