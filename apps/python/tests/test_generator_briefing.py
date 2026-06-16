@@ -8,6 +8,7 @@ from src.generator.briefing import (
     build_watch_events_context,
     build_watch_sectors_context,
     generate_briefing,
+    load_briefing_few_shot,
 )
 
 
@@ -154,3 +155,30 @@ class TestGenerateBriefing:
 
         assert "main ok" in result
         assert "セクター動向の取得に失敗しました" in result
+
+    def test_main_prompt_includes_few_shot_asset(self):
+        """メイン分析プロンプトに few-shot 例（#192 のアセット）が注入される。"""
+        config = _make_config()
+        captured = {}
+
+        def mock(prompt, label, timeout):
+            if label == "メイン分析":
+                captured["prompt"] = prompt
+            return "ok"
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            generate_briefing("PLTR: +2%", config)
+
+        few_shot = load_briefing_few_shot()
+        # 例の先頭の特徴的な見出しがそのままプロンプトに含まれる
+        assert "### 今日のサマリー（1文）" in captured["prompt"]
+        assert few_shot.strip() in captured["prompt"]
+
+
+class TestLoadBriefingFewShot:
+    def test_asset_is_non_empty_and_follows_format(self):
+        text = load_briefing_few_shot()
+        assert text.strip()
+        # 出力フォーマットの主要セクションを型として含む
+        for heading in ("### 今日のサマリー", "### なぜ動いたか", "### 自分への示唆", "### 参考記事"):
+            assert heading in text

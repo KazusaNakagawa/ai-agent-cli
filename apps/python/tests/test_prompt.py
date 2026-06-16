@@ -47,10 +47,11 @@ class TestExistingTemplates:
             geopolitical="GEO",
             watch_events="EVT",
             stocks="STK",
+            few_shot="FEWSHOT",
         )
-        for marker in ("THM", "TKR", "GEO", "EVT", "STK"):
+        for marker in ("THM", "TKR", "GEO", "EVT", "STK", "FEWSHOT"):
             assert marker in out
-        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks"):
+        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$few_shot"):
             assert placeholder not in out
 
     def test_briefing_sectors_renders_all_placeholders(self):
