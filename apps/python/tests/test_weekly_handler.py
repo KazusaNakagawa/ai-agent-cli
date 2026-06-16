@@ -115,16 +115,39 @@ class TestFormatBriefings:
 
 
 class TestGenerateWeeklySummary:
+    def _fake_cfg(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(model="qwen2.5:14b", num_ctx=16384, temperature=0.2)
+
     def test_empty_pages_raises(self):
         with pytest.raises(ValueError, match="見つかりませんでした"):
             generate_weekly_summary([])
 
-    def test_calls_run_claude(self):
+    def test_runs_on_local_ollama_not_claude(self):
+        """週次サマリーはローカル Ollama 経路で生成され、Claude API を呼ばない (#193)。"""
         pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
-        with patch("src.generator.weekly_summary.run_claude", return_value="summary") as mock_run:
-            result = generate_weekly_summary(pages)
-        assert result == "summary"
-        mock_run.assert_called_once()
+        fake_client = MagicMock()
+        fake_client.chat.return_value = {"message": {"content": "週次サマリー本文"}}
+
+        result = generate_weekly_summary(
+            pages, ollama_client=fake_client, cfg=self._fake_cfg()
+        )
+
+        assert result == "週次サマリー本文"
+        # ローカル Ollama の chat が呼ばれ、cfg のモデル/オプションが渡る
+        fake_client.chat.assert_called_once()
+        kwargs = fake_client.chat.call_args.kwargs
+        assert kwargs["model"] == "qwen2.5:14b"
+        assert kwargs["options"]["num_ctx"] == 16384
+        # 前週ブリーフィングの本文がプロンプトに含まれる
+        assert "content" in kwargs["messages"][-1]["content"]
+
+    def test_does_not_import_or_call_run_claude(self):
+        """weekly_summary モジュールは run_claude へ依存しない（オフロード完了の回帰ガード）。"""
+        import src.generator.weekly_summary as mod
+
+        assert not hasattr(mod, "run_claude")
 
 
 # ---------------------------------------------------------------------------
