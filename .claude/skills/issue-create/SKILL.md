@@ -1,6 +1,6 @@
 ---
 name: issue-create
-description: Use when the user has an implementation plan and wants to file feature-unit GitHub Issues in English, with an Epic parent that links to child issues via checklist
+description: Use when the user has an implementation plan and wants to file feature-unit GitHub Issues in English. Single issue → no Epic, no confirmation; multiple issues → add an Epic parent linking children via checklist
 argument-hint: "<plan-file-path>"
 allowed-tools: Bash(gh:*), Read, AskUserQuestion
 ---
@@ -19,7 +19,9 @@ Convert a plan document (typically under `.claude/superpowers/plans/` or `docs/`
 
 1. **Read the plan file** passed as `$ARGUMENTS`. Identify discrete tasks.
 
-2. **Group tasks into feature units.** Target 4–8 issues. Avoid 1-issue-per-task (too noisy) and avoid 1-or-2 mega-issues (too coarse). A feature unit is something that can be PR'd independently.
+2. **Group tasks into feature units.** A feature unit is something that can be PR'd independently. Decide single vs. multiple by the work, not a fixed target:
+   - **Single issue** (1 PR / spike / small feature) → file exactly one issue, **no Epic**. Avoid over-splitting.
+   - **Multiple issues** (4–8 typical) → file the children **and** an Epic parent. Avoid 1-issue-per-task (too noisy) and 1-or-2 mega-issues (too coarse).
 
 3. **Inspect existing labels and milestones** so the new issues fit the project's conventions:
 
@@ -29,10 +31,10 @@ Convert a plan document (typically under `.claude/superpowers/plans/` or `docs/`
    gh api repos/<owner>/<repo>/milestones
    ```
 
-4. **Confirm with the user** via `AskUserQuestion`:
-   - Granularity (proposed grouping table) — show as a markdown table before asking
-   - Whether to create an Epic parent (recommended: yes)
-   - Whether each issue body should reference spec/plan paths (recommended: yes, even if `.claude/` is gitignored)
+4. **Granularity & Epic — decide without asking.**
+   - **Single issue:** create it directly. No confirmation, no Epic.
+   - **Multiple issues:** include an Epic parent by default. Only use `AskUserQuestion` if the grouping is genuinely ambiguous; otherwise proceed with your proposed grouping.
+   - Always reference spec/plan paths in issue bodies (even if `.claude/` is gitignored).
 
 5. **Draft each issue** with the following structure (English only):
 
@@ -67,7 +69,7 @@ Convert a plan document (typically under `.claude/superpowers/plans/` or `docs/`
    )"
    ```
 
-7. **Create the Epic** referencing children by issue number with checkbox markdown. Capture child URLs into shell variables and `basename` them to get numbers:
+7. **Create the Epic (multiple-issue case only — skip for a single issue)** referencing children by issue number with checkbox markdown. Capture child URLs into shell variables and `basename` them to get numbers:
 
    ```bash
    URL1=$(gh issue create ...)
