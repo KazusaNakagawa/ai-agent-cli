@@ -28,6 +28,21 @@ def _extract_json_array(raw: str) -> list:
     return data if isinstance(data, list) else []
 
 
+def _normalize_targets(value) -> list[str]:
+    # LLM が単一文字列を返した場合に文字分割しないよう、リスト化してから正規化する。
+    if not isinstance(value, list):
+        value = [value] if str(value).strip() else []
+    return [str(t) for t in value if str(t).strip()]
+
+
+def _to_int(value, default: int) -> int:
+    # 非数値・型不整合な horizon_days で抽出全体が落ちないよう既定値に倒す。
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def parse_claims(raw: str, date_str: str) -> list[dict]:
     claims = []
     for i, item in enumerate(_extract_json_array(raw), start=1):
@@ -41,8 +56,8 @@ def parse_claims(raw: str, date_str: str) -> list[dict]:
             "id": f"{date_str}-{i:02d}",
             "theme": str(item.get("theme", "")).strip(),
             "direction": direction,
-            "targets": [str(t) for t in item.get("targets", []) if str(t).strip()],
-            "horizon_days": int(item.get("horizon_days") or 5),
+            "targets": _normalize_targets(item.get("targets", [])),
+            "horizon_days": _to_int(item.get("horizon_days") or 5, 5),
             "type": ctype,
         })
     return claims

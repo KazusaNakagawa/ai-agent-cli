@@ -35,9 +35,17 @@ def parse_verdict(raw: str) -> dict:
         return {"verdict": "unresolved", "confidence": 0.0, "rationale": "unknown verdict"}
     return {
         "verdict": verdict,
-        "confidence": float(data.get("confidence", 0.0)),
+        "confidence": _to_float(data.get("confidence"), 0.0),
         "rationale": str(data.get("rationale", "")),
     }
+
+
+def _to_float(value, default: float) -> float:
+    # confidence が "high" や null でも採点が落ちないよう既定値に倒す。
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def score_claim(claim: dict, all_dates: list[str]) -> dict:

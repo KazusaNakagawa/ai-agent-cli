@@ -19,6 +19,12 @@ def test_parse_verdict_bad_json_is_unresolved():
     assert v["verdict"] == "unresolved"
 
 
+def test_parse_verdict_non_numeric_confidence_defaults():
+    v = score.parse_verdict('{"verdict":"hit","confidence":"high","rationale":"r"}')
+    assert v["verdict"] == "hit"
+    assert v["confidence"] == 0.0
+
+
 def test_score_claim_unresolved_without_followup():
     claim = {"id": "2026-06-17-01", "theme": "t", "direction": "弱気",
              "targets": ["PLTR"], "horizon_days": 1, "type": "prediction"}
