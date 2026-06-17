@@ -22,6 +22,7 @@
 
 ### Out of scope（YAGNI）
 - 市場データ API による客観採点（将来の拡張: ground truth source B）
+- matplotlib 等による PNG グラフ出力（視覚化は Mermaid 埋め込みで足りる）
 - DB / Web UI / 通知連携
 - ディベートエージェントなどの判断生成側
 
@@ -99,7 +100,7 @@ output/eval/report.md              ← 的中率スコアカード
 
 入力: `output/eval/scores/*.json` 全件。
 処理: `unresolved` を除いた確定スコアを集計。
-出力: `output/eval/report.md`。
+出力: `output/eval/report.md`（Mermaid 図を埋め込んだマークダウン）。
 
 集計軸:
 - type別（prediction / causal）の的中率
@@ -107,6 +108,22 @@ output/eval/report.md              ← 的中率スコアカード
 - 時系列（日付ごとの hit率の推移）
 
 partial は 0.5 hit として加重。
+
+### 視覚化（Mermaid・依存ライブラリ追加なし）
+
+グラフは Mermaid をマークダウンに直接埋め込む。GitHub・Notion ともにレンダリングするため、
+既存の notion-import 連携ともそのまま噛み合う。新規 Python ライブラリは不要（集計は既存の
+pandas/numpy で足りる）。
+
+- type別・セクター別の的中率内訳: `pie` チャート
+- 時系列の hit率推移: `xychart-beta`（折れ線）
+- 数値の裏付けとして、各図に対応する集計テーブル（マークダウン）も併記する
+
+Mermaid 文字列は `report.py` 内のヘルパで集計値から組み立てる（テンプレートに数値を流し込む
+だけで、外部描画プロセスは走らせない）。
+
+将来、より自由度の高い折れ線・棒グラフが必要になれば `matplotlib`（PNG出力）を後付けする
+（本 spec ではスコープ外）。
 
 ## エントリポイント
 
