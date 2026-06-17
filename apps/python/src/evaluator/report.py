@@ -56,8 +56,20 @@ h1 { font-size: 1.7rem; font-weight: 700; letter-spacing: .02em; margin: 0 0 .25
   padding: 1.25rem 1.5rem; margin-bottom: 1.25rem;
   box-shadow: 0 1px 3px rgba(0,0,0,.4);
 }
-.card h2 { font-size: 1.05rem; margin: 0 0 1rem; display: flex; gap: .5rem; align-items: baseline; }
+.card h2 { font-size: 1.05rem; margin: 0 0 .35rem; display: flex; gap: .5rem; align-items: baseline; }
 .card h2 .note { font-size: .75rem; color: #8b93a1; font-weight: 400; }
+.card .desc { font-size: .8rem; color: #8b93a1; margin: 0 0 1rem; }
+.legend {
+  background: #141821; border: 1px solid #232732; border-radius: 12px;
+  padding: 1rem 1.25rem; margin-bottom: 1.5rem; font-size: .82rem; color: #b8c0cc;
+}
+.legend b { color: #e6e8ec; }
+.legend ul { margin: .5rem 0 0; padding-left: 1.1rem; }
+.legend li { margin: .15rem 0; }
+.legend .chip {
+  display: inline-block; padding: .05rem .4rem; border-radius: 5px;
+  font-size: .75rem; font-weight: 600; color: #0f1115;
+}
 table { width: 100%; border-collapse: collapse; }
 td { padding: .45rem .5rem; border-top: 1px solid #232732; vertical-align: middle; }
 tr:first-child td { border-top: none; }
@@ -71,7 +83,7 @@ tr:first-child td { border-top: none; }
 def _color(rate: float) -> str:
     # hit率 0=赤 → 1=緑 へ連続変化（hue 0→120）。
     hue = int(round(rate * 120))
-    return f"hsl({hue}, 65%, 48%)"
+    return f"hsla({hue}, 65%, 48%, .6)"
 
 
 def _bar_html(rate: float) -> str:
@@ -106,10 +118,28 @@ def _trend_rows(by_date: list[dict]) -> str:
     )
 
 
-def _card(title: str, body: str, note: str = "") -> str:
+def _card(title: str, body: str, desc: str = "", note: str = "") -> str:
     note_html = f'<span class="note">{_esc(note)}</span>' if note else ""
-    return (f'<section class="card"><h2>{_esc(title)}{note_html}</h2>'
+    desc_html = f'<p class="desc">{_esc(desc)}</p>' if desc else ""
+    return (f'<section class="card"><h2>{_esc(title)}{note_html}</h2>{desc_html}'
             f'<table>{body}</table></section>')
+
+
+_LEGEND = (
+    '<div class="legend">'
+    '<b>このレポートの読み方</b>'
+    '<ul>'
+    '<li><b>hit率</b> … 過去のブリーフィングの「見立て」が、後日のブリーフィング（真値）に'
+    '照らしてどれだけ当たったかの平均スコア。'
+    '<span class="chip" style="background:hsla(0,65%,48%,.6);color:#fff">miss=0</span> / '
+    '<span class="chip" style="background:hsla(60,65%,48%,.6)">partial=0.5</span> / '
+    '<span class="chip" style="background:hsla(120,65%,48%,.6);color:#fff">hit=1.0</span> '
+    'の平均で、<b>1.0 に近いほどよく当たっている</b>。バーの色も赤→緑で同じ意味。</li>'
+    '<li><b>type</b> … 見立ての種類。<b>prediction</b>＝将来こうなるという予測、'
+    '<b>causal</b>＝「ある出来事が相場のこう動かした」という因果説明。</li>'
+    '<li><b>件数</b> … 集計に使ったテーマ数。少ないほどブレやすい（1件なら 0 か 1 に振れる）。</li>'
+    '</ul></div>'
+)
 
 
 def build_report() -> str:
@@ -126,10 +156,14 @@ def build_report() -> str:
     target_note = (f"上位 {_TARGET_TOP_N} 件 / 全 {target_count} 件"
                    if target_count > _TARGET_TOP_N else "")
     cards = "\n".join([
-        _card("type別 hit率", _section_rows(agg["by_type"])),
+        _card("type別 hit率", _section_rows(agg["by_type"]),
+              desc="予測（prediction）と因果説明（causal）、どちらの見立てが当たりやすいか。"),
         _card("セクター/銘柄別 hit率",
-              _section_rows(agg["by_target"], top_n=_TARGET_TOP_N), target_note),
-        _card("hit率の推移", _trend_rows(agg["by_date"])),
+              _section_rows(agg["by_target"], top_n=_TARGET_TOP_N),
+              desc="どの銘柄・セクターの見立てが当たりやすい／読みにくいか。",
+              note=target_note),
+        _card("hit率の推移", _trend_rows(agg["by_date"]),
+              desc="日ごとの平均 hit率。ブリーフィング全体の精度が時間とともにどう動くか。"),
     ])
     html = (
         "<!doctype html>\n"
@@ -138,8 +172,8 @@ def build_report() -> str:
         "<title>ブリーフィング評価スコアカード</title>"
         f"<style>{_CSS}</style></head><body><div class=\"wrap\">"
         "<h1>ブリーフィング評価スコアカード</h1>"
-        '<div class="sub">後日のブリーフィングを真値とした的中率（hit=1.0 / partial=0.5 / miss=0）</div>'
-        f"{cards}</div></body></html>\n"
+        '<div class="sub">後日のブリーフィングを真値とした、過去の見立ての的中率スコア</div>'
+        f"{_LEGEND}{cards}</div></body></html>\n"
     )
     storage.REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     storage.REPORT_PATH.write_text(html, encoding="utf-8")

@@ -9,7 +9,7 @@ def _claim(cid, ctype, targets):
 
 
 def _hue(color: str) -> int:
-    return int(re.search(r"hsl\((\d+)", color).group(1))
+    return int(re.search(r"hsla?\((\d+)", color).group(1))
 
 
 def test_aggregate_hit_rate_with_partial_weight():
