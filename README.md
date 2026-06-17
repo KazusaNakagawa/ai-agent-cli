@@ -127,8 +127,8 @@ See [docs/launchd-setup.md](docs/launchd-setup.md) for the full setup guide (pli
 
 A separate pipeline scores past briefings to measure how well their views held up. It extracts
 macro, theme-level views from each briefing, judges them against *later* briefings as ground truth,
-and aggregates hit rates into a Mermaid scorecard. LLM calls go through the same `claude` CLI path
-(subscription auth) — no extra API key required.
+and aggregates hit rates into a self-contained HTML scorecard (modern dark theme, colored hit-rate
+bars). LLM calls go through the same `claude` CLI path (subscription auth) — no extra API key required.
 
 ```bash
 # 1. Extract structured themes from briefings (all dates; already-extracted ones are skipped)
@@ -146,7 +146,7 @@ Outputs (all under git-ignored `output/`):
 
 - `output/eval/claims/<date>.json` — extracted themes (`direction`, `targets`, `horizon_days`, `type`)
 - `output/eval/scores/<date>.json` — verdicts (`hit` / `miss` / `partial` / `unresolved`)
-- `output/eval/report.md` — Mermaid `pie` + `xychart-beta` scorecard (hit rate by type / sector / time)
+- `output/eval/report.html` — HTML scorecard (hit rate by type / sector / time); open it in a browser. Per-target view shows the top 10 by count.
 
 A theme stays `unresolved` until at least one briefing exists inside its window `(date, date + horizon_days]`;
 re-running `score` only re-evaluates `unresolved` entries and never overwrites finalized verdicts.

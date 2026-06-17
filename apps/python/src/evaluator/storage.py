@@ -11,7 +11,7 @@ from src.constants import BRIEFING_OUTPUT_DIR, OUTPUT_DIR
 EVAL_DIR = OUTPUT_DIR / "eval"
 CLAIMS_DIR = EVAL_DIR / "claims"
 SCORES_DIR = EVAL_DIR / "scores"
-REPORT_PATH = EVAL_DIR / "report.md"
+REPORT_PATH = EVAL_DIR / "report.html"
 
 _BRIEFING_RE = re.compile(r"^briefing_(\d{4}-\d{2}-\d{2})\.md$")
 
