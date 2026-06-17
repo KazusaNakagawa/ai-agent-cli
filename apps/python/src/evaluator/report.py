@@ -47,8 +47,8 @@ def pie_block(title: str, rates: dict[str, dict]) -> str:
 
 
 def xychart_block(by_date: list[dict]) -> str:
-    xs = ", ".join(d["date"] for d in by_date)
-    ys = " ".join(str(d["hit_rate"]) for d in by_date)
+    xs = ", ".join(f'"{d["date"]}"' for d in by_date)
+    ys = ", ".join(str(d["hit_rate"]) for d in by_date)
     return "\n".join([
         "```mermaid",
         "xychart-beta",

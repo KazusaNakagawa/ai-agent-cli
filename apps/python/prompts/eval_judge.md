@@ -10,4 +10,4 @@ $followups
 - verdict: "hit"（方向性が当たった）| "miss"（外れた）| "partial"（部分的）| "unresolved"（判断材料不足）
 - confidence: 0.0〜1.0
 - rationale: 1〜2文の根拠（後日ブリーフィングの記述を引用）
-出力は {"verdict","confidence","rationale"} の JSON オブジェクトのみ。
+出力は {"verdict":"hit|miss|partial|unresolved","confidence":0.0,"rationale":"..."} の JSON オブジェクトのみ。

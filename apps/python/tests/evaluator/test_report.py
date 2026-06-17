@@ -27,3 +27,12 @@ def test_aggregate_hit_rate_with_partial_weight():
 def test_pie_block_is_mermaid():
     block = report.pie_block("type別", {"prediction": {"count": 2, "hit_rate": 0.75}})
     assert "```mermaid" in block and "pie" in block
+
+
+def test_xychart_block_quotes_dates_and_comma_separates_values():
+    block = report.xychart_block([
+        {"date": "2026-06-17", "hit_rate": 0.5},
+        {"date": "2026-06-19", "hit_rate": 1.0},
+    ])
+    assert 'x-axis ["2026-06-17", "2026-06-19"]' in block
+    assert "line [0.5, 1.0]" in block

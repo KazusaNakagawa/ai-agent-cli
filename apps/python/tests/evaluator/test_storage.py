@@ -22,6 +22,7 @@ def test_list_briefing_dates_filters_and_sorts(tmp_path, monkeypatch):
         "briefing_2026-06-15.md",
         "local_2026-06-16.md",
         "briefing_2026-06-16-001.md",
+        "briefing_2026-02-31.md",  # 形式は合うが暦上無効
     ]:
         (bdir / name).write_text("x", encoding="utf-8")
     monkeypatch.setattr(storage, "BRIEFING_OUTPUT_DIR", bdir)

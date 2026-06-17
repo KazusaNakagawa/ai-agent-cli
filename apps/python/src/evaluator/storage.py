@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -31,9 +32,15 @@ def briefing_path(date_str: str) -> Path:
 def list_briefing_dates() -> list[str]:
     if not BRIEFING_OUTPUT_DIR.exists():
         return []
-    dates = [
-        m.group(1)
-        for p in BRIEFING_OUTPUT_DIR.iterdir()
-        if (m := _BRIEFING_RE.match(p.name))
-    ]
+    dates: list[str] = []
+    for p in BRIEFING_OUTPUT_DIR.iterdir():
+        m = _BRIEFING_RE.match(p.name)
+        if not m:
+            continue
+        d = m.group(1)
+        try:
+            date.fromisoformat(d)  # 形式は合うが暦上無効な日付を除外
+        except ValueError:
+            continue
+        dates.append(d)
     return sorted(dates)
