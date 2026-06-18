@@ -2,7 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.notifier.notion import send_to_notion, _markdown_to_blocks, _block_to_text
+from src.notifier.notion import send_to_notion, _block_to_text
+from src.notifier.markdown import markdown_to_notion_blocks as _markdown_to_blocks
 
 
 def _make_notion_mock(title_prop="Name", page_url="https://notion.so/page-1"):
