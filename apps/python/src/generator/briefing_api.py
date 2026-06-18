@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime
-from pathlib import Path
 
 from src.config import BriefingConfig, load_config
 from src.constants import BRIEFING_OUTPUT_DIR
@@ -29,6 +28,7 @@ from src.generator.briefing import (
 )
 from src.generator.prompt import render
 from src.logger import get_logger
+from src.notifier.local_md import write_md_file
 from src.usage_logger import log_usage
 from src.local_llm.articles import enrich_with_article_text
 from src.local_llm.briefing import prefetch_briefing_context, render_context_block
@@ -196,9 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     md = run_briefing_api(config, client)
 
     today = date.today().isoformat()
-    BRIEFING_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = Path(BRIEFING_OUTPUT_DIR) / f"briefing_api_{today}.md"
-    out_path.write_text(md, encoding="utf-8")
+    out_path = write_md_file(BRIEFING_OUTPUT_DIR, f"briefing_api_{today}.md", md)
     logger.info("保存完了: %s", out_path)
     logger.info("=== Claude API ブリーフィング終了 ===")
     return 0

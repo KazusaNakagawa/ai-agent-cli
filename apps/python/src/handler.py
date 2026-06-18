@@ -10,12 +10,9 @@ from src.notifier.discord import send_to_discord
 from src.notifier.local_md import save_briefing_md
 from src.notifier.notion import send_to_notion
 from src.logger import get_logger
+from src.utils import is_configured as _is_configured
 
 logger = get_logger(__name__)
-
-
-def _is_configured(*values: str) -> bool:
-    return all(values)
 
 
 def _preflight() -> None:

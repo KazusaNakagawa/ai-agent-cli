@@ -371,20 +371,29 @@ def _block_to_text(block: dict) -> str:
     return text
 
 
-def _fetch_blocks(notion: Client, block_id: str) -> list[dict]:
-    """指定ブロックの全子ブロックをページネーションして返す。"""
+def _paginate(call, base_kwargs: dict) -> list[dict]:
+    """Notion API のカーソルページネーションを共通化する。
+
+    ``call`` は ``start_cursor`` を含む kwargs を受け取り ``has_more`` / ``next_cursor`` /
+    ``results`` キーを持つレスポンスを返す callable。
+    """
     results: list[dict] = []
     cursor: str | None = None
     while True:
-        kwargs: dict = {"block_id": block_id, "page_size": 100}
+        kwargs = dict(base_kwargs)
         if cursor:
             kwargs["start_cursor"] = cursor
-        resp = notion.blocks.children.list(**kwargs)
+        resp = call(**kwargs)
         results.extend(resp.get("results", []))
         if not resp.get("has_more"):
             break
         cursor = resp.get("next_cursor")
     return results
+
+
+def _fetch_blocks(notion: Client, block_id: str) -> list[dict]:
+    """指定ブロックの全子ブロックをページネーションして返す。"""
+    return _paginate(notion.blocks.children.list, {"block_id": block_id, "page_size": 100})
 
 
 def _fetch_page_text(notion: Client, page_id: str) -> str:
@@ -448,22 +457,12 @@ def fetch_weekly_pages(
     since_dt = _utcnow() - timedelta(days=days)
     normalized_db_id = database_id.replace("-", "")
 
-    all_results: list[dict] = []
-    cursor: str | None = None
     try:
-        while True:
-            kwargs: dict = {
-                "filter": {"value": "page", "property": "object"},
-                "sort": {"direction": "descending", "timestamp": "last_edited_time"},
-                "page_size": 100,
-            }
-            if cursor:
-                kwargs["start_cursor"] = cursor
-            resp = notion.search(**kwargs)
-            all_results.extend(resp.get("results", []))
-            if not resp.get("has_more"):
-                break
-            cursor = resp.get("next_cursor")
+        all_results = _paginate(notion.search, {
+            "filter": {"value": "page", "property": "object"},
+            "sort": {"direction": "descending", "timestamp": "last_edited_time"},
+            "page_size": 100,
+        })
     except Exception:
         logger.exception("Notion 検索に失敗しました (database_id=%s)", database_id)
         return []
