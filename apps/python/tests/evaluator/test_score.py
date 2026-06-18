@@ -37,6 +37,7 @@ def test_parse_verdicts_batch_valid():
 def test_parse_verdicts_batch_invalid_returns_none():
     assert score.parse_verdicts_batch("garbage") is None
     assert score.parse_verdicts_batch('{"verdict":"hit"}') is None  # object not array
+    assert score.parse_verdicts_batch('[null, {"verdict":"hit"}]') is None  # non-dict element
 
 
 def test_score_claim_unresolved_without_followup():
@@ -59,6 +60,23 @@ def test_score_claim_uses_judge_when_followup_exists(tmp_path, monkeypatch):
         result = score.score_claim(claim, _DATES)
     assert result["verdict"] == "hit"
     assert result["id"] == "2026-06-17-01"
+
+
+def test_score_claims_batch_id_assigned_positionally(tmp_path, monkeypatch):
+    """LLM が id を間違えて返しても pending の id がポジションベースで確定される。"""
+    bdir = tmp_path / "briefing"
+    bdir.mkdir()
+    (bdir / "briefing_2026-06-19.md").write_text("後日本文", encoding="utf-8")
+    monkeypatch.setattr(storage, "BRIEFING_OUTPUT_DIR", bdir)
+    claims = [
+        {"id": "2026-06-17-01", "theme": "t", "direction": "強気",
+         "targets": ["PLTR"], "horizon_days": 5, "type": "prediction"},
+    ]
+    # LLM が間違った id を返す
+    batch_out = '[{"id":"WRONG-ID","verdict":"hit","confidence":0.9,"rationale":"r"}]'
+    with patch("src.evaluator.score.run_claude", return_value=batch_out):
+        results = score.score_claims_batch(claims, _DATES)
+    assert results[0]["id"] == "2026-06-17-01"  # pending の id に上書きされる
 
 
 def test_score_claims_batch_single_call(tmp_path, monkeypatch):

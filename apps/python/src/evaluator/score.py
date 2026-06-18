@@ -42,7 +42,11 @@ def parse_verdict(raw: str) -> dict:
 
 
 def parse_verdicts_batch(raw: str) -> list[dict] | None:
-    """バッチ応答 (JSON 配列) をパースする。失敗時は None を返す。"""
+    """バッチ応答 (JSON 配列) をパースする。失敗時は None を返す。
+
+    非 dict 要素が 1 件でもあれば None を返してフォールバックを促す。
+    id は呼び出し側でポジションベースに上書きするため、ここでは raw 値をそのまま格納する。
+    """
     text = raw.strip()
     m = _FENCE_RE.search(text)
     if m:
@@ -55,11 +59,13 @@ def parse_verdicts_batch(raw: str) -> list[dict] | None:
         return None
     results = []
     for item in data:
+        if not isinstance(item, dict):
+            return None
         verdict = item.get("verdict", "unresolved")
         if verdict not in _VALID_VERDICT:
             verdict = "unresolved"
         results.append({
-            "id": str(item.get("id", "")),
+            "id": item.get("id"),  # 呼び出し側でポジションベースに確定する
             "verdict": verdict,
             "confidence": _to_float(item.get("confidence"), 0.0),
             "rationale": str(item.get("rationale", "")),
@@ -80,13 +86,19 @@ def score_claim(claim: dict, all_dates: list[str]) -> dict:
     return results[0]
 
 
-def score_claims_batch(claims: list[dict], all_dates: list[str]) -> list[dict]:
+def score_claims_batch(
+    claims: list[dict],
+    all_dates: list[str],
+    precomputed: dict[str, list[str]] | None = None,
+) -> list[dict]:
     """同一 followup グループの claims を 1 回の LLM 呼び出しで採点する。
 
+    precomputed: {claim_id: followup_dates} の事前計算済みマップ。
+    渡された場合は followup_dates() の再計算を省略する。
     フォールバック: バッチ応答のパースに失敗した場合は per-claim で再実行する。
     """
-    # followup_dates の解決 (グループ内で同一前提で呼ばれるが、念のり個別に解決)
-    followup_map: dict[str, list[str]] = {
+    # followup_dates の解決
+    followup_map: dict[str, list[str]] = precomputed if precomputed is not None else {
         c["id"]: followup_dates(c["id"][:10], c["horizon_days"], all_dates)
         for c in claims
     }
@@ -126,6 +138,9 @@ def score_claims_batch(claims: list[dict], all_dates: list[str]) -> list[dict]:
 
     batch_results = parse_verdicts_batch(raw)
     if batch_results is not None and len(batch_results) == len(pending):
+        # LLM の id は信頼せず、ポジションベースで pending の id を確定する
+        for result, claim in zip(batch_results, pending):
+            result["id"] = claim["id"]
         return resolved + batch_results
 
     # フォールバック: バッチ応答が壊れていた場合は 1 件ずつ再実行
@@ -148,6 +163,7 @@ def score_claims_batch(claims: list[dict], all_dates: list[str]) -> list[dict]:
         single_raw = run_claude(single_prompt, label=f"eval-judge {c['id']}")
         single_results = parse_verdicts_batch(single_raw)
         if single_results and len(single_results) == 1:
+            single_results[0]["id"] = c["id"]  # ポジションベースで id 確定
             fallback.append(single_results[0])
         else:
             fallback.append({"id": c["id"], "verdict": "unresolved", "confidence": 0.0,
@@ -181,14 +197,21 @@ def score(target: str = "all") -> None:
             storage.save_json(scores_file, finalized)
             continue
 
-        # followup_dates キーでグループ化してバッチ処理
+        # followup_dates を一度だけ計算してキャッシュし、グループ化とバッチ処理で再利用
+        followups_cache: dict[str, list[str]] = {
+            c["id"]: followup_dates(c["id"][:10], c["horizon_days"], all_dates)
+            for c in pending
+        }
+
         def _key(c: dict) -> tuple[str, ...]:
-            return tuple(followup_dates(c["id"][:10], c["horizon_days"], all_dates))
+            return tuple(followups_cache[c["id"]])
 
         pending.sort(key=_key)
         batch_results: list[dict] = []
         for _, group in groupby(pending, key=_key):
-            batch_results.extend(score_claims_batch(list(group), all_dates))
+            claims_in_group = list(group)
+            group_cache = {c["id"]: followups_cache[c["id"]] for c in claims_in_group}
+            batch_results.extend(score_claims_batch(claims_in_group, all_dates, group_cache))
 
         # 元の claim 順序に合わせて保存
         id_to_result = {r["id"]: r for r in finalized + batch_results}
