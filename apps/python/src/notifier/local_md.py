@@ -33,6 +33,15 @@ def save_briefing_md(
     return path
 
 
+def write_md_file(output_dir: Path, filename: str, text: str) -> Path:
+    """output_dir/filename にテキストを書き込む。ディレクトリがなければ作成する。"""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / filename
+    path.write_text(text, encoding="utf-8")
+    logger.info("MD 出力: %s (%d文字)", path, len(text))
+    return path
+
+
 def _prune_old(output_dir: Path, retention_days: int) -> None:
     matched = [
         p for p in output_dir.iterdir()

@@ -8,12 +8,9 @@ from src.metrics.xss import extract_xss_metrics
 from src.notifier.discord import send_to_discord
 from src.notifier.notion import send_to_notion
 from src.logger import get_logger
+from src.utils import is_configured as _is_configured
 
 logger = get_logger(__name__)
-
-
-def _is_configured(*values: str) -> bool:
-    return all(values)
 
 
 def _write_md_fallback(text: str, filename: str) -> Path:
