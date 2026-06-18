@@ -17,6 +17,6 @@ Under usage-based billing, hitting a full-performance model every time gets expe
 The Mac M4 Air already runs an Ollama + LangChain + FAISS setup, so deterministic work — formatting ticker information, formatting/posting to Notion/Discord — can be shifted to local models or rule-based logic, leaving only the parts that genuinely need reasoning (geopolitical analysis, portfolio-impact assessment) on API calls. Sorting out this split now keeps the per-unit cost impact down after the move to usage-based billing.
 
 ### **4. Make usage visible**
-To estimate the cost feel after moving to usage-based billing, start logging token usage per task in ai-agent-cli now. That reveals which tasks are high-cost ahead of time, so you can prioritize what to optimize first.
+To estimate the cost impact after moving to usage-based billing, start logging token usage per task in ai-agent-cli now. That reveals which tasks are high-cost ahead of time, so you can prioritize what to optimize first.
 
 Where would you imagine starting? For example, designing the "model-abstraction refactoring" together could be a good first step.
