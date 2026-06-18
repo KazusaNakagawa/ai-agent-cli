@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-# Import bin/chat.py without triggering main()
+# src/chat_cli.py に移動済み
 _spec = importlib.util.spec_from_file_location(
-    "chat", Path(__file__).parents[1] / "bin" / "chat.py"
+    "chat", Path(__file__).parents[1] / "src" / "chat_cli.py"
 )
 chat = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(chat)

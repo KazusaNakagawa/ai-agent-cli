@@ -3,8 +3,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# bin/ はパッケージではないので spec から直接ロードする
-_REPORT_PATH = Path(__file__).parents[1] / "bin" / "usage_report.py"
+_REPORT_PATH = Path(__file__).parents[1] / "src" / "usage_report.py"
 _spec = importlib.util.spec_from_file_location("usage_report", _REPORT_PATH)
 usage_report = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(usage_report)

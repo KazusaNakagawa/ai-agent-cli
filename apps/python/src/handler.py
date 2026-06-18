@@ -73,3 +73,13 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
 
     logger.info("=== 完了 ===")
     return {"statusCode": 200, "body": "Briefing sent.", "md_written": md_written}
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="My World Briefing agent")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Validate credentials and config without running the pipeline")
+    args = parser.parse_args()
+    lambda_handler(dry_run=args.dry_run)
