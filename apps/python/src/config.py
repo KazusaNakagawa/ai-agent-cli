@@ -24,7 +24,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.credentials import get_credential
 
-load_dotenv()
+# Repo root .env（apps/python/ より 2 階層上）を優先ロード。
+# キーチェーンに登録済みの値は credentials.get_credential() が優先するため、
+# .env はキーチェーン未登録時のフォールバックとして機能する。
+load_dotenv(Path(__file__).parents[2] / ".env")
 
 CONFIG_PATH = Path(os.getenv("BRIEFING_CONFIG_PATH", str(Path(__file__).parents[1] / "config" / "briefing.json")))
 XSS_INTEL_CONFIG_PATH = Path(__file__).parents[1] / "config" / "xss_intel.json"
