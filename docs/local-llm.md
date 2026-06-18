@@ -21,7 +21,7 @@ Requires `BRAVE_API_KEY` in `.env` for `--briefing` (Free-plan key at <https://a
 ## Usage
 
 ```bash
-bin/local_llm.sh --index                       # index ~/work/ai-agent into Chroma
+bin/local_llm.sh --index                       # index ~/work/ai-agent-cli into Chroma
 bin/local_llm.sh --status                      # show indexed chunk count & models
 bin/local_llm.sh --ask "認証はどう動く？"
 bin/local_llm.sh --sources "認証はどう動く？"  # retrieval-only debug
