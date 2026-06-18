@@ -98,3 +98,13 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
     all_notifiers_failed = all(v not in ("ok", "skipped") and v is not None for v in notifier_values)
     status_code = 500 if all_notifiers_failed else 200
     return {"statusCode": status_code, "body": result}
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="XSS Intel agent")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Validate credentials and config without running the pipeline")
+    args = parser.parse_args()
+    lambda_handler(dry_run=args.dry_run)

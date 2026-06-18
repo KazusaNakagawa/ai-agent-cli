@@ -42,3 +42,7 @@ def weekly_handler(event=None, context=None):
     logger.info("Notion ページ: %s", page_url)
     logger.info("=== 完了 ===")
     return {"statusCode": 200, "body": f"Weekly summary posted: {page_url}"}
+
+
+if __name__ == "__main__":
+    weekly_handler()

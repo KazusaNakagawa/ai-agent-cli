@@ -6,8 +6,6 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parents[1]))
-
 from src.usage_logger import USAGE_FILE_GLOB, parse_usage_file_date
 
 USAGE_DIR = Path(__file__).parents[1] / "log" / "usage"

@@ -7,10 +7,10 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 # .env is sourced by the repo-root wrapper (../../bin/run.sh) before exec.
 source "$PROJECT_ROOT/.venv/bin/activate"
 
-python "$SCRIPT_DIR/briefing.py"
-# python "$SCRIPT_DIR/xss_intel.py"
+PYTHONPATH="$PROJECT_ROOT" python -m src.handler
+# PYTHONPATH="$PROJECT_ROOT" python -m src.xss_handler
 
 # 金曜日のみ週次振り返りを日次実行後に実行 (1=月 … 5=金)
 if [ "$(date +%u)" = "5" ]; then
-    python "$SCRIPT_DIR/weekly_summary.py"
+    PYTHONPATH="$PROJECT_ROOT" python -m src.weekly_handler
 fi
