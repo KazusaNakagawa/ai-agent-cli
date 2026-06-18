@@ -2,7 +2,8 @@
 .env
 
 # ローカル設定（個人用）
-apps/python/config/briefing.json
+briefing.json
+*.bk
 
 # Claude Code
 .claude/*
