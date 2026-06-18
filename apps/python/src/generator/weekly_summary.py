@@ -17,26 +17,16 @@ from src.prompt_safety import wrap_untrusted
 logger = get_logger(__name__)
 
 
-# Per-page char cap so that N pages fit within a typical local-LLM num_ctx.
-# 16 pages × 1500 chars ≈ 24 000 chars ≈ 12 000 tokens — safely under 16 384.
-_MAX_PAGE_CHARS = 1500
-
-
 def _format_briefings(pages: list[dict]) -> str:
     """ページリストを要約プロンプト用テキストにまとめる。
 
-    Each page body is truncated to _MAX_PAGE_CHARS before being wrapped in an
-    untrusted-context block (indirect prompt-injection guard — page text is
-    prior LLM output that may have ingested attacker-controlled news content).
+    Each page body is wrapped in an untrusted-context block because the
+    page text is prior LLM output that may itself have ingested
+    attacker-controlled news content (indirect prompt injection).
     """
-    def _truncate(text: str) -> str:
-        if len(text) <= _MAX_PAGE_CHARS:
-            return text
-        return text[:_MAX_PAGE_CHARS] + "\n… (truncated)"
-
     return "\n\n---\n\n".join(
         f"### {p['date']} — {p['title']}\n\n"
-        f"{wrap_untrusted(_truncate(p['text']), label='previous_briefing')}"
+        f"{wrap_untrusted(p['text'], label='previous_briefing')}"
         for p in pages
     )
 
