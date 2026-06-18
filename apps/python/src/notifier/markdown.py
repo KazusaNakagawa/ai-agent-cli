@@ -86,7 +86,7 @@ def _line_to_block(line: str) -> dict | None:
         level = len(m.group(1))
         block_type = f"heading_{min(level, 3)}"
         heading_text = re.sub(r"^#+\s*", "", m.group(2))
-        heading_text = re.sub(r"\*+", "", heading_text).strip()
+        heading_text = re.sub(r"^\*{2}|\*{2}$", "", heading_text).strip()
         return {
             "object": "block",
             "type": block_type,
@@ -173,7 +173,7 @@ def _split_label_colon(line: str) -> list[str]:
     m = NOTION_LABEL_COLON_RE.match(line.rstrip())
     if not m:
         return [line]
-    label = m.group(2).strip("* ").rstrip("：:")
+    label = m.group(2).strip("* ").rstrip("\uFF1A:")
     if not label:
         return [line]
     content = re.sub(r"^\*+\s*|\s*\*+$", "", m.group(3).strip())
