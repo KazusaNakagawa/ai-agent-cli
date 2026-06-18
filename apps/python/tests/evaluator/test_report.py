@@ -24,15 +24,41 @@ def test_aggregate_hit_rate_with_partial_weight():
     assert agg["by_target"]["PLTR"] == {"count": 2, "hit_rate": 0.75}
 
 
-def test_pie_block_is_mermaid():
-    block = report.pie_block("type別", {"prediction": {"count": 2, "hit_rate": 0.75}})
-    assert "```mermaid" in block and "pie" in block
+def test_build_html_contains_scorecard_structure():
+    agg = {
+        "by_type": {"prediction": {"count": 2, "hit_rate": 0.75}},
+        "by_target": {"PLTR": {"count": 2, "hit_rate": 0.75}},
+        "by_date": [{"date": "2026-06-17", "hit_rate": 0.75}],
+    }
+    html = report._build_html(agg)
+    assert "<!doctype html>" in html
+    assert "ブリーフィング評価スコアカード" in html
+    assert "prediction" in html
+    assert "PLTR" in html
+    assert "2026-06-17" in html
 
 
-def test_xychart_block_quotes_dates_and_comma_separates_values():
-    block = report.xychart_block([
-        {"date": "2026-06-17", "hit_rate": 0.5},
-        {"date": "2026-06-19", "hit_rate": 1.0},
-    ])
-    assert 'x-axis ["2026-06-17", "2026-06-19"]' in block
-    assert "line [0.5, 1.0]" in block
+def test_build_report_writes_dated_and_latest(tmp_path, monkeypatch):
+    from src.evaluator import storage
+    monkeypatch.setattr(storage, "CLAIMS_DIR", tmp_path / "claims")
+    monkeypatch.setattr(storage, "SCORES_DIR", tmp_path / "scores")
+    monkeypatch.setattr(storage, "REPORT_PATH", tmp_path / "report.html")
+    monkeypatch.setattr(storage, "REPORT_DIR", tmp_path / "reports")
+
+    (tmp_path / "claims").mkdir()
+    (tmp_path / "scores").mkdir()
+
+    import json
+    claim = {"id": "2026-06-17-01", "type": "prediction", "targets": ["PLTR"],
+             "theme": "t", "direction": "強気", "horizon_days": 5}
+    (tmp_path / "claims" / "2026-06-17.json").write_text(json.dumps([claim]))
+    score = {"id": "2026-06-17-01", "verdict": "hit", "confidence": 0.9, "rationale": "r"}
+    (tmp_path / "scores" / "2026-06-17.json").write_text(json.dumps([score]))
+
+    report.build_report()
+
+    assert (tmp_path / "report.html").exists()
+    from datetime import date
+    dated = tmp_path / "reports" / f"report_{date.today().isoformat()}.html"
+    assert dated.exists()
+    assert dated.read_text() == (tmp_path / "report.html").read_text()
