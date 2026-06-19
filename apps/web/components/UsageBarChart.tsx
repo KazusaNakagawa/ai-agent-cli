@@ -49,10 +49,34 @@ export function UsageBarChart({
     barRefs.current[clamped]?.focus()
   }
 
+  const handleBarBlur = (e: React.FocusEvent<HTMLButtonElement>) => {
+    // Keep the active state when focus moves to another bar (arrow keys), so we
+    // don't flicker to null + re-announce via aria-live.
+    const next = e.relatedTarget as Node | null
+    if (next && e.currentTarget.parentElement?.contains(next)) return
+    onActiveChange?.(null)
+  }
+
+  const handleBarKeyDown = (i: number, e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "ArrowRight") {
+      e.preventDefault()
+      focusBar(i + 1)
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault()
+      focusBar(i - 1)
+    }
+  }
+
   return (
     <div data-testid="usage-bar-chart" role="group" aria-label="Usage bar chart" className="flex">
-      {/* Y-axis tick labels, aligned to the gridlines by bottom-offset %. */}
-      <div className="relative shrink-0" style={{ height: CHART_HEIGHT, width: Y_AXIS_WIDTH }}>
+      {/* Y-axis tick labels, aligned to the gridlines by bottom-offset %.
+          aria-hidden: each bar already announces its value, so these would be
+          redundant noise for screen readers. */}
+      <div
+        aria-hidden
+        className="relative shrink-0"
+        style={{ height: CHART_HEIGHT, width: Y_AXIS_WIDTH }}
+      >
         {ticks.map((t) => (
           <span
             key={t}
@@ -105,22 +129,8 @@ export function UsageBarChart({
                 className="flex h-full flex-1 flex-col justify-end"
                 onMouseEnter={() => onActiveChange?.(i)}
                 onFocus={() => onActiveChange?.(i)}
-                onBlur={(e) => {
-                  // Keep the active state when focus moves to another bar (arrow
-                  // keys), so we don't flicker to null + re-announce via aria-live.
-                  const next = e.relatedTarget as Node | null
-                  if (next && e.currentTarget.parentElement?.contains(next)) return
-                  onActiveChange?.(null)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowRight") {
-                    e.preventDefault()
-                    focusBar(i + 1)
-                  } else if (e.key === "ArrowLeft") {
-                    e.preventDefault()
-                    focusBar(i - 1)
-                  }
-                }}
+                onBlur={handleBarBlur}
+                onKeyDown={(e) => handleBarKeyDown(i, e)}
               >
                 <span
                   data-testid={`usage-bar-fill-${i}`}
