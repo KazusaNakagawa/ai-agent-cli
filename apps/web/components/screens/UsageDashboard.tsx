@@ -1,5 +1,5 @@
 "use client"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { UsageBarChart } from "@/components/UsageBarChart"
 import {
@@ -20,13 +20,17 @@ const METRICS: UsageMetric[] = [
 ]
 
 export function UsageDashboard() {
-  const [dates, setDates] = useState<string[]>([])
+  // `null` = dates request still in flight; `[]` = loaded but no logs.
+  const [dates, setDates] = useState<string[] | null>(null)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [records, setRecords] = useState<UsageRecord[]>([])
   const [metric, setMetric] = useState<UsageMetric>("cost_usd")
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // Tracks the date of the most recent request so a slower response for an
+  // older date can't overwrite records for the date the user now has selected.
+  const latestRequestedDate = useRef<string | null>(null)
 
   // Load available dates once; default to the newest.
   useEffect(() => {
@@ -51,14 +55,24 @@ export function UsageDashboard() {
     setLoading(true)
     setError(null)
     setActiveIndex(null)
+    latestRequestedDate.current = date
     fetch(`/api/usage?date=${encodeURIComponent(date)}`, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json() as Promise<UsageDayResponse>
       })
-      .then((data) => setRecords(data.records))
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false))
+      .then((data) => {
+        // Drop responses superseded by a newer date selection.
+        if (latestRequestedDate.current !== date) return
+        setRecords(data.records)
+      })
+      .catch((e) => {
+        if (latestRequestedDate.current !== date) return
+        setError(String(e))
+      })
+      .finally(() => {
+        if (latestRequestedDate.current === date) setLoading(false)
+      })
   }, [])
 
   useEffect(() => {
@@ -69,6 +83,14 @@ export function UsageDashboard() {
     return (
       <p data-testid="usage-error" className="text-sm text-destructive">
         Failed to load usage data: {error}
+      </p>
+    )
+  }
+
+  if (dates === null) {
+    return (
+      <p data-testid="usage-dates-loading" className="text-sm text-muted-foreground">
+        Loading usage dates…
       </p>
     )
   }
