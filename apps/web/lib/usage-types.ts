@@ -40,6 +40,41 @@ export function metricValue(record: UsageRecord, metric: UsageMetric): number {
   return record[metric] ?? 0
 }
 
+export type NiceScale = {
+  /** Top gridline value; bars are scaled against this, not the raw max. */
+  niceMax: number
+  /** Spacing between gridlines (a 1/2/5 × 10ⁿ "nice" number). */
+  step: number
+  /** Tick values from 0 to niceMax inclusive. */
+  ticks: number[]
+}
+
+// Compute a "nice" axis scale: round the step up to the nearest 1/2/5 × 10ⁿ so
+// gridlines land on readable intervals (e.g. max 5000 → step 1000; max 14 →
+// step 2). `targetSteps` is the rough number of intervals to aim for.
+export function niceScale(max: number, targetSteps = 7): NiceScale {
+  if (!(max > 0) || !Number.isFinite(max)) {
+    return { niceMax: 1, step: 1, ticks: [0, 1] }
+  }
+  const rawStep = max / targetSteps
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep))
+  const normalized = rawStep / magnitude
+  let niceUnit: number
+  if (normalized <= 1) niceUnit = 1
+  else if (normalized <= 2) niceUnit = 2
+  else if (normalized <= 5) niceUnit = 5
+  else niceUnit = 10
+  const step = niceUnit * magnitude
+  const niceMax = Math.ceil(max / step) * step
+  const ticks: number[] = []
+  // Use integer count + multiply to avoid float drift accumulating per add.
+  const count = Math.round(niceMax / step)
+  for (let i = 0; i <= count; i++) {
+    ticks.push(Number((step * i).toPrecision(12)))
+  }
+  return { niceMax, step, ticks }
+}
+
 // Human-readable labels for the detail panel, in a fixed display order so the
 // tooltip is predictable regardless of JSON key order.
 export const USAGE_FIELD_LABELS: Record<keyof UsageRecord, string> = {
