@@ -7,6 +7,8 @@ import {
   UsageDatesResponse,
   UsageDayResponse,
   UsageMetric,
+  USAGE_FIELD_LABELS,
+  USAGE_FIELD_ORDER,
   USAGE_METRIC_LABELS,
   UsageRecord,
 } from "@/lib/usage-types"
@@ -161,9 +163,9 @@ export function UsageDashboard() {
           aria-live="polite"
           className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-md border p-3 text-sm sm:grid-cols-3"
         >
-          {(Object.keys(activeRecord) as (keyof UsageRecord)[]).map((key) => (
+          {USAGE_FIELD_ORDER.map((key) => (
             <div key={key} className="flex justify-between gap-2">
-              <dt className="text-muted-foreground">{key}</dt>
+              <dt className="text-muted-foreground">{USAGE_FIELD_LABELS[key]}</dt>
               <dd className="font-medium">
                 {formatUsageField(key, activeRecord[key])}
               </dd>

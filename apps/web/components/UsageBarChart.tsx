@@ -68,7 +68,13 @@ export function UsageBarChart({
             className="flex h-full flex-1 flex-col justify-end"
             onMouseEnter={() => onActiveChange?.(i)}
             onFocus={() => onActiveChange?.(i)}
-            onBlur={() => onActiveChange?.(null)}
+            onBlur={(e) => {
+              // Keep the active state when focus moves to another bar (arrow
+              // keys), so we don't flicker to null + re-announce via aria-live.
+              const next = e.relatedTarget as Node | null
+              if (next && e.currentTarget.parentElement?.contains(next)) return
+              onActiveChange?.(null)
+            }}
             onKeyDown={(e) => {
               if (e.key === "ArrowRight") {
                 e.preventDefault()

@@ -119,6 +119,23 @@ describe("UsageDashboard", () => {
     expect(screen.getByTestId("usage-bar-0")).toHaveFocus()
   })
 
+  it("keeps the detail panel visible while arrow-navigating between bars", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+      return Promise.resolve(jsonResponse(DAY_20620))
+    })
+
+    render(<UsageDashboard />)
+    await waitFor(() => expect(screen.getByTestId("usage-bar-0")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    screen.getByTestId("usage-bar-0").focus()
+    expect(await screen.findByTestId("usage-detail")).toHaveTextContent("セクタースイープ")
+    await user.keyboard("{ArrowRight}")
+    // Panel stays mounted and now reflects the second record.
+    expect(screen.getByTestId("usage-detail")).toHaveTextContent("メイン分析")
+  })
+
   it("shows a no-dates message when there are no logs", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ dates: [] }))
     render(<UsageDashboard />)
