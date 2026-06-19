@@ -87,3 +87,9 @@ async def test_unknown_date_returns_404(authed_client, usage_dir):
 async def test_malformed_date_returns_404(authed_client, usage_dir):
     response = await authed_client.get("/api/usage?date=not-a-date")
     assert response.status_code == 404
+
+
+async def test_path_traversal_date_returns_404(authed_client, usage_dir):
+    # ``..`` / パス区切りを含む date はファイルに触れず 404 になること。
+    response = await authed_client.get("/api/usage?date=../../tmp/20260620")
+    assert response.status_code == 404
