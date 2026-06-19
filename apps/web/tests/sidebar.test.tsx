@@ -88,3 +88,15 @@ describe("Sidebar collapse", () => {
     })
   })
 })
+
+describe("Config > Usage nav", () => {
+  it("renders a Usage link to /config/usage with tooltip attributes", async () => {
+    const user = userEvent.setup()
+    renderSidebar()
+    await user.click(screen.getByTestId("config-toggle"))
+    const link = screen.getByTestId("nav-config-usage")
+    expect(link).toHaveAttribute("href", "/config/usage")
+    expect(link).toHaveAttribute("title", "Usage")
+    expect(link).toHaveAttribute("aria-label", "Usage")
+  })
+})

@@ -131,6 +131,22 @@ export function Sidebar() {
           variant="heading"
         >
           <div className="flex flex-col gap-1">
+            <Link
+              href="/config/usage"
+              title="Usage"
+              aria-label="Usage"
+              data-sidebar-row
+              data-testid="nav-config-usage"
+              className={cn(
+                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+                pathname === "/config/usage"
+                  ? "bg-accent font-medium text-accent-foreground"
+                  : "hover:bg-accent/50",
+              )}
+            >
+              <span aria-hidden>📈</span>
+              <span data-sidebar-label>Usage</span>
+            </Link>
             <SidebarDisclosure
               label="Appearance"
               icon="🎨"
