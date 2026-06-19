@@ -1,4 +1,6 @@
 "use client"
+import { useRef } from "react"
+
 import { metricValue, UsageMetric, UsageRecord } from "@/lib/usage-types"
 import { cn } from "@/lib/utils"
 
@@ -21,6 +23,8 @@ export function UsageBarChart({
   activeIndex = null,
   onActiveChange,
 }: Props) {
+  const barRefs = useRef<(HTMLButtonElement | null)[]>([])
+
   if (records.length === 0) {
     return (
       <p data-testid="usage-chart-empty" className="text-sm text-muted-foreground">
@@ -31,6 +35,11 @@ export function UsageBarChart({
 
   const values = records.map((r) => metricValue(r, metric))
   const max = Math.max(...values, 1)
+
+  const focusBar = (index: number) => {
+    const clamped = Math.max(0, Math.min(records.length - 1, index))
+    barRefs.current[clamped]?.focus()
+  }
 
   return (
     <div
@@ -48,6 +57,9 @@ export function UsageBarChart({
         return (
           <button
             key={`${record.timestamp}-${i}`}
+            ref={(el) => {
+              barRefs.current[i] = el
+            }}
             type="button"
             data-testid={`usage-bar-${i}`}
             data-active={active}
@@ -57,6 +69,15 @@ export function UsageBarChart({
             onMouseEnter={() => onActiveChange?.(i)}
             onFocus={() => onActiveChange?.(i)}
             onBlur={() => onActiveChange?.(null)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight") {
+                e.preventDefault()
+                focusBar(i + 1)
+              } else if (e.key === "ArrowLeft") {
+                e.preventDefault()
+                focusBar(i - 1)
+              }
+            }}
           >
             <span
               data-testid={`usage-bar-fill-${i}`}

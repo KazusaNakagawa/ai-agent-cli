@@ -39,3 +39,19 @@ export const USAGE_METRIC_LABELS: Record<UsageMetric, string> = {
 export function metricValue(record: UsageRecord, metric: UsageMetric): number {
   return record[metric] ?? 0
 }
+
+// Human-readable rendering of a record field for the detail tooltip:
+// cost as currency, duration in seconds, token counts grouped with commas.
+export function formatUsageField(key: keyof UsageRecord, value: unknown): string {
+  if (value === null || value === undefined) return "—"
+  if (key === "cost_usd" && typeof value === "number") {
+    return `$${value.toFixed(4)}`
+  }
+  if (key === "duration_ms" && typeof value === "number") {
+    return `${(value / 1000).toFixed(1)}s`
+  }
+  if (typeof value === "number") {
+    return value.toLocaleString("en-US")
+  }
+  return String(value)
+}

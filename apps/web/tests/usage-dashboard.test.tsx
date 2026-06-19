@@ -84,6 +84,41 @@ describe("UsageDashboard", () => {
     })
   })
 
+  it("shows formatted key/value detail when a bar is hovered", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+      return Promise.resolve(jsonResponse(DAY_20620))
+    })
+
+    render(<UsageDashboard />)
+    await waitFor(() => expect(screen.getByTestId("usage-bar-0")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.hover(screen.getByTestId("usage-bar-0"))
+
+    const detail = await screen.findByTestId("usage-detail")
+    expect(detail).toHaveTextContent("セクタースイープ")
+    expect(detail).toHaveTextContent("$0.8270") // cost formatted as currency
+    expect(detail).toHaveTextContent("186.6s") // duration formatted in seconds
+  })
+
+  it("moves focus between bars with arrow keys", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+      return Promise.resolve(jsonResponse(DAY_20620))
+    })
+
+    render(<UsageDashboard />)
+    await waitFor(() => expect(screen.getByTestId("usage-bar-0")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    screen.getByTestId("usage-bar-0").focus()
+    await user.keyboard("{ArrowRight}")
+    expect(screen.getByTestId("usage-bar-1")).toHaveFocus()
+    await user.keyboard("{ArrowLeft}")
+    expect(screen.getByTestId("usage-bar-0")).toHaveFocus()
+  })
+
   it("shows a no-dates message when there are no logs", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ dates: [] }))
     render(<UsageDashboard />)
