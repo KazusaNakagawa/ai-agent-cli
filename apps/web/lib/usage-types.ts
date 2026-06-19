@@ -18,6 +18,20 @@ export type UsageDatesResponse = {
   dates: string[]
 }
 
+export type UsageDailySummary = {
+  date: string // ISO YYYY-MM-DD
+  calls: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  cost_usd: number
+}
+
+export type UsageSummaryResponse = {
+  summary: UsageDailySummary[]
+}
+
 // Numeric fields a user can chart on the y-axis.
 export type UsageMetric =
   | "cost_usd"
@@ -38,6 +52,15 @@ export const USAGE_METRIC_LABELS: Record<UsageMetric, string> = {
 
 export function metricValue(record: UsageRecord, metric: UsageMetric): number {
   return record[metric] ?? 0
+}
+
+// Daily summaries omit duration; treat missing metrics as 0 for the trend line.
+export function summaryMetricValue(
+  day: UsageDailySummary,
+  metric: UsageMetric,
+): number {
+  const value = (day as unknown as Record<string, unknown>)[metric]
+  return typeof value === "number" ? value : 0
 }
 
 export type NiceScale = {

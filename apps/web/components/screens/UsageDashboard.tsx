@@ -2,8 +2,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { UsageBarChart } from "@/components/UsageBarChart"
+import { UsageTrendChart } from "@/components/UsageTrendChart"
 import {
   formatUsageField,
+  UsageDailySummary,
   UsageDatesResponse,
   UsageDayResponse,
   UsageMetric,
@@ -11,6 +13,7 @@ import {
   USAGE_FIELD_ORDER,
   USAGE_METRIC_LABELS,
   UsageRecord,
+  UsageSummaryResponse,
 } from "@/lib/usage-types"
 
 const METRICS: UsageMetric[] = [
@@ -28,6 +31,7 @@ export function UsageDashboard() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [records, setRecords] = useState<UsageRecord[]>([])
   const [metric, setMetric] = useState<UsageMetric>("cost_usd")
+  const [summary, setSummary] = useState<UsageDailySummary[]>([])
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -49,6 +53,14 @@ export function UsageDashboard() {
         setSelectedDate(data.dates[0] ?? null)
       })
       .catch((e) => !cancelled && setError(String(e)))
+    // Daily summary for the trend chart; failure here is non-fatal (the
+    // per-day bar chart still works), so we only log it.
+    fetch("/api/usage/summary", { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<UsageSummaryResponse>) : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.summary)) setSummary(data.summary)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -143,17 +155,31 @@ export function UsageDashboard() {
         </label>
       </div>
 
-      {loading ? (
-        <p data-testid="usage-loading" className="text-sm text-muted-foreground">
-          Loading…
-        </p>
-      ) : (
-        <UsageBarChart
-          records={records}
-          metric={metric}
-          activeIndex={activeIndex}
-          onActiveChange={setActiveIndex}
-        />
+      <section className="space-y-1">
+        <h3 className="text-sm font-medium text-muted-foreground">
+          Per run — {USAGE_METRIC_LABELS[metric]}
+        </h3>
+        {loading ? (
+          <p data-testid="usage-loading" className="text-sm text-muted-foreground">
+            Loading…
+          </p>
+        ) : (
+          <UsageBarChart
+            records={records}
+            metric={metric}
+            activeIndex={activeIndex}
+            onActiveChange={setActiveIndex}
+          />
+        )}
+      </section>
+
+      {summary.length > 0 && (
+        <section className="space-y-1">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Daily trend — {USAGE_METRIC_LABELS[metric]}
+          </h3>
+          <UsageTrendChart summary={summary} metric={metric} />
+        </section>
       )}
 
       {activeRecord ? (

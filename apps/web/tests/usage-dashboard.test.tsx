@@ -31,6 +31,29 @@ const DAY_20620 = {
   ],
 }
 
+const SUMMARY = {
+  summary: [
+    {
+      date: "2026-06-19",
+      calls: 3,
+      input_tokens: 100,
+      output_tokens: 2000,
+      cache_read_tokens: 5000,
+      cache_creation_tokens: 1000,
+      cost_usd: 0.5,
+    },
+    {
+      date: "2026-06-20",
+      calls: 2,
+      input_tokens: 200,
+      output_tokens: 10607,
+      cache_read_tokens: 9000,
+      cache_creation_tokens: 2000,
+      cost_usd: 1.3,
+    },
+  ],
+}
+
 const fetchMock = vi.fn()
 
 function jsonResponse(body: unknown) {
@@ -82,6 +105,24 @@ describe("UsageDashboard", () => {
       const urls = fetchMock.mock.calls.map((c) => c[0] as string)
       expect(urls.some((u) => u.includes("date=20260619"))).toBe(true)
     })
+  })
+
+  it("renders the daily trend chart from the summary endpoint", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
+      if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+      return Promise.resolve(jsonResponse(DAY_20620))
+    })
+
+    render(<UsageDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("usage-trend-chart")).toBeInTheDocument()
+    })
+    // One point per summary day; line drawn for >1 point.
+    expect(screen.getByTestId("usage-trend-point-0")).toBeInTheDocument()
+    expect(screen.getByTestId("usage-trend-point-1")).toBeInTheDocument()
+    expect(screen.getByTestId("usage-trend-line")).toBeInTheDocument()
   })
 
   it("shows formatted key/value detail when a bar is hovered", async () => {
@@ -146,9 +187,13 @@ describe("UsageDashboard", () => {
 
   it("shows a dates-loading state before the dates request resolves", async () => {
     let resolveDates: (r: Response) => void = () => {}
-    fetchMock.mockImplementation(
-      () => new Promise<Response>((resolve) => (resolveDates = resolve)),
-    )
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/usage/dates")) {
+        return new Promise<Response>((resolve) => (resolveDates = resolve))
+      }
+      // Summary (and any other) endpoint: leave pending so it can't interfere.
+      return new Promise<Response>(() => {})
+    })
     render(<UsageDashboard />)
     // Before resolution we must NOT show the empty-state message.
     expect(screen.getByTestId("usage-dates-loading")).toBeInTheDocument()

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ValidationError
 
 from src.usage_logger import USAGE_DIR, parse_usage_file_date
+from src.usage_report import build_summary
 from web.auth import require_bearer
 
 router = APIRouter(dependencies=[Depends(require_bearer)])
@@ -40,6 +41,22 @@ class UsageDayResponse(BaseModel):
     records: list[UsageRecord]
 
 
+class UsageDailySummary(BaseModel):
+    """1 日分の全 run を合算した集計 (折れ線グラフ用)。"""
+
+    date: str  # ISO ``YYYY-MM-DD``
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_creation_tokens: int
+    cost_usd: float
+
+
+class UsageSummaryResponse(BaseModel):
+    summary: list[UsageDailySummary]
+
+
 @router.get("/usage/dates", response_model=UsageDatesResponse)
 def list_dates() -> UsageDatesResponse:
     """利用可能な ``YYYYMMDD`` を新しい順で返す。"""
@@ -52,6 +69,41 @@ def list_dates() -> UsageDatesResponse:
             dates.append(file_date.strftime("%Y%m%d"))
     dates.sort(reverse=True)
     return UsageDatesResponse(dates=dates)
+
+
+@router.get("/usage/summary", response_model=UsageSummaryResponse)
+def get_summary() -> UsageSummaryResponse:
+    """日別の全 run 合算を古い順 (時系列) で返す。
+
+    ``usage_report.build_summary`` は ``(day, label)`` 単位なので、ここで
+    ``day`` 単位に畳み込み直す。
+    """
+    if not USAGE_DIR.exists():
+        return UsageSummaryResponse(summary=[])
+
+    per_day: dict[str, UsageDailySummary] = {}
+    for (day, _label), agg in build_summary(USAGE_DIR, days=None).items():
+        entry = per_day.get(day)
+        if entry is None:
+            entry = UsageDailySummary(
+                date=day,
+                calls=0,
+                input_tokens=0,
+                output_tokens=0,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+                cost_usd=0.0,
+            )
+            per_day[day] = entry
+        entry.calls += agg["calls"]
+        entry.input_tokens += agg["input_tokens"]
+        entry.output_tokens += agg["output_tokens"]
+        entry.cache_read_tokens += agg["cache_read_tokens"]
+        entry.cache_creation_tokens += agg["cache_creation_tokens"]
+        entry.cost_usd += agg["cost_usd"]
+
+    summary = sorted(per_day.values(), key=lambda s: s.date)
+    return UsageSummaryResponse(summary=summary)
 
 
 @router.get("/usage", response_model=UsageDayResponse)

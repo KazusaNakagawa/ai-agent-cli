@@ -79,6 +79,22 @@ async def test_get_records_for_date(authed_client, usage_dir):
     assert body["records"][0]["cost_usd"] == 0.827
 
 
+async def test_summary_requires_auth(async_client, usage_dir):
+    response = await async_client.get("/api/usage/summary")
+    assert response.status_code == 401
+
+
+async def test_summary_aggregates_per_day_oldest_first(authed_client, usage_dir):
+    response = await authed_client.get("/api/usage/summary")
+    assert response.status_code == 200
+    summary = response.json()["summary"]
+    assert [s["date"] for s in summary] == ["2026-06-19", "2026-06-20"]
+    day = summary[1]
+    assert day["calls"] == 1
+    assert day["output_tokens"] == 6061
+    assert day["cost_usd"] == 0.827
+
+
 async def test_unknown_date_returns_404(authed_client, usage_dir):
     response = await authed_client.get("/api/usage?date=20990101")
     assert response.status_code == 404
