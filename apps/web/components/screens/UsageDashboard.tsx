@@ -60,7 +60,10 @@ export function UsageDashboard() {
       .then((data) => {
         if (!cancelled && Array.isArray(data?.summary)) setSummary(data.summary)
       })
-      .catch(() => {})
+      .catch((e) => {
+        // Non-fatal: the per-day bar chart still works without the trend.
+        if (!cancelled) console.error("Failed to load usage summary:", e)
+      })
     return () => {
       cancelled = true
     }
