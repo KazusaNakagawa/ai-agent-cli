@@ -3,9 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react"
 
 import { UsageBarChart } from "@/components/UsageBarChart"
 import {
+  formatUsageField,
   UsageDatesResponse,
   UsageDayResponse,
   UsageMetric,
+  USAGE_FIELD_LABELS,
+  USAGE_FIELD_ORDER,
   USAGE_METRIC_LABELS,
   UsageRecord,
 } from "@/lib/usage-types"
@@ -103,6 +106,8 @@ export function UsageDashboard() {
     )
   }
 
+  const activeRecord = activeIndex !== null ? records[activeIndex] : null
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -149,6 +154,28 @@ export function UsageDashboard() {
           activeIndex={activeIndex}
           onActiveChange={setActiveIndex}
         />
+      )}
+
+      {activeRecord ? (
+        <dl
+          data-testid="usage-detail"
+          role="status"
+          aria-live="polite"
+          className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-md border p-3 text-sm sm:grid-cols-3"
+        >
+          {USAGE_FIELD_ORDER.map((key) => (
+            <div key={key} className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">{USAGE_FIELD_LABELS[key]}</dt>
+              <dd className="font-medium">
+                {formatUsageField(key, activeRecord[key])}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p data-testid="usage-detail-hint" className="text-sm text-muted-foreground">
+          Hover or focus a bar to see its details.
+        </p>
       )}
     </div>
   )
