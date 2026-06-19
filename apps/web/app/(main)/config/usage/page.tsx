@@ -1,3 +1,5 @@
+import { UsageDashboard } from "@/components/screens/UsageDashboard"
+
 export const dynamic = "force-dynamic"
 
 export default function UsagePage() {
@@ -9,12 +11,7 @@ export default function UsagePage() {
           Token usage and cost per Claude run, charted from the daily JSONL logs.
         </p>
       </header>
-      <div
-        data-testid="usage-dashboard-placeholder"
-        className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground"
-      >
-        Usage dashboard coming soon.
-      </div>
+      <UsageDashboard />
     </div>
   )
 }
