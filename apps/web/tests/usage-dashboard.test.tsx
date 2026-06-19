@@ -91,4 +91,47 @@ describe("UsageDashboard", () => {
       expect(screen.getByTestId("usage-no-dates")).toBeInTheDocument()
     })
   })
+
+  it("shows a dates-loading state before the dates request resolves", async () => {
+    let resolveDates: (r: Response) => void = () => {}
+    fetchMock.mockImplementation(
+      () => new Promise<Response>((resolve) => (resolveDates = resolve)),
+    )
+    render(<UsageDashboard />)
+    // Before resolution we must NOT show the empty-state message.
+    expect(screen.getByTestId("usage-dates-loading")).toBeInTheDocument()
+    expect(screen.queryByTestId("usage-no-dates")).not.toBeInTheDocument()
+
+    resolveDates(jsonResponse({ dates: [] }))
+    await waitFor(() => {
+      expect(screen.getByTestId("usage-no-dates")).toBeInTheDocument()
+    })
+  })
+
+  it("ignores a stale slow response when the date changed", async () => {
+    const resolvers: Record<string, (r: Response) => void> = {}
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+      const date = new URL(url, "http://x").searchParams.get("date") ?? ""
+      return new Promise<Response>((resolve) => (resolvers[date] = resolve))
+    })
+
+    render(<UsageDashboard />)
+    await waitFor(() => expect(screen.getByTestId("usage-date-select")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    // Switch to the older date; its request is now the latest.
+    await user.selectOptions(screen.getByTestId("usage-date-select"), "20260619")
+    await waitFor(() => expect(resolvers["20260619"]).toBeDefined())
+
+    // The newest date (20260620) resolves LATE — it must be ignored.
+    resolvers["20260620"]?.(jsonResponse(DAY_20620))
+    resolvers["20260619"]?.(jsonResponse({ date: "20260619", records: [] }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("usage-chart-empty")).toBeInTheDocument()
+    })
+    // Stale 20260620 records (2 bars) must not have leaked in.
+    expect(screen.queryByTestId("usage-bar-0")).not.toBeInTheDocument()
+  })
 })
