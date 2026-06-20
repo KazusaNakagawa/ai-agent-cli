@@ -205,6 +205,29 @@ describe("UsageDashboard", () => {
     })
   })
 
+  it("renders stacked segments and legend when metric is 'all'", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+      return Promise.resolve(jsonResponse(DAY_20620))
+    })
+
+    render(<UsageDashboard />)
+    await waitFor(() => expect(screen.getByTestId("usage-bar-0")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByTestId("usage-metric-select"), "all")
+
+    await waitFor(() => {
+      // Stacked fill spans with segment testids.
+      expect(screen.getByTestId("usage-bar-segment-0-input_tokens")).toBeInTheDocument()
+      expect(screen.getByTestId("usage-bar-segment-0-output_tokens")).toBeInTheDocument()
+      // Color legend is visible.
+      expect(screen.getByTestId("usage-stack-legend")).toBeInTheDocument()
+      // Trend chart is hidden when metric is "all".
+      expect(screen.queryByTestId("usage-trend-chart")).not.toBeInTheDocument()
+    })
+  })
+
   it("ignores a stale slow response when the date changed", async () => {
     const resolvers: Record<string, (r: Response) => void> = {}
     fetchMock.mockImplementation((url: string) => {

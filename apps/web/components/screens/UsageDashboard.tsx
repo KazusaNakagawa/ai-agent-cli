@@ -5,24 +5,26 @@ import { UsageBarChart } from "@/components/UsageBarChart"
 import { UsageTrendChart } from "@/components/UsageTrendChart"
 import {
   formatUsageField,
+  UsageChartMetric,
   UsageDailySummary,
   UsageDatesResponse,
   UsageDayResponse,
   UsageMetric,
+  USAGE_CHART_METRIC_LABELS,
   USAGE_FIELD_LABELS,
   USAGE_FIELD_ORDER,
-  USAGE_METRIC_LABELS,
   UsageRecord,
   UsageSummaryResponse,
 } from "@/lib/usage-types"
 
-const METRICS: UsageMetric[] = [
+const METRICS: UsageChartMetric[] = [
   "cost_usd",
   "input_tokens",
   "output_tokens",
   "cache_read_tokens",
   "cache_creation_tokens",
   "duration_ms",
+  "all",
 ]
 
 export function UsageDashboard() {
@@ -30,7 +32,7 @@ export function UsageDashboard() {
   const [dates, setDates] = useState<string[] | null>(null)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [records, setRecords] = useState<UsageRecord[]>([])
-  const [metric, setMetric] = useState<UsageMetric>("cost_usd")
+  const [metric, setMetric] = useState<UsageChartMetric>("cost_usd")
   const [summary, setSummary] = useState<UsageDailySummary[]>([])
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -146,12 +148,12 @@ export function UsageDashboard() {
           <select
             data-testid="usage-metric-select"
             value={metric}
-            onChange={(e) => setMetric(e.target.value as UsageMetric)}
+            onChange={(e) => setMetric(e.target.value as UsageChartMetric)}
             className="rounded-md border bg-background px-2 py-1 text-sm"
           >
             {METRICS.map((m) => (
               <option key={m} value={m}>
-                {USAGE_METRIC_LABELS[m]}
+                {USAGE_CHART_METRIC_LABELS[m]}
               </option>
             ))}
           </select>
@@ -160,7 +162,7 @@ export function UsageDashboard() {
 
       <section className="space-y-1">
         <h3 className="text-sm font-medium text-muted-foreground">
-          Per run — {USAGE_METRIC_LABELS[metric]}
+          Per run — {USAGE_CHART_METRIC_LABELS[metric]}
         </h3>
         {loading ? (
           <p data-testid="usage-loading" className="text-sm text-muted-foreground">
@@ -176,12 +178,12 @@ export function UsageDashboard() {
         )}
       </section>
 
-      {summary.length > 0 && (
+      {summary.length > 0 && metric !== "all" && (
         <section className="space-y-1">
           <h3 className="text-sm font-medium text-muted-foreground">
-            Daily trend — {USAGE_METRIC_LABELS[metric]}
+            Daily trend — {USAGE_CHART_METRIC_LABELS[metric]}
           </h3>
-          <UsageTrendChart summary={summary} metric={metric} />
+          <UsageTrendChart summary={summary} metric={metric as UsageMetric} />
         </section>
       )}
 

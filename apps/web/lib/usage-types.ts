@@ -50,6 +50,34 @@ export const USAGE_METRIC_LABELS: Record<UsageMetric, string> = {
   duration_ms: "Duration (ms)",
 }
 
+// Chart metric adds a synthetic "all" option that stacks the token segments.
+export type UsageChartMetric = UsageMetric | "all"
+
+export const USAGE_CHART_METRIC_LABELS: Record<UsageChartMetric, string> = {
+  ...USAGE_METRIC_LABELS,
+  all: "All tokens (stacked)",
+}
+
+// Token fields stacked when the chart metric is "all". `cost_usd` / `duration_ms`
+// are excluded — different units can't share a stack. Colors are blue-family
+// shades so the chart stays in the requested palette.
+export type TokenSegment = {
+  key: "input_tokens" | "output_tokens" | "cache_read_tokens" | "cache_creation_tokens"
+  label: string
+  className: string
+}
+
+export const TOKEN_SEGMENTS: TokenSegment[] = [
+  { key: "input_tokens", label: "Input", className: "bg-blue-700" },
+  { key: "output_tokens", label: "Output", className: "bg-blue-500" },
+  { key: "cache_read_tokens", label: "Cache read", className: "bg-blue-400" },
+  { key: "cache_creation_tokens", label: "Cache creation", className: "bg-blue-300" },
+]
+
+export function stackedTotal(record: UsageRecord): number {
+  return TOKEN_SEGMENTS.reduce((sum, seg) => sum + (record[seg.key] ?? 0), 0)
+}
+
 export function metricValue(record: UsageRecord, metric: UsageMetric): number {
   return record[metric] ?? 0
 }
