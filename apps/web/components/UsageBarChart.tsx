@@ -82,9 +82,9 @@ export function UsageBarChart({
       data-testid="usage-bar-chart"
       role="group"
       aria-label="Usage bar chart"
-      // pt-4 keeps the top y-tick label (translated up 50%) clear of the heading,
+      // pt-6 keeps the top y-tick label (translated up 50%) clear of the heading,
       // even with wide 6-digit token counts in the "All" view.
-      className="flex pt-4"
+      className="flex pt-6"
     >
       {/* Y-axis tick labels, aligned to the gridlines by bottom-offset %.
           aria-hidden: each bar already announces its value, so these would be

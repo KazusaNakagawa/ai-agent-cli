@@ -52,9 +52,9 @@ export function UsageTrendChart({ summary, metric }: Props) {
       data-testid="usage-trend-chart"
       role="group"
       aria-label="Usage daily trend chart"
-      // pt-4 keeps the top y-tick label (translated up 50%) from colliding with
+      // pt-6 keeps the top y-tick label (translated up 50%) from colliding with
       // the section heading above; matches UsageBarChart.
-      className="flex pt-4"
+      className="flex pt-6"
     >
       {/* Y-axis tick labels (visual only; values are in the title tooltips). */}
       <div
