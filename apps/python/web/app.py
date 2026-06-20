@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from web.routers import auth_mode, chat, config, credentials, health, run, state, usage
+from web.routers import auth_mode, briefing, chat, config, credentials, health, run, state, usage
 
 app = FastAPI(title="ai-agent Web API", version="0.1.0")
 app.include_router(health.router, prefix="/api")
@@ -11,3 +11,4 @@ app.include_router(state.router, prefix="/api")
 app.include_router(run.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
+app.include_router(briefing.router, prefix="/api")
