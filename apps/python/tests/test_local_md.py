@@ -114,6 +114,24 @@ class TestSaveBriefingMd:
             "briefing_2026-05-19.md",
         ]
 
+    def test_rotation_disabled_keeps_all_files(self, tmp_path):
+        """Verifies: rotation_enabled=False keeps all dated files regardless of retention_days."""
+        for i in range(10):
+            d = date(2026, 5, 10 + i)
+            save_briefing_md(f"day{i}", tmp_path, retention_days=7, today=d, rotation_enabled=False)
+
+        remaining = sorted(p.name for p in tmp_path.glob("briefing_*.md"))
+        assert len(remaining) == 10
+
+    def test_rotation_enabled_true_still_prunes(self, tmp_path):
+        """Verifies: rotation_enabled=True (explicit) behaves identically to the default."""
+        for i in range(8):
+            d = date(2026, 5, 12 + i)
+            save_briefing_md(f"day{i}", tmp_path, retention_days=7, today=d, rotation_enabled=True)
+
+        remaining = sorted(p.name for p in tmp_path.glob("briefing_*.md"))
+        assert len(remaining) == 7
+
     def test_invalid_retention_raises(self, tmp_path):
         """Verifies: retention_days < 1 raises ValueError before any file work.
         Why: zero or negative retention would delete the file we just wrote;

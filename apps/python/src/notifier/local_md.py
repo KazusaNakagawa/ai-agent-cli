@@ -14,9 +14,14 @@ def save_briefing_md(
     output_dir: Path,
     retention_days: int,
     today: date | None = None,
+    *,
+    rotation_enabled: bool = True,
 ) -> Path:
-    """ブリーフィング本文を briefing_YYYY-MM-DD.md として書き込み、
-    output_dir 内の同パターンファイルを新しい順に retention_days 件残して削除する。
+    """ブリーフィング本文を briefing_YYYY-MM-DD.md として書き込む。
+
+    rotation_enabled=True のとき output_dir 内の同パターンファイルを
+    新しい順に retention_days 件残して削除する。
+    rotation_enabled=False のとき削除は行わず全ファイルを無制限に保持する。
     """
     if retention_days < 1:
         raise ValueError(
@@ -29,7 +34,10 @@ def save_briefing_md(
     path.write_text(text, encoding="utf-8")
     logger.info("ローカル MD 出力: %s (%d文字)", path, len(text))
 
-    _prune_old(output_dir, retention_days)
+    if rotation_enabled:
+        _prune_old(output_dir, retention_days)
+    else:
+        logger.debug("ローテーション無効 — 古い MD は削除しません")
     return path
 
 

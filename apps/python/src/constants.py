@@ -23,6 +23,8 @@ BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
 
 # Briefing local MD retention (number of newest dated files to keep)
 BRIEFING_MD_RETENTION_DAYS = 7
+# When False, _prune_old is skipped and all dated files are kept indefinitely
+BRIEFING_MD_ROTATION_ENABLED = False
 
 # Notion
 NOTION_CHAR_LIMIT = 2000
