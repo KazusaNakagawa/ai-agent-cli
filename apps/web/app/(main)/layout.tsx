@@ -30,7 +30,7 @@ export default async function MainLayout({
     <JobStateProvider>
       <ChatStateProvider>
         <ChatJobStateProvider>
-          <div className="flex h-screen overflow-hidden">
+          <div className="flex h-dvh overflow-hidden">
             <Sidebar />
             <main className="flex-1 overflow-y-auto p-8">{children}</main>
           </div>
