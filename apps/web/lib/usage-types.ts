@@ -59,19 +59,23 @@ export const USAGE_CHART_METRIC_LABELS: Record<UsageChartMetric, string> = {
 }
 
 // Token fields stacked when the chart metric is "all". `cost_usd` / `duration_ms`
-// are excluded — different units can't share a stack. Colors are blue-family
-// shades so the chart stays in the requested palette.
+// are excluded — different units can't share a stack. Each segment is a vertical
+// gradient between adjacent blue shades so the whole stack reads as one smooth
+// dark→light gradient (matching the single-metric bar) while staying distinct.
 export type TokenSegment = {
   key: "input_tokens" | "output_tokens" | "cache_read_tokens" | "cache_creation_tokens"
   label: string
+  /** Gradient class for the stacked bar segment. */
   className: string
+  /** Solid representative color for the legend swatch. */
+  swatchClassName: string
 }
 
 export const TOKEN_SEGMENTS: TokenSegment[] = [
-  { key: "input_tokens", label: "Input", className: "bg-blue-700" },
-  { key: "output_tokens", label: "Output", className: "bg-blue-500" },
-  { key: "cache_read_tokens", label: "Cache read", className: "bg-blue-400" },
-  { key: "cache_creation_tokens", label: "Cache creation", className: "bg-blue-300" },
+  { key: "input_tokens", label: "Input", className: "bg-gradient-to-t from-blue-700 to-blue-600", swatchClassName: "bg-blue-700" },
+  { key: "output_tokens", label: "Output", className: "bg-gradient-to-t from-blue-600 to-blue-500", swatchClassName: "bg-blue-600" },
+  { key: "cache_read_tokens", label: "Cache read", className: "bg-gradient-to-t from-blue-500 to-blue-400", swatchClassName: "bg-blue-500" },
+  { key: "cache_creation_tokens", label: "Cache creation", className: "bg-gradient-to-t from-blue-400 to-blue-300", swatchClassName: "bg-blue-400" },
 ]
 
 export function stackedTotal(record: UsageRecord): number {
