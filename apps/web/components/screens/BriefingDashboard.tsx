@@ -26,6 +26,7 @@ export function BriefingDashboard() {
   const latestFile = useRef<string | null>(null)
 
   const fetchContent = useCallback((file: BriefingFile) => {
+    latestFile.current = file.name
     const cached = contentCache.current.get(file.name)
     if (cached !== undefined) {
       setSelected(file)
@@ -33,7 +34,6 @@ export function BriefingDashboard() {
       setLoadingContent(false)
       return
     }
-    latestFile.current = file.name
     setSelected(file)
     setLoadingContent(true)
     setContent(null)
@@ -133,7 +133,14 @@ export function BriefingDashboard() {
               <tr
                 key={file.name}
                 data-testid={`briefing-row-${file.name}`}
+                tabIndex={0}
                 onClick={() => fetchContent(file)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    fetchContent(file)
+                  }
+                }}
                 onMouseEnter={() => prefetch(file)}
                 className={cn(
                   "cursor-pointer border-b text-xs transition-colors last:border-0",

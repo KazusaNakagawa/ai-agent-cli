@@ -8,6 +8,7 @@ type は ``briefing`` または ``local`` の 2 種。
 """
 import re
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,7 +27,7 @@ _SAFE_NAME_RE = re.compile(r"^[\w-]+\.md$")
 
 class BriefingFile(BaseModel):
     name: str
-    type: str  # "briefing" | "local"
+    type: Literal["briefing", "local"]
     date: str  # YYYY-MM-DD
     size: int  # bytes
 
@@ -48,6 +49,8 @@ def list_briefings() -> BriefingListResponse:
 
     files: list[BriefingFile] = []
     for path in BRIEFING_DIR.glob("*.md"):
+        if not path.is_file():
+            continue
         m = _FILE_RE.match(path.name)
         if m is None:
             continue

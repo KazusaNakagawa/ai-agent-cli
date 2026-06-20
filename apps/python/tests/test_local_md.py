@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from src.notifier.local_md import save_briefing_md
+from src.notifier.local_md import save_briefing_md, write_md_file
 
 
 class TestSaveBriefingMd:
@@ -114,6 +114,24 @@ class TestSaveBriefingMd:
             "briefing_2026-05-19.md",
         ]
 
+    def test_rotation_disabled_keeps_all_files(self, tmp_path):
+        """Verifies: rotation_enabled=False keeps all dated files regardless of retention_days."""
+        for i in range(10):
+            d = date(2026, 5, 10 + i)
+            save_briefing_md(f"day{i}", tmp_path, retention_days=7, today=d, rotation_enabled=False)
+
+        remaining = sorted(p.name for p in tmp_path.glob("briefing_*.md"))
+        assert len(remaining) == 10
+
+    def test_rotation_enabled_true_still_prunes(self, tmp_path):
+        """Verifies: rotation_enabled=True (explicit) behaves identically to the default."""
+        for i in range(8):
+            d = date(2026, 5, 12 + i)
+            save_briefing_md(f"day{i}", tmp_path, retention_days=7, today=d, rotation_enabled=True)
+
+        remaining = sorted(p.name for p in tmp_path.glob("briefing_*.md"))
+        assert len(remaining) == 7
+
     def test_invalid_retention_raises(self, tmp_path):
         """Verifies: retention_days < 1 raises ValueError before any file work.
         Why: zero or negative retention would delete the file we just wrote;
@@ -123,3 +141,27 @@ class TestSaveBriefingMd:
             save_briefing_md("body", tmp_path, retention_days=0, today=date(2026, 5, 19))
         with pytest.raises(ValueError, match="retention_days"):
             save_briefing_md("body", tmp_path, retention_days=-1, today=date(2026, 5, 19))
+
+
+class TestWriteMdFile:
+    def test_creates_directory_and_writes_file(self, tmp_path):
+        """Verifies: write_md_file creates missing directories and writes content."""
+        output_dir = tmp_path / "nonexistent" / "nested"
+        path = write_md_file(output_dir, "report.md", "# Content")
+
+        assert path == output_dir / "report.md"
+        assert output_dir.is_dir()
+        assert path.read_text(encoding="utf-8") == "# Content"
+
+    def test_does_not_invoke_rotation(self, tmp_path, monkeypatch):
+        """Verifies: write_md_file never calls _prune_old."""
+        called = False
+
+        def fake_prune(*args, **kwargs):
+            nonlocal called
+            called = True
+
+        monkeypatch.setattr("src.notifier.local_md._prune_old", fake_prune)
+        write_md_file(tmp_path, "out.md", "text")
+
+        assert called is False

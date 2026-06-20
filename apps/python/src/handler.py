@@ -2,7 +2,7 @@ from datetime import date
 
 from src.claude_runner import get_model
 from src.config import CONFIG
-from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_OUTPUT_DIR
+from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_MD_ROTATION_ENABLED, BRIEFING_OUTPUT_DIR
 from src.fetcher.stocks import fetch_stock_moves
 from src.generator.briefing import generate_briefing
 from src.metrics.briefing import extract_briefing_metrics
@@ -46,7 +46,12 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
     # ローカル MD 出力を先に行う: Discord/Notion で例外が出ても本文をディスクに残せる
     md_written = False
     try:
-        save_briefing_md(briefing, BRIEFING_OUTPUT_DIR, BRIEFING_MD_RETENTION_DAYS)
+        save_briefing_md(
+            briefing,
+            BRIEFING_OUTPUT_DIR,
+            BRIEFING_MD_RETENTION_DAYS,
+            rotation_enabled=BRIEFING_MD_ROTATION_ENABLED,
+        )
         md_written = True
     except OSError as exc:
         logger.warning("ローカル MD 出力失敗: %s — 継続します", exc)

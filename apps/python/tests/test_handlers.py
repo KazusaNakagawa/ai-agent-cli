@@ -252,6 +252,33 @@ class TestBriefingHandler:
         mock_stocks.assert_not_called()
         mock_gen.assert_not_called()
 
+    def test_handler_forwards_rotation_enabled_to_save_briefing_md(self, tmp_path):
+        """Verifies: BRIEFING_MD_ROTATION_ENABLED from constants is forwarded to save_briefing_md.
+        Why: changing the constant must actually toggle rotation end-to-end.
+        """
+        captured = {}
+
+        def fake_save(text, output_dir, retention_days, today=None, *, rotation_enabled=True):
+            captured["rotation_enabled"] = rotation_enabled
+            (output_dir / "briefing_2026-01-01.md").write_text(text)
+
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.save_briefing_md", side_effect=fake_save),
+            patch("src.handler.BRIEFING_MD_ROTATION_ENABLED", False),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = ""
+            mock_cfg.discord_channel_id = ""
+            mock_cfg.notion_api_key = ""
+            mock_cfg.notion_database_id = ""
+            briefing_handler()
+
+        assert captured.get("rotation_enabled") is False
+
     def test_preflight_warns_on_missing_discord(self, caplog):
         import logging
         with (
