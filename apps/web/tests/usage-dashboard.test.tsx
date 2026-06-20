@@ -205,13 +205,16 @@ describe("UsageDashboard", () => {
     })
   })
 
-  it("renders stacked segments and legend when metric is 'all'", async () => {
+  it("renders stacked segments and legend when metric is 'all'; restores trend on switch back", async () => {
     fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
       if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
       return Promise.resolve(jsonResponse(DAY_20620))
     })
 
     render(<UsageDashboard />)
+    // Trend chart should be visible before switching to stacked mode.
+    await waitFor(() => expect(screen.getByTestId("usage-trend-chart")).toBeInTheDocument())
     await waitFor(() => expect(screen.getByTestId("usage-bar-0")).toBeInTheDocument())
 
     const user = userEvent.setup()
@@ -223,8 +226,14 @@ describe("UsageDashboard", () => {
       expect(screen.getByTestId("usage-bar-segment-0-output_tokens")).toBeInTheDocument()
       // Color legend is visible.
       expect(screen.getByTestId("usage-stack-legend")).toBeInTheDocument()
-      // Trend chart is hidden when metric is "all".
+      // Trend chart is hidden while in stacked "all" metric mode.
       expect(screen.queryByTestId("usage-trend-chart")).not.toBeInTheDocument()
+    })
+
+    // Switch back to a single metric and ensure the trend chart is restored.
+    await user.selectOptions(screen.getByTestId("usage-metric-select"), "cost_usd")
+    await waitFor(() => {
+      expect(screen.getByTestId("usage-trend-chart")).toBeInTheDocument()
     })
   })
 

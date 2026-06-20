@@ -150,7 +150,10 @@ export function UsageBarChart({
                 {stacked ? (
                   <span
                     data-testid={`usage-bar-fill-${i}`}
-                    className="flex w-full flex-col-reverse overflow-hidden rounded-t"
+                    className={cn(
+                      "flex w-full flex-col-reverse overflow-hidden rounded-t transition-all",
+                      active ? "brightness-110" : "brightness-100",
+                    )}
                     style={{ height: `${heightPct}%` }}
                   >
                     {TOKEN_SEGMENTS.map((seg) => {

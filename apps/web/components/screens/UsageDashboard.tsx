@@ -9,7 +9,6 @@ import {
   UsageDailySummary,
   UsageDatesResponse,
   UsageDayResponse,
-  UsageMetric,
   USAGE_CHART_METRIC_LABELS,
   USAGE_FIELD_LABELS,
   USAGE_FIELD_ORDER,
@@ -183,7 +182,7 @@ export function UsageDashboard() {
           <h3 className="text-sm font-medium text-muted-foreground">
             Daily trend — {USAGE_CHART_METRIC_LABELS[metric]}
           </h3>
-          <UsageTrendChart summary={summary} metric={metric as UsageMetric} />
+          <UsageTrendChart summary={summary} metric={metric} />
         </section>
       )}
 
