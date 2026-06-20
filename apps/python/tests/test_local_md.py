@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from src.notifier.local_md import save_briefing_md
+from src.notifier.local_md import save_briefing_md, write_md_file
 
 
 class TestSaveBriefingMd:
@@ -141,3 +141,27 @@ class TestSaveBriefingMd:
             save_briefing_md("body", tmp_path, retention_days=0, today=date(2026, 5, 19))
         with pytest.raises(ValueError, match="retention_days"):
             save_briefing_md("body", tmp_path, retention_days=-1, today=date(2026, 5, 19))
+
+
+class TestWriteMdFile:
+    def test_creates_directory_and_writes_file(self, tmp_path):
+        """Verifies: write_md_file creates missing directories and writes content."""
+        output_dir = tmp_path / "nonexistent" / "nested"
+        path = write_md_file(output_dir, "report.md", "# Content")
+
+        assert path == output_dir / "report.md"
+        assert output_dir.is_dir()
+        assert path.read_text(encoding="utf-8") == "# Content"
+
+    def test_does_not_invoke_rotation(self, tmp_path, monkeypatch):
+        """Verifies: write_md_file never calls _prune_old."""
+        called = False
+
+        def fake_prune(*args, **kwargs):
+            nonlocal called
+            called = True
+
+        monkeypatch.setattr("src.notifier.local_md._prune_old", fake_prune)
+        write_md_file(tmp_path, "out.md", "text")
+
+        assert called is False
