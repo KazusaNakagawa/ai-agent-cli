@@ -1,12 +1,19 @@
 "use client"
 import { useRef } from "react"
 
-import { metricValue, niceScale, UsageMetric, UsageRecord } from "@/lib/usage-types"
+import {
+  metricValue,
+  niceScale,
+  stackedTotal,
+  TOKEN_SEGMENTS,
+  UsageChartMetric,
+  UsageRecord,
+} from "@/lib/usage-types"
 import { cn } from "@/lib/utils"
 
 type Props = {
   records: UsageRecord[]
-  metric: UsageMetric
+  metric: UsageChartMetric
   /** Index of the focused/hovered bar, or null. Controlled by the parent. */
   activeIndex?: number | null
   onActiveChange?: (index: number | null) => void
@@ -40,7 +47,10 @@ export function UsageBarChart({
     )
   }
 
-  const values = records.map((r) => metricValue(r, metric))
+  const stacked = metric === "all"
+  const values = records.map((r) =>
+    stacked ? stackedTotal(r) : metricValue(r, metric),
+  )
   const max = Math.max(...values, 1)
   const { niceMax, ticks } = niceScale(max)
 
@@ -68,7 +78,12 @@ export function UsageBarChart({
   }
 
   return (
-    <div data-testid="usage-bar-chart" role="group" aria-label="Usage bar chart" className="flex">
+    <div
+      data-testid="usage-bar-chart"
+      role="group"
+      aria-label="Usage bar chart"
+      className="flex pt-3"
+    >
       {/* Y-axis tick labels, aligned to the gridlines by bottom-offset %.
           aria-hidden: each bar already announces its value, so these would be
           redundant noise for screen readers. */}
@@ -132,21 +147,59 @@ export function UsageBarChart({
                 onBlur={handleBarBlur}
                 onKeyDown={(e) => handleBarKeyDown(i, e)}
               >
-                <span
-                  data-testid={`usage-bar-fill-${i}`}
-                  className={cn(
-                    "w-full rounded-t bg-gradient-to-t transition-colors",
-                    active
-                      ? "from-blue-700 to-blue-400"
-                      : "from-blue-600 to-blue-300 hover:from-blue-700 hover:to-blue-400",
-                  )}
-                  style={{ height: `${heightPct}%` }}
-                />
+                {stacked ? (
+                  <span
+                    data-testid={`usage-bar-fill-${i}`}
+                    className={cn(
+                      "flex w-full flex-col-reverse overflow-hidden rounded-t transition-all",
+                      active ? "brightness-110" : "brightness-100",
+                    )}
+                    style={{ height: `${heightPct}%` }}
+                  >
+                    {TOKEN_SEGMENTS.map((seg) => {
+                      const segValue = record[seg.key] ?? 0
+                      const total = value || 1
+                      return (
+                        <span
+                          key={seg.key}
+                          data-testid={`usage-bar-segment-${i}-${seg.key}`}
+                          className={cn("w-full", seg.className)}
+                          style={{ height: `${(segValue / total) * 100}%` }}
+                        />
+                      )
+                    })}
+                  </span>
+                ) : (
+                  <span
+                    data-testid={`usage-bar-fill-${i}`}
+                    className={cn(
+                      "w-full rounded-t bg-gradient-to-t transition-colors",
+                      active
+                        ? "from-blue-700 to-blue-400"
+                        : "from-blue-600 to-blue-300 hover:from-blue-700 hover:to-blue-400",
+                    )}
+                    style={{ height: `${heightPct}%` }}
+                  />
+                )}
               </button>
             )
           })}
         </div>
       </div>
+
+      {stacked && (
+        <ul
+          data-testid="usage-stack-legend"
+          className="ml-2 flex shrink-0 flex-col justify-start gap-1 self-center text-xs text-muted-foreground"
+        >
+          {TOKEN_SEGMENTS.map((seg) => (
+            <li key={seg.key} className="flex items-center gap-1.5">
+              <span className={cn("h-2.5 w-2.5 rounded-sm", seg.className)} aria-hidden />
+              {seg.label}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
