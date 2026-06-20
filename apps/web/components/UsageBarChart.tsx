@@ -82,7 +82,9 @@ export function UsageBarChart({
       data-testid="usage-bar-chart"
       role="group"
       aria-label="Usage bar chart"
-      className="flex pt-3"
+      // pt-4 keeps the top y-tick label (translated up 50%) clear of the heading,
+      // even with wide 6-digit token counts in the "All" view.
+      className="flex pt-4"
     >
       {/* Y-axis tick labels, aligned to the gridlines by bottom-offset %.
           aria-hidden: each bar already announces its value, so these would be
@@ -194,7 +196,7 @@ export function UsageBarChart({
         >
           {TOKEN_SEGMENTS.map((seg) => (
             <li key={seg.key} className="flex items-center gap-1.5">
-              <span className={cn("h-2.5 w-2.5 rounded-sm", seg.className)} aria-hidden />
+              <span className={cn("h-2.5 w-2.5 rounded-sm", seg.swatchClassName)} aria-hidden />
               {seg.label}
             </li>
           ))}
