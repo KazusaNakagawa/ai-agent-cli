@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { BriefingDashboard } from "@/components/screens/BriefingDashboard"
 
+
 const FILES_RESPONSE = {
   files: [
     { name: "briefing_2026-06-20.md", type: "briefing", date: "2026-06-20", size: 5120 },
@@ -139,7 +140,10 @@ describe("BriefingDashboard", () => {
 
     await waitFor(() => {
       const content = screen.getByTestId("briefing-content")
-      expect(content.querySelector("h1")).toBeTruthy()
+      const h1 = content.querySelector("h1")
+      expect(h1).toBeTruthy()
+      // rehypeHeadingIds must attach a slug id that survives sanitization
+      expect(h1?.getAttribute("id")).toBe("june-20-briefing")
       expect(content).toHaveTextContent("Today's market summary.")
     })
   })
@@ -197,5 +201,52 @@ describe("BriefingDashboard", () => {
       expect(screen.getByTestId("briefing-panel")).toBeInTheDocument()
       expect(screen.getByTestId("briefing-content")).toHaveTextContent("June 19 via keyboard")
     })
+  })
+})
+
+describe("TOC navigation", () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    vi.stubGlobal("fetch", fetchMock)
+  })
+
+  it("gives Japanese headings ids that match the TOC slugs and scrolls on click", async () => {
+    const jp = {
+      name: "briefing_2026-06-20.md",
+      content: "## 今日のサマリー（1文）\n\n本文A\n\n## なぜ動いたか（ストーリー）\n\n本文B",
+    }
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/briefing/")) return Promise.resolve(jsonResponse(jp))
+      return Promise.resolve(jsonResponse(FILES_RESPONSE))
+    })
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId("briefing-open-briefing_2026-06-20.md"))
+
+    let h2s: HTMLElement[] = []
+    await waitFor(() => {
+      const content = screen.getByTestId("briefing-content")
+      h2s = Array.from(content.querySelectorAll("h2")) as HTMLElement[]
+      // ids must NOT carry sanitize's "user-content-" prefix, so they match extractToc slugs
+      expect(h2s.map((h) => h.getAttribute("id"))).toEqual([
+        "今日のサマリー1文",
+        "なぜ動いたかストーリー",
+      ])
+    })
+
+    // scrollIntoView is the scroll mechanism; jsdom doesn't implement it
+    const scrollIntoView = vi.fn()
+    h2s[1].scrollIntoView = scrollIntoView
+
+    await user.click(screen.getByTestId("panel-toc-btn"))
+    const target = screen
+      .getAllByRole("button")
+      .find((b) => b.textContent === "なぜ動いたか（ストーリー）") as HTMLElement
+    await user.click(target)
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" })
+    // clicking a TOC entry closes the TOC
+    expect(screen.queryByTestId("briefing-toc")?.closest(".opacity-0")).toBeTruthy()
   })
 })
