@@ -73,6 +73,22 @@ describe("BriefingDashboard", () => {
     expect(screen.getByTestId("briefing-content")).toHaveTextContent("June 20 Briefing")
   })
 
+  it("opens side panel when the row itself is clicked", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/briefing/")) return Promise.resolve(jsonResponse(CONTENT_RESPONSE))
+      return Promise.resolve(jsonResponse(FILES_RESPONSE))
+    })
+
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId("briefing-row-briefing_2026-06-20.md"))
+
+    await waitFor(() => expect(screen.getByTestId("briefing-panel")).toBeInTheDocument())
+    expect(screen.getByTestId("briefing-content")).toHaveTextContent("June 20 Briefing")
+  })
+
   it("shows properties (type, date, size) in the panel header", async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.includes("/api/briefing/")) return Promise.resolve(jsonResponse(CONTENT_RESPONSE))

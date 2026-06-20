@@ -74,7 +74,7 @@ export function BriefingPanel({
     <div
       data-testid="briefing-panel"
       className={cn(
-        "flex flex-col overflow-hidden bg-background transition-all",
+        "flex h-full flex-col overflow-hidden bg-background transition-all",
         fullSize ? "rounded-lg border" : "border-l",
       )}
     >
@@ -124,7 +124,7 @@ export function BriefingPanel({
       </div>
 
       {/* Panel body + TOC overlay */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         <div ref={bodyRef} className="h-full overflow-y-auto px-4 py-4 pr-6">
           {loading ? (
             <p data-testid="briefing-content-loading" className="text-sm text-muted-foreground">

@@ -85,7 +85,7 @@ export function BriefingDashboard() {
 
       {/* Side panel */}
       {selected && (
-        <div className="flex-1 overflow-hidden">
+        <div className="min-w-0 flex-1 overflow-hidden">
           <BriefingPanel
             file={selected}
             content={content}

@@ -67,9 +67,9 @@ export function Sidebar() {
       data-sidebar-rail
       data-testid="sidebar"
       data-collapsed={collapsed}
-      className="flex flex-col gap-4 border-r bg-card p-4"
+      className="flex shrink-0 flex-col gap-4 overflow-hidden border-r bg-card p-4"
     >
-      <div data-sidebar-header className="flex items-center justify-between">
+      <div data-sidebar-header className="flex shrink-0 items-center justify-between">
         <span data-sidebar-brand className="px-2 text-base font-semibold">
           ai-agent
         </span>
@@ -86,6 +86,7 @@ export function Sidebar() {
         </button>
       </div>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
       <section className="flex flex-col gap-1">
         <nav className="flex flex-col gap-1">
           {ITEMS.map((item) => {
@@ -165,6 +166,7 @@ export function Sidebar() {
           </div>
         </SidebarDisclosure>
       </section>
+      </div>
     </aside>
   )
 }
