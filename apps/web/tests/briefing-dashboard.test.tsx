@@ -120,4 +120,17 @@ describe("BriefingDashboard", () => {
       expect(screen.getByTestId("briefing-error")).toBeInTheDocument()
     })
   })
+
+  it("shows content error without hiding file list when a file fetch fails", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url === "/api/briefing") return Promise.resolve(jsonResponse(FILES_RESPONSE))
+      return Promise.reject(new Error("content fetch failed"))
+    })
+    render(<BriefingDashboard />)
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content-error")).toBeInTheDocument()
+    })
+    // File list must still be visible despite the content error
+    expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument()
+  })
 })

@@ -17,7 +17,8 @@ export function BriefingDashboard() {
   const [selected, setSelected] = useState<BriefingFile | null>(null)
   const [content, setContent] = useState<string | null>(null)
   const [loadingContent, setLoadingContent] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
+  const [contentError, setContentError] = useState<string | null>(null)
 
   // In-memory cache so revisiting a row is instant (no re-fetch).
   const contentCache = useRef(new Map<string, string>())
@@ -36,6 +37,7 @@ export function BriefingDashboard() {
     setSelected(file)
     setLoadingContent(true)
     setContent(null)
+    setContentError(null)
     fetch(`/api/briefing/${encodeURIComponent(file.name)}`, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -50,7 +52,7 @@ export function BriefingDashboard() {
       })
       .catch((e) => {
         if (latestFile.current === file.name) {
-          setError(String(e))
+          setContentError(String(e))
           setLoadingContent(false)
         }
       })
@@ -83,17 +85,17 @@ export function BriefingDashboard() {
         }
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e))
+        if (!cancelled) setListError(String(e))
       })
     return () => {
       cancelled = true
     }
   }, [fetchContent])
 
-  if (error) {
+  if (listError) {
     return (
       <p data-testid="briefing-error" className="text-sm text-destructive">
-        Failed to load briefings: {error}
+        Failed to load briefings: {listError}
       </p>
     )
   }
@@ -156,6 +158,10 @@ export function BriefingDashboard() {
         {loadingContent ? (
           <p data-testid="briefing-content-loading" className="text-sm text-muted-foreground">
             Loading…
+          </p>
+        ) : contentError !== null ? (
+          <p data-testid="briefing-content-error" className="text-sm text-destructive">
+            Failed to load content: {contentError}
           </p>
         ) : content !== null ? (
           <div
