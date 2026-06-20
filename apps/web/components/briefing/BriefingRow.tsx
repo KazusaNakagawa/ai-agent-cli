@@ -16,6 +16,7 @@ export function BriefingRow({ file, selected, onOpen, onHover }: BriefingRowProp
       data-testid={`briefing-row-${file.name}`}
       tabIndex={0}
       aria-selected={selected}
+      onClick={() => onOpen(file)}
       onMouseEnter={() => onHover(file)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -24,7 +25,7 @@ export function BriefingRow({ file, selected, onOpen, onHover }: BriefingRowProp
         }
       }}
       className={cn(
-        "group border-b text-xs transition-colors last:border-0",
+        "group cursor-pointer border-b text-xs transition-colors last:border-0",
         selected ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent/50",
       )}
     >
