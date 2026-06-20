@@ -86,8 +86,11 @@ describe("BriefingDashboard", () => {
     await user.click(screen.getByTestId("briefing-open-briefing_2026-06-20.md"))
 
     await waitFor(() => expect(screen.getByTestId("briefing-panel")).toBeInTheDocument())
+    // type shows the mapped label, not the raw enum
+    expect(screen.getByTestId("panel-type")).toHaveTextContent("Briefing")
     expect(screen.getByTestId("panel-date")).toHaveTextContent("2026-06-20")
-    expect(screen.getByTestId("panel-size")).toBeInTheDocument()
+    // 5120 bytes formats to "5.0 KB"
+    expect(screen.getByTestId("panel-size")).toHaveTextContent("5.0 KB")
   })
 
   it("closes the panel when the close button is clicked", async () => {
@@ -120,10 +123,19 @@ describe("BriefingDashboard", () => {
     await user.click(screen.getByTestId("briefing-open-briefing_2026-06-20.md"))
     await waitFor(() => expect(screen.getByTestId("briefing-panel")).toBeInTheDocument())
 
+    const recordsList = screen.getByTestId("briefing-records-list")
+    expect(recordsList).not.toHaveClass("hidden")
+
     const fullSizeBtn = screen.getByTestId("panel-fullsize-btn")
+
+    // Expand: records list is hidden, panel stays mounted
     await user.click(fullSizeBtn)
-    // Full-size renders panel inside an absolute grid overlay (sidebar stays visible)
+    await waitFor(() => expect(screen.getByTestId("briefing-records-list")).toHaveClass("hidden"))
     expect(screen.getByTestId("briefing-panel")).toBeInTheDocument()
+
+    // Collapse: records list visible again
+    await user.click(screen.getByTestId("panel-fullsize-btn"))
+    await waitFor(() => expect(screen.getByTestId("briefing-records-list")).not.toHaveClass("hidden"))
   })
 
   it("renders markdown content in the panel", async () => {

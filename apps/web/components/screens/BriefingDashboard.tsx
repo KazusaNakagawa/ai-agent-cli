@@ -408,6 +408,7 @@ export function BriefingDashboard() {
     <div data-testid="briefing-dashboard" className="flex h-full">
       {/* Records list */}
       <div
+        data-testid="briefing-records-list"
         className={cn(
           "flex-shrink-0 overflow-y-auto border-r transition-all",
           selected && !fullSize ? "w-72" : "flex-1",
@@ -439,7 +440,7 @@ export function BriefingDashboard() {
 
       {/* Side panel */}
       {selected && (
-        <div className={cn("overflow-hidden", fullSize ? "flex-1" : "flex-1")}>
+        <div className="flex-1 overflow-hidden">
           <BriefingPanel
             file={selected}
             content={content}
@@ -465,17 +466,12 @@ interface RowProps {
 }
 
 function BriefingRow({ file, selected, onOpen, onHover }: RowProps) {
-  const [hovered, setHovered] = useState(false)
-
   return (
     <tr
       data-testid={`briefing-row-${file.name}`}
       tabIndex={0}
-      onMouseEnter={() => {
-        setHovered(true)
-        onHover(file)
-      }}
-      onMouseLeave={() => setHovered(false)}
+      aria-selected={selected}
+      onMouseEnter={() => onHover(file)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault()
@@ -497,10 +493,7 @@ function BriefingRow({ file, selected, onOpen, onHover }: RowProps) {
           data-testid={`briefing-open-${file.name}`}
           onClick={() => onOpen(file)}
           aria-label={`Open ${file.name}`}
-          className={cn(
-            "rounded p-0.5 text-muted-foreground transition-opacity hover:bg-accent hover:text-accent-foreground",
-            hovered ? "opacity-100" : "opacity-0",
-          )}
+          className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus:opacity-100 group-hover:opacity-100"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
