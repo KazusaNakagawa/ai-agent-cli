@@ -18,7 +18,12 @@ const HEADER_BTN =
   "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
 
 // Track the heading currently scrolled into view within `containerRef`.
-function useActiveHeading(containerRef: React.RefObject<HTMLDivElement | null>, deps: unknown[]) {
+// `content` is the trigger: when it changes the rendered headings change, so the
+// observer is rebuilt against the new DOM nodes.
+function useActiveHeading(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  content: string | null,
+) {
   const [activeId, setActiveId] = useState<string | null>(null)
   useEffect(() => {
     const container = containerRef.current
@@ -36,8 +41,7 @@ function useActiveHeading(containerRef: React.RefObject<HTMLDivElement | null>, 
     )
     container.querySelectorAll("h1[id], h2[id], h3[id]").forEach((el) => observer.observe(el))
     return () => observer.disconnect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
+  }, [containerRef, content])
   return activeId
 }
 
@@ -64,7 +68,7 @@ export function BriefingPanel({
   const bodyRef = useRef<HTMLDivElement>(null)
 
   const toc = useMemo(() => (content ? extractToc(content) : []), [content])
-  const activeId = useActiveHeading(bodyRef, [toc, content])
+  const activeId = useActiveHeading(bodyRef, content)
 
   return (
     <div

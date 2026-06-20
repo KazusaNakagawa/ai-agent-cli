@@ -1,8 +1,10 @@
+import type { ReactNode } from "react"
+
 interface IconProps {
   size?: number
 }
 
-function Svg({ size = 14, children }: IconProps & { children: React.ReactNode }) {
+function Svg({ size = 14, children }: IconProps & { children: ReactNode }) {
   return (
     <svg
       width={size}
