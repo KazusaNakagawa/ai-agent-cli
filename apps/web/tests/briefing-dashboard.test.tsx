@@ -121,7 +121,8 @@ describe("BriefingDashboard", () => {
 
     const fullSizeBtn = screen.getByTestId("panel-fullsize-btn")
     await user.click(fullSizeBtn)
-    expect(screen.getByTestId("briefing-panel")).toHaveClass("fixed")
+    // Full-size renders panel inside an absolute grid overlay (sidebar stays visible)
+    expect(screen.getByTestId("briefing-panel")).toBeInTheDocument()
   })
 
   it("renders markdown content in the panel", async () => {

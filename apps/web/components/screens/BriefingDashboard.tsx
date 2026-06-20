@@ -38,7 +38,7 @@ function BriefingPanel({
       data-testid="briefing-panel"
       className={cn(
         "flex flex-col overflow-hidden border-l bg-background transition-all",
-        fullSize ? "fixed inset-0 z-50" : "relative",
+        "relative",
       )}
     >
       {/* Panel header */}
@@ -225,7 +225,7 @@ export function BriefingDashboard() {
   }
 
   return (
-    <div data-testid="briefing-dashboard" className="flex h-full">
+    <div data-testid="briefing-dashboard" className="relative flex h-full">
       {/* Records list */}
       <div
         className={cn(
@@ -257,18 +257,35 @@ export function BriefingDashboard() {
         </table>
       </div>
 
-      {/* Side panel */}
-      {selected && (
-        <div className={cn("flex-1 overflow-hidden", fullSize && "flex-1")}>
+      {/* Side panel — normal mode */}
+      {selected && !fullSize && (
+        <div className="flex-1 overflow-hidden">
           <BriefingPanel
             file={selected}
             content={content}
             loading={loadingContent}
             error={contentError}
-            fullSize={fullSize}
-            onToggleFullSize={() => setFullSize((v) => !v)}
+            fullSize={false}
+            onToggleFullSize={() => setFullSize(true)}
             onClose={handleClose}
           />
+        </div>
+      )}
+
+      {/* Full-size overlay within main content area (sidebar stays visible) */}
+      {selected && fullSize && (
+        <div className="absolute inset-0 grid grid-cols-[1fr_8fr_1fr] bg-background">
+          <div />
+          <BriefingPanel
+            file={selected}
+            content={content}
+            loading={loadingContent}
+            error={contentError}
+            fullSize={true}
+            onToggleFullSize={() => setFullSize(false)}
+            onClose={handleClose}
+          />
+          <div />
         </div>
       )}
     </div>
