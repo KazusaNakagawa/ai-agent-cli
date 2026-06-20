@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
@@ -19,42 +19,76 @@ export function BriefingDashboard() {
   const [loadingContent, setLoadingContent] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // In-memory cache so revisiting a row is instant (no re-fetch).
+  const contentCache = useRef(new Map<string, string>())
+  // Tracks the most recently requested file to discard stale responses.
+  const latestFile = useRef<string | null>(null)
+
+  const fetchContent = useCallback((file: BriefingFile) => {
+    const cached = contentCache.current.get(file.name)
+    if (cached !== undefined) {
+      setSelected(file)
+      setContent(cached)
+      setLoadingContent(false)
+      return
+    }
+    latestFile.current = file.name
+    setSelected(file)
+    setLoadingContent(true)
+    setContent(null)
+    fetch(`/api/briefing/${encodeURIComponent(file.name)}`, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json() as Promise<BriefingFileResponse>
+      })
+      .then((data) => {
+        contentCache.current.set(file.name, data.content)
+        if (latestFile.current === file.name) {
+          setContent(data.content)
+          setLoadingContent(false)
+        }
+      })
+      .catch((e) => {
+        if (latestFile.current === file.name) {
+          setError(String(e))
+          setLoadingContent(false)
+        }
+      })
+  }, [])
+
+  // Fire-and-forget prefetch on hover; silently populates the cache.
+  const prefetch = useCallback((file: BriefingFile) => {
+    if (contentCache.current.has(file.name)) return
+    fetch(`/api/briefing/${encodeURIComponent(file.name)}`, { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<BriefingFileResponse>) : null))
+      .then((data) => {
+        if (data) contentCache.current.set(file.name, data.content)
+      })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
+    let cancelled = false
     fetch("/api/briefing", { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json() as Promise<BriefingListResponse>
       })
       .then((data) => {
+        if (cancelled) return
         setFiles(data.files)
-        if (data.files.length > 0) setSelected(data.files[0])
-      })
-      .catch((e) => setError(String(e)))
-  }, [])
-
-  useEffect(() => {
-    if (!selected) return
-    let cancelled = false
-    setLoadingContent(true)
-    setContent(null)
-    fetch(`/api/briefing/${encodeURIComponent(selected.name)}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json() as Promise<BriefingFileResponse>
-      })
-      .then((data) => {
-        if (!cancelled) setContent(data.content)
+        if (data.files.length > 0) {
+          // Start content fetch immediately — no intermediate state-cycle delay.
+          fetchContent(data.files[0])
+        }
       })
       .catch((e) => {
         if (!cancelled) setError(String(e))
       })
-      .finally(() => {
-        if (!cancelled) setLoadingContent(false)
-      })
     return () => {
       cancelled = true
     }
-  }, [selected])
+  }, [fetchContent])
 
   if (error) {
     return (
@@ -97,7 +131,8 @@ export function BriefingDashboard() {
               <tr
                 key={file.name}
                 data-testid={`briefing-row-${file.name}`}
-                onClick={() => setSelected(file)}
+                onClick={() => fetchContent(file)}
+                onMouseEnter={() => prefetch(file)}
                 className={cn(
                   "cursor-pointer border-b text-xs transition-colors last:border-0",
                   selected?.name === file.name
