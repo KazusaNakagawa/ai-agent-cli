@@ -134,7 +134,6 @@ export function BriefingDashboard() {
                 key={file.name}
                 data-testid={`briefing-row-${file.name}`}
                 tabIndex={0}
-                role="button"
                 onClick={() => fetchContent(file)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
