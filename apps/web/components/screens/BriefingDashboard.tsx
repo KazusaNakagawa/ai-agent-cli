@@ -12,6 +12,113 @@ import {
 } from "@/lib/briefing-types"
 import { cn } from "@/lib/utils"
 
+// ── Panel view ────────────────────────────────────────────────────────────────
+
+interface PanelProps {
+  file: BriefingFile
+  content: string | null
+  loading: boolean
+  error: string | null
+  fullSize: boolean
+  onToggleFullSize: () => void
+  onClose: () => void
+}
+
+function BriefingPanel({
+  file,
+  content,
+  loading,
+  error,
+  fullSize,
+  onToggleFullSize,
+  onClose,
+}: PanelProps) {
+  return (
+    <div
+      data-testid="briefing-panel"
+      className={cn(
+        "flex flex-col overflow-hidden border-l bg-background transition-all",
+        fullSize ? "fixed inset-0 z-50" : "relative",
+      )}
+    >
+      {/* Panel header */}
+      <div className="flex items-center justify-between border-b px-4 py-2">
+        <div className="flex gap-3 text-xs text-muted-foreground">
+          <span data-testid="panel-type">{BRIEFING_TYPE_LABELS[file.type]}</span>
+          <span data-testid="panel-date">{file.date}</span>
+          <span data-testid="panel-size">{(file.size / 1024).toFixed(1)} KB</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            data-testid="panel-fullsize-btn"
+            onClick={onToggleFullSize}
+            aria-label={fullSize ? "Collapse" : "Full size"}
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            {fullSize ? (
+              // Compress icon
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+                <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+                <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+                <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+              </svg>
+            ) : (
+              // Expand icon
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 3h6v6" />
+                <path d="M9 21H3v-6" />
+                <path d="M21 3l-7 7" />
+                <path d="M3 21l7-7" />
+              </svg>
+            )}
+          </button>
+          <button
+            data-testid="panel-close-btn"
+            onClick={onClose}
+            aria-label="Close panel"
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Panel title */}
+      <div className="border-b px-4 py-3">
+        <h2 className="text-sm font-semibold" data-testid="panel-title">{file.name}</h2>
+      </div>
+
+      {/* Panel body */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {loading ? (
+          <p data-testid="briefing-content-loading" className="text-sm text-muted-foreground">
+            Loading…
+          </p>
+        ) : error !== null ? (
+          <p data-testid="briefing-content-error" className="text-sm text-destructive">
+            Failed to load content: {error}
+          </p>
+        ) : content !== null ? (
+          <div
+            data-testid="briefing-content"
+            className="prose prose-sm max-w-none dark:prose-invert"
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+              {content}
+            </ReactMarkdown>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+// ── Main dashboard ─────────────────────────────────────────────────────────────
+
 export function BriefingDashboard() {
   const [files, setFiles] = useState<BriefingFile[] | null>(null)
   const [selected, setSelected] = useState<BriefingFile | null>(null)
@@ -19,10 +126,9 @@ export function BriefingDashboard() {
   const [loadingContent, setLoadingContent] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [contentError, setContentError] = useState<string | null>(null)
+  const [fullSize, setFullSize] = useState(false)
 
-  // In-memory cache so revisiting a row is instant (no re-fetch).
   const contentCache = useRef(new Map<string, string>())
-  // Tracks the most recently requested file to discard stale responses.
   const latestFile = useRef<string | null>(null)
 
   const fetchContent = useCallback((file: BriefingFile) => {
@@ -58,7 +164,6 @@ export function BriefingDashboard() {
       })
   }, [])
 
-  // Fire-and-forget prefetch on hover; silently populates the cache.
   const prefetch = useCallback((file: BriefingFile) => {
     if (contentCache.current.has(file.name)) return
     fetch(`/api/briefing/${encodeURIComponent(file.name)}`, { cache: "no-store" })
@@ -79,10 +184,6 @@ export function BriefingDashboard() {
       .then((data) => {
         if (cancelled) return
         setFiles(data.files)
-        if (data.files.length > 0) {
-          // Start content fetch immediately — no intermediate state-cycle delay.
-          fetchContent(data.files[0])
-        }
       })
       .catch((e) => {
         if (!cancelled) setListError(String(e))
@@ -90,7 +191,14 @@ export function BriefingDashboard() {
     return () => {
       cancelled = true
     }
-  }, [fetchContent])
+  }, [])
+
+  const handleClose = useCallback(() => {
+    setSelected(null)
+    setContent(null)
+    setContentError(null)
+    setFullSize(false)
+  }, [])
 
   if (listError) {
     return (
@@ -117,70 +225,110 @@ export function BriefingDashboard() {
   }
 
   return (
-    <div data-testid="briefing-dashboard" className="flex h-full gap-4">
-      {/* File list */}
-      <aside className="w-64 shrink-0 overflow-y-auto rounded-md border">
+    <div data-testid="briefing-dashboard" className="flex h-full">
+      {/* Records list */}
+      <div
+        className={cn(
+          "flex-shrink-0 overflow-y-auto border-r transition-all",
+          selected && !fullSize ? "w-72" : "flex-1",
+          fullSize && "hidden",
+        )}
+      >
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
               <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2">Type</th>
               <th className="px-3 py-2">Date</th>
+              <th className="w-8 px-3 py-2" />
             </tr>
           </thead>
           <tbody>
             {files.map((file) => (
-              <tr
+              <BriefingRow
                 key={file.name}
-                data-testid={`briefing-row-${file.name}`}
-                tabIndex={0}
-                onClick={() => fetchContent(file)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault()
-                    fetchContent(file)
-                  }
-                }}
-                onMouseEnter={() => prefetch(file)}
-                className={cn(
-                  "cursor-pointer border-b text-xs transition-colors last:border-0",
-                  selected?.name === file.name
-                    ? "bg-accent font-medium text-accent-foreground"
-                    : "hover:bg-accent/50",
-                )}
-              >
-                <td className="max-w-[120px] truncate px-3 py-2" title={file.name}>
-                  {file.name}
-                </td>
-                <td className="px-3 py-2">{BRIEFING_TYPE_LABELS[file.type]}</td>
-                <td className="px-3 py-2 tabular-nums">{file.date}</td>
-              </tr>
+                file={file}
+                selected={selected?.name === file.name}
+                onOpen={fetchContent}
+                onHover={prefetch}
+              />
             ))}
           </tbody>
         </table>
-      </aside>
+      </div>
 
-      {/* Markdown detail */}
-      <main className="min-w-0 flex-1 overflow-y-auto">
-        {loadingContent ? (
-          <p data-testid="briefing-content-loading" className="text-sm text-muted-foreground">
-            Loading…
-          </p>
-        ) : contentError !== null ? (
-          <p data-testid="briefing-content-error" className="text-sm text-destructive">
-            Failed to load content: {contentError}
-          </p>
-        ) : content !== null ? (
-          <div
-            data-testid="briefing-content"
-            className="prose prose-sm max-w-none dark:prose-invert"
-          >
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-              {content}
-            </ReactMarkdown>
-          </div>
-        ) : null}
-      </main>
+      {/* Side panel */}
+      {selected && (
+        <div className={cn("flex-1 overflow-hidden", fullSize && "flex-1")}>
+          <BriefingPanel
+            file={selected}
+            content={content}
+            loading={loadingContent}
+            error={contentError}
+            fullSize={fullSize}
+            onToggleFullSize={() => setFullSize((v) => !v)}
+            onClose={handleClose}
+          />
+        </div>
+      )}
     </div>
+  )
+}
+
+// ── Row with hover open icon ───────────────────────────────────────────────────
+
+interface RowProps {
+  file: BriefingFile
+  selected: boolean
+  onOpen: (file: BriefingFile) => void
+  onHover: (file: BriefingFile) => void
+}
+
+function BriefingRow({ file, selected, onOpen, onHover }: RowProps) {
+  const [hovered, setHovered] = useState(false)
+
+  return (
+    <tr
+      data-testid={`briefing-row-${file.name}`}
+      tabIndex={0}
+      onMouseEnter={() => {
+        setHovered(true)
+        onHover(file)
+      }}
+      onMouseLeave={() => setHovered(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onOpen(file)
+        }
+      }}
+      className={cn(
+        "group border-b text-xs transition-colors last:border-0",
+        selected ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent/50",
+      )}
+    >
+      <td className="max-w-[160px] truncate px-3 py-2" title={file.name}>
+        {file.name}
+      </td>
+      <td className="px-3 py-2">{BRIEFING_TYPE_LABELS[file.type]}</td>
+      <td className="px-3 py-2 tabular-nums">{file.date}</td>
+      <td className="px-2 py-2">
+        <button
+          data-testid={`briefing-open-${file.name}`}
+          onClick={() => onOpen(file)}
+          aria-label={`Open ${file.name}`}
+          className={cn(
+            "rounded p-0.5 text-muted-foreground transition-opacity hover:bg-accent hover:text-accent-foreground",
+            hovered ? "opacity-100" : "opacity-0",
+          )}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+        </button>
+      </td>
+    </tr>
   )
 }
