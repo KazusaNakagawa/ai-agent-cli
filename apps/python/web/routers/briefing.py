@@ -48,6 +48,8 @@ def list_briefings() -> BriefingListResponse:
 
     files: list[BriefingFile] = []
     for path in BRIEFING_DIR.glob("*.md"):
+        if not path.is_file():
+            continue
         m = _FILE_RE.match(path.name)
         if m is None:
             continue

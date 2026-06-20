@@ -120,4 +120,36 @@ describe("BriefingDashboard", () => {
       expect(screen.getByTestId("briefing-error")).toBeInTheDocument()
     })
   })
+
+  it("shows content error inline without hiding the file list", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url === "/api/briefing") return Promise.resolve(jsonResponse(FILES_RESPONSE))
+      return Promise.reject(new Error("content fetch failed"))
+    })
+    render(<BriefingDashboard />)
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content-error")).toBeInTheDocument()
+    })
+    expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument()
+  })
+
+  it("activates row on Enter key press", async () => {
+    const otherContent = { name: "briefing_2026-06-19.md", content: "# June 19 via keyboard" }
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("briefing_2026-06-19")) return Promise.resolve(jsonResponse(otherContent))
+      if (url.includes("/api/briefing/")) return Promise.resolve(jsonResponse(CONTENT_RESPONSE))
+      return Promise.resolve(jsonResponse(FILES_RESPONSE))
+    })
+
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    const row = screen.getByTestId("briefing-row-briefing_2026-06-19.md")
+    await user.type(row, "{Enter}")
+
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("June 19 via keyboard")
+    })
+  })
 })
