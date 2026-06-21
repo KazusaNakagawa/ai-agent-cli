@@ -34,6 +34,8 @@ describe("BriefingDashboard", () => {
   })
   afterEach(() => {
     vi.unstubAllGlobals()
+    // Reset the ?type= URL so tab state never leaks across tests, even on failure.
+    window.history.replaceState(null, "", "/")
   })
 
   it("shows loading state before files arrive", async () => {
@@ -208,6 +210,50 @@ describe("BriefingDashboard", () => {
       expect(screen.getByTestId("briefing-content-error")).toBeInTheDocument()
     })
     expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument()
+  })
+
+  it("renders a Type tab per type present and filters the list on select", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(FILES_RESPONSE))
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    expect(screen.getByTestId("briefing-tab-__all__")).toBeInTheDocument()
+    expect(screen.getByTestId("briefing-tab-briefing")).toBeInTheDocument()
+    expect(screen.getByTestId("briefing-tab-local")).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId("briefing-tab-local"))
+
+    // local-only after filtering
+    expect(screen.getByTestId("briefing-row-local_2026-06-18.md")).toBeInTheDocument()
+    expect(screen.queryByTestId("briefing-row-briefing_2026-06-20.md")).not.toBeInTheDocument()
+
+    // All restores everything
+    await user.click(screen.getByTestId("briefing-tab-__all__"))
+    expect(screen.getByTestId("briefing-row-briefing_2026-06-20.md")).toBeInTheDocument()
+  })
+
+  it("persists the selected tab to the ?type= URL query", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(FILES_RESPONSE))
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId("briefing-tab-local"))
+    expect(new URLSearchParams(window.location.search).get("type")).toBe("local")
+
+    await user.click(screen.getByTestId("briefing-tab-__all__"))
+    expect(new URLSearchParams(window.location.search).get("type")).toBeNull()
+  })
+
+  it("restores the selected tab from ?type= on load", async () => {
+    window.history.replaceState(null, "", "/?type=local")
+    fetchMock.mockResolvedValue(jsonResponse(FILES_RESPONSE))
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    expect(screen.getByTestId("briefing-row-local_2026-06-18.md")).toBeInTheDocument()
+    expect(screen.queryByTestId("briefing-row-briefing_2026-06-20.md")).not.toBeInTheDocument()
   })
 
   it("activates row on Enter key press", async () => {

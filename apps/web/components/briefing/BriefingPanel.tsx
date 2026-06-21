@@ -4,7 +4,7 @@ import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 
 import { extractToc, rehypeHeadingIds, sanitizeSchema } from "@/lib/briefing-toc"
-import { BriefingFile, BRIEFING_TYPE_LABELS } from "@/lib/briefing-types"
+import { BriefingFile, briefingTypeLabel } from "@/lib/briefing-types"
 import { cn } from "@/lib/utils"
 
 import { BriefingToc } from "./BriefingToc"
@@ -81,7 +81,7 @@ export function BriefingPanel({
       {/* Panel header */}
       <div className="flex items-center justify-between border-b px-4 py-2">
         <div className="flex gap-3 text-xs text-muted-foreground">
-          <span data-testid="panel-type">{BRIEFING_TYPE_LABELS[file.type]}</span>
+          <span data-testid="panel-type">{briefingTypeLabel(file.type)}</span>
           <span data-testid="panel-date">{file.date}</span>
           <span data-testid="panel-size">{(file.size / 1024).toFixed(1)} KB</span>
         </div>

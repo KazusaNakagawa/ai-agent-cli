@@ -4,11 +4,10 @@
 一覧表示し、選択されたファイルの Markdown 本文を返す。
 
 ファイル名規約: ``{type}_{YYYY-MM-DD}[-NNN].md``
-type は ``briefing`` または ``local`` の 2 種。
+type は任意の小文字始まりプレフィックス (``briefing`` / ``local`` / ``market`` ...)。
 """
 import re
 from pathlib import Path
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -19,15 +18,15 @@ router = APIRouter(dependencies=[Depends(require_bearer)])
 
 BRIEFING_DIR = Path(__file__).parents[2] / "output" / "briefing"
 
-# filename: briefing_YYYY-MM-DD[-NNN].md  or  local_YYYY-MM-DD[-NNN].md
-_FILE_RE = re.compile(r"^(briefing|local)_(\d{4}-\d{2}-\d{2})(?:-\d+)?\.md$")
+# filename: <type>_YYYY-MM-DD[-NNN].md — type is any lowercase-led prefix.
+_FILE_RE = re.compile(r"^([a-z][\w-]*?)_(\d{4}-\d{2}-\d{2})(?:-\d+)?\.md$")
 # safe-name guard: only alphanum / underscore / hyphen + .md — no path separators
 _SAFE_NAME_RE = re.compile(r"^[\w-]+\.md$")
 
 
 class BriefingFile(BaseModel):
     name: str
-    type: Literal["briefing", "local"]
+    type: str
     date: str  # YYYY-MM-DD
     size: int  # bytes
 
