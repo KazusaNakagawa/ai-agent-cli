@@ -97,6 +97,32 @@ async def test_get_invalid_extension_returns_404(authed_client, briefing_dir):
     assert response.status_code == 404
 
 
+async def test_list_accepts_custom_type_prefix(authed_client, briefing_dir):
+    """A non-briefing/local type prefix (e.g. market_) is listed with its type."""
+    (briefing_dir / "market_2026-06-21.md").write_text("# Market", encoding="utf-8")
+    response = await authed_client.get("/api/briefing")
+    files = {f["name"]: f for f in response.json()["files"]}
+    assert files["market_2026-06-21.md"]["type"] == "market"
+    assert files["market_2026-06-21.md"]["date"] == "2026-06-21"
+
+
+async def test_list_ignores_non_lowercase_type_prefix(authed_client, briefing_dir):
+    """Type must start lowercase; uppercase-led names are rejected by the regex."""
+    (briefing_dir / "Market_2026-06-21.md").write_text("nope", encoding="utf-8")
+    (briefing_dir / "_2026-06-21.md").write_text("nope", encoding="utf-8")
+    response = await authed_client.get("/api/briefing")
+    names = [f["name"] for f in response.json()["files"]]
+    assert "Market_2026-06-21.md" not in names
+    assert "_2026-06-21.md" not in names
+
+
+async def test_get_accepts_custom_type_prefix(authed_client, briefing_dir):
+    (briefing_dir / "market_2026-06-21.md").write_text("# Market body", encoding="utf-8")
+    response = await authed_client.get("/api/briefing/market_2026-06-21.md")
+    assert response.status_code == 200
+    assert "Market body" in response.json()["content"]
+
+
 async def test_list_newest_first_sorted_correctly(authed_client, briefing_dir):
     """Ensure sort order: briefing_2026-06-20 > briefing_2026-06-19 > briefing_2026-06-16-001."""
     response = await authed_client.get("/api/briefing")

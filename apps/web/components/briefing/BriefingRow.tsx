@@ -1,4 +1,4 @@
-import { BriefingFile, BRIEFING_TYPE_LABELS } from "@/lib/briefing-types"
+import { BriefingFile, briefingTypeLabel } from "@/lib/briefing-types"
 import { cn } from "@/lib/utils"
 
 import { ExternalLinkIcon } from "./icons"
@@ -32,7 +32,7 @@ export function BriefingRow({ file, selected, onOpen, onHover }: BriefingRowProp
       <td className="max-w-[160px] truncate px-3 py-2" title={file.name}>
         {file.name}
       </td>
-      <td className="px-3 py-2">{BRIEFING_TYPE_LABELS[file.type]}</td>
+      <td className="px-3 py-2">{briefingTypeLabel(file.type)}</td>
       <td className="px-3 py-2 tabular-nums">{file.date}</td>
       <td className="px-2 py-2">
         <button

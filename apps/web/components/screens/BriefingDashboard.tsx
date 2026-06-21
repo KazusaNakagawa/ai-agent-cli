@@ -1,10 +1,16 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { BriefingPanel } from "@/components/briefing/BriefingPanel"
 import { BriefingRow } from "@/components/briefing/BriefingRow"
+import { ALL_TAB, BriefingTabs } from "@/components/briefing/BriefingTabs"
 import { useBriefingData } from "@/lib/hooks/useBriefingData"
 import { cn } from "@/lib/utils"
+
+function initialTab(): string {
+  if (typeof window === "undefined") return ALL_TAB
+  return new URLSearchParams(window.location.search).get("type") ?? ALL_TAB
+}
 
 export function BriefingDashboard() {
   const {
@@ -19,6 +25,21 @@ export function BriefingDashboard() {
     close,
   } = useBriefingData()
   const [fullSize, setFullSize] = useState(false)
+  const [tab, setTab] = useState<string>(initialTab)
+
+  // Persist the selected tab to the ?type= URL query.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const url = new URL(window.location.href)
+    if (tab === ALL_TAB) url.searchParams.delete("type")
+    else url.searchParams.set("type", tab)
+    window.history.replaceState(null, "", url.toString())
+  }, [tab])
+
+  const visibleFiles = useMemo(
+    () => (files ?? []).filter((f) => tab === ALL_TAB || f.type === tab),
+    [files, tab],
+  )
 
   const handleClose = () => {
     setFullSize(false)
@@ -60,6 +81,7 @@ export function BriefingDashboard() {
           fullSize && "hidden",
         )}
       >
+        <BriefingTabs files={files} selected={tab} onSelect={setTab} />
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
@@ -70,7 +92,7 @@ export function BriefingDashboard() {
             </tr>
           </thead>
           <tbody>
-            {files.map((file) => (
+            {visibleFiles.map((file) => (
               <BriefingRow
                 key={file.name}
                 file={file}
