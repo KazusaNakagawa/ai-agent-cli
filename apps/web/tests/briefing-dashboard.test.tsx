@@ -34,6 +34,8 @@ describe("BriefingDashboard", () => {
   })
   afterEach(() => {
     vi.unstubAllGlobals()
+    // Reset the ?type= URL so tab state never leaks across tests, even on failure.
+    window.history.replaceState(null, "", "/")
   })
 
   it("shows loading state before files arrive", async () => {
@@ -215,7 +217,7 @@ describe("BriefingDashboard", () => {
     render(<BriefingDashboard />)
     await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
 
-    expect(screen.getByTestId("briefing-tab-all")).toBeInTheDocument()
+    expect(screen.getByTestId("briefing-tab-__all__")).toBeInTheDocument()
     expect(screen.getByTestId("briefing-tab-briefing")).toBeInTheDocument()
     expect(screen.getByTestId("briefing-tab-local")).toBeInTheDocument()
 
@@ -227,7 +229,7 @@ describe("BriefingDashboard", () => {
     expect(screen.queryByTestId("briefing-row-briefing_2026-06-20.md")).not.toBeInTheDocument()
 
     // All restores everything
-    await user.click(screen.getByTestId("briefing-tab-all"))
+    await user.click(screen.getByTestId("briefing-tab-__all__"))
     expect(screen.getByTestId("briefing-row-briefing_2026-06-20.md")).toBeInTheDocument()
   })
 
@@ -240,7 +242,7 @@ describe("BriefingDashboard", () => {
     await user.click(screen.getByTestId("briefing-tab-local"))
     expect(new URLSearchParams(window.location.search).get("type")).toBe("local")
 
-    await user.click(screen.getByTestId("briefing-tab-all"))
+    await user.click(screen.getByTestId("briefing-tab-__all__"))
     expect(new URLSearchParams(window.location.search).get("type")).toBeNull()
   })
 
@@ -252,7 +254,6 @@ describe("BriefingDashboard", () => {
 
     expect(screen.getByTestId("briefing-row-local_2026-06-18.md")).toBeInTheDocument()
     expect(screen.queryByTestId("briefing-row-briefing_2026-06-20.md")).not.toBeInTheDocument()
-    window.history.replaceState(null, "", "/")
   })
 
   it("activates row on Enter key press", async () => {

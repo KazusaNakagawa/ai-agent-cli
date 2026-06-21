@@ -1,7 +1,8 @@
 import { BriefingFile, briefingTypeLabel } from "@/lib/briefing-types"
 import { cn } from "@/lib/utils"
 
-export const ALL_TAB = "all"
+// Sentinel for the "All" tab — must not collide with any real file type prefix.
+export const ALL_TAB = "__all__"
 
 interface BriefingTabsProps {
   files: BriefingFile[]

@@ -27,12 +27,12 @@ describe("briefingTypeLabel", () => {
 })
 
 describe("BriefingTabs", () => {
-  it("renders All first, then one tab per type present", () => {
+  it("renders All first, then one tab per type present, in order", () => {
     render(<BriefingTabs files={FILES} selected={ALL_TAB} onSelect={() => {}} />)
-    expect(screen.getByTestId("briefing-tab-all")).toHaveTextContent("All")
-    expect(screen.getByTestId("briefing-tab-market")).toHaveTextContent("Market")
-    expect(screen.getByTestId("briefing-tab-briefing")).toHaveTextContent("Briefing")
-    expect(screen.getByTestId("briefing-tab-local")).toHaveTextContent("Local")
+    const labels = Array.from(
+      screen.getByTestId("briefing-tabs").querySelectorAll("button"),
+    ).map((el) => el.textContent)
+    expect(labels).toEqual(["All", "Market", "Briefing", "Local"])
   })
 
   it("calls onSelect with the clicked type", async () => {
