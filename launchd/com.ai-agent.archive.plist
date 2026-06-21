@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Monthly briefing archive job.
+
+  Manual install (edit the absolute paths below to match your checkout):
+    cp launchd/com.ai-agent.archive.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ai-agent.archive.plist
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.ai-agent.archive.plist
+
+  Runs on the 1st of each month at 03:00 and archives the previous month.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-agent.archive</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/nakagawakazusa/work/ai-agent/bin/archive.sh</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Day</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/ai-agent-archive.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/ai-agent-archive.err.log</string>
+</dict>
+</plist>

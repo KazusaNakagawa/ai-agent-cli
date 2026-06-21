@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useMemo, useState } from "react"
 
+import { ArchiveButton } from "@/components/briefing/ArchiveButton"
 import { BriefingPanel } from "@/components/briefing/BriefingPanel"
 import { BriefingRow } from "@/components/briefing/BriefingRow"
 import { BriefingSearch } from "@/components/briefing/BriefingSearch"
@@ -118,6 +119,7 @@ export function BriefingDashboard() {
           fullSize && "hidden",
         )}
       >
+        <ArchiveButton />
         <BriefingSearch onSearch={setQuery} />
         <BriefingTabs files={files} selected={tab} onSelect={setTab} />
         <table className="w-full text-sm">
