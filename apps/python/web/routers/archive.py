@@ -39,7 +39,10 @@ def post_archive(
     if prune:
         cmd.append("--prune")
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # No command injection: args are passed as a list (no shell=True), the only
+    # dynamic value (month) is regex-validated to ^\d{4}-\d{2}$ above, and the
+    # binary path is a fixed constant.
+    result = subprocess.run(cmd, capture_output=True, text=True)  # noqa: S603
     if result.returncode != 0:
         excerpt = result.stderr.strip()[-_STDERR_EXCERPT:]
         raise HTTPException(

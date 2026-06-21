@@ -35,8 +35,11 @@ done
 if [ -z "$MONTH" ]; then
     if date -v-1m +%Y-%m >/dev/null 2>&1; then
         MONTH="$(date -v-1m +%Y-%m)"
-    else
+    elif date -d 'last month' +%Y-%m >/dev/null 2>&1; then
         MONTH="$(date -d 'last month' +%Y-%m)"
+    else
+        echo "error: unsupported 'date' implementation; please supply --month YYYY-MM" >&2
+        exit 1
     fi
 fi
 

@@ -114,3 +114,19 @@ def test_missing_rclone_exits_nonzero_with_hint(tmp_path):
     )
     assert result.returncode == 1
     assert "rclone not found" in result.stderr.lower()
+
+
+def test_unsupported_date_without_month_exits_with_hint(tmp_path):
+    _seed_briefings(tmp_path / "briefing")
+    # Stub `date` that fails for every form, simulating a minimal/BusyBox host,
+    # and omit --month so the default-month branch is exercised.
+    stub_bin = tmp_path / "stubbin"
+    stub_bin.mkdir()
+    (stub_bin / "dirname").symlink_to("/usr/bin/dirname")
+    date_stub = stub_bin / "date"
+    date_stub.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    date_stub.chmod(0o755)
+
+    result = _run(tmp_path, env_extra={"PATH": str(stub_bin)})
+    assert result.returncode == 1
+    assert "supply --month" in result.stderr.lower()
