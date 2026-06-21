@@ -46,6 +46,10 @@ bin/chat.sh   # Launch chat session
 - CI and local `pytest` always load `apps/python/tests/config/briefing.json` — `conftest.py` sets `BRIEFING_CONFIG_PATH` before any import of `src.config`.
 - When adding or changing config schema, update both `.example` and `tests/config/briefing.json`.
 
+## Code Style
+
+- **Code comments and docstrings must be written in English** (both Python and TypeScript), unified across the codebase. User-facing chat responses stay in Japanese, but in-code documentation is English only — do not mix languages within a file.
+
 ## Git Conventions
 
 Branch naming: `feat/` `fix/` `refactor/` `docs/` `chore/`

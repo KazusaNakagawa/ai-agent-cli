@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from "react"
 
 import { BriefingPanel } from "@/components/briefing/BriefingPanel"
 import { BriefingRow } from "@/components/briefing/BriefingRow"
+import { BriefingSearch } from "@/components/briefing/BriefingSearch"
 import { ALL_TAB, BriefingTabs } from "@/components/briefing/BriefingTabs"
+import { BriefingFile, BriefingListResponse } from "@/lib/briefing-types"
 import { useBriefingData } from "@/lib/hooks/useBriefingData"
 import { cn } from "@/lib/utils"
 
@@ -26,6 +28,9 @@ export function BriefingDashboard() {
   } = useBriefingData()
   const [fullSize, setFullSize] = useState(false)
   const [tab, setTab] = useState<string>(initialTab)
+  const [query, setQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<BriefingFile[] | null>(null)
+  const [searching, setSearching] = useState(false)
 
   // Persist the selected tab to the ?type= URL query.
   useEffect(() => {
@@ -36,10 +41,36 @@ export function BriefingDashboard() {
     window.history.replaceState(null, "", url.toString())
   }, [tab])
 
-  const visibleFiles = useMemo(
-    () => (files ?? []).filter((f) => tab === ALL_TAB || f.type === tab),
-    [files, tab],
-  )
+  // Fetch server-side search results when the (debounced) query changes.
+  useEffect(() => {
+    if (query === "") {
+      setSearchResults(null)
+      setSearching(false)
+      return
+    }
+    let cancelled = false
+    setSearching(true)
+    fetch(`/api/briefing/search?q=${encodeURIComponent(query)}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data: BriefingListResponse) => {
+        if (!cancelled) setSearchResults(data.files)
+      })
+      .catch(() => {
+        if (!cancelled) setSearchResults([])
+      })
+      .finally(() => {
+        if (!cancelled) setSearching(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [query])
+
+  // Search (when active) and Type tab combine as an AND filter.
+  const visibleFiles = useMemo(() => {
+    const base = query !== "" ? (searchResults ?? []) : (files ?? [])
+    return base.filter((f) => tab === ALL_TAB || f.type === tab)
+  }, [files, tab, query, searchResults])
 
   const handleClose = () => {
     setFullSize(false)
@@ -81,6 +112,7 @@ export function BriefingDashboard() {
           fullSize && "hidden",
         )}
       >
+        <BriefingSearch onSearch={setQuery} />
         <BriefingTabs files={files} selected={tab} onSelect={setTab} />
         <table className="w-full text-sm">
           <thead>
@@ -103,6 +135,22 @@ export function BriefingDashboard() {
             ))}
           </tbody>
         </table>
+        {searching && (
+          <p
+            data-testid="briefing-search-loading"
+            className="px-3 py-2 text-xs text-muted-foreground"
+          >
+            Searching…
+          </p>
+        )}
+        {!searching && visibleFiles.length === 0 && (
+          <p
+            data-testid="briefing-no-results"
+            className="px-3 py-2 text-xs text-muted-foreground"
+          >
+            No matching briefings.
+          </p>
+        )}
       </div>
 
       {/* Side panel */}
