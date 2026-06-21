@@ -256,6 +256,93 @@ describe("BriefingDashboard", () => {
     expect(screen.queryByTestId("briefing-row-briefing_2026-06-20.md")).not.toBeInTheDocument()
   })
 
+  it("filters via server search and combines with the Type tab (AND)", async () => {
+    const searchResponse = {
+      files: [
+        { name: "briefing_2026-06-20.md", type: "briefing", date: "2026-06-20", size: 5120 },
+        { name: "local_2026-06-18.md", type: "local", date: "2026-06-18", size: 1280 },
+      ],
+    }
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/briefing/search")) return Promise.resolve(jsonResponse(searchResponse))
+      return Promise.resolve(jsonResponse(FILES_RESPONSE))
+    })
+
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.type(screen.getByTestId("briefing-search-input"), "content")
+
+    // search narrows the list to the two server matches
+    await waitFor(() =>
+      expect(screen.queryByTestId("briefing-row-briefing_2026-06-19.md")).not.toBeInTheDocument(),
+    )
+    expect(screen.getByTestId("briefing-row-briefing_2026-06-20.md")).toBeInTheDocument()
+    expect(screen.getByTestId("briefing-row-local_2026-06-18.md")).toBeInTheDocument()
+    const searchUrl = fetchMock.mock.calls.map((c) => c[0]).find((u: string) => u.includes("/search"))
+    expect(searchUrl).toContain("q=content")
+
+    // AND with Type tab: local-only among the search matches
+    await user.click(screen.getByTestId("briefing-tab-local"))
+    expect(screen.getByTestId("briefing-row-local_2026-06-18.md")).toBeInTheDocument()
+    expect(screen.queryByTestId("briefing-row-briefing_2026-06-20.md")).not.toBeInTheDocument()
+  })
+
+  it("clearing the search returns to tab-only filtering", async () => {
+    const searchResponse = {
+      files: [{ name: "local_2026-06-18.md", type: "local", date: "2026-06-18", size: 1280 }],
+    }
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/briefing/search")) return Promise.resolve(jsonResponse(searchResponse))
+      return Promise.resolve(jsonResponse(FILES_RESPONSE))
+    })
+
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.type(screen.getByTestId("briefing-search-input"), "local")
+    await waitFor(() =>
+      expect(screen.queryByTestId("briefing-row-briefing_2026-06-20.md")).not.toBeInTheDocument(),
+    )
+
+    await user.click(screen.getByTestId("briefing-search-clear"))
+    await waitFor(() =>
+      expect(screen.getByTestId("briefing-row-briefing_2026-06-20.md")).toBeInTheDocument(),
+    )
+  })
+
+  it("shows a zero-result state when the search has no matches", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/briefing/search")) return Promise.resolve(jsonResponse({ files: [] }))
+      return Promise.resolve(jsonResponse(FILES_RESPONSE))
+    })
+
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.type(screen.getByTestId("briefing-search-input"), "zzz")
+    await waitFor(() => expect(screen.getByTestId("briefing-no-results")).toBeInTheDocument())
+  })
+
+  it("shows a distinct error state (not zero-result) when search fails", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/briefing/search")) return Promise.reject(new Error("Network down"))
+      return Promise.resolve(jsonResponse(FILES_RESPONSE))
+    })
+
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.type(screen.getByTestId("briefing-search-input"), "nvda")
+    await waitFor(() => expect(screen.getByTestId("briefing-search-error")).toBeInTheDocument())
+    // error is shown instead of the zero-result message
+    expect(screen.queryByTestId("briefing-no-results")).not.toBeInTheDocument()
+  })
+
   it("activates row on Enter key press", async () => {
     const otherContent = { name: "briefing_2026-06-19.md", content: "# June 19 via keyboard" }
     fetchMock.mockImplementation((url: string) => {
