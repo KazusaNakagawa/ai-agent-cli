@@ -327,6 +327,22 @@ describe("BriefingDashboard", () => {
     await waitFor(() => expect(screen.getByTestId("briefing-no-results")).toBeInTheDocument())
   })
 
+  it("shows a distinct error state (not zero-result) when search fails", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/briefing/search")) return Promise.reject(new Error("Network down"))
+      return Promise.resolve(jsonResponse(FILES_RESPONSE))
+    })
+
+    render(<BriefingDashboard />)
+    await waitFor(() => expect(screen.getByTestId("briefing-dashboard")).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.type(screen.getByTestId("briefing-search-input"), "nvda")
+    await waitFor(() => expect(screen.getByTestId("briefing-search-error")).toBeInTheDocument())
+    // error is shown instead of the zero-result message
+    expect(screen.queryByTestId("briefing-no-results")).not.toBeInTheDocument()
+  })
+
   it("activates row on Enter key press", async () => {
     const otherContent = { name: "briefing_2026-06-19.md", content: "# June 19 via keyboard" }
     fetchMock.mockImplementation((url: string) => {

@@ -31,6 +31,7 @@ export function BriefingDashboard() {
   const [query, setQuery] = useState("")
   const [searchResults, setSearchResults] = useState<BriefingFile[] | null>(null)
   const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
 
   // Persist the selected tab to the ?type= URL query.
   useEffect(() => {
@@ -46,17 +47,22 @@ export function BriefingDashboard() {
     if (query === "") {
       setSearchResults(null)
       setSearching(false)
+      setSearchError(null)
       return
     }
     let cancelled = false
     setSearching(true)
+    setSearchError(null)
     fetch(`/api/briefing/search?q=${encodeURIComponent(query)}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((data: BriefingListResponse) => {
         if (!cancelled) setSearchResults(data.files)
       })
-      .catch(() => {
-        if (!cancelled) setSearchResults([])
+      .catch((e) => {
+        if (cancelled) return
+        // Keep search errors distinct from a legitimate zero-result search.
+        setSearchResults([])
+        setSearchError(String(e))
       })
       .finally(() => {
         if (!cancelled) setSearching(false)
@@ -143,7 +149,15 @@ export function BriefingDashboard() {
             Searching…
           </p>
         )}
-        {!searching && visibleFiles.length === 0 && (
+        {!searching && searchError && (
+          <p
+            data-testid="briefing-search-error"
+            className="px-3 py-2 text-xs text-destructive"
+          >
+            Search failed: {searchError}
+          </p>
+        )}
+        {!searching && !searchError && visibleFiles.length === 0 && (
           <p
             data-testid="briefing-no-results"
             className="px-3 py-2 text-xs text-muted-foreground"
