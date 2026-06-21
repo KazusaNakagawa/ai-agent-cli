@@ -1,10 +1,10 @@
-"""GET /api/briefing — apps/python/output/briefing/*.md のリスト・内容取得 API。
+"""GET /api/briefing — list and read apps/python/output/briefing/*.md.
 
-ブリーフィングビューア (Sidebar > Briefing) がファイル一覧を取得して
-一覧表示し、選択されたファイルの Markdown 本文を返す。
+The briefing viewer (Sidebar > Briefing) fetches the file list to render the
+record list, then fetches the selected file's Markdown body.
 
-ファイル名規約: ``{type}_{YYYY-MM-DD}[-NNN].md``
-type は任意の小文字始まりプレフィックス (``briefing`` / ``local`` / ``market`` ...)。
+Filename convention: ``{type}_{YYYY-MM-DD}[-NNN].md``
+``type`` is any lowercase-led prefix (``briefing`` / ``local`` / ``market`` ...).
 """
 import re
 from pathlib import Path
@@ -42,9 +42,14 @@ class BriefingFileResponse(BaseModel):
 
 @router.get("/briefing", response_model=BriefingListResponse)
 def list_briefings() -> BriefingListResponse:
-    """利用可能なブリーフィングファイルを新しい順で返す。"""
+    """Return available briefing files, newest first."""
+    return BriefingListResponse(files=_scan_files())
+
+
+def _scan_files() -> list[BriefingFile]:
+    """Return convention-matching md files in BRIEFING_DIR, newest first (date, name DESC)."""
     if not BRIEFING_DIR.exists():
-        return BriefingListResponse(files=[])
+        return []
 
     files: list[BriefingFile] = []
     for path in BRIEFING_DIR.glob("*.md"):
@@ -62,12 +67,34 @@ def list_briefings() -> BriefingListResponse:
             )
         )
     files.sort(key=lambda f: (f.date, f.name), reverse=True)
-    return BriefingListResponse(files=files)
+    return files
+
+
+@router.get("/briefing/search", response_model=BriefingListResponse)
+def search_briefings(q: str = "") -> BriefingListResponse:
+    """Return files whose name or body contains ``q`` (case-insensitive, substring), newest first.
+
+    An empty query returns all files. Must be registered before ``/briefing/{name}``.
+    """
+    needle = q.strip().lower()
+    files = _scan_files()
+    if not needle:
+        return BriefingListResponse(files=files)
+
+    matched: list[BriefingFile] = []
+    for f in files:
+        if needle in f.name.lower():
+            matched.append(f)
+            continue
+        body = (BRIEFING_DIR / f.name).read_text(encoding="utf-8")
+        if needle in body.lower():
+            matched.append(f)
+    return BriefingListResponse(files=matched)
 
 
 @router.get("/briefing/{name}", response_model=BriefingFileResponse)
 def get_briefing(name: str) -> BriefingFileResponse:
-    """指定ファイルの Markdown 本文を返す。不正名やディレクトリ外は 404。"""
+    """Return the Markdown body of the named file. Invalid names or paths outside the dir 404."""
     if not _SAFE_NAME_RE.match(name) or _FILE_RE.match(name) is None:
         raise HTTPException(status_code=404, detail=f"Briefing not found: {name}")
 

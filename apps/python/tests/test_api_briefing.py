@@ -123,6 +123,46 @@ async def test_get_accepts_custom_type_prefix(authed_client, briefing_dir):
     assert "Market body" in response.json()["content"]
 
 
+async def test_search_requires_auth(async_client, briefing_dir):
+    response = await async_client.get("/api/briefing/search?q=06-20")
+    assert response.status_code == 401
+
+
+async def test_search_matches_name_newest_first(authed_client, briefing_dir):
+    response = await authed_client.get("/api/briefing/search?q=2026-06")
+    assert response.status_code == 200
+    names = [f["name"] for f in response.json()["files"]]
+    assert names == [
+        "briefing_2026-06-20.md",
+        "briefing_2026-06-19.md",
+        "local_2026-06-18.md",
+        "briefing_2026-06-16-001.md",
+    ]
+
+
+async def test_search_matches_body_case_insensitive(authed_client, briefing_dir):
+    # "Content C." only appears in the local file body.
+    response = await authed_client.get("/api/briefing/search?q=content+c")
+    names = [f["name"] for f in response.json()["files"]]
+    assert names == ["local_2026-06-18.md"]
+
+
+async def test_search_empty_query_returns_all(authed_client, briefing_dir):
+    response = await authed_client.get("/api/briefing/search?q=")
+    names = [f["name"] for f in response.json()["files"]]
+    assert names == [
+        "briefing_2026-06-20.md",
+        "briefing_2026-06-19.md",
+        "local_2026-06-18.md",
+        "briefing_2026-06-16-001.md",
+    ]
+
+
+async def test_search_no_match_returns_empty(authed_client, briefing_dir):
+    response = await authed_client.get("/api/briefing/search?q=zzzznomatch")
+    assert response.json()["files"] == []
+
+
 async def test_list_newest_first_sorted_correctly(authed_client, briefing_dir):
     """Ensure sort order: briefing_2026-06-20 > briefing_2026-06-19 > briefing_2026-06-16-001."""
     response = await authed_client.get("/api/briefing")
