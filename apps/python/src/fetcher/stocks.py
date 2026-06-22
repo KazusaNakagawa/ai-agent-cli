@@ -22,7 +22,7 @@ def fetch_stock_move_map(tickers: list[str]) -> dict[str, str]:
             logger.debug("stock fetch: %s: %s", t, moves[t])
         except Exception as e:
             logger.warning("stock fetch failed [%s]: %s", t, e)
-            moves[t] = f"取得エラー ({e})"
+            moves[t] = f"Stock fetch error ({e})"
     return moves
 
 
