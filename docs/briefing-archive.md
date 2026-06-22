@@ -53,8 +53,42 @@ bin/archive.sh --month 2026-05 --prune
 ```
 
 Result: `briefing_YYYY-MM.zip` is created under `apps/python/output/archive/` and
-uploaded to `gdrive:ai-agent/briefing/`. With no matching files the script exits
+uploaded to `<remote>:ai-agent/briefing/`. With no matching files the script exits
 zero and prints a skip message; local md files are **kept** unless `--prune` is given.
+
+### Custom remote name
+
+If you named the remote something other than `gdrive` (e.g. `repo-briefing`),
+tell the scripts via `RCLONE_REMOTE` — add it to `.env` so both the CLI and the
+Web API pick it up:
+
+```bash
+# .env
+RCLONE_REMOTE=repo-briefing
+```
+
+```bash
+rclone listremotes          # repo-briefing:
+bin/archive.sh --month 2026-05
+# → uploaded: repo-briefing:ai-agent/briefing/briefing_2026-05.zip
+```
+
+## Verify the upload
+
+```bash
+# 1. List the remote (most reliable)
+rclone ls  repo-briefing:ai-agent/briefing      # sizes + names
+rclone lsl repo-briefing:ai-agent/briefing      # + modtimes
+
+# 3. The local copy (kept unless --prune)
+ls apps/python/output/archive/
+```
+
+2. **Google Drive web/app** — open [drive.google.com](https://drive.google.com)
+   → *My Drive* → the `ai-agent/briefing/` folder (the `RCLONE_PATH` value becomes
+   the folder path). Searching `briefing_2026-05.zip` also finds it. If the remote
+   was created with the `drive.file` scope, only rclone-uploaded files are visible —
+   that is expected, and `rclone ls` showing the file confirms it is stored.
 
 ## Configuration
 
