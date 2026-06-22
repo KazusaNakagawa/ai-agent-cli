@@ -1,0 +1,219 @@
+from __future__ import annotations
+
+import json
+import re
+from datetime import date, timedelta
+from itertools import groupby
+
+from src.claude_runner import run_claude
+from src.evaluator import storage
+from src.generator.prompt import render
+from src.logger import get_logger
+
+logger = get_logger(__name__)
+
+_VALID_VERDICT = {"hit", "miss", "partial", "unresolved"}
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
+
+
+def followup_dates(base: str, horizon: int, all_dates: list[str]) -> list[str]:
+    lo = date.fromisoformat(base)
+    hi = lo + timedelta(days=horizon)
+    return [d for d in all_dates if lo < date.fromisoformat(d) <= hi]
+
+
+def parse_verdict(raw: str) -> dict:
+    text = raw.strip()
+    m = _FENCE_RE.search(text)
+    if m:
+        text = m.group(1).strip()
+    try:
+        data = json.loads(text)
+        verdict = data["verdict"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return {"verdict": "unresolved", "confidence": 0.0, "rationale": "parse error"}
+    if verdict not in _VALID_VERDICT:
+        return {"verdict": "unresolved", "confidence": 0.0, "rationale": "unknown verdict"}
+    return {
+        "verdict": verdict,
+        "confidence": _to_float(data.get("confidence"), 0.0),
+        "rationale": str(data.get("rationale", "")),
+    }
+
+
+def parse_verdicts_batch(raw: str) -> list[dict] | None:
+    """バッチ応答 (JSON 配列) をパースする。失敗時は None を返す。
+
+    非 dict 要素が 1 件でもあれば None を返してフォールバックを促す。
+    id は呼び出し側でポジションベースに上書きするため、ここでは raw 値をそのまま格納する。
+    """
+    text = raw.strip()
+    m = _FENCE_RE.search(text)
+    if m:
+        text = m.group(1).strip()
+    try:
+        data = json.loads(text)
+        if not isinstance(data, list):
+            return None
+    except (json.JSONDecodeError, TypeError):
+        return None
+    results = []
+    for item in data:
+        if not isinstance(item, dict):
+            return None
+        verdict = item.get("verdict", "unresolved")
+        if verdict not in _VALID_VERDICT:
+            verdict = "unresolved"
+        results.append({
+            "id": item.get("id"),  # 呼び出し側でポジションベースに確定する
+            "verdict": verdict,
+            "confidence": _to_float(item.get("confidence"), 0.0),
+            "rationale": str(item.get("rationale", "")),
+        })
+    return results
+
+
+def _to_float(value, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def score_claim(claim: dict, all_dates: list[str]) -> dict:
+    """1 件の claim を採点する。内部では score_claims_batch を経由する。"""
+    results = score_claims_batch([claim], all_dates)
+    return results[0]
+
+
+def score_claims_batch(
+    claims: list[dict],
+    all_dates: list[str],
+    precomputed: dict[str, list[str]] | None = None,
+) -> list[dict]:
+    """同一 followup グループの claims を 1 回の LLM 呼び出しで採点する。
+
+    precomputed: {claim_id: followup_dates} の事前計算済みマップ。
+    渡された場合は followup_dates() の再計算を省略する。
+    フォールバック: バッチ応答のパースに失敗した場合は per-claim で再実行する。
+    """
+    # followup_dates の解決
+    followup_map: dict[str, list[str]] = precomputed if precomputed is not None else {
+        c["id"]: followup_dates(c["id"][:10], c["horizon_days"], all_dates)
+        for c in claims
+    }
+
+    # followup が 1 件もない claim はここで即解決
+    resolved: list[dict] = []
+    pending: list[dict] = []
+    for c in claims:
+        if not followup_map[c["id"]]:
+            resolved.append({"id": c["id"], "verdict": "unresolved", "confidence": 0.0,
+                              "rationale": "no follow-up briefing in window"})
+        else:
+            pending.append(c)
+
+    if not pending:
+        return resolved
+
+    # followup 本文を union して構築（グループ内で重複しないよう set で結合）
+    all_followup_dates: list[str] = sorted(
+        {d for c in pending for d in followup_map[c["id"]]}
+    )
+    bodies = "\n\n---\n\n".join(
+        storage.briefing_path(d).read_text(encoding="utf-8") for d in all_followup_dates
+    )
+    themes_json = json.dumps(
+        [{"id": c["id"], "theme": c.get("theme", ""), "direction": c.get("direction", ""),
+          "targets": c.get("targets", []), "horizon_days": c.get("horizon_days", 0),
+          "type": c.get("type", "")}
+         for c in pending],
+        ensure_ascii=False,
+    )
+
+    base_date = pending[0]["id"][:10]
+    label = f"eval-judge {base_date} ({len(pending)} claims)"
+    prompt = render("eval_judge", themes=themes_json, followups=bodies)
+    raw = run_claude(prompt, label=label)
+
+    batch_results = parse_verdicts_batch(raw)
+    if batch_results is not None and len(batch_results) == len(pending):
+        # LLM の id は信頼せず、ポジションベースで pending の id を確定する
+        for result, claim in zip(batch_results, pending):
+            result["id"] = claim["id"]
+        return resolved + batch_results
+
+    # フォールバック: バッチ応答が壊れていた場合は 1 件ずつ再実行
+    logger.warning(
+        "eval-judge バッチ応答のパースに失敗 (%s)、per-claim フォールバック実行", base_date,
+    )
+    fallback = []
+    for c in pending:
+        fup_dates = followup_map[c["id"]]
+        fup_bodies = "\n\n---\n\n".join(
+            storage.briefing_path(d).read_text(encoding="utf-8") for d in fup_dates
+        )
+        single_themes = json.dumps(
+            [{"id": c["id"], "theme": c.get("theme", ""), "direction": c.get("direction", ""),
+              "targets": c.get("targets", []), "horizon_days": c.get("horizon_days", 0),
+              "type": c.get("type", "")}],
+            ensure_ascii=False,
+        )
+        single_prompt = render("eval_judge", themes=single_themes, followups=fup_bodies)
+        single_raw = run_claude(single_prompt, label=f"eval-judge {c['id']}")
+        single_results = parse_verdicts_batch(single_raw)
+        if single_results and len(single_results) == 1:
+            single_results[0]["id"] = c["id"]  # ポジションベースで id 確定
+            fallback.append(single_results[0])
+        else:
+            fallback.append({"id": c["id"], "verdict": "unresolved", "confidence": 0.0,
+                             "rationale": "parse error"})
+    return resolved + fallback
+
+
+def score(target: str = "all") -> None:
+    all_dates = storage.list_briefing_dates()
+    dates = all_dates if target == "all" else [target]
+    for date_str in dates:
+        claims_file = storage.CLAIMS_DIR / f"{date_str}.json"
+        if not claims_file.exists():
+            continue
+        claims = storage.load_json(claims_file)
+        scores_file = storage.SCORES_DIR / f"{date_str}.json"
+        existing = {s["id"]: s for s in storage.load_json(scores_file)} \
+            if scores_file.exists() else {}
+
+        # 確定済みと未処理に分ける
+        finalized: list[dict] = []
+        pending: list[dict] = []
+        for claim in claims:
+            prev = existing.get(claim["id"])
+            if prev and prev["verdict"] != "unresolved":
+                finalized.append(prev)
+            else:
+                pending.append(claim)
+
+        if not pending:
+            storage.save_json(scores_file, finalized)
+            continue
+
+        # followup_dates を一度だけ計算してキャッシュし、グループ化とバッチ処理で再利用
+        followups_cache: dict[str, list[str]] = {
+            c["id"]: followup_dates(c["id"][:10], c["horizon_days"], all_dates)
+            for c in pending
+        }
+
+        def _key(c: dict) -> tuple[str, ...]:
+            return tuple(followups_cache[c["id"]])
+
+        pending.sort(key=_key)
+        batch_results: list[dict] = []
+        for _, group in groupby(pending, key=_key):
+            claims_in_group = list(group)
+            group_cache = {c["id"]: followups_cache[c["id"]] for c in claims_in_group}
+            batch_results.extend(score_claims_batch(claims_in_group, all_dates, group_cache))
+
+        # 元の claim 順序に合わせて保存
+        id_to_result = {r["id"]: r for r in finalized + batch_results}
+        results = [id_to_result[c["id"]] for c in claims if c["id"] in id_to_result]
+        storage.save_json(scores_file, results)

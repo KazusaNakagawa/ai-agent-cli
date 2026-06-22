@@ -14,26 +14,41 @@ from src.config import BriefingConfig
 from src.generator.briefing import join_safe
 from src.generator.prompt import render
 
+from .cluster import (
+    TOP_NEWS_CLUSTER_LIMIT,
+    EmbedFn,
+    cluster_news_hits,
+    rank_clusters,
+    render_clusters_block,
+)
 from .prefetch import PrefetchedContext
-from .render import render_geo_events_block, render_macro_block
+from .render import render_geo_events_block
 
 
 def build_section_topnews_prompt(
-    cfg: BriefingConfig, *, ctx: PrefetchedContext, today: str
+    cfg: BriefingConfig, *, ctx: PrefetchedContext, today: str, embed_fn: EmbedFn | None = None
 ) -> str:
     """Top-news generation prompt.
 
     cfg is taken so the model always judges "each news item's impact on the
-    holdings ($tickers)" as part of the 3-line causal block (#159). The sources
-    are the macro block only; per-ticker and geopolitical hits are not passed at
-    this stage.
+    holdings ($tickers)" as part of the 3-line causal block (#159).
+
+    Sources are macro + per-ticker hits, clustered into deduplicated stories
+    (#169) so the same event surfaced under several tickers/macro is presented
+    once. Clusters are then ranked by investment importance and capped to the
+    top ``TOP_NEWS_CLUSTER_LIMIT`` so the section leads with material catalysts
+    (#170). ``embed_fn`` optionally supplies bge-m3 embeddings for clustering;
+    omitted, a deterministic offline heuristic is used. Geopolitical/event hits
+    are still routed to their own section, not here.
     """
     tickers = join_safe(cfg.portfolio.tickers, sep=", ")
+    clusters = cluster_news_hits(ctx, embed_fn=embed_fn)
+    clusters = rank_clusters(clusters, limit=TOP_NEWS_CLUSTER_LIMIT)
     return render(
         "local_section_topnews",
         today=today,
         tickers=tickers,
-        web_context=render_macro_block(ctx),
+        web_context=render_clusters_block(clusters),
     )
 
 

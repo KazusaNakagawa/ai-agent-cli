@@ -119,12 +119,39 @@ class TestGenerateWeeklySummary:
         with pytest.raises(ValueError, match="見つかりませんでした"):
             generate_weekly_summary([])
 
-    def test_calls_run_claude(self):
+    def test_delegates_to_run_claude(self):
+        """週次サマリーは run_claude 経路に委譲し、プロンプトにページ本文と purpose が含まれる。"""
         pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
-        with patch("src.generator.weekly_summary.run_claude", return_value="summary") as mock_run:
+
+        with patch(
+            "src.generator.weekly_summary.run_claude",
+            return_value="週次サマリー本文",
+        ) as mock_run:
             result = generate_weekly_summary(pages)
-        assert result == "summary"
+
+        assert result == "週次サマリー本文"
         mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        prompt_arg, purpose_arg = args[:2]
+        assert "content" in prompt_arg
+        assert purpose_arg == "週次サマリー生成"
+
+    def test_run_claude_receives_timeout(self):
+        """run_claude に TIMEOUT_WEEKLY_SUMMARY が timeout キーワードで渡される。"""
+        from src.constants import TIMEOUT_WEEKLY_SUMMARY
+
+        pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
+
+        with patch(
+            "src.generator.weekly_summary.run_claude",
+            return_value="summary",
+        ) as mock_run:
+            generate_weekly_summary(pages)
+
+        _, call_kwargs = mock_run.call_args
+        # timeout is the 3rd positional arg; accept both positional and keyword form
+        timeout_val = call_kwargs.get("timeout", mock_run.call_args.args[2] if len(mock_run.call_args.args) > 2 else None)
+        assert timeout_val == TIMEOUT_WEEKLY_SUMMARY
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from unittest.mock import MagicMock, patch
@@ -6,6 +7,7 @@ import pytest
 
 from src import claude_runner, credentials, state as state_mod
 from src.claude_runner import run_claude
+from src.constants import DEFAULT_MODEL
 
 
 @pytest.fixture(autouse=True)
@@ -98,6 +100,77 @@ class TestRunClaude:
                 run_claude("prompt", "test")
 
         assert captured["stdin"] == subprocess.DEVNULL
+
+
+class TestRunClaudeUsageLogging:
+    def test_json_output_returns_result_text_and_logs_usage(self):
+        """--output-format json の stdout から result を取り出して返し、
+        usage を usage_logger に渡す。"""
+        payload = json.dumps({
+            "result": "  the answer  ",
+            "total_cost_usd": 0.05,
+            "duration_ms": 1200,
+            "usage": {
+                "input_tokens": 11,
+                "output_tokens": 22,
+                "cache_read_input_tokens": 3,
+                "cache_creation_input_tokens": 4,
+            },
+        })
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "briefing")
+
+        assert result == "the answer"
+        mock_log.assert_called_once()
+        kwargs = mock_log.call_args.kwargs
+        assert kwargs["label"] == "briefing"
+        assert kwargs["usage"]["input_tokens"] == 11
+        assert kwargs["cost_usd"] == 0.05
+        assert kwargs["duration_ms"] == 1200
+
+    def test_malformed_output_falls_back_to_stdout_without_logging(self):
+        """JSON でない stdout はそのまま（strip して）返し、例外を出さず使用量も記録しない。"""
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout="  plain text  ")):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == "plain text"
+        mock_log.assert_not_called()
+
+    def test_json_without_usage_returns_result_and_skips_logging(self):
+        payload = json.dumps({"result": "ok"})
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == "ok"
+        mock_log.assert_not_called()
+
+    def test_json_without_result_field_falls_back_to_stdout(self):
+        """result フィールドの無い JSON は raw stdout にフォールバックし、使用量も記録しない。"""
+        payload = json.dumps({"foo": 1})
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == payload
+        mock_log.assert_not_called()
+
+    def test_non_string_result_is_stringified_and_usage_logged(self):
+        """result が文字列以外でも str() 化して返し、usage は記録する。"""
+        payload = json.dumps({"result": ["x", "y"], "usage": {"input_tokens": 5, "output_tokens": 6}})
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+                with patch("src.claude_runner.log_usage") as mock_log:
+                    result = run_claude("prompt", "test")
+
+        assert result == str(["x", "y"])
+        mock_log.assert_called_once()
 
 
 class TestRunClaudeRetry:
@@ -293,6 +366,59 @@ class TestRunClaudeRetry:
                     run_claude("prompt", "test", timeout=300)
 
         assert mock_run.call_count == 1
+
+
+class TestGetModel:
+    def test_env_var_takes_precedence_over_config(self, monkeypatch):
+        monkeypatch.setenv("CLAUDE_MODEL", "env-model")
+        monkeypatch.setattr(claude_runner, "_config_model", lambda: "config-model")
+        assert claude_runner.get_model() == "env-model"
+
+    def test_config_model_used_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("CLAUDE_MODEL", raising=False)
+        monkeypatch.setattr(claude_runner, "_config_model", lambda: "config-model")
+        assert claude_runner.get_model() == "config-model"
+
+    def test_falls_back_to_default_when_neither_set(self, monkeypatch):
+        monkeypatch.delenv("CLAUDE_MODEL", raising=False)
+        monkeypatch.setattr(claude_runner, "_config_model", lambda: None)
+        assert claude_runner.get_model() == DEFAULT_MODEL
+
+    def test_blank_env_var_is_ignored(self, monkeypatch):
+        monkeypatch.setenv("CLAUDE_MODEL", "   ")
+        monkeypatch.setattr(claude_runner, "_config_model", lambda: None)
+        assert claude_runner.get_model() == DEFAULT_MODEL
+
+    def test_config_model_reads_config_field(self, monkeypatch):
+        """briefing.json の model フィールドが解決に反映される。"""
+        fake_config_mod = MagicMock()
+        fake_config_mod.CONFIG.model = "claude-sonnet-4-6"
+        monkeypatch.setattr(claude_runner, "config_mod", fake_config_mod)
+        assert claude_runner._config_model() == "claude-sonnet-4-6"
+
+    def test_config_model_returns_none_when_missing_file(self, monkeypatch):
+        """briefing.json 未作成 (FileNotFoundError) は静かに None を返す。"""
+        class _Missing:
+            @property
+            def CONFIG(self):
+                raise FileNotFoundError("no briefing.json")
+
+        monkeypatch.setattr(claude_runner, "config_mod", _Missing())
+        with patch.object(claude_runner.logger, "warning") as mock_warn:
+            assert claude_runner._config_model() is None
+        mock_warn.assert_not_called()  # 想定内なので警告は出さない
+
+    def test_config_model_logs_and_returns_none_on_unexpected_error(self, monkeypatch):
+        """想定外の config エラーは握りつぶしつつ警告ログを出して None を返す。"""
+        class _Broken:
+            @property
+            def CONFIG(self):
+                raise ValueError("broken config")
+
+        monkeypatch.setattr(claude_runner, "config_mod", _Broken())
+        with patch.object(claude_runner.logger, "warning") as mock_warn:
+            assert claude_runner._config_model() is None
+        mock_warn.assert_called_once()
 
 
 class TestBuildEnv:

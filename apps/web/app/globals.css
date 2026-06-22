@@ -82,6 +82,12 @@
 
 }
 
+/* Dark mode prose body text — override Tailwind Typography's default gray-300
+   to plain white for legibility on the dark background. */
+.dark .prose {
+  --tw-prose-invert-body: rgb(255 255 255);
+}
+
 /* Sidebar collapsed mode — kept OUTSIDE @layer base so Tailwind utilities
    can't outrank the cascade. The flag is set on <html> by the pre-hydration
    script (see app/layout.tsx / themeBootScript) so the rail starts in the

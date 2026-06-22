@@ -2,7 +2,7 @@ from datetime import date
 
 from src.claude_runner import get_model
 from src.config import CONFIG
-from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_OUTPUT_DIR
+from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_MD_ROTATION_ENABLED, BRIEFING_OUTPUT_DIR
 from src.fetcher.stocks import fetch_stock_moves
 from src.generator.briefing import generate_briefing
 from src.metrics.briefing import extract_briefing_metrics
@@ -10,12 +10,9 @@ from src.notifier.discord import send_to_discord
 from src.notifier.local_md import save_briefing_md
 from src.notifier.notion import send_to_notion
 from src.logger import get_logger
+from src.utils import is_configured as _is_configured
 
 logger = get_logger(__name__)
-
-
-def _is_configured(*values: str) -> bool:
-    return all(values)
 
 
 def _preflight() -> None:
@@ -49,7 +46,12 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
     # ローカル MD 出力を先に行う: Discord/Notion で例外が出ても本文をディスクに残せる
     md_written = False
     try:
-        save_briefing_md(briefing, BRIEFING_OUTPUT_DIR, BRIEFING_MD_RETENTION_DAYS)
+        save_briefing_md(
+            briefing,
+            BRIEFING_OUTPUT_DIR,
+            BRIEFING_MD_RETENTION_DAYS,
+            rotation_enabled=BRIEFING_MD_ROTATION_ENABLED,
+        )
         md_written = True
     except OSError as exc:
         logger.warning("ローカル MD 出力失敗: %s — 継続します", exc)
@@ -76,3 +78,13 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
 
     logger.info("=== 完了 ===")
     return {"statusCode": 200, "body": "Briefing sent.", "md_written": md_written}
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="My World Briefing agent")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Validate credentials and config without running the pipeline")
+    args = parser.parse_args()
+    lambda_handler(dry_run=args.dry_run)

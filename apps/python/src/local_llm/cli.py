@@ -178,8 +178,144 @@ def _cmd_ask(cfg, question: str) -> int:
     return 0
 
 
+def _make_briefing_ollama(cfg):
+    """Ollama クライアントを生成モデル用に初期化して返す。失敗時は OllamaUnavailable を送出。"""
+    logger.info("Ollama 接続確認中...")
+    olm = make_ollama_client(cfg)
+    # briefing only generates; pass None so an un-pulled embed_model does not block it.
+    ensure_models_available(olm, cfg.model, embed_model=None)
+    # The insight stage routes to a (possibly stronger) reasoning model (#171).
+    if cfg.synthesis_model != cfg.model:
+        ensure_models_available(olm, cfg.synthesis_model, embed_model=None)
+    return olm
+
+
+def _prefetch_and_enrich(briefing_cfg, search_client, today: str):
+    """Brave Search pre-fetch + 記事本文取得を行い (ctx, article_summary) を返す。"""
+    logger.info(
+        "Brave Search pre-fetch 開始 — 銘柄 %d 件 + マクロ + 地政学",
+        len(briefing_cfg.portfolio.tickers),
+    )
+    ctx = prefetch_briefing_context(briefing_cfg, search_client=search_client, today=today)
+    logger.info("Brave Search pre-fetch 完了 — 上位ヒットの記事本文を取得")
+    # The model cannot write concrete facts from snippets alone, so extract the
+    # bodies of the top hits and inject them into the prompt (#151). Failures
+    # fall back to the snippet.
+    ctx = enrich_with_article_text(ctx)
+    attempted, fetched = count_article_fetches(ctx)
+    article_summary = f"{fetched}/{attempted} 件取得 (上位ヒットのみ・失敗はスニペットで代替)"
+    logger.info("記事本文取得完了 — プロンプトに注入")
+    return ctx, article_summary
+
+
+def _generate_section(
+    label: str,
+    prompt: str,
+    *,
+    olm,
+    model: str,
+    system_prompt: str,
+    gen_options: dict,
+) -> str:
+    """1セクションを生成して返す。中国語を検出した場合は1回だけ再生成する。"""
+    logger.info("[section] %s 生成開始 (model=%s)", label, model)
+    out = ""
+    for attempt in range(2):
+        out = generate_local_briefing(
+            prompt,
+            ollama_client=olm,
+            model=model,
+            system_prompt=system_prompt,
+            options=gen_options,
+        )
+        if not has_simplified_chinese_text(out):
+            break
+        if attempt == 0:
+            logger.warning("[section] %s に中国語を検出 — 再生成します", label)
+    logger.info("[section] %s 生成完了 (%d 文字)", label, len(out))
+    return out
+
+
+def _generate_all_sections(cfg, briefing_cfg, ctx, moves, olm, system_prompt: str, today: str) -> str:
+    """Five-stage section-split generation を実行して結合した body を返す。
+
+    Five-stage section-split generation (top news / sector / geopolitics /
+    holdings table / insight). Writing every section in a single chat() scatters
+    attention and caused frequent URL fabrication in the holdings table, so the
+    web_context passed to each stage is narrowed to just what that section needs.
+    Ollama's default num_ctx (4096) can still overflow on a section prompt, so set it explicitly (#150).
+    """
+    gen_options = {"num_ctx": cfg.num_ctx, "temperature": cfg.temperature}
+
+    def _gen(label: str, prompt: str, *, model: str | None = None) -> str:
+        return _generate_section(
+            label, prompt,
+            olm=olm, model=model or cfg.model,
+            system_prompt=system_prompt, gen_options=gen_options,
+        )
+
+    body_top = _gen("トップニュース", build_section_topnews_prompt(briefing_cfg, ctx=ctx, today=today))
+    # The world → sector → ticker narrative's middle layer. Extract the affected
+    # sectors from the top-news body and connect them to the holdings (#162).
+    body_sector = _gen("セクター影響", build_section_sector_prompt(briefing_cfg, prior_text=body_top, today=today))
+    # The holdings table uses per-ticker structured output (#152). The model only
+    # writes {topic, source_index} JSON; URLs, price moves, and table assembly are
+    # done on the Python side.
+    logger.info("[section] 保有銘柄テーブル 構造化生成開始")
+    body_port = generate_portfolio_table(
+        briefing_cfg.portfolio.tickers,
+        ctx=ctx, moves=moves, ollama_client=olm,
+        model=cfg.model, options=gen_options, today=today,
+    )
+    logger.info("[section] 保有銘柄テーブル 生成完了 (%d 文字)", len(body_port))
+    body_geo = _gen("地政学+イベント", build_section_geo_events_prompt(briefing_cfg, ctx=ctx, today=today))
+    # Safety net so that even if the model silently omits an investment-relevant
+    # topic (e.g. Middle East = oil), the configured topic's heading and sources
+    # are always preserved on the Python side (#175).
+    body_geo = ensure_geo_topics_covered(body_geo, ctx)
+    # Stack in the order world (top news) → sector → geopolitics → tickers (table)
+    # and pass it to the insight stage (#162).
+    prior_text = "\n\n".join([body_top, body_sector, body_geo, body_port]).strip()
+    # Final synthesis stage — route to the (possibly stronger) reasoning model
+    # while the cheaper main model handled the extraction/summary stages (#171).
+    body_insight = _gen(
+        "自分への示唆",
+        build_section_insight_prompt(briefing_cfg, prior_text=prior_text, today=today),
+        model=cfg.synthesis_model,
+    )
+
+    references_md = collect_references(ctx, prior_text)
+    debug_block = render_prefetch_debug_block(ctx)
+    # Output order: world (top news) → sector → geopolitics → tickers (table) → insight (#162)
+    return "\n\n".join([body_top, body_sector, body_geo, body_port, body_insight, references_md, debug_block])
+
+
+def _post_briefing_to_notion(md: str, briefing_cfg, today: str) -> bool:
+    """Notion へブリーフィングを投稿する。成功時 True、失敗時 False を返す。"""
+    if not (briefing_cfg.notion_api_key and briefing_cfg.notion_database_id):
+        logger.error("--notion 指定だが NOTION_API_KEY / NOTION_DATABASE_ID が未設定")
+        return False
+    logger.info("Notion へ投稿中...")
+    url = send_to_notion(
+        md,
+        briefing_cfg.notion_api_key,
+        briefing_cfg.notion_database_id,
+        title=f"ローカルブリーフィング — {today}",  # today is YYYY-MM-DD
+        tags=["agent", "local"],
+    )
+    if url:
+        logger.info("Notion 投稿完了: %s", url)
+        return True
+    logger.error("Notion 投稿に失敗しました")
+    return False
+
+
 def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
-    logger.info("=== ローカル LLM ブリーフィング開始 (model=%s) ===", cfg.model)
+    logger.info(
+        "=== ローカル LLM ブリーフィング開始 (model=%s, synthesis_model=%s) ===",
+        cfg.model,
+        cfg.synthesis_model,
+    )
 
     brave_api_key = os.environ.get("BRAVE_API_KEY", "").strip()
     if not brave_api_key:
@@ -190,10 +326,7 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
         return 1
 
     try:
-        logger.info("Ollama 接続確認中...")
-        olm = make_ollama_client(cfg)
-        # briefing only generates; pass None so an un-pulled embed_model does not block it.
-        ensure_models_available(olm, cfg.model, embed_model=None)
+        olm = _make_briefing_ollama(cfg)
     except OllamaUnavailable as e:
         logger.error("Ollama に接続できません: %s", e)
         return 1
@@ -201,113 +334,14 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     logger.info("briefing.json 読み込み中...")
     briefing_cfg = load_briefing_config()
 
-    logger.info(
-        "株価取得中 (tickers=%s)...", ", ".join(briefing_cfg.portfolio.tickers)
-    )
+    logger.info("株価取得中 (tickers=%s)...", ", ".join(briefing_cfg.portfolio.tickers))
     moves = fetch_stock_move_map(briefing_cfg.portfolio.tickers)
 
     today = date.today().isoformat()  # YYYY-MM-DD — shared by both the filename and the prompt
-    search_client = BraveSearchClient(brave_api_key)
-
-    logger.info(
-        "Brave Search pre-fetch 開始 — 銘柄 %d 件 + マクロ + 地政学",
-        len(briefing_cfg.portfolio.tickers),
-    )
-    ctx = prefetch_briefing_context(
-        briefing_cfg, search_client=search_client, today=today
-    )
-    logger.info("Brave Search pre-fetch 完了 — 上位ヒットの記事本文を取得")
-
-    # The model cannot write concrete facts from snippets alone, so extract the
-    # bodies of the top hits and inject them into the prompt (#151). Failures
-    # fall back to the snippet.
-    ctx = enrich_with_article_text(ctx)
-    attempted, fetched = count_article_fetches(ctx)
-    article_summary = f"{fetched}/{attempted} 件取得 (上位ヒットのみ・失敗はスニペットで代替)"
-    logger.info("記事本文取得完了 — プロンプトに注入")
+    ctx, article_summary = _prefetch_and_enrich(briefing_cfg, BraveSearchClient(brave_api_key), today)
 
     system_prompt = load_local_briefing_system_prompt()
-
-    # Five-stage section-split generation (top news / sector / geopolitics /
-    # holdings table / insight). Writing every section in a single chat() scatters
-    # attention and caused frequent URL fabrication in the holdings table, so the
-    # web_context passed to each stage is narrowed to just what that section needs.
-    # Ollama's default num_ctx (4096) can still overflow on a section prompt, so set it explicitly (#150).
-    gen_options = {"num_ctx": cfg.num_ctx, "temperature": cfg.temperature}
-
-    def _gen(label: str, prompt: str) -> str:
-        logger.info("[section] %s 生成開始", label)
-        for attempt in range(2):
-            out = generate_local_briefing(
-                prompt,
-                ollama_client=olm,
-                model=cfg.model,
-                system_prompt=system_prompt,
-                options=gen_options,
-            )
-            if not has_simplified_chinese_text(out):
-                break
-            if attempt == 0:
-                logger.warning("[section] %s に中国語を検出 — 再生成します", label)
-        logger.info("[section] %s 生成完了 (%d 文字)", label, len(out))
-        return out
-
-    body_top = _gen(
-        "トップニュース",
-        build_section_topnews_prompt(briefing_cfg, ctx=ctx, today=today),
-    )
-    # The world → sector → ticker narrative's middle layer. Extract the affected
-    # sectors from the top-news body and connect them to the holdings (#162).
-    body_sector = _gen(
-        "セクター影響",
-        build_section_sector_prompt(briefing_cfg, prior_text=body_top, today=today),
-    )
-    # The holdings table uses per-ticker structured output (#152). The model only
-    # writes {topic, source_index} JSON; URLs, price moves, and table assembly are
-    # done on the Python side.
-    logger.info("[section] 保有銘柄テーブル 構造化生成開始")
-    body_port = generate_portfolio_table(
-        briefing_cfg.portfolio.tickers,
-        ctx=ctx,
-        moves=moves,
-        ollama_client=olm,
-        model=cfg.model,
-        options=gen_options,
-        today=today,
-    )
-    logger.info("[section] 保有銘柄テーブル 生成完了 (%d 文字)", len(body_port))
-    body_geo = _gen(
-        "地政学+イベント",
-        build_section_geo_events_prompt(briefing_cfg, ctx=ctx, today=today),
-    )
-    # Safety net so that even if the model silently omits an investment-relevant
-    # topic (e.g. Middle East = oil), the configured topic's heading and sources
-    # are always preserved on the Python side (#175).
-    body_geo = ensure_geo_topics_covered(body_geo, ctx)
-    # Stack in the order world (top news) → sector → geopolitics → tickers (table)
-    # and pass it to the insight stage (#162).
-    prior_text = "\n\n".join([body_top, body_sector, body_geo, body_port]).strip()
-    body_insight = _gen(
-        "自分への示唆",
-        build_section_insight_prompt(
-            briefing_cfg, prior_text=prior_text, today=today
-        ),
-    )
-
-    references_md = collect_references(ctx, prior_text)
-    debug_block = render_prefetch_debug_block(ctx)
-    # Output order: world (top news) → sector → geopolitics → tickers (table) → insight (#162)
-    body = "\n\n".join(
-        [
-            body_top,
-            body_sector,
-            body_geo,
-            body_port,
-            body_insight,
-            references_md,
-            debug_block,
-        ]
-    )
+    body = _generate_all_sections(cfg, briefing_cfg, ctx, moves, olm, system_prompt, today)
 
     validation = validate_urls(body, ctx)
     if validation.fabricated > 0:
@@ -337,24 +371,8 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     out_path.write_text(md, encoding="utf-8")
     logger.info("ブリーフィング保存完了: %s", out_path)
 
-    if post_to_notion:
-        if not (briefing_cfg.notion_api_key and briefing_cfg.notion_database_id):
-            logger.error(
-                "--notion 指定だが NOTION_API_KEY / NOTION_DATABASE_ID が未設定"
-            )
-            return 1
-        logger.info("Notion へ投稿中...")
-        url = send_to_notion(
-            md,
-            briefing_cfg.notion_api_key,
-            briefing_cfg.notion_database_id,
-            title=f"ローカルブリーフィング — {today}",  # today is YYYY-MM-DD
-            tags=["agent", "local"],
-        )
-        if url:
-            logger.info("Notion 投稿完了: %s", url)
-        else:
-            logger.error("Notion 投稿に失敗しました")
+    if post_to_notion and not _post_briefing_to_notion(md, briefing_cfg, today):
+        return 1
 
     logger.info("=== ローカル LLM ブリーフィング終了 ===")
     return 0

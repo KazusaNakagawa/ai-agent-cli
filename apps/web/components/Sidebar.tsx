@@ -23,6 +23,7 @@ const ITEMS: Item[] = [
   { href: "/auth", label: "Auth", icon: "🔑" },
   { href: "/run", label: "Run", icon: "▶️" },
   { href: "/chat", label: "Q&A Chat", icon: "💬" },
+  { href: "/briefing", label: "Briefing", icon: "📚" },
 ]
 
 export function Sidebar() {
@@ -66,9 +67,9 @@ export function Sidebar() {
       data-sidebar-rail
       data-testid="sidebar"
       data-collapsed={collapsed}
-      className="flex flex-col gap-4 border-r bg-card p-4"
+      className="flex shrink-0 flex-col gap-4 overflow-hidden border-r bg-card p-4"
     >
-      <div data-sidebar-header className="flex items-center justify-between">
+      <div data-sidebar-header className="flex shrink-0 items-center justify-between">
         <span data-sidebar-brand className="px-2 text-base font-semibold">
           ai-agent
         </span>
@@ -85,6 +86,7 @@ export function Sidebar() {
         </button>
       </div>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
       <section className="flex flex-col gap-1">
         <nav className="flex flex-col gap-1">
           {ITEMS.map((item) => {
@@ -131,6 +133,22 @@ export function Sidebar() {
           variant="heading"
         >
           <div className="flex flex-col gap-1">
+            <Link
+              href="/config/usage"
+              title="Usage"
+              aria-label="Usage"
+              data-sidebar-row
+              data-testid="nav-config-usage"
+              className={cn(
+                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+                pathname === "/config/usage"
+                  ? "bg-accent font-medium text-accent-foreground"
+                  : "hover:bg-accent/50",
+              )}
+            >
+              <span aria-hidden>📈</span>
+              <span data-sidebar-label>Usage</span>
+            </Link>
             <SidebarDisclosure
               label="Appearance"
               icon="🎨"
@@ -148,6 +166,7 @@ export function Sidebar() {
           </div>
         </SidebarDisclosure>
       </section>
+      </div>
     </aside>
   )
 }

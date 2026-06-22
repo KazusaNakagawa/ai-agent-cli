@@ -26,6 +26,15 @@ Module layout:
 
 from __future__ import annotations
 
+from .cluster import (
+    DEFAULT_SIMILARITY_THRESHOLD,
+    TOP_NEWS_CLUSTER_LIMIT,
+    NewsCluster,
+    cluster_news_hits,
+    rank_clusters,
+    render_clusters_block,
+    score_cluster,
+)
 from .compose import compose_briefing_md
 from .filters import (
     _extract_url_date,
@@ -64,6 +73,7 @@ from .render import (
     _format_results,
     collect_references,
     ensure_geo_topics_covered,
+    render_context_block,
     render_geo_events_block,
     render_macro_block,
     render_prefetch_debug_block,
@@ -72,7 +82,10 @@ from .render import (
 from .validate import UrlValidation, validate_urls
 
 __all__ = [
+    "DEFAULT_SIMILARITY_THRESHOLD",
+    "NewsCluster",
     "OVERFETCH_EXTRA",
+    "TOP_NEWS_CLUSTER_LIMIT",
     "PER_EVENT_RESULTS",
     "PER_GEO_RESULTS",
     "PER_MACRO_RESULTS",
@@ -85,13 +98,18 @@ __all__ = [
     "build_section_insight_prompt",
     "build_section_sector_prompt",
     "build_section_topnews_prompt",
+    "cluster_news_hits",
     "collect_references",
     "compose_briefing_md",
+    "rank_clusters",
+    "render_clusters_block",
+    "score_cluster",
     "ensure_geo_topics_covered",
     "generate_local_briefing",
     "has_simplified_chinese_text",
     "load_local_briefing_system_prompt",
     "prefetch_briefing_context",
+    "render_context_block",
     "render_geo_events_block",
     "render_macro_block",
     "render_prefetch_debug_block",

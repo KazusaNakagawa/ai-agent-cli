@@ -1,0 +1,86 @@
+"""Claude CLI 呼び出しごとのトークン使用量・コストを JSONL に追記する。
+
+`src/logger.py` の「日次ファイル + 7 日リテンション」規約に倣う。
+ログ記録の失敗が元のタスクを壊してはならないため、例外は握りつぶす。
+"""
+import json
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from src.constants import LOG_RETENTION_DAYS
+from src.logger import get_logger
+
+logger = get_logger(__name__)
+
+USAGE_DIR = Path(__file__).parents[1] / "log" / "usage"
+
+
+USAGE_FILE_GLOB = "*-usage.jsonl"
+
+
+def parse_usage_file_date(path: Path):
+    """``YYYYMMDD-usage.jsonl`` のファイル名から日付 (date) を取り出す。
+
+    ``usage_logger`` と ``bin/usage_report.py`` で共有し、ファイル名規約の
+    ドリフトを防ぐ。解析できなければ ``None`` を返す。
+    """
+    try:
+        return datetime.strptime(path.stem.replace("-usage", ""), "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
+_last_purge_date = None
+
+
+def _maybe_purge(usage_dir: Path) -> None:
+    """同日内の重複 purge を避けるため、1 日 1 回だけ ``_purge_old_logs`` を呼ぶ。
+
+    高頻度呼び出し時にディレクトリ全 glob を毎回走らせる無駄を省く。
+    """
+    global _last_purge_date
+    today = datetime.now().date()
+    if _last_purge_date == today:
+        return
+    _purge_old_logs(usage_dir)
+    _last_purge_date = today
+
+
+def _purge_old_logs(usage_dir: Path) -> None:
+    cutoff = (datetime.now() - timedelta(days=LOG_RETENTION_DAYS)).date()
+    for path in usage_dir.glob(USAGE_FILE_GLOB):
+        file_date = parse_usage_file_date(path)
+        if file_date is None:
+            continue
+        try:
+            if file_date < cutoff:
+                path.unlink()
+        except OSError:
+            pass
+
+
+def log_usage(label: str, usage: dict, cost_usd: float | None, duration_ms: int | None) -> None:
+    """1 回の claude 呼び出しの使用量を当日ファイルに 1 行追記する。
+
+    例外は記録のみで握りつぶす — 使用量ログの失敗で本処理を止めない。
+    """
+    try:
+        USAGE_DIR.mkdir(parents=True, exist_ok=True)
+        _maybe_purge(USAGE_DIR)
+
+        record = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "label": label,
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
+            "cache_read_tokens": usage.get("cache_read_input_tokens", 0),
+            "cache_creation_tokens": usage.get("cache_creation_input_tokens", 0),
+            "cost_usd": cost_usd,
+            "duration_ms": duration_ms,
+        }
+
+        log_file = USAGE_DIR / f"{datetime.now().strftime('%Y%m%d')}-usage.jsonl"
+        with log_file.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001 — 使用量ログの失敗は本処理を止めない
+        logger.warning("使用量ログの記録に失敗しました [%s]", label, exc_info=True)

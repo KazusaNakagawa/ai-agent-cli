@@ -2,7 +2,8 @@
 .env
 
 # ローカル設定（個人用）
-apps/python/config/briefing.json
+briefing.json
+*.bk
 
 # Claude Code
 .claude/*
@@ -41,3 +42,7 @@ htmlcov/
 
 # Local LLM RAG persistent store
 apps/python/.chroma_db/
+
+# Dependencies / build caches (never commit)
+/node_modules
+apps/*/node_modules

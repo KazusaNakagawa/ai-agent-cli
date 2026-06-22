@@ -1,8 +1,10 @@
+import json
 import os
 import shutil
 import subprocess
 import time
 
+from src import config as config_mod
 from src import credentials as cred_mod
 from src import state as state_mod
 from src.constants import (
@@ -13,14 +15,68 @@ from src.constants import (
 )
 from src.logger import get_logger
 from src.transient_errors import is_transient
+from src.usage_logger import log_usage
 
 logger = get_logger(__name__)
 
 
+def _parse_and_log_usage(stdout: str, label: str) -> str:
+    """``--output-format json`` の stdout を解析し使用量を記録、テキスト結果を返す。
+
+    JSON でない / ``result`` フィールドが無い場合は警告を出して raw stdout を
+    そのまま返す（使用量ログはスキップ）— 使用量計測のために本処理を壊さない。
+    """
+    try:
+        parsed = json.loads(stdout)
+        result_text = parsed["result"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        logger.warning(
+            "claude CLI 出力を JSON として解析できませんでした、使用量ログをスキップ [%s]", label,
+        )
+        return stdout.strip()
+
+    usage = parsed.get("usage")
+    if isinstance(usage, dict):
+        log_usage(
+            label=label,
+            usage=usage,
+            cost_usd=parsed.get("total_cost_usd"),
+            duration_ms=parsed.get("duration_ms"),
+        )
+    else:
+        # usage を出さない呼び出しは正常運用でもありうるため debug に留める（ノイズ回避）
+        logger.debug("claude CLI 出力に usage が無いため使用量ログをスキップ [%s]", label)
+
+    return result_text.strip() if isinstance(result_text, str) else str(result_text)
+
+
+def _config_model() -> str | None:
+    """briefing.json の ``model`` フィールドを返す。読めなければ None。
+
+    briefing.json が無い / 壊れている場合でもモデル解決を止めないため、
+    例外は握りつぶして None を返す（呼び出し側で DEFAULT_MODEL にフォールバック）。
+    """
+    try:
+        model = config_mod.CONFIG.model
+    except FileNotFoundError:
+        # briefing.json 未作成（例: web 起動直後）は想定内なので静かに無視。
+        return None
+    except Exception:  # noqa: BLE001 — 予期しない config エラーでもモデル解決は止めない
+        logger.warning("config からのモデル取得に失敗、DEFAULT_MODEL を使用", exc_info=True)
+        return None
+    return model.strip() if model and model.strip() else None
+
+
 def get_model() -> str:
-    """環境変数 CLAUDE_MODEL を読み、空・空白の場合はデフォルトを返す。"""
+    """claude CLI に渡すモデル ID を解決する。
+
+    優先順位: ``CLAUDE_MODEL`` env > briefing.json の ``model`` > ``DEFAULT_MODEL``。
+    env はアドホックな上書き用に最優先のまま。
+    """
     env_model = os.environ.get("CLAUDE_MODEL", "").strip()
-    return env_model if env_model else DEFAULT_MODEL
+    if env_model:
+        return env_model
+    return _config_model() or DEFAULT_MODEL
 
 
 def _backoff_delay(attempt: int) -> float:
@@ -70,7 +126,12 @@ def run_claude(
 
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
     model = get_model()
-    cmd = [claude_path, "-p", prompt, "--allowedTools", "WebSearch", "--model", model]
+    cmd = [
+        claude_path, "-p", prompt,
+        "--output-format", "json",
+        "--allowedTools", "WebSearch",
+        "--model", model,
+    ]
 
     last_returncode = 0
     last_detail = ""
@@ -94,7 +155,7 @@ def run_claude(
 
         if result.returncode == 0:
             logger.info("claude CLI 完了: %s (%d文字)", label, len(result.stdout))
-            return result.stdout.strip()
+            return _parse_and_log_usage(result.stdout, label)
 
         logger.error(
             "claude CLI エラー [%s] rc=%d attempt=%d/%d\nstdout=%s\nstderr=%s",

@@ -1,17 +1,11 @@
-"""Tests for bin/chat.py — session management and command building."""
-import importlib.util
+"""Tests for src/chat_cli.py — session management and command building."""
 import subprocess
 import uuid
 from pathlib import Path
 
 import pytest
 
-# Import bin/chat.py without triggering main()
-_spec = importlib.util.spec_from_file_location(
-    "chat", Path(__file__).parents[1] / "bin" / "chat.py"
-)
-chat = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(chat)
+from src import chat_cli as chat
 
 
 class TestListSessions:

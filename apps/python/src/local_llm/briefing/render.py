@@ -54,6 +54,24 @@ def render_geo_events_block(ctx: PrefetchedContext) -> str:
     return "\n".join(parts)
 
 
+def render_context_block(ctx: PrefetchedContext) -> str:
+    """Flatten the whole pre-fetched context (macro + tickers + geo + events) into
+    one plain-text block for prompts that inject context instead of searching live
+    (the Claude API briefing spike, #204). Reuses `_format_results` so per-hit
+    formatting stays consistent with the section-split blocks.
+    """
+    parts: list[str] = [render_macro_block(ctx)]
+    if ctx.per_ticker:
+        parts.append("\n### 保有・注目銘柄")
+        for ticker, results in ctx.per_ticker.items():
+            parts.append(f"\n**{ticker}**")
+            parts.append(_format_results(results))
+    geo_events = render_geo_events_block(ctx)
+    if geo_events:
+        parts.append("\n" + geo_events)
+    return "\n".join(parts)
+
+
 def ensure_geo_topics_covered(body: str, ctx: PrefetchedContext) -> str:
     """Safety net preventing configured geopolitical topics from silently dropping out of the model output (#175).
 

@@ -1,7 +1,7 @@
 """週次ブリーフィングサマリーを生成する。"""
 from datetime import date, timedelta
 
-from src.claude_runner import run_claude
+from src.claude_runner import get_model, run_claude
 from src.constants import TIMEOUT_WEEKLY_SUMMARY
 from src.generator.prompt import render
 from src.logger import get_logger
@@ -38,5 +38,5 @@ def generate_weekly_summary(pages: list[dict]) -> str:
 
     prompt = render("weekly_summary", briefings=_format_briefings(pages), week_label=week_label())
 
-    logger.info("週次サマリー生成中 (対象ページ数=%d)...", len(pages))
+    logger.info("週次サマリー生成中 (model=%s, 対象ページ数=%d)...", get_model(), len(pages))
     return run_claude(prompt, "週次サマリー生成", TIMEOUT_WEEKLY_SUMMARY)
