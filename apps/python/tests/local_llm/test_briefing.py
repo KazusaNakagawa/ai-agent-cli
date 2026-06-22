@@ -775,7 +775,7 @@ def test_generate_local_briefing_defaults_to_no_options(caplog):
     assert olm.calls[0]["options"] is None
     # num_ctx 不明時は警告ではなく info で「Ollama 既定」と記録する
     assert not any(r.levelname == "WARNING" for r in caplog.records)
-    assert any("(Ollama 既定)" in r.getMessage() for r in caplog.records)
+    assert any("(Ollama default)" in r.getMessage() for r in caplog.records)
 
 
 def test_generate_local_briefing_warns_when_prompt_exceeds_num_ctx(caplog):
@@ -1139,7 +1139,7 @@ def test_cmd_briefing_strips_fabricated_urls_from_output(monkeypatch, tmp_path, 
     assert "<URL未検証>" in content
     # caveat にも捏造件数が出ている
     assert "捏造 1 件" in content
-    assert any("URL 捏造検出" in r.message for r in caplog.records)
+    assert any("URL fabrication detected" in r.message for r in caplog.records)
 
 
 def test_cmd_briefing_posts_to_notion_when_flag(monkeypatch, tmp_path):
@@ -1195,7 +1195,7 @@ def test_cmd_briefing_regens_on_chinese_output(monkeypatch, tmp_path, caplog):
     content = list(fake.output_dir.glob("local_*.md"))[0].read_text()
     assert "什么变了" not in content
     assert "S&P 500 が過去最高値" in content
-    assert any("中国語" in r.message for r in caplog.records)
+    assert any("contains Chinese" in r.message for r in caplog.records)
 
 
 def test_cmd_briefing_without_brave_api_key_fails_fast(monkeypatch, tmp_path, caplog):

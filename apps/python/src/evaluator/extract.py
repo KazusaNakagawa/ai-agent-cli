@@ -23,20 +23,20 @@ def _extract_json_array(raw: str) -> list:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        logger.warning("eval-extract: JSON 解析失敗、空として扱います")
+        logger.warning("eval-extract: JSON parse failed, treating as empty")
         return []
     return data if isinstance(data, list) else []
 
 
 def _normalize_targets(value) -> list[str]:
-    # LLM が単一文字列を返した場合に文字分割しないよう、リスト化してから正規化する。
+    # Wrap in a list before normalizing so a single string from the LLM is not split into chars.
     if not isinstance(value, list):
         value = [value] if str(value).strip() else []
     return [str(t) for t in value if str(t).strip()]
 
 
 def _to_int(value, default: int) -> int:
-    # 非数値・型不整合な horizon_days で抽出全体が落ちないよう既定値に倒す。
+    # Fall back to the default so a non-numeric/type-mismatched horizon_days does not break extraction.
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -76,6 +76,6 @@ def extract(target: str = "all") -> None:
     dates = storage.list_briefing_dates() if target == "all" else [target]
     for date_str in dates:
         if (storage.CLAIMS_DIR / f"{date_str}.json").exists():
-            logger.info("eval-extract: %s は抽出済み、スキップ", date_str)
+            logger.info("eval-extract: %s already extracted, skipping", date_str)
             continue
         extract_one(date_str)

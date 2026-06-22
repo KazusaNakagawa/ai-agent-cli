@@ -27,7 +27,7 @@ def _make_result(returncode=0, stdout="output", stderr=""):
 class TestRunClaude:
     def test_cli_not_found_raises(self):
         with patch("src.claude_runner.shutil.which", return_value=None):
-            with pytest.raises(RuntimeError, match="claude CLI が見つかりません"):
+            with pytest.raises(RuntimeError, match="claude CLI not found"):
                 run_claude("prompt", "test")
 
     def test_success_returns_stripped_stdout(self):
@@ -42,7 +42,7 @@ class TestRunClaude:
                 "src.claude_runner.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("claude", 300),
             ):
-                with pytest.raises(RuntimeError, match="タイムアウト"):
+                with pytest.raises(RuntimeError, match="timed out"):
                     run_claude("prompt", "test", timeout=300)
 
     def test_nonzero_returncode_raises_with_stderr(self):
@@ -362,7 +362,7 @@ class TestRunClaudeRetry:
                 "src.claude_runner.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("claude", 300),
             ) as mock_run:
-                with pytest.raises(RuntimeError, match="タイムアウト"):
+                with pytest.raises(RuntimeError, match="timed out"):
                     run_claude("prompt", "test", timeout=300)
 
         assert mock_run.call_count == 1

@@ -18,32 +18,32 @@ logger = get_logger(__name__)
 def _preflight() -> None:
     """Log a WARNING for each missing credential before the pipeline starts."""
     if not _is_configured(CONFIG.discord_token, CONFIG.discord_channel_id):
-        logger.warning("DISCORD_TOKEN または CHANNEL_ID が未設定 — Discord 通知をスキップします")
+        logger.warning("DISCORD_TOKEN or CHANNEL_ID unset — skipping Discord notification")
     if not _is_configured(CONFIG.notion_api_key, CONFIG.notion_database_id):
-        logger.warning("NOTION_API_KEY または NOTION_DATABASE_ID が未設定 — Notion 通知をスキップします")
+        logger.warning("NOTION_API_KEY or NOTION_DATABASE_ID unset — skipping Notion notification")
 
 
 def lambda_handler(event=None, context=None, *, dry_run: bool = False):
-    """株価ブリーフィングを生成し Discord/Notion/ローカル MD に配信する Lambda ハンドラ。"""
-    logger.info("=== My World Briefing 開始 ===")
+    """Lambda handler that generates the stock briefing and delivers it to Discord/Notion/local MD."""
+    logger.info("=== My World Briefing start ===")
     _preflight()
 
     if dry_run:
-        logger.info("Dry-run モード — パイプラインをスキップします")
+        logger.info("Dry-run mode — skipping the pipeline")
         return {"statusCode": 200, "body": "dry-run"}
 
-    logger.info("株価取得中...")
+    logger.info("fetching stock moves...")
     stocks = fetch_stock_moves(CONFIG.portfolio.tickers)
 
-    logger.info("ブリーフィング生成中 (WebSearch)...")
+    logger.info("generating briefing (WebSearch)...")
     briefing = generate_briefing(stocks, CONFIG)
 
-    logger.debug("ブリーフィング生成完了 (length=%d)", len(briefing))
+    logger.debug("briefing generated (length=%d)", len(briefing))
 
     discord_ok = _is_configured(CONFIG.discord_token, CONFIG.discord_channel_id)
     notion_ok = _is_configured(CONFIG.notion_api_key, CONFIG.notion_database_id)
 
-    # ローカル MD 出力を先に行う: Discord/Notion で例外が出ても本文をディスクに残せる
+    # Write local MD first: keep the body on disk even if Discord/Notion raise.
     md_written = False
     try:
         save_briefing_md(
@@ -54,14 +54,14 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
         )
         md_written = True
     except OSError as exc:
-        logger.warning("ローカル MD 出力失敗: %s — 継続します", exc)
+        logger.warning("local MD write failed: %s — continuing", exc)
 
     if discord_ok:
-        logger.info("Discord に送信中...")
+        logger.info("sending to Discord...")
         send_to_discord(briefing, CONFIG.discord_token, CONFIG.discord_channel_id)
 
     if notion_ok:
-        logger.info("Notion にページ作成中...")
+        logger.info("creating Notion page...")
         model = get_model()
         notion_text = briefing + f"\n\n---\nModel: {model}"
         metrics = extract_briefing_metrics(briefing, CONFIG.portfolio.tickers)
@@ -76,7 +76,7 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
         if page_url:
             logger.info("Notion ページ: %s", page_url)
 
-    logger.info("=== 完了 ===")
+    logger.info("=== done ===")
     return {"statusCode": 200, "body": "Briefing sent.", "md_written": md_written}
 
 

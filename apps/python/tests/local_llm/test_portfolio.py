@@ -150,7 +150,7 @@ def test_generate_portfolio_table_out_of_range_index_means_no_source(caplog):
         )
 
     assert "| PLTR | ↑1.0% | 話題 | - |" in table
-    assert any("範囲外" in r.message for r in caplog.records)
+    assert any("out of range" in r.message for r in caplog.records)
 
 
 def test_generate_portfolio_table_null_index_means_no_source():
@@ -182,7 +182,7 @@ def test_generate_portfolio_table_invalid_json_falls_back(caplog):
         )
 
     assert f"| PLTR | ↑1.0% | {GENERATION_ERROR_TOPIC} | - |" in table
-    assert any("JSON 解析失敗" in r.message for r in caplog.records)
+    assert any("JSON parse failed" in r.message for r in caplog.records)
 
 
 def test_generate_portfolio_table_sanitizes_pipes_in_topic_and_title():

@@ -1,18 +1,18 @@
-"""briefing.json と xss_intel.json をロードするモジュール。
+"""Module that loads briefing.json and xss_intel.json.
 
-ブリーフィングの設定スキーマは Pydantic v2 モデルで 1 箇所に定義し、
-``/api/config`` と ``load_config()`` の両方で共有する。継承構造:
+The briefing config schema is defined once as Pydantic v2 models and shared by
+both ``/api/config`` and ``load_config()``. Inheritance structure:
 
-- ``BriefingFileConfig`` — ``briefing.json`` に書ける部分（公開可能）。
-  ``/api/config`` の input/output スキーマとして ``web.schemas`` から
-  ``BriefingConfigSchema`` の名前で re-export される。
-- ``BriefingConfig`` — ``BriefingFileConfig`` を継承し、env から注入する
-  クレデンシャル 4 フィールドを足す。ランタイム消費者 (handler / generator /
-  notifier) はこちらを受け取る。
+- ``BriefingFileConfig`` — the part writable in ``briefing.json`` (publishable).
+  Re-exported from ``web.schemas`` as ``BriefingConfigSchema`` for the
+  ``/api/config`` input/output schema.
+- ``BriefingConfig`` — extends ``BriefingFileConfig`` with the 4 credential
+  fields injected from env. Runtime consumers (handler / generator / notifier)
+  receive this one.
 
-入力バリデーション (``tickers`` / ``watch_sectors`` の non-empty 等) は
-Pydantic 側で集約。``load_config()`` は ``pydantic.ValidationError`` を
-``ValueError`` にラップして公開コントラクトを維持する。
+Input validation (non-empty ``tickers`` / ``watch_sectors``, etc.) is
+consolidated in Pydantic. ``load_config()`` wraps ``pydantic.ValidationError``
+in ``ValueError`` to keep the public contract.
 """
 import json
 import os
@@ -24,9 +24,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.credentials import get_credential
 
-# Repo root .env（apps/python/ より 2 階層上）を優先ロード。
-# キーチェーンに登録済みの値は credentials.get_credential() が優先するため、
-# .env はキーチェーン未登録時のフォールバックとして機能する。
+# Load the repo-root .env first (two levels up from apps/python/).
+# Since credentials.get_credential() prefers values already in the keychain,
+# .env acts as the fallback when a key is not registered in the keychain.
 load_dotenv(Path(__file__).parents[2] / ".env")
 
 CONFIG_PATH = Path(os.getenv("BRIEFING_CONFIG_PATH", str(Path(__file__).parents[1] / "config" / "briefing.json")))
@@ -38,8 +38,8 @@ class Conflict(BaseModel):
     affected_sectors: list[str]
     related_tickers: list[str] = Field(default_factory=list)
     notes: str | None = None
-    # ローカル LLM 経路の pre-fetch 用英語検索クエリ (#153)。日本語トピック名の
-    # 検索は常設の索引ページを引きがちなので、設定があればこちらを優先する。
+    # English search query for the local-LLM path pre-fetch (#153). Searching by
+    # Japanese topic name tends to hit standing index pages, so prefer this when set.
     query_en: str | None = None
 
 
@@ -67,16 +67,16 @@ class WatchEvent(BaseModel):
 
 
 class BriefingFileConfig(BaseModel):
-    """``briefing.json`` で表現される部分。クレデンシャルは含まない。
+    """The part expressed in ``briefing.json``. Contains no credentials.
 
-    ``/api/config`` の input/output として直接安全に使える形にしてある。
-    ``extra="forbid"`` は briefing.json の typo (例: ``watch_evens``) を黙って
-    捨てるのではなく load 時に弾くため。"""
+    Shaped so it can be used directly and safely as ``/api/config`` input/output.
+    ``extra="forbid"`` rejects briefing.json typos (e.g. ``watch_evens``) at load
+    time instead of silently dropping them."""
 
     model_config = ConfigDict(extra="forbid")
 
-    # claude CLI に渡すモデル ID（任意）。未設定なら DEFAULT_MODEL。
-    # 優先順位は CLAUDE_MODEL env > この config 値 > DEFAULT_MODEL（claude_runner.get_model 参照）。
+    # Model ID passed to the claude CLI (optional). DEFAULT_MODEL if unset.
+    # Precedence: CLAUDE_MODEL env > this config value > DEFAULT_MODEL (see claude_runner.get_model).
     model: str | None = None
     portfolio: PortfolioConfig
     geopolitical: GeopoliticalConfig = Field(default_factory=GeopoliticalConfig)
@@ -85,10 +85,11 @@ class BriefingFileConfig(BaseModel):
 
 
 class BriefingConfig(BriefingFileConfig):
-    """ランタイム用。ファイル部分 + env 経由のクレデンシャル。
+    """For runtime use: the file part + credentials via env.
 
-    継承順がポイント: ``BriefingFileConfig`` (file shape) を拡張する形なので、
-    API 側に渡すときは ``BriefingFileConfig`` 視点に絞り込めば secrets は漏れない。"""
+    The inheritance order matters: because it extends ``BriefingFileConfig``
+    (the file shape), narrowing to the ``BriefingFileConfig`` view when passing
+    to the API ensures secrets do not leak."""
 
     discord_token: str = ""
     discord_channel_id: str = ""
@@ -97,13 +98,13 @@ class BriefingConfig(BriefingFileConfig):
 
 
 def load_config() -> BriefingConfig:
-    """briefing.json と環境変数から BriefingConfig を構築して返す。
+    """Build and return a BriefingConfig from briefing.json and env vars.
 
-    Pydantic の ``ValidationError`` は ``ValueError`` にラップする — 既存の
-    呼び出し側 (load_config を直接叩く CLI 起動パス、tests/test_config.py) が
-    ``ValueError`` を期待しているための後方互換。エラーメッセージは最初の
-    違反だけを抜き出して "at <loc>: <msg>" の形に整える (Pydantic 既定の
-    フル stringification は startup ログとして読みづらい)。"""
+    Pydantic's ``ValidationError`` is wrapped in ``ValueError`` for backward
+    compatibility — existing callers (the CLI startup path that calls load_config
+    directly, tests/test_config.py) expect ``ValueError``. The error message
+    extracts only the first violation into an "at <loc>: <msg>" form (Pydantic's
+    default full stringification is hard to read as a startup log)."""
     raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     try:
         return BriefingConfig(
@@ -161,7 +162,7 @@ class XssIntelConfig:
 
 
 def load_xss_config() -> XssIntelConfig:
-    """xss_intel.json と環境変数から XssIntelConfig を構築して返す。"""
+    """Build and return an XssIntelConfig from xss_intel.json and env vars."""
     raw = json.loads(XSS_INTEL_CONFIG_PATH.read_text(encoding="utf-8"))
     targets = XssTargetsConfig(**raw["targets"])
 
@@ -178,7 +179,7 @@ _XSS_CONFIG: XssIntelConfig | None = None
 
 
 def get_xss_config() -> XssIntelConfig:
-    """XssIntelConfig をシングルトンとして返す（初回アクセス時にのみ読み込む）。"""
+    """Return XssIntelConfig as a singleton (loaded only on first access)."""
     global _XSS_CONFIG
     if _XSS_CONFIG is None:
         _XSS_CONFIG = load_xss_config()

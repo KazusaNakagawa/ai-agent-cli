@@ -1,4 +1,4 @@
-"""log/usage/*.jsonl を集計し、label 別・日別のトークン/コスト合計を出力する。"""
+"""Aggregate log/usage/*.jsonl and print token/cost totals per label and per day."""
 import argparse
 import json
 import sys
@@ -34,7 +34,7 @@ def _iter_records(usage_dir: Path, days: int | None):
 
 
 def build_summary(usage_dir: Path, days: int | None) -> dict:
-    """(day, label) ごとにトークン/コスト/呼び出し回数を集計する。"""
+    """Aggregate tokens/cost/call count per (day, label)."""
     summary: dict = defaultdict(lambda: {
         "calls": 0,
         "input_tokens": 0,

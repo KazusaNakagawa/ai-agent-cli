@@ -1,12 +1,12 @@
-"""OS Keychain ラッパ + .env フォールバック。
+"""OS Keychain wrapper + .env fallback.
 
-`python-keyring` 経由で OS のキーチェーンに資格情報を保存する。読み出し時に
-キーチェーンが ``None`` を返した場合のみ、同名の環境変数にフォールバックする。
-書き込みは常にキーチェーンへ行う（.env は不変）。
+Stores credentials in the OS keychain via `python-keyring`. On read, falls back
+to the same-named environment variable only when the keychain returns ``None``.
+Writes always go to the keychain (.env is immutable).
 
-許可された名前 (`ALLOWED_KEYS`) 以外は ``ValueError``。これは
-``/api/credentials`` の入力サニタイズと、運用ミスでよく分からないキーが
-保管されないようにするためのガード。
+Names outside the allowed set (`ALLOWED_KEYS`) raise ``ValueError``. This guards
+both the ``/api/credentials`` input sanitization and against operational
+mistakes that would store unknown keys.
 """
 import os
 from typing import Any

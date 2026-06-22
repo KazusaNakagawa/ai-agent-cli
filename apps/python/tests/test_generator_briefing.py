@@ -139,7 +139,7 @@ class TestGenerateBriefing:
             return "sectors ok"
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
-            with pytest.raises(RuntimeError, match="メイン分析"):
+            with pytest.raises(RuntimeError, match="main analysis"):
                 generate_briefing("PLTR: +2%", config)
 
     def test_sectors_failure_returns_degraded_output(self):

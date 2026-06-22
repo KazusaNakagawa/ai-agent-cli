@@ -1,13 +1,13 @@
-"""ブリーフィングテキストから Notion 数値プロパティ用のメトリクスを抽出する。"""
+"""Extract metrics for Notion number properties from the briefing text."""
 import re
 
 
 def extract_briefing_metrics(text: str, tickers: list[str]) -> dict:
-    """文字数・言及銘柄数を Notion extra_properties 形式で返す。
+    """Return character count and mentioned-ticker count in Notion extra_properties form.
 
-    ティッカーは ASCII 英数字・アンダースコアの lookaround で照合する。
-    \b では日本語助詞に直接隣接するケース（例: "PLTRは上昇"）を検出できないため、
-    (?<![A-Za-z0-9_])TICKER(?![A-Za-z0-9_]) を使用する。
+    Tickers are matched with ASCII alphanumeric/underscore lookarounds. ``\\b``
+    cannot detect cases directly adjacent to a Japanese particle (e.g. "PLTRは上昇"),
+    so (?<![A-Za-z0-9_])TICKER(?![A-Za-z0-9_]) is used instead.
 
     Returns:
         {"CharCount": {"number": N}, "TickerCount": {"number": M}}

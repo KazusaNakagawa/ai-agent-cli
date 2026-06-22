@@ -5,11 +5,12 @@ logger = get_logger(__name__)
 
 
 def fetch_stock_move_map(tickers: list[str]) -> dict[str, str]:
-    """yfinance で前日比を取得し、ticker → 表示文字列の dict で返す (#152)。
+    """Fetch day-over-day change via yfinance and return a ticker → display-string dict (#152).
 
-    ローカル LLM 経路の保有銘柄テーブルは Python 側でセルを埋めるため、
-    結合済み文字列ではなく per-ticker の値が要る。取得失敗はエラー文字列を
-    入れて呼び出し側に判断を委ねる (テーブル側は出典セル同様 `-` 等で表示)。
+    The local-LLM path's holdings table fills cells on the Python side, so it
+    needs per-ticker values rather than one joined string. On fetch failure, an
+    error string is stored and the decision left to the caller (the table renders
+    it like a source cell, e.g. with `-`).
     """
     moves: dict[str, str] = {}
     for t in tickers:
@@ -18,15 +19,15 @@ def fetch_stock_move_map(tickers: list[str]) -> dict[str, str]:
             pct = (info.last_price / info.previous_close - 1) * 100
             arrow = "↑" if pct > 0 else "↓"
             moves[t] = f"{arrow}{abs(pct):.1f}%  (${info.last_price:.2f})"
-            logger.debug("株価取得: %s: %s", t, moves[t])
+            logger.debug("stock fetch: %s: %s", t, moves[t])
         except Exception as e:
-            logger.warning("株価取得失敗 [%s]: %s", t, e)
+            logger.warning("stock fetch failed [%s]: %s", t, e)
             moves[t] = f"取得エラー ({e})"
     return moves
 
 
 def fetch_stock_moves(tickers: list[str]) -> str:
-    """yfinance で前日比を取得（無料）"""
+    """Fetch day-over-day change via yfinance (free)."""
     return "\n".join(
         f"{t}: {move}" for t, move in fetch_stock_move_map(tickers).items()
     )

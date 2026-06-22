@@ -10,23 +10,23 @@ from src.prompt_safety import neutralize_user_text
 
 logger = get_logger(__name__)
 
-# 並列実行のため実際の待機時間は max(MAIN, SECTORS) = 480s（合計ではない）
+# Because of parallel execution, actual wait time is max(MAIN, SECTORS) = 480s (not the sum).
 
-# 高性能モデル出力を捕捉した few-shot 例。安価なモデルでも構成を保てるよう
-# メインブリーフィングのプロンプトに注入する（#192）。再生成手順は
-# prompts/examples/README.md を参照。
+# Few-shot example captured from a high-capability model's output. Injected into
+# the main briefing prompt so cheaper models keep the structure (#192). See
+# prompts/examples/README.md for the regeneration steps.
 _FEW_SHOT_PATH = Path(__file__).parents[2] / "prompts" / "examples" / "briefing_few_shot.md"
 
 
 @lru_cache(maxsize=1)
 def load_briefing_few_shot() -> str:
-    """メインブリーフィングの few-shot 例を読み込んで返す。
+    """Load and return the main briefing few-shot example.
 
-    few-shot は ``render()`` の **値** として渡るため、本文中の ``$`` が
-    プレースホルダとして再解釈されることはない（単一パス置換）。
+    The few-shot is passed as a **value** to ``render()``, so any ``$`` in its
+    body is never reinterpreted as a placeholder (single-pass substitution).
 
-    アセットはリポジトリ同梱で実行中に変わらないため ``lru_cache`` で
-    1 回だけ読み、``generate_briefing()`` 呼び出しごとのディスク I/O を避ける。
+    The asset ships with the repo and does not change at runtime, so ``lru_cache``
+    reads it once to avoid disk I/O on every ``generate_briefing()`` call.
     """
     return _FEW_SHOT_PATH.read_text(encoding="utf-8")
 
@@ -89,7 +89,7 @@ def build_watch_events_context(config: BriefingConfig) -> str:
 
 
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
-    """メイン分析とセクタースイープを並列実行してブリーフィングを生成する。"""
+    """Generate the briefing by running the main analysis and sector sweep in parallel."""
     tickers = join_safe(config.portfolio.tickers, sep=", ")
     themes = join_safe(config.portfolio.themes, sep=", ")
 
@@ -120,18 +120,18 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
             try:
                 results[key] = future.result()
             except Exception as e:
-                logger.error("claude CLI 失敗 [%s]: %s", key, e)
+                logger.error("claude CLI failed [%s]: %s", key, e)
                 errors[key] = str(e)
 
     if "main" in errors:
-        raise RuntimeError(f"ブリーフィング生成に失敗しました: メイン分析\n{errors['main']}")
+        raise RuntimeError(f"briefing generation failed: main analysis\n{errors['main']}")
 
     assert "main" in results, "main result missing despite no error recorded"
 
     main_text = results["main"]
 
     if "sectors" in errors:
-        logger.warning("セクタースイープ失敗（メイン分析は成功）: %s", errors["sectors"])
+        logger.warning("sector sweep failed (main analysis succeeded): %s", errors["sectors"])
         return main_text + "\n\n---\n\n⚠️ セクター動向の取得に失敗しました。\n" + errors["sectors"]
 
     assert "sectors" in results, "sectors result missing despite no error recorded"

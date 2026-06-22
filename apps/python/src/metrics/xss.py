@@ -1,12 +1,12 @@
-"""XSS レポートテキストから Notion 数値プロパティ用のメトリクスを抽出する。"""
+"""Extract metrics for Notion number properties from the XSS report text."""
 import re
 
 
 def extract_xss_metrics(text: str) -> dict:
-    """重要度別（High/Medium/Low）の件数を Notion extra_properties 形式で返す。
+    """Return counts by severity (High/Medium/Low) in Notion extra_properties form.
 
-    プロンプト出力の構造化行 「深刻度: <level>」 のみをカウントし、
-    散文中の high/low といった一般語による誤カウントを防ぐ。
+    Only counts the structured ``深刻度: <level>`` lines from the prompt output,
+    preventing miscounts from generic words like "high"/"low" in prose.
 
     Returns:
         {"HighCount": {"number": N}, "MediumCount": {"number": M}, "LowCount": {"number": L}}
