@@ -76,6 +76,7 @@ bin/chat.sh --list     # list saved sessions
 |---|---|
 | Configuration (env vars, config schema, prompts) | [docs/configuration.md](docs/configuration.md) |
 | Scheduled execution (macOS launchd) | [docs/launchd-setup.md](docs/launchd-setup.md) |
+| Briefing archive (monthly zip → Google Drive via rclone) | [docs/briefing-archive.md](docs/briefing-archive.md) |
 | Briefing evaluation pipeline | [docs/evaluation.md](docs/evaluation.md) |
 | Local LLM mode (Ollama + Chroma) | [docs/local-llm.md](docs/local-llm.md) |
 | Testing & dependency management | [docs/testing.md](docs/testing.md) |
