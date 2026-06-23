@@ -45,8 +45,8 @@ class AppendEntryResponse(BaseModel):
 def list_journal() -> JournalListResponse:
     """Return available journal dates, newest first."""
     dates = [
-        JournalDate(date=d, size=(journal_store.JOURNAL_DIR / f"{d}.md").stat().st_size)
-        for d in journal_store.list_dates()
+        JournalDate(date=date, size=path.stat().st_size)
+        for date, path in journal_store.list_files()
     ]
     return JournalListResponse(dates=dates)
 

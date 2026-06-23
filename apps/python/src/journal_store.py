@@ -65,17 +65,26 @@ def append_entry(content: str, date: str | None = None) -> str:
     return date
 
 
-def list_dates() -> list[str]:
-    """Return available journal dates, newest first."""
+def list_files() -> list[tuple[str, Path]]:
+    """Return (date, path) for available journal files, newest first.
+
+    Returning the globbed ``Path`` lets callers reuse it (e.g. for ``stat()``)
+    instead of rebuilding the path from the date string.
+    """
     if not JOURNAL_DIR.exists():
         return []
-    dates = [
-        m.group(1)
+    files = [
+        (m.group(1), path)
         for path in JOURNAL_DIR.glob("*.md")
         if path.is_file() and (m := _FILE_RE.match(path.name))
     ]
-    dates.sort(reverse=True)
-    return dates
+    files.sort(key=lambda f: f[0], reverse=True)
+    return files
+
+
+def list_dates() -> list[str]:
+    """Return available journal dates, newest first."""
+    return [date for date, _ in list_files()]
 
 
 def read_entry(date: str) -> str | None:
