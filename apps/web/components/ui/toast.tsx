@@ -11,8 +11,8 @@ const toastVariants = cva(
   {
     variants: {
       variant: {
-        success: "border-green-700 bg-green-600 text-white",
-        error: "border-red-700 bg-red-600 text-white",
+        success: "border-green-700 bg-green-600/70 text-white backdrop-blur-sm",
+        error: "border-red-700 bg-red-600/70 text-white backdrop-blur-sm",
       },
     },
     defaultVariants: {
@@ -52,7 +52,7 @@ function ToastViewport({ className, ...props }: React.HTMLAttributes<HTMLDivElem
   return (
     <div
       className={cn(
-        "pointer-events-none fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-2",
+        "pointer-events-none fixed left-1/2 top-4 z-50 flex w-full max-w-md -translate-x-1/2 flex-col gap-2 px-4",
         className
       )}
       {...props}
