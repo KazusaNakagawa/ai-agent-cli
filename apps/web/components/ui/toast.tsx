@@ -28,9 +28,12 @@ export interface ToastProps
 }
 
 /** Dismissible popup notification. Success → green, error → red. */
-function Toast({ className, variant, onClose, children, ...props }: ToastProps) {
+function Toast({ className, variant, onClose, children, role, ...props }: ToastProps) {
+  // Errors deserve an assertive announcement; success is a passive status update.
+  const ariaRole = role ?? (variant === "error" ? "alert" : "status")
+
   return (
-    <div role="status" className={cn(toastVariants({ variant }), className)} {...props}>
+    <div role={ariaRole} className={cn(toastVariants({ variant }), className)} {...props}>
       <div className="flex-1 break-words text-sm">{children}</div>
       {onClose && (
         <button

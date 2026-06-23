@@ -45,7 +45,10 @@ export function ArchiveButton() {
           <Toast
             data-testid="archive-message"
             variant={status === "error" ? "error" : "success"}
-            onClose={() => setStatus("idle")}
+            onClose={() => {
+              setStatus("idle")
+              setMessage("")
+            }}
           >
             {message}
           </Toast>
