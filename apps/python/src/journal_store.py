@@ -50,11 +50,18 @@ def append_entry(content: str, date: str | None = None) -> str:
     timestamp = datetime.now().strftime("%H:%M:%S")
     section = f"## {timestamp}\n\n{text}\n"
 
-    if path.exists():
-        existing = path.read_text(encoding="utf-8").rstrip("\n")
-        path.write_text(f"{existing}\n\n{section}", encoding="utf-8")
-    else:
-        path.write_text(f"# Journal {date}\n\n{section}", encoding="utf-8")
+    # Append-only writes so concurrent appends cannot read-modify-write over
+    # each other and silently drop entries. The day heading is seeded once,
+    # on first creation, via exclusive-create ("x") which no-ops if the file
+    # already exists.
+    try:
+        with open(path, "x", encoding="utf-8") as fh:
+            fh.write(f"# Journal {date}\n")
+    except FileExistsError:
+        pass
+
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(f"\n{section}")
     return date
 
 
