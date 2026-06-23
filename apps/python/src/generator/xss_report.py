@@ -9,7 +9,7 @@ logger = get_logger(__name__)
 
 
 def generate_xss_report(config: XssIntelConfig) -> str:
-    """claude CLI + WebSearch で XSS 脆弱性インテリジェンスレポートを生成"""
+    """Generate the XSS vulnerability intelligence report via claude CLI + WebSearch."""
     frameworks = neutralize_user_text(", ".join(config.targets.frameworks))
     libraries = neutralize_user_text(", ".join(config.targets.libraries))
     keywords = neutralize_user_text(", ".join(config.targets.keywords))
@@ -22,8 +22,8 @@ def generate_xss_report(config: XssIntelConfig) -> str:
         date=date.today().strftime("%Y-%m-%d"),
     )
 
-    logger.debug("対象フレームワーク: %s / ライブラリ: %s", frameworks, libraries)
+    logger.debug("target frameworks: %s / libraries: %s", frameworks, libraries)
 
     text = run_claude(prompt, "XSS Intel", timeout=300)
-    logger.info("XSS レポート生成完了 (%d文字)", len(text))
+    logger.info("XSS report generated (%d chars)", len(text))
     return text

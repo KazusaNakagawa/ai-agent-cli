@@ -42,10 +42,10 @@ def parse_verdict(raw: str) -> dict:
 
 
 def parse_verdicts_batch(raw: str) -> list[dict] | None:
-    """バッチ応答 (JSON 配列) をパースする。失敗時は None を返す。
+    """Parse a batch response (JSON array). Return None on failure.
 
-    非 dict 要素が 1 件でもあれば None を返してフォールバックを促す。
-    id は呼び出し側でポジションベースに上書きするため、ここでは raw 値をそのまま格納する。
+    Return None if even one element is not a dict, to trigger the fallback.
+    The id is overwritten position-based by the caller, so store the raw value here.
     """
     text = raw.strip()
     m = _FENCE_RE.search(text)
@@ -65,7 +65,7 @@ def parse_verdicts_batch(raw: str) -> list[dict] | None:
         if verdict not in _VALID_VERDICT:
             verdict = "unresolved"
         results.append({
-            "id": item.get("id"),  # 呼び出し側でポジションベースに確定する
+            "id": item.get("id"),  # finalized position-based by the caller
             "verdict": verdict,
             "confidence": _to_float(item.get("confidence"), 0.0),
             "rationale": str(item.get("rationale", "")),
@@ -81,7 +81,7 @@ def _to_float(value, default: float) -> float:
 
 
 def score_claim(claim: dict, all_dates: list[str]) -> dict:
-    """1 件の claim を採点する。内部では score_claims_batch を経由する。"""
+    """Score a single claim. Internally goes through score_claims_batch."""
     results = score_claims_batch([claim], all_dates)
     return results[0]
 
@@ -91,19 +91,19 @@ def score_claims_batch(
     all_dates: list[str],
     precomputed: dict[str, list[str]] | None = None,
 ) -> list[dict]:
-    """同一 followup グループの claims を 1 回の LLM 呼び出しで採点する。
+    """Score claims in the same followup group with a single LLM call.
 
-    precomputed: {claim_id: followup_dates} の事前計算済みマップ。
-    渡された場合は followup_dates() の再計算を省略する。
-    フォールバック: バッチ応答のパースに失敗した場合は per-claim で再実行する。
+    precomputed: a precomputed {claim_id: followup_dates} map. When passed,
+    skips recomputing followup_dates().
+    Fallback: if the batch response fails to parse, re-run per-claim.
     """
-    # followup_dates の解決
+    # Resolve followup_dates
     followup_map: dict[str, list[str]] = precomputed if precomputed is not None else {
         c["id"]: followup_dates(c["id"][:10], c["horizon_days"], all_dates)
         for c in claims
     }
 
-    # followup が 1 件もない claim はここで即解決
+    # Claims with no followups are resolved immediately here
     resolved: list[dict] = []
     pending: list[dict] = []
     for c in claims:
@@ -116,7 +116,7 @@ def score_claims_batch(
     if not pending:
         return resolved
 
-    # followup 本文を union して構築（グループ内で重複しないよう set で結合）
+    # Build the union of followup bodies (joined via a set to dedupe within the group)
     all_followup_dates: list[str] = sorted(
         {d for c in pending for d in followup_map[c["id"]]}
     )
@@ -138,14 +138,14 @@ def score_claims_batch(
 
     batch_results = parse_verdicts_batch(raw)
     if batch_results is not None and len(batch_results) == len(pending):
-        # LLM の id は信頼せず、ポジションベースで pending の id を確定する
+        # Do not trust the LLM's id; finalize pending ids position-based
         for result, claim in zip(batch_results, pending):
             result["id"] = claim["id"]
         return resolved + batch_results
 
-    # フォールバック: バッチ応答が壊れていた場合は 1 件ずつ再実行
+    # Fallback: if the batch response was broken, re-run one claim at a time
     logger.warning(
-        "eval-judge バッチ応答のパースに失敗 (%s)、per-claim フォールバック実行", base_date,
+        "eval-judge batch response parse failed (%s), running per-claim fallback", base_date,
     )
     fallback = []
     for c in pending:
@@ -163,7 +163,7 @@ def score_claims_batch(
         single_raw = run_claude(single_prompt, label=f"eval-judge {c['id']}")
         single_results = parse_verdicts_batch(single_raw)
         if single_results and len(single_results) == 1:
-            single_results[0]["id"] = c["id"]  # ポジションベースで id 確定
+            single_results[0]["id"] = c["id"]  # finalize id position-based
             fallback.append(single_results[0])
         else:
             fallback.append({"id": c["id"], "verdict": "unresolved", "confidence": 0.0,
@@ -183,7 +183,7 @@ def score(target: str = "all") -> None:
         existing = {s["id"]: s for s in storage.load_json(scores_file)} \
             if scores_file.exists() else {}
 
-        # 確定済みと未処理に分ける
+        # Split into finalized and pending
         finalized: list[dict] = []
         pending: list[dict] = []
         for claim in claims:
@@ -197,7 +197,7 @@ def score(target: str = "all") -> None:
             storage.save_json(scores_file, finalized)
             continue
 
-        # followup_dates を一度だけ計算してキャッシュし、グループ化とバッチ処理で再利用
+        # Compute followup_dates once and cache it, reused for grouping and batching
         followups_cache: dict[str, list[str]] = {
             c["id"]: followup_dates(c["id"][:10], c["horizon_days"], all_dates)
             for c in pending
@@ -213,7 +213,7 @@ def score(target: str = "all") -> None:
             group_cache = {c["id"]: followups_cache[c["id"]] for c in claims_in_group}
             batch_results.extend(score_claims_batch(claims_in_group, all_dates, group_cache))
 
-        # 元の claim 順序に合わせて保存
+        # Save in the original claim order
         id_to_result = {r["id"]: r for r in finalized + batch_results}
         results = [id_to_result[c["id"]] for c in claims if c["id"] in id_to_result]
         storage.save_json(scores_file, results)

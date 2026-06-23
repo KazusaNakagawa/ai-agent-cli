@@ -130,7 +130,7 @@ def _make_client():
     api_key = get_credential("ANTHROPIC_API_KEY")
     if not api_key:
         raise SystemExit(
-            "ANTHROPIC_API_KEY が未設定です（Keychain か .env に設定してください）"
+            "ANTHROPIC_API_KEY is unset (set it in the Keychain or .env)"
         )
     import anthropic
 
@@ -143,7 +143,7 @@ def run_briefing_api(config: BriefingConfig, client) -> str:
     tickers = join_safe(config.portfolio.tickers, sep=", ")
     themes = join_safe(config.portfolio.themes, sep=", ")
 
-    logger.info("株価取得中...")
+    logger.info("fetching stock moves...")
     moves = fetch_stock_move_map(config.portfolio.tickers)
     stocks = "\n".join(f"- {t}: {m}" for t, m in moves.items()) or "(取得なし)"
 
@@ -175,7 +175,7 @@ def _gen_and_log(client, label: str, prompt: str) -> str:
     text, usage = generate_section(client, system=SYSTEM_PROMPT, prompt=prompt)
     dt_ms = int((datetime.now() - t0).total_seconds() * 1000)
     log_section_usage(label, usage, duration_ms=dt_ms)
-    logger.info("[section] %s 生成完了 (%d 文字)", label, len(text))
+    logger.info("[section] %s generated (%d chars)", label, len(text))
     return text
 
 
@@ -184,12 +184,12 @@ def _require_brave_key() -> str:
 
     key = os.environ.get("BRAVE_API_KEY", "").strip()
     if not key:
-        raise SystemExit("BRAVE_API_KEY が未設定です（.env に設定してください）")
+        raise SystemExit("BRAVE_API_KEY is unset (set it in .env)")
     return key
 
 
 def main(argv: list[str] | None = None) -> int:
-    logger.info("=== Claude API ブリーフィング（検証スパイク）開始 ===")
+    logger.info("=== Claude API briefing (verification spike) start ===")
     config = load_config()
     client = _make_client()  # validates ANTHROPIC_API_KEY
     _require_brave_key()  # fail fast before any fetching
@@ -197,8 +197,8 @@ def main(argv: list[str] | None = None) -> int:
 
     today = date.today().isoformat()
     out_path = write_md_file(BRIEFING_OUTPUT_DIR, f"briefing_api_{today}.md", md)
-    logger.info("保存完了: %s", out_path)
-    logger.info("=== Claude API ブリーフィング終了 ===")
+    logger.info("saved: %s", out_path)
+    logger.info("=== Claude API briefing end ===")
     return 0
 
 

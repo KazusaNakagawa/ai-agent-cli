@@ -36,7 +36,7 @@ class TestFetchStockMoves:
         with patch("src.fetcher.stocks.yf.Ticker", side_effect=Exception("API down")):
             result = fetch_stock_moves(["PLTR"])
         assert "PLTR" in result
-        assert "取得エラー" in result
+        assert "Stock fetch error" in result
 
     def test_empty_tickers_returns_empty_string(self):
         result = fetch_stock_moves([])
@@ -60,7 +60,7 @@ class TestFetchStockMoveMap:
     def test_error_ticker_gets_error_string(self):
         with patch("src.fetcher.stocks.yf.Ticker", side_effect=Exception("API down")):
             moves = fetch_stock_move_map(["PLTR"])
-        assert "取得エラー" in moves["PLTR"]
+        assert "Stock fetch error" in moves["PLTR"]
 
     def test_empty_tickers_returns_empty_dict(self):
         assert fetch_stock_move_map([]) == {}

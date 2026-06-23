@@ -5,11 +5,12 @@ PROMPTS_DIR = Path(__file__).parents[2] / "prompts"
 
 
 def render(template_name: str, **kwargs: str) -> str:
-    """prompts/{template_name}.md を読み込み、$name プレースホルダを埋め込んで返す。
+    """Load prompts/{template_name}.md, fill in $name placeholders, and return it.
 
-    string.Template を使うことで、もし将来 ``render(user_input, ...)`` のように
-    テンプレート側に外部入力が渡る経路が生まれても、``{0.__class__.__init__.__globals__}``
-    のような attribute walk は構文として成立せず、Python レベルの情報漏洩を機構的に遮断する。
+    Using string.Template means that even if a future path passes external input
+    into the template (e.g. ``render(user_input, ...)``), an attribute walk like
+    ``{0.__class__.__init__.__globals__}`` is not valid syntax, structurally
+    blocking Python-level information leakage.
     """
     path = PROMPTS_DIR / f"{template_name}.md"
     template = Template(path.read_text(encoding="utf-8"))

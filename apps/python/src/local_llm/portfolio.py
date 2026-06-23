@@ -120,10 +120,10 @@ def _generate_row(
     try:
         data = json.loads(content)
     except (json.JSONDecodeError, TypeError) as e:
-        logger.warning("[portfolio] %s: JSON 解析失敗: %s (raw=%r)", ticker, e, content[:200])
+        logger.warning("[portfolio] %s: JSON parse failed: %s (raw=%r)", ticker, e, content[:200])
         return GENERATION_ERROR_TOPIC, None
     if not isinstance(data, dict):
-        logger.warning("[portfolio] %s: JSON が object でない: %r", ticker, content[:200])
+        logger.warning("[portfolio] %s: JSON is not an object: %r", ticker, content[:200])
         return GENERATION_ERROR_TOPIC, None
 
     topic = str(data.get("topic") or "").strip() or NO_NEWS_TOPIC
@@ -131,7 +131,7 @@ def _generate_row(
     if not isinstance(idx, int) or isinstance(idx, bool) or not (1 <= idx <= len(hits)):
         if idx is not None:
             logger.warning(
-                "[portfolio] %s: source_index=%r が範囲外 (hits=%d) — 出典なし扱い",
+                "[portfolio] %s: source_index=%r out of range (hits=%d) — treating as no source",
                 ticker,
                 idx,
                 len(hits),
@@ -171,7 +171,7 @@ def generate_portfolio_table(
             topic: str = NO_NEWS_TOPIC
             idx: int | None = None
         else:
-            logger.info("[portfolio] %s: 行生成 (hits=%d)", ticker, len(hits))
+            logger.info("[portfolio] %s: generating row (hits=%d)", ticker, len(hits))
             topic, idx = _generate_row(
                 ticker,
                 hits,

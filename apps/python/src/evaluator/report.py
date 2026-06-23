@@ -179,11 +179,11 @@ def build_report() -> str:
     agg = aggregate(scores, claims_by_id)
     html = _build_html(agg)
 
-    # 最新レポート（常に上書き）
+    # Latest report (always overwritten)
     storage.REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     storage.REPORT_PATH.write_text(html, encoding="utf-8")
 
-    # 日付付きレポート（蓄積）
+    # Dated report (accumulated)
     dated_path = storage.dated_report_path(date.today().isoformat())
     dated_path.parent.mkdir(parents=True, exist_ok=True)
     dated_path.write_text(html, encoding="utf-8")

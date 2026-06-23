@@ -89,7 +89,7 @@ def _env_number(name: str, default, cast):
         return cast(raw)
     except ValueError:
         logger.warning(
-            "env %s=%r を %s に変換できないため既定値 %r を使用",
+            "env %s=%r could not be converted to %s, using default %r",
             name,
             raw,
             cast.__name__,

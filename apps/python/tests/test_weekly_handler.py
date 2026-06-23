@@ -116,7 +116,7 @@ class TestFormatBriefings:
 
 class TestGenerateWeeklySummary:
     def test_empty_pages_raises(self):
-        with pytest.raises(ValueError, match="見つかりませんでした"):
+        with pytest.raises(ValueError, match="no pages found"):
             generate_weekly_summary([])
 
     def test_delegates_to_run_claude(self):
