@@ -345,6 +345,27 @@ def _extract_final_text(stream_json_stdout: str) -> str:
     return final
 
 
+def _append_to_local_briefing(date: str, question: str, answer: str) -> Path:
+    """Append the Q&A to the local daily briefing markdown file.
+
+    Mirrors the `## 追記:` block the /notion-import skill writes to the Notion
+    page, so the local `briefing_<date>.md` stays in sync with Notion. The
+    file is created (with its parent dir) if it does not exist yet, so a Q&A
+    is never silently dropped for a date with no briefing run.
+    """
+    target = BRIEFING_DIR / f"briefing_{date}.md"
+    block = (
+        f"\n\n---\n\n"
+        f"## 追記: QA チャット ({date})\n\n"
+        f"**Q:** {question}\n\n"
+        f"{answer}\n"
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as fh:
+        fh.write(block)
+    return target
+
+
 @router.post("/chat/notion-import", response_model=ChatNotionImportResponse)
 def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportResponse:
     """Delegate the save to the local `/notion-import` skill via the CLI.
@@ -444,5 +465,13 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
                 f"(skill report: {report})"
             ),
         )
+
+    # Notion is the primary durable artifact; the local briefing mirror is
+    # best-effort. A filesystem hiccup here must not fail an already-successful
+    # Notion append, so we log and continue rather than raising.
+    try:
+        _append_to_local_briefing(body.date, body.question, body.answer)
+    except OSError as exc:
+        logger.warning("failed to append Q&A to local briefing for %s: %s", body.date, exc)
 
     return ChatNotionImportResponse(url=url_match.group(0), summary=final_text.strip()[:500])

@@ -525,6 +525,16 @@ async def test_chat_job_is_gc_after_grace_period(
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def local_briefing_dir(tmp_path, monkeypatch):
+    """Point the router's BRIEFING_DIR at a tmp dir so the notion-import
+    success path doesn't append to the real apps/python/output/briefing."""
+    d = tmp_path / "output" / "briefing"
+    d.mkdir(parents=True)
+    monkeypatch.setattr("web.routers.chat.BRIEFING_DIR", d)
+    return d
+
+
 def _seed_notion_creds():
     from src import credentials as cred_mod
     cred_mod.set_credential("NOTION_API_KEY", "k-test")
@@ -588,7 +598,7 @@ async def test_chat_notion_import_400_when_api_key_missing(
 
 
 async def test_chat_notion_import_success_invokes_skill_and_extracts_url(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     page_url = "https://www.notion.so/created-page-abc123"
@@ -634,8 +644,58 @@ async def test_chat_notion_import_success_invokes_skill_and_extracts_url(
     assert env.get("NOTION_DATABASE_ID") == "db-test"
 
 
+async def test_chat_notion_import_appends_to_local_briefing(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    """On success, the Q&A is appended to briefing_<date>.md in addition to Notion."""
+    _seed_notion_creds()
+    existing = local_briefing_dir / "briefing_2026-05-30.md"
+    existing.write_text("# 既存ブリーフィング\n", encoding="utf-8")
+    factory = _fake_run_factory(
+        stdout=_stream_json_result("done https://www.notion.so/abc"),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "半導体リスクは？", "answer": "TSMC の地政学…"},
+    )
+
+    assert response.status_code == 200
+    text = existing.read_text(encoding="utf-8")
+    assert "# 既存ブリーフィング" in text  # original content preserved
+    assert "## 追記: QA チャット (2026-05-30)" in text
+    assert "半導体リスクは？" in text
+    assert "TSMC の地政学…" in text
+
+
+async def test_chat_notion_import_creates_local_briefing_when_missing(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    """When no briefing file exists for the date, it is created with the Q&A."""
+    _seed_notion_creds()
+    factory = _fake_run_factory(
+        stdout=_stream_json_result("done https://www.notion.so/abc"),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+
+    assert response.status_code == 200
+    created = local_briefing_dir / "briefing_2026-05-30.md"
+    assert created.exists()
+    assert "Q?" in created.read_text(encoding="utf-8")
+
+
 async def test_chat_notion_import_defaults_to_sonnet_model(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     factory = _fake_run_factory(
