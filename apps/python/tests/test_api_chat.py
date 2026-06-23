@@ -694,6 +694,38 @@ async def test_chat_notion_import_creates_local_briefing_when_missing(
     assert "Q?" in created.read_text(encoding="utf-8")
 
 
+async def test_chat_notion_import_succeeds_when_local_append_fails(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir, caplog
+):
+    """Local-briefing append is best-effort: an OSError must not fail the
+    already-successful Notion save (still 200), and the failure is logged."""
+    import logging
+
+    _seed_notion_creds()
+    factory = _fake_run_factory(
+        stdout=_stream_json_result("done https://www.notion.so/abc"),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    def _boom(*_a, **_kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("web.routers.chat._append_to_local_briefing", _boom)
+
+    with caplog.at_level(logging.WARNING):
+        response = await authed_client.post(
+            "/api/chat/notion-import",
+            json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://www.notion.so/abc"
+    assert not (local_briefing_dir / "briefing_2026-05-30.md").exists()
+    assert "failed to append Q&A to local briefing" in caplog.text
+
+
 async def test_chat_notion_import_defaults_to_sonnet_model(
     authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):

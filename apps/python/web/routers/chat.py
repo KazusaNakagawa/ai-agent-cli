@@ -352,6 +352,9 @@ def _append_to_local_briefing(date: str, question: str, answer: str) -> Path:
     page, so the local `briefing_<date>.md` stays in sync with Notion. The
     file is created (with its parent dir) if it does not exist yet, so a Q&A
     is never silently dropped for a date with no briefing run.
+
+    ``date`` is already constrained to ``^\\d{4}-\\d{2}-\\d{2}$`` by
+    ``ChatNotionImportBody``, so it cannot path-traverse out of BRIEFING_DIR.
     """
     target = BRIEFING_DIR / f"briefing_{date}.md"
     block = (
@@ -470,7 +473,8 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
     # best-effort. A filesystem hiccup here must not fail an already-successful
     # Notion append, so we log and continue rather than raising.
     try:
-        _append_to_local_briefing(body.date, body.question, body.answer)
+        local_path = _append_to_local_briefing(body.date, body.question, body.answer)
+        logger.info("appended Q&A to local briefing %s", local_path)
     except OSError as exc:
         logger.warning("failed to append Q&A to local briefing for %s: %s", body.date, exc)
 
