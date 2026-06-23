@@ -1,5 +1,7 @@
 import { useState } from "react"
 
+import { Toast, ToastViewport } from "@/components/ui/toast"
+
 type Status = "idle" | "running" | "done" | "error"
 
 /** Triggers POST /api/archive (previous month) and surfaces the result inline. */
@@ -26,6 +28,8 @@ export function ArchiveButton() {
     }
   }
 
+  const showToast = (status === "done" || status === "error") && message
+
   return (
     <div className="flex items-center gap-2 px-2 py-1">
       <button
@@ -36,13 +40,19 @@ export function ArchiveButton() {
       >
         {status === "running" ? "Archiving…" : "Archive last month"}
       </button>
-      {message && (
-        <span
-          data-testid="archive-message"
-          className={status === "error" ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
-        >
-          {message}
-        </span>
+      {showToast && (
+        <ToastViewport>
+          <Toast
+            data-testid="archive-message"
+            variant={status === "error" ? "error" : "success"}
+            onClose={() => {
+              setStatus("idle")
+              setMessage("")
+            }}
+          >
+            {message}
+          </Toast>
+        </ToastViewport>
       )}
     </div>
   )
