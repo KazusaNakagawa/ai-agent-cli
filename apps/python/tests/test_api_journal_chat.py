@@ -11,12 +11,35 @@ Mirrors test_api_chat.py: in test mode the BackgroundTask runs
 synchronously, so the FakePopen has completed by the time POST returns.
 """
 import io
+import json
 
 import pytest
 
 from src import chat_job_store, journal_store
 
 pytestmark = pytest.mark.usefixtures("isolated_state")
+
+
+def _delta_line(text: str) -> bytes:
+    return (
+        json.dumps(
+            {
+                "type": "stream_event",
+                "event": {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": text},
+                },
+            }
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _result_line(*, usage: dict | None = None, result: str = "") -> bytes:
+    rec: dict = {"type": "result", "subtype": "success", "result": result}
+    if usage is not None:
+        rec["usage"] = usage
+    return (json.dumps(rec) + "\n").encode("utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -154,7 +177,9 @@ async def test_context_capped_at_max_chars(authed_client, journal_dir, monkeypat
 
 
 async def test_stream_reuses_chat_endpoint(authed_client, journal_dir, monkeypatch):
-    factory = _make_popen(stdout_lines=[b"Brainstorm idea\n"])
+    factory = _make_popen(
+        stdout_lines=[_delta_line("Brainstorm idea"), _result_line()]
+    )
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     post = await authed_client.post("/api/journal/chat", json={"question": "q"})
@@ -162,3 +187,28 @@ async def test_stream_reuses_chat_endpoint(authed_client, journal_dir, monkeypat
     stream = await authed_client.get(f"/api/chat/{job_id}/stream")
     assert stream.status_code == 200
     assert "Brainstorm idea" in stream.text
+
+
+async def test_journal_logs_usage_with_journal_label(
+    authed_client, journal_dir, monkeypatch
+):
+    """A journal brainstorm turn records a usage-log entry labeled ``journal``."""
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        "web.routers.chat.log_usage", lambda **kw: captured.append(kw)
+    )
+    usage = {"input_tokens": 7, "output_tokens": 11}
+    factory = _make_popen(
+        stdout_lines=[_delta_line("an idea"), _result_line(usage=usage)]
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    post = await authed_client.post("/api/journal/chat", json={"question": "q"})
+    job_id = post.json()["job_id"]
+    stream = await authed_client.get(f"/api/chat/{job_id}/stream")
+
+    # Verify streaming still delivers assistant text even when usage logging is active.
+    assert "an idea" in stream.text
+    assert len(captured) == 1
+    assert captured[0]["label"] == "journal"
+    assert captured[0]["usage"]["output_tokens"] == 11
