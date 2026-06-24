@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 
 import { AppearancePanel } from "@/components/AppearancePanel"
 import { ConfigFilePanel } from "@/components/ConfigFilePanel"
+import { OutputExportPanel } from "@/components/OutputExportPanel"
 import { SidebarDisclosure } from "@/components/SidebarDisclosure"
 import { useJobState } from "@/lib/jobStore"
 import {
@@ -163,6 +164,13 @@ export function Sidebar() {
               testid="config-file-toggle"
             >
               <ConfigFilePanel />
+            </SidebarDisclosure>
+            <SidebarDisclosure
+              label="Export data"
+              icon="📦"
+              testid="output-export-toggle"
+            >
+              <OutputExportPanel />
             </SidebarDisclosure>
           </div>
         </SidebarDisclosure>
