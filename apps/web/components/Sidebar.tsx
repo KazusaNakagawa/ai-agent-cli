@@ -8,6 +8,7 @@ import { useJobState } from "@/lib/jobStore"
 import {
   SIDEBAR_COLLAPSED_ATTR,
   SIDEBAR_COLLAPSED_KEY,
+  SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   SIDEBAR_WIDTH_KEY,
@@ -76,17 +77,22 @@ export function Sidebar() {
       const startWidth =
         parseInt(getComputedStyle(root).getPropertyValue(SIDEBAR_WIDTH_VAR), 10) ||
         root.querySelector<HTMLElement>("[data-sidebar-rail]")?.offsetWidth ||
-        240
+        SIDEBAR_DEFAULT_WIDTH
       const clamp = (w: number) =>
         Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, w))
+
+      const controller = new AbortController()
+      const { signal } = controller
 
       const onMove = (ev: PointerEvent) => {
         const w = clamp(startWidth + (ev.clientX - startX))
         root.style.setProperty(SIDEBAR_WIDTH_VAR, `${w}px`)
       }
-      const onUp = () => {
-        window.removeEventListener("pointermove", onMove)
-        window.removeEventListener("pointerup", onUp)
+      // pointerup / pointercancel both end the drag so a cancelled gesture
+      // (OS gesture, context menu) doesn't leak listeners. AbortController
+      // removes every listener in one call.
+      const onEnd = () => {
+        controller.abort()
         const w = parseInt(
           getComputedStyle(root).getPropertyValue(SIDEBAR_WIDTH_VAR),
           10,
@@ -97,8 +103,9 @@ export function Sidebar() {
           // localStorage unavailable (private mode / quota); width still applies
         }
       }
-      window.addEventListener("pointermove", onMove)
-      window.addEventListener("pointerup", onUp)
+      window.addEventListener("pointermove", onMove, { signal })
+      window.addEventListener("pointerup", onEnd, { signal })
+      window.addEventListener("pointercancel", onEnd, { signal })
     },
     [],
   )
@@ -178,8 +185,11 @@ export function Sidebar() {
           aria-label="Resize sidebar"
           data-testid="sidebar-resizer"
           onPointerDown={onResizeStart}
-          className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary/50"
-        />
+          className="group absolute inset-y-0 right-0 w-3 cursor-col-resize bg-transparent"
+        >
+          {/* Visible 1px line; the wider parent is the hit area. */}
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-1 group-hover:bg-primary/50" />
+        </div>
       )}
     </aside>
   )
