@@ -61,8 +61,9 @@ from pydantic import BaseModel, Field
 
 from src import chat_job_store
 from src import credentials as cred_mod
+from src import journal_store
 from src import state as state_mod
-from src.chat_session import build_cmd
+from src.chat_session import build_cmd, build_journal_cmd
 from src.claude_runner import build_env
 from src.logger import get_logger
 from web.auth import require_bearer
@@ -246,6 +247,54 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
 
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     cmd = build_cmd(body.date, briefing_file, session_file) + ["-p", body.question]
+    env = build_env(auth_mode=state_mod.read_state().auth_mode)
+
+    job = chat_job_store.create_job()
+    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env)
+    return ChatPostResponse(job_id=job.job_id, status=job.status)
+
+
+class JournalChatBody(BaseModel):
+    question: str = Field(min_length=1)
+    # How many most-recent journal days to load as brainstorm context.
+    days: int = Field(default=7, ge=1, le=31)
+
+
+def _gather_journal_context(days: int) -> str:
+    """Concatenate the newest ``days`` journal files into one context blob.
+
+    Returns "" when there are no journal entries. Each day is delimited so
+    the assistant can tell entries apart; the whole blob is wrapped as
+    untrusted input by ``build_journal_cmd``.
+    """
+    dates = journal_store.list_dates()[:days]
+    sections = []
+    for date in dates:
+        content = journal_store.read_entry(date)
+        if content:
+            sections.append(content.strip())
+    return "\n\n".join(sections)
+
+
+@router.post("/journal/chat", status_code=202, response_model=ChatPostResponse)
+def post_journal_chat(
+    body: JournalChatBody, background_tasks: BackgroundTasks
+) -> ChatPostResponse:
+    """Start a journaling brainstorm chat seeded with recent journal entries.
+
+    Reuses the chat job/stream machinery: the returned ``job_id`` is streamed
+    via ``GET /api/chat/{job_id}/stream`` and cancelled via ``DELETE``.
+    """
+    context = _gather_journal_context(body.days)
+    if not context:
+        raise HTTPException(status_code=404, detail="no journal entries to brainstorm over")
+
+    today = journal_store._today()
+    sessions_dir = journal_store.JOURNAL_DIR / ".sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    session_file = sessions_dir / today
+
+    cmd = build_journal_cmd(today, context, session_file) + ["-p", body.question]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()
