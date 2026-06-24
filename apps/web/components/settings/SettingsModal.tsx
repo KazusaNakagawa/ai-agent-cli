@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { AppearancePanel } from "@/components/AppearancePanel"
 import { ConfigFilePanel } from "@/components/ConfigFilePanel"
@@ -27,9 +27,52 @@ const SECTIONS: Section[] = [
   { key: "export", label: "Export data", icon: "📦", render: () => <OutputExportPanel /> },
 ]
 
+const NAV_WIDTH_KEY = "ai-agent:settings-nav-width:v1"
+const NAV_MIN_WIDTH = 140
+const NAV_MAX_WIDTH = 480
+const NAV_DEFAULT_WIDTH = 192 // matches the previous fixed w-48
+
 export function SettingsModal() {
   const [active, setActive] = useState<string>(SECTIONS[0].key)
   const current = SECTIONS.find((s) => s.key === active) ?? SECTIONS[0]
+
+  const [navWidth, setNavWidth] = useState(NAV_DEFAULT_WIDTH)
+  const draggingRef = useRef(false)
+
+  // Restore the persisted nav width on mount (client-only to avoid SSR mismatch).
+  useEffect(() => {
+    const saved = Number(localStorage.getItem(NAV_WIDTH_KEY))
+    if (saved >= NAV_MIN_WIDTH && saved <= NAV_MAX_WIDTH) setNavWidth(saved)
+  }, [])
+
+  const clamp = (w: number) => Math.min(NAV_MAX_WIDTH, Math.max(NAV_MIN_WIDTH, w))
+
+  const onDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    draggingRef.current = true
+    const startX = e.clientX
+    const startWidth = navWidth
+
+    const onMove = (ev: PointerEvent) => {
+      if (!draggingRef.current) return
+      setNavWidth(clamp(startWidth + (ev.clientX - startX)))
+    }
+    const onUp = () => {
+      draggingRef.current = false
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+      setNavWidth((w) => {
+        try {
+          localStorage.setItem(NAV_WIDTH_KEY, String(w))
+        } catch {
+          // localStorage unavailable (private mode / quota); width still applies
+        }
+        return w
+      })
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }, [navWidth])
 
   return (
     <Dialog>
@@ -51,8 +94,11 @@ export function SettingsModal() {
         className="flex h-[80vh] w-[80vw] max-w-[80vw] gap-0 overflow-hidden p-0"
       >
         <DialogTitle className="sr-only">Config</DialogTitle>
-        {/* Left: section nav */}
-        <nav className="flex w-48 shrink-0 flex-col gap-1 border-r bg-card p-3">
+        {/* Left: section nav (resizable) */}
+        <nav
+          style={{ width: navWidth }}
+          className="flex shrink-0 flex-col gap-1 border-r bg-card p-3"
+        >
           <p className="px-2 pb-1 text-xs font-semibold uppercase text-muted-foreground">
             Settings
           </p>
@@ -75,6 +121,14 @@ export function SettingsModal() {
             </button>
           ))}
         </nav>
+        {/* Drag handle to resize the nav */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          data-testid="settings-nav-resizer"
+          onPointerDown={onDragStart}
+          className="w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/50"
+        />
         {/* Right: active section content */}
         <div
           data-testid="settings-content"
