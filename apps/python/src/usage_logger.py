@@ -5,8 +5,10 @@ Exceptions are swallowed because a logging failure must never break the
 original task.
 """
 import json
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from src.constants import LOG_RETENTION_DAYS
 from src.logger import get_logger
@@ -88,7 +90,7 @@ def log_usage(label: str, usage: dict, cost_usd: float | None, duration_ms: int 
         logger.warning("failed to record usage log [%s]", label, exc_info=True)
 
 
-def log_usage_from_result(label: str, result_obj: object) -> bool:
+def log_usage_from_result(label: str, result_obj: Mapping[str, Any] | None) -> bool:
     """Log usage from a claude CLI ``result`` record (token-consuming call).
 
     ``result_obj`` is the parsed terminal object of a ``--output-format json``
@@ -98,10 +100,11 @@ def log_usage_from_result(label: str, result_obj: object) -> bool:
     stays uniform.
 
     Returns ``True`` when a usage record was logged, ``False`` when the object
-    has no ``usage`` dict (a no-op the caller can branch on for logging).
+    has no ``usage`` dict (a no-op the caller can branch on for debug logging).
     """
-    usage = result_obj.get("usage") if isinstance(result_obj, dict) else None
+    usage = result_obj.get("usage") if result_obj is not None else None
     if not isinstance(usage, dict):
+        logger.debug("no usage in result object, skipping usage log [%s]", label)
         return False
     log_usage(
         label=label,
