@@ -75,6 +75,14 @@ describe("Sidebar collapse", () => {
     )
   })
 
+  it("shows a resize handle when expanded and hides it when collapsed", async () => {
+    const user = userEvent.setup()
+    renderSidebar()
+    expect(screen.getByTestId("sidebar-resizer")).toBeInTheDocument()
+    await user.click(screen.getByTestId("sidebar-toggle"))
+    expect(screen.queryByTestId("sidebar-resizer")).not.toBeInTheDocument()
+  })
+
   it("syncs to the html attribute set by the pre-hydration script after mount", async () => {
     document.documentElement.setAttribute(HTML_ATTR, "true")
     renderSidebar()

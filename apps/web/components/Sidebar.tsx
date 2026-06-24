@@ -1,13 +1,18 @@
 "use client"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import { SettingsModal } from "@/components/settings/SettingsModal"
 import { useJobState } from "@/lib/jobStore"
 import {
   SIDEBAR_COLLAPSED_ATTR,
   SIDEBAR_COLLAPSED_KEY,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_WIDTH_KEY,
+  SIDEBAR_WIDTH_VAR,
 } from "@/lib/sidebar"
 import { cn } from "@/lib/utils"
 
@@ -61,12 +66,56 @@ export function Sidebar() {
 
   const toggle = () => setCollapsed((prev) => !prev)
 
+  // Drag the right edge to resize the rail. Width is written live to the
+  // CSS custom property on <html> (the same one the boot script restores)
+  // and persisted to localStorage on release.
+  const onResizeStart = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      const startX = e.clientX
+      const root = document.documentElement
+      const startWidth =
+        parseInt(getComputedStyle(root).getPropertyValue(SIDEBAR_WIDTH_VAR), 10) ||
+        root.querySelector<HTMLElement>("[data-sidebar-rail]")?.offsetWidth ||
+        SIDEBAR_DEFAULT_WIDTH
+      const clamp = (w: number) =>
+        Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, w))
+
+      const controller = new AbortController()
+      const { signal } = controller
+
+      const onMove = (ev: PointerEvent) => {
+        const w = clamp(startWidth + (ev.clientX - startX))
+        root.style.setProperty(SIDEBAR_WIDTH_VAR, `${w}px`)
+      }
+      // pointerup / pointercancel both end the drag so a cancelled gesture
+      // (OS gesture, context menu) doesn't leak listeners. AbortController
+      // removes every listener in one call.
+      const onEnd = () => {
+        controller.abort()
+        const w = parseInt(
+          getComputedStyle(root).getPropertyValue(SIDEBAR_WIDTH_VAR),
+          10,
+        )
+        try {
+          if (w) localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w))
+        } catch {
+          // localStorage unavailable (private mode / quota); width still applies
+        }
+      }
+      window.addEventListener("pointermove", onMove, { signal })
+      window.addEventListener("pointerup", onEnd, { signal })
+      window.addEventListener("pointercancel", onEnd, { signal })
+    },
+    [],
+  )
+
   return (
     <aside
       data-sidebar-rail
       data-testid="sidebar"
       data-collapsed={collapsed}
-      className="flex shrink-0 flex-col gap-4 overflow-hidden border-r bg-card p-4"
+      className="relative flex shrink-0 flex-col gap-4 overflow-hidden border-r bg-card p-4"
     >
       <div data-sidebar-header className="flex shrink-0 items-center justify-between">
         <span data-sidebar-brand className="px-2 text-base font-semibold">
@@ -128,6 +177,20 @@ export function Sidebar() {
         <SettingsModal />
       </section>
       </div>
+      {/* Right-edge drag handle to resize the rail (hidden when collapsed). */}
+      {!collapsed && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          data-testid="sidebar-resizer"
+          onPointerDown={onResizeStart}
+          className="group absolute inset-y-0 right-0 w-3 cursor-col-resize bg-transparent"
+        >
+          {/* Visible 1px line; the wider parent is the hit area. */}
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-1 group-hover:bg-primary/50" />
+        </div>
+      )}
     </aside>
   )
 }
