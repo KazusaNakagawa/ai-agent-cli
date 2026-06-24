@@ -119,7 +119,7 @@ class TestRunClaudeUsageLogging:
         })
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "briefing")
 
         assert result == "the answer"
@@ -134,7 +134,7 @@ class TestRunClaudeUsageLogging:
         """JSON でない stdout はそのまま（strip して）返し、例外を出さず使用量も記録しない。"""
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout="  plain text  ")):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
         assert result == "plain text"
@@ -144,7 +144,7 @@ class TestRunClaudeUsageLogging:
         payload = json.dumps({"result": "ok"})
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
         assert result == "ok"
@@ -155,7 +155,7 @@ class TestRunClaudeUsageLogging:
         payload = json.dumps({"foo": 1})
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
         assert result == payload
@@ -166,7 +166,7 @@ class TestRunClaudeUsageLogging:
         payload = json.dumps({"result": ["x", "y"], "usage": {"input_tokens": 5, "output_tokens": 6}})
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
         assert result == str(["x", "y"])
