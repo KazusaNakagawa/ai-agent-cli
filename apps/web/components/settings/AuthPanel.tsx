@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react"
 
 import { AuthModeForm } from "@/components/screens/AuthModeForm"
-import { apiFetch } from "@/lib/api"
+import { fetchCredentials } from "@/lib/credentials"
 
 type Initial = { authMode: "cli" | "api"; anthropicKeySet: boolean }
 
@@ -11,18 +11,16 @@ export function AuthPanel() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    Promise.all([apiFetch("/api/auth/mode"), apiFetch("/api/credentials")])
-      .then(async ([modeRes, credsRes]) => {
+    Promise.all([fetch("/api/auth/mode"), fetchCredentials()])
+      .then(async ([modeRes, creds]) => {
         if (!modeRes.ok) throw new Error(`GET /api/auth/mode HTTP ${modeRes.status}`)
-        if (!credsRes.ok) throw new Error(`GET /api/credentials HTTP ${credsRes.status}`)
         const mode = (await modeRes.json()) as { auth_mode: "cli" | "api" }
-        const creds = (await credsRes.json()) as Record<string, boolean>
         setInitial({
           authMode: mode.auth_mode,
           anthropicKeySet: Boolean(creds.ANTHROPIC_API_KEY),
         })
       })
-      .catch((e: unknown) => setError(String(e)))
+      .catch(() => setError("Failed to load auth settings."))
   }, [])
 
   if (error) return <p className="text-sm text-destructive">{error}</p>

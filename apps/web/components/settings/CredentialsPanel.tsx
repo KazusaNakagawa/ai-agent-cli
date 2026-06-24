@@ -2,20 +2,16 @@
 import { useEffect, useState } from "react"
 
 import { CredentialsForm } from "@/components/screens/CredentialsForm"
-import { apiFetch } from "@/lib/api"
+import { fetchCredentials } from "@/lib/credentials"
 
 export function CredentialsPanel() {
   const [status, setStatus] = useState<Record<string, boolean> | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    apiFetch("/api/credentials")
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json() as Promise<Record<string, boolean>>
-      })
+    fetchCredentials()
       .then(setStatus)
-      .catch((e: unknown) => setError(String(e)))
+      .catch(() => setError("Failed to load credentials."))
   }, [])
 
   if (error) return <p className="text-sm text-destructive">{error}</p>
