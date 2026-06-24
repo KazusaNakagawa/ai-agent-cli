@@ -46,6 +46,12 @@ export function JournalScreen() {
   const [dates, setDates] = useState<JournalDate[]>([])
   const [datesError, setDatesError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  // Mirror of `selected` so async callbacks (brainstorm streaming) read the
+  // live selection instead of the value captured when they started.
+  const selectedRef = useRef<string | null>(null)
+  useEffect(() => {
+    selectedRef.current = selected
+  }, [selected])
   const [content, setContent] = useState("")
   // Monotonic id so a slow earlier loadEntry can't overwrite a newer selection.
   const entryReqSeq = useRef(0)
@@ -171,18 +177,23 @@ export function JournalScreen() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ content }),
         })
-        if (res.ok) {
-          const { date } = (await res.json()) as { date: string }
-          await loadDates()
-          if (selected === date) await loadEntry(date)
+        if (!res.ok) {
+          const body = await res.text()
+          setChatError(`Auto-save failed (HTTP ${res.status}): ${body}`)
+          return
         }
+        const { date } = (await res.json()) as { date: string }
+        await loadDates()
+        // Use the live selection (ref) so switching dates mid-stream doesn't
+        // yank the view back to a stale selection.
+        if (selectedRef.current === date) await loadEntry(date)
       }
     } catch (e) {
       setChatError(String(e))
     } finally {
       setBrainstorming(false)
     }
-  }, [question, brainstorming, appendToLastAnswer, loadDates, loadEntry, selected])
+  }, [question, brainstorming, appendToLastAnswer, loadDates, loadEntry])
 
   return (
     <div className="flex flex-col gap-6">
@@ -282,8 +293,13 @@ export function JournalScreen() {
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => {
-                // Enter sends; Shift+Enter inserts a newline.
-                if (e.key === "Enter" && !e.shiftKey) {
+                // Enter sends; Shift+Enter inserts a newline. Ignore Enter
+                // while an IME is composing (Japanese/CJK candidate confirm).
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
                   e.preventDefault()
                   void brainstorm()
                 }
