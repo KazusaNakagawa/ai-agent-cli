@@ -3,8 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
+import { cn } from "@/lib/utils"
+
 type JournalDate = { date: string; size: number }
-type Turn = { question: string; answer: string; saved: boolean }
+type Turn = { question: string; answer: string }
 
 const PROSE =
   "prose prose-sm max-w-none dark:prose-invert prose-a:text-blue-600 " +
@@ -133,7 +135,7 @@ export function JournalScreen() {
     if (!q || brainstorming) return
     setBrainstorming(true)
     setChatError(null)
-    setTurns((prev) => [...prev, { question: q, answer: "", saved: false }])
+    setTurns((prev) => [...prev, { question: q, answer: "" }])
     setQuestion("")
     try {
       const post = await fetch("/api/journal/chat", {
@@ -156,40 +158,31 @@ export function JournalScreen() {
         setChatError(`Stream failed (HTTP ${stream.status})`)
         return
       }
+      let answer = ""
       for await (const chunk of readSse(stream.body)) {
+        answer = answer ? `${answer}\n${chunk}` : chunk
         appendToLastAnswer(chunk)
+      }
+      // Auto-save the completed Q&A turn to today's journal file.
+      if (answer) {
+        const content = `### Brainstorm\n\n**Q:** ${q}\n\n${answer}`
+        const res = await fetch("/api/journal", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content }),
+        })
+        if (res.ok) {
+          const { date } = (await res.json()) as { date: string }
+          await loadDates()
+          if (selected === date) await loadEntry(date)
+        }
       }
     } catch (e) {
       setChatError(String(e))
     } finally {
       setBrainstorming(false)
     }
-  }, [question, brainstorming, appendToLastAnswer])
-
-  // Persist a brainstorm turn to today's journal file via POST /api/journal.
-  const saveTurn = useCallback(
-    async (index: number) => {
-      const turn = turns[index]
-      if (!turn || turn.saved || !turn.answer) return
-      const content = `### Brainstorm\n\n**Q:** ${turn.question}\n\n${turn.answer}`
-      const res = await fetch("/api/journal", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content }),
-      })
-      if (!res.ok) {
-        setChatError(`Save to journal failed (HTTP ${res.status})`)
-        return
-      }
-      setTurns((prev) =>
-        prev.map((t, i) => (i === index ? { ...t, saved: true } : t)),
-      )
-      const { date } = (await res.json()) as { date: string }
-      await loadDates()
-      if (selected === date) await loadEntry(date)
-    },
-    [turns, loadDates, loadEntry, selected],
-  )
+  }, [question, brainstorming, appendToLastAnswer, loadDates, loadEntry, selected])
 
   return (
     <div className="flex flex-col gap-6">
@@ -254,55 +247,63 @@ export function JournalScreen() {
           </section>
         )}
 
-        <section className="flex flex-col gap-2 rounded-lg border bg-card p-4">
-          <h3 className="text-sm font-semibold">Brainstorm with Claude</h3>
-          <p className="text-xs text-muted-foreground">
-            Ask anything — Claude uses your recent journal entries as context.
-          </p>
-          <textarea
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="e.g. What should I focus on next based on this week?"
-            rows={3}
-            className="w-full resize-y rounded-md border bg-background p-3 text-sm"
-          />
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void brainstorm()}
-              disabled={brainstorming || question.trim() === ""}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-            >
-              {brainstorming ? "Thinking…" : "Brainstorm"}
-            </button>
-            {chatError && <span className="text-sm text-destructive">{chatError}</span>}
+        <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+          <div>
+            <h3 className="text-sm font-semibold">Brainstorm with Claude</h3>
+            <p className="text-xs text-muted-foreground">
+              Ask anything — Claude uses your recent journal entries as context.
+              Answers are saved to today&apos;s journal automatically.
+            </p>
           </div>
+
+          {/* Conversation transcript (oldest first, like a chat thread). */}
           {turns.length > 0 && (
-            <div className="mt-2 flex flex-col gap-4">
+            <div className="flex flex-col gap-4">
               {turns.map((turn, i) => (
-                <div key={i} className="flex flex-col gap-2 rounded-md border bg-background p-3">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Q: {turn.question}
-                  </p>
-                  <div className={PROSE}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
+                <div key={i} className="flex flex-col gap-2">
+                  <div className="self-end rounded-2xl rounded-br-sm bg-primary px-4 py-2 text-sm text-primary-foreground">
+                    {turn.question}
                   </div>
-                  {turn.answer && (
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => void saveTurn(i)}
-                        disabled={turn.saved}
-                        className="rounded-md border px-3 py-1 text-xs transition-colors hover:bg-accent/50 disabled:opacity-50"
-                      >
-                        {turn.saved ? "Saved to journal ✓" : "Save to journal"}
-                      </button>
-                    </div>
-                  )}
+                  <div className={cn(PROSE, "rounded-2xl rounded-bl-sm border bg-background px-4 py-2")}>
+                    {turn.answer ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Thinking…</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
+
+          {/* Composer pinned below the transcript, so follow-ups read top-down. */}
+          <div className="flex flex-col gap-2">
+            <textarea
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter sends; Shift+Enter inserts a newline.
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault()
+                  void brainstorm()
+                }
+              }}
+              placeholder="e.g. What should I focus on next based on this week?"
+              rows={3}
+              className="w-full resize-y rounded-md border bg-background p-3 text-sm"
+            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void brainstorm()}
+                disabled={brainstorming || question.trim() === ""}
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              >
+                {brainstorming ? "Thinking…" : "Brainstorm"}
+              </button>
+              {chatError && <span className="text-sm text-destructive">{chatError}</span>}
+            </div>
+          </div>
         </section>
       </div>
     </div>
