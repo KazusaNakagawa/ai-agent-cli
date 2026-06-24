@@ -29,6 +29,14 @@ def test_text_deltas_flush_on_newline_and_buffer_trailing():
     assert state.saw_text is True
 
 
+def test_text_delta_with_multiple_newlines_emits_all_complete_lines():
+    state = StreamState()
+    # All complete lines (a, ' b') are returned; the trailing fragment stays buffered.
+    result = consume_stream_line(_delta("a\n b\n c"), state)
+    assert result == ["a", " b"]
+    assert state.text_buf == " c"
+
+
 def test_result_record_captures_usage():
     state = StreamState()
     consume_stream_line(_delta("answer"), state)
