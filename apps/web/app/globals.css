@@ -108,7 +108,6 @@ html[data-sidebar-collapsed="true"] [data-sidebar-rail] {
   white-space: nowrap;
 }
 html[data-sidebar-collapsed="true"] [data-sidebar-label],
-html[data-sidebar-collapsed="true"] [data-sidebar-section="config"],
 html[data-sidebar-collapsed="true"] [data-sidebar-brand] {
   display: none;
 }
