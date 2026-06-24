@@ -3,8 +3,6 @@ import { useCallback, useEffect, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
-import { cn } from "@/lib/utils"
-
 type JournalDate = { date: string; size: number }
 type Turn = { question: string; answer: string; saved: boolean }
 
@@ -172,35 +170,34 @@ export function JournalScreen() {
   )
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[160px_1fr]">
-      {/* Left: date list */}
-      <aside className="flex flex-col gap-2">
-        <h3 className="text-sm font-semibold text-muted-foreground">Entries</h3>
+    <div className="flex flex-col gap-6">
+      {/* Top: date picker */}
+      <div className="flex items-center gap-3">
+        <label htmlFor="journal-date" className="text-sm font-semibold text-muted-foreground">
+          Entries
+        </label>
         {dates.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No entries yet.</p>
+          <span className="text-sm text-muted-foreground">No entries yet.</span>
         ) : (
-          <ul className="flex flex-col gap-1">
+          <select
+            id="journal-date"
+            value={selected ?? ""}
+            onChange={(e) => void loadEntry(e.target.value)}
+            className="rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            <option value="" disabled>
+              Select a date…
+            </option>
             {dates.map((d) => (
-              <li key={d.date}>
-                <button
-                  type="button"
-                  onClick={() => void loadEntry(d.date)}
-                  className={cn(
-                    "w-full rounded-md px-3 py-2 text-left text-sm transition-colors",
-                    selected === d.date
-                      ? "bg-accent font-medium text-accent-foreground"
-                      : "hover:bg-accent/50",
-                  )}
-                >
-                  {d.date}
-                </button>
-              </li>
+              <option key={d.date} value={d.date}>
+                {d.date}
+              </option>
             ))}
-          </ul>
+          </select>
         )}
-      </aside>
+      </div>
 
-      {/* Right: record + view + brainstorm */}
+      {/* Full-width: record + view + brainstorm */}
       <div className="flex flex-col gap-6">
         <section className="flex flex-col gap-2 rounded-lg border bg-card p-4">
           <h3 className="text-sm font-semibold">Record today</h3>
