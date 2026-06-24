@@ -65,6 +65,7 @@ from src import journal_store
 from src import state as state_mod
 from src.chat_session import build_cmd, build_journal_cmd
 from src.claude_runner import build_env
+from src.claude_stream import StreamState, consume_stream_line
 from src.logger import get_logger
 from src.usage_logger import log_usage
 from web.auth import require_bearer
@@ -131,66 +132,6 @@ def _sse_event(content: str, event: str | None = None) -> bytes:
     return ("\n".join(out) + "\n\n").encode("utf-8")
 
 
-class _StreamState:
-    """Accumulator for parsing a ``--output-format stream-json`` stream.
-
-    Buffers partial assistant text into whole lines (so the SSE client's
-    join-by-newline contract is preserved) and captures the final ``usage``
-    record (token counts, cost, duration) for usage logging.
-    """
-
-    def __init__(self) -> None:
-        self.text_buf = ""
-        self.saw_text = False
-        self.usage: dict | None = None
-        self.cost_usd: float | None = None
-        self.duration_ms: int | None = None
-
-
-def _consume_stream_line(line: str, state: _StreamState) -> list[str]:
-    """Parse one stream-json line, returning newly-completed text lines.
-
-    Only user-facing assistant text (``text_delta``) is surfaced — thinking
-    deltas, hook/system events, and tool use are ignored so the streamed
-    output matches the pre-stream-json plain-text behavior. The final
-    ``result`` record's usage is stashed on ``state``; if partial-message
-    deltas never produced text (older CLI), the result text is used as a
-    fallback so the answer is never dropped.
-    """
-    try:
-        obj = json.loads(line)
-    except json.JSONDecodeError:
-        logger.debug("stream-json: non-JSON line (truncated): %.120s", line)
-        return []
-
-    obj_type = obj.get("type")
-    if obj_type == "stream_event":
-        event = obj.get("event") or {}
-        if event.get("type") == "content_block_delta":
-            delta = event.get("delta") or {}
-            if delta.get("type") == "text_delta":
-                state.saw_text = True
-                state.text_buf += delta.get("text", "")
-                parts = state.text_buf.split("\n")
-                state.text_buf = parts.pop()
-                return parts
-    elif obj_type == "result":
-        usage = obj.get("usage")
-        if isinstance(usage, dict):
-            state.usage = usage
-            state.cost_usd = obj.get("total_cost_usd")
-            state.duration_ms = obj.get("duration_ms")
-        if not state.saw_text and not state.text_buf:
-            result_text = obj.get("result")
-            if isinstance(result_text, str):
-                # Split on newlines so multi-line results are line-buffered the
-                # same way text_delta output is: all complete lines go directly
-                # to the caller, the final partial fragment stays in text_buf.
-                parts = result_text.split("\n")
-                state.text_buf = parts.pop()
-                return parts
-    return []
-
 
 def _run_chat_job(
     job_id: str,
@@ -228,14 +169,14 @@ def _run_chat_job(
         stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
         stderr_thread.start()
 
-        state = _StreamState()
+        state = StreamState()
         try:
             assert proc.stdout is not None
             for line_bytes in proc.stdout:
                 line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
                 if not line:
                     continue
-                for text_line in _consume_stream_line(line, state):
+                for text_line in consume_stream_line(line, state):
                     chat_job_store.append_event(job_id, _sse_event(text_line))
         finally:
             proc.wait()
