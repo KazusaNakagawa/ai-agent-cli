@@ -6,8 +6,10 @@ import { BriefingPanel } from "@/components/briefing/BriefingPanel"
 import { BriefingRow } from "@/components/briefing/BriefingRow"
 import { BriefingSearch } from "@/components/briefing/BriefingSearch"
 import { ALL_TAB, BriefingTabs } from "@/components/briefing/BriefingTabs"
+import { ResizeHandle } from "@/components/ResizeHandle"
 import { BriefingFile, BriefingListResponse } from "@/lib/briefing-types"
 import { useBriefingData } from "@/lib/hooks/useBriefingData"
+import { useResizable } from "@/lib/hooks/useResizable"
 import { cn } from "@/lib/utils"
 
 function initialTab(): string {
@@ -28,6 +30,12 @@ export function BriefingDashboard() {
     close,
   } = useBriefingData()
   const [fullSize, setFullSize] = useState(false)
+  const { width: listWidth, startResize } = useResizable({
+    storageKey: "ai-agent:briefing-list-width:v1",
+    defaultWidth: 288, // matches the previous fixed w-72
+    minWidth: 200,
+    maxWidth: 560,
+  })
   const [tab, setTab] = useState<string>(initialTab)
   const [query, setQuery] = useState("")
   const [searchResults, setSearchResults] = useState<BriefingFile[] | null>(null)
@@ -110,12 +118,13 @@ export function BriefingDashboard() {
 
   return (
     <div data-testid="briefing-dashboard" className="flex h-full">
-      {/* Records list */}
+      {/* Records list (resizable when a file is open) */}
       <div
         data-testid="briefing-records-list"
+        style={selected && !fullSize ? { width: listWidth } : undefined}
         className={cn(
-          "flex-shrink-0 overflow-y-auto border-r transition-all",
-          selected && !fullSize ? "w-72" : "flex-1",
+          "relative flex-shrink-0 overflow-y-auto border-r",
+          !(selected && !fullSize) && "flex-1",
           fullSize && "hidden",
         )}
       >
@@ -166,6 +175,12 @@ export function BriefingDashboard() {
           >
             No matching briefings.
           </p>
+        )}
+        {selected && !fullSize && (
+          <ResizeHandle
+            onPointerDown={startResize}
+            data-testid="briefing-list-resizer"
+          />
         )}
       </div>
 
