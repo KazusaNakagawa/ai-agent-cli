@@ -21,7 +21,7 @@ _FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _today() -> str:
+def today() -> str:
     """Return today's date as YYYY-MM-DD (local time)."""
     return datetime.now().strftime("%Y-%m-%d")
 
@@ -43,7 +43,7 @@ def append_entry(content: str, date: str | None = None) -> str:
     if not text:
         raise ValueError("Journal entry content must not be empty")
 
-    date = date or _today()
+    date = date or today()
     path = _path_for(date)
     JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 
