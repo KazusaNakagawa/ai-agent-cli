@@ -143,6 +143,9 @@ export function JournalScreen() {
     setChatError(null)
     setTurns((prev) => [...prev, { question: q, answer: "" }])
     setQuestion("")
+    // Remove the pending placeholder turn so a failed/empty stream doesn't
+    // leave a permanent "Thinking…" bubble in the transcript.
+    const dropPendingTurn = () => setTurns((prev) => prev.slice(0, -1))
     try {
       const post = await fetch("/api/journal/chat", {
         method: "POST",
@@ -156,12 +159,14 @@ export function JournalScreen() {
             ? "No journal entries yet — record something first."
             : `Brainstorm failed (HTTP ${post.status}): ${body}`,
         )
+        dropPendingTurn()
         return
       }
       const { job_id } = (await post.json()) as { job_id: string }
       const stream = await fetch(`/api/chat/${job_id}/stream`, { cache: "no-store" })
       if (!stream.ok || !stream.body) {
         setChatError(`Stream failed (HTTP ${stream.status})`)
+        dropPendingTurn()
         return
       }
       let answer = ""
@@ -169,25 +174,28 @@ export function JournalScreen() {
         answer = answer ? `${answer}\n${chunk}` : chunk
         appendToLastAnswer(chunk)
       }
-      // Auto-save the completed Q&A turn to today's journal file.
-      if (answer) {
-        const content = `### Brainstorm\n\n**Q:** ${q}\n\n${answer}`
-        const res = await fetch("/api/journal", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ content }),
-        })
-        if (!res.ok) {
-          const body = await res.text()
-          setChatError(`Auto-save failed (HTTP ${res.status}): ${body}`)
-          return
-        }
-        const { date } = (await res.json()) as { date: string }
-        await loadDates()
-        // Use the live selection (ref) so switching dates mid-stream doesn't
-        // yank the view back to a stale selection.
-        if (selectedRef.current === date) await loadEntry(date)
+      if (!answer) {
+        setChatError("Brainstorm returned an empty answer.")
+        dropPendingTurn()
+        return
       }
+      // Auto-save the completed Q&A turn to today's journal file.
+      const content = `### Brainstorm\n\n**Q:** ${q}\n\n${answer}`
+      const res = await fetch("/api/journal", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content }),
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        setChatError(`Auto-save failed (HTTP ${res.status}): ${body}`)
+        return
+      }
+      const { date } = (await res.json()) as { date: string }
+      await loadDates()
+      // Use the live selection (ref) so switching dates mid-stream doesn't
+      // yank the view back to a stale selection.
+      if (selectedRef.current === date) await loadEntry(date)
     } catch (e) {
       setChatError(String(e))
     } finally {
