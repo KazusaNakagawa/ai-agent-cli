@@ -3,6 +3,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 
+import { ResizeHandle } from "@/components/ResizeHandle"
 import { SettingsModal } from "@/components/settings/SettingsModal"
 import { useJobState } from "@/lib/jobStore"
 import {
@@ -70,7 +71,7 @@ export function Sidebar() {
   // CSS custom property on <html> (the same one the boot script restores)
   // and persisted to localStorage on release.
   const onResizeStart = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
+    (e: React.PointerEvent) => {
       e.preventDefault()
       const startX = e.clientX
       const root = document.documentElement
@@ -179,17 +180,11 @@ export function Sidebar() {
       </div>
       {/* Right-edge drag handle to resize the rail (hidden when collapsed). */}
       {!collapsed && (
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          data-testid="sidebar-resizer"
+        <ResizeHandle
           onPointerDown={onResizeStart}
-          className="group absolute inset-y-0 right-0 w-3 cursor-col-resize bg-transparent"
-        >
-          {/* Visible 1px line; the wider parent is the hit area. */}
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-1 group-hover:bg-primary/50" />
-        </div>
+          ariaLabel="Resize sidebar"
+          data-testid="sidebar-resizer"
+        />
       )}
     </aside>
   )
