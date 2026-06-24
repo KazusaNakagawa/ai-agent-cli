@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
 
 type JournalDate = { date: string; size: number }
+type Turn = { question: string; answer: string; saved: boolean }
 
 const PROSE =
   "prose prose-sm max-w-none dark:prose-invert prose-a:text-blue-600 " +
@@ -43,7 +44,7 @@ export function JournalScreen() {
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const [question, setQuestion] = useState("")
-  const [answer, setAnswer] = useState("")
+  const [turns, setTurns] = useState<Turn[]>([])
   const [brainstorming, setBrainstorming] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
 
@@ -97,12 +98,23 @@ export function JournalScreen() {
     }
   }, [entry, saving, loadDates, loadEntry])
 
+  // Append text to the answer of the most recent (in-flight) turn.
+  const appendToLastAnswer = useCallback((chunk: string) => {
+    setTurns((prev) => {
+      if (prev.length === 0) return prev
+      const last = prev[prev.length - 1]
+      const answer = last.answer ? `${last.answer}\n${chunk}` : chunk
+      return [...prev.slice(0, -1), { ...last, answer }]
+    })
+  }, [])
+
   const brainstorm = useCallback(async () => {
     const q = question.trim()
     if (!q || brainstorming) return
     setBrainstorming(true)
     setChatError(null)
-    setAnswer("")
+    setTurns((prev) => [...prev, { question: q, answer: "", saved: false }])
+    setQuestion("")
     try {
       const post = await fetch("/api/journal/chat", {
         method: "POST",
@@ -125,14 +137,39 @@ export function JournalScreen() {
         return
       }
       for await (const chunk of readSse(stream.body)) {
-        setAnswer((prev) => (prev ? `${prev}\n${chunk}` : chunk))
+        appendToLastAnswer(chunk)
       }
     } catch (e) {
       setChatError(String(e))
     } finally {
       setBrainstorming(false)
     }
-  }, [question, brainstorming])
+  }, [question, brainstorming, appendToLastAnswer])
+
+  // Persist a brainstorm turn to today's journal file via POST /api/journal.
+  const saveTurn = useCallback(
+    async (index: number) => {
+      const turn = turns[index]
+      if (!turn || turn.saved || !turn.answer) return
+      const content = `### Brainstorm\n\n**Q:** ${turn.question}\n\n${turn.answer}`
+      const res = await fetch("/api/journal", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content }),
+      })
+      if (!res.ok) {
+        setChatError(`Save to journal failed (HTTP ${res.status})`)
+        return
+      }
+      setTurns((prev) =>
+        prev.map((t, i) => (i === index ? { ...t, saved: true } : t)),
+      )
+      const { date } = (await res.json()) as { date: string }
+      await loadDates()
+      if (selected === date) await loadEntry(date)
+    },
+    [turns, loadDates, loadEntry, selected],
+  )
 
   return (
     <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
@@ -219,9 +256,30 @@ export function JournalScreen() {
             </button>
             {chatError && <span className="text-sm text-destructive">{chatError}</span>}
           </div>
-          {answer && (
-            <div className={cn(PROSE, "mt-2 rounded-md border bg-background p-3")}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+          {turns.length > 0 && (
+            <div className="mt-2 flex flex-col gap-4">
+              {turns.map((turn, i) => (
+                <div key={i} className="flex flex-col gap-2 rounded-md border bg-background p-3">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Q: {turn.question}
+                  </p>
+                  <div className={PROSE}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
+                  </div>
+                  {turn.answer && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => void saveTurn(i)}
+                        disabled={turn.saved}
+                        className="rounded-md border px-3 py-1 text-xs transition-colors hover:bg-accent/50 disabled:opacity-50"
+                      >
+                        {turn.saved ? "Saved to journal ✓" : "Save to journal"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </section>
