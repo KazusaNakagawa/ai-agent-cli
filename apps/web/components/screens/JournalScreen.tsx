@@ -1,5 +1,5 @@
 "use client"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
@@ -9,6 +9,15 @@ type Turn = { question: string; answer: string; saved: boolean }
 const PROSE =
   "prose prose-sm max-w-none dark:prose-invert prose-a:text-blue-600 " +
   "hover:prose-a:underline dark:prose-a:text-blue-400"
+
+/** Join the `data:` lines of one raw SSE event block into text. */
+function parseSseEvent(raw: string): string {
+  return raw
+    .split("\n")
+    .filter((l) => l.startsWith("data:"))
+    .map((l) => l.slice(5).replace(/^ /, ""))
+    .join("\n")
+}
 
 /** Parse a Server-Sent Events stream, yielding the joined `data:` text per event. */
 async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
@@ -21,22 +30,23 @@ async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string
     buffer += decoder.decode(value, { stream: true })
     let sep: number
     while ((sep = buffer.indexOf("\n\n")) !== -1) {
-      const raw = buffer.slice(0, sep)
+      const data = parseSseEvent(buffer.slice(0, sep))
       buffer = buffer.slice(sep + 2)
-      const data = raw
-        .split("\n")
-        .filter((l) => l.startsWith("data:"))
-        .map((l) => l.slice(5).replace(/^ /, ""))
-        .join("\n")
       if (data) yield data
     }
   }
+  // Flush a trailing event that wasn't terminated by a final "\n\n".
+  const tail = parseSseEvent(buffer)
+  if (tail) yield tail
 }
 
 export function JournalScreen() {
   const [dates, setDates] = useState<JournalDate[]>([])
+  const [datesError, setDatesError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [content, setContent] = useState("")
+  // Monotonic id so a slow earlier loadEntry can't overwrite a newer selection.
+  const entryReqSeq = useRef(0)
   const [entry, setEntry] = useState("")
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -47,21 +57,33 @@ export function JournalScreen() {
   const [chatError, setChatError] = useState<string | null>(null)
 
   const loadDates = useCallback(async () => {
-    const res = await fetch("/api/journal", { cache: "no-store" })
-    if (!res.ok) return
-    const data = (await res.json()) as { dates: JournalDate[] }
-    setDates(data.dates)
-    return data.dates
+    try {
+      setDatesError(null)
+      const res = await fetch("/api/journal", { cache: "no-store" })
+      if (!res.ok) {
+        setDatesError(`Failed to load entries (HTTP ${res.status})`)
+        return
+      }
+      const data = (await res.json()) as { dates: JournalDate[] }
+      setDates(data.dates)
+      return data.dates
+    } catch (e) {
+      setDatesError(`Failed to load entries: ${String(e)}`)
+    }
   }, [])
 
   const loadEntry = useCallback(async (date: string) => {
+    const seq = ++entryReqSeq.current
     setSelected(date)
     const res = await fetch(`/api/journal/${date}`, { cache: "no-store" })
+    // Ignore a stale response that lost the race to a newer selection.
+    if (seq !== entryReqSeq.current) return
     if (!res.ok) {
       setContent("")
       return
     }
     const data = (await res.json()) as { content: string }
+    if (seq !== entryReqSeq.current) return
     setContent(data.content)
   }, [])
 
@@ -176,7 +198,9 @@ export function JournalScreen() {
         <label htmlFor="journal-date" className="text-sm font-semibold text-muted-foreground">
           Entries
         </label>
-        {dates.length === 0 ? (
+        {datesError ? (
+          <span className="text-sm text-destructive">{datesError}</span>
+        ) : dates.length === 0 ? (
           <span className="text-sm text-muted-foreground">No entries yet.</span>
         ) : (
           <select
