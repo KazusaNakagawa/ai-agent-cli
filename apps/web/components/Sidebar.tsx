@@ -3,10 +3,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 
-import { AppearancePanel } from "@/components/AppearancePanel"
-import { ConfigFilePanel } from "@/components/ConfigFilePanel"
-import { OutputExportPanel } from "@/components/OutputExportPanel"
-import { SidebarDisclosure } from "@/components/SidebarDisclosure"
+import { SettingsModal } from "@/components/settings/SettingsModal"
 import { useJobState } from "@/lib/jobStore"
 import {
   SIDEBAR_COLLAPSED_ATTR,
@@ -170,52 +167,7 @@ export function Sidebar() {
         data-sidebar-section="config"
         className="flex flex-col gap-1"
       >
-        <SidebarDisclosure
-          label="Config"
-          icon="⚙️"
-          testid="config-toggle"
-          variant="heading"
-        >
-          <div className="flex flex-col gap-1">
-            <Link
-              href="/config/usage"
-              title="Usage"
-              aria-label="Usage"
-              data-sidebar-row
-              data-testid="nav-config-usage"
-              className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-                pathname === "/config/usage"
-                  ? "bg-accent font-medium text-accent-foreground"
-                  : "hover:bg-accent/50",
-              )}
-            >
-              <span aria-hidden>📈</span>
-              <span data-sidebar-label>Usage</span>
-            </Link>
-            <SidebarDisclosure
-              label="Appearance"
-              icon="🎨"
-              testid="appearance-toggle"
-            >
-              <AppearancePanel />
-            </SidebarDisclosure>
-            <SidebarDisclosure
-              label="Config file"
-              icon="📁"
-              testid="config-file-toggle"
-            >
-              <ConfigFilePanel />
-            </SidebarDisclosure>
-            <SidebarDisclosure
-              label="Export data"
-              icon="📦"
-              testid="output-export-toggle"
-            >
-              <OutputExportPanel />
-            </SidebarDisclosure>
-          </div>
-        </SidebarDisclosure>
+        <SettingsModal />
       </section>
       </div>
       {/* Right-edge drag handle to resize the rail (hidden when collapsed). */}

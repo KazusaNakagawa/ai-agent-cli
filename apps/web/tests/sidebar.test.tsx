@@ -97,14 +97,65 @@ describe("Sidebar collapse", () => {
   })
 })
 
-describe("Config > Usage nav", () => {
-  it("renders a Usage link to /config/usage with tooltip attributes", async () => {
+describe("Config settings modal", () => {
+  it("opens a modal with the four settings sections when Config is clicked", async () => {
+    const user = userEvent.setup()
+    renderSidebar()
+
+    // Modal is closed initially.
+    expect(screen.queryByTestId("settings-modal")).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId("config-toggle"))
+
+    expect(screen.getByTestId("settings-modal")).toBeInTheDocument()
+    for (const key of ["usage", "appearance", "config-file", "export"]) {
+      expect(screen.getByTestId(`settings-nav-${key}`)).toBeInTheDocument()
+    }
+
+    // Usage is the default active section on open.
+    expect(screen.getByTestId("settings-nav-usage")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+    expect(screen.getByTestId("settings-section-usage")).toBeInTheDocument()
+    for (const key of ["appearance", "config-file", "export"]) {
+      expect(screen.getByTestId(`settings-nav-${key}`)).toHaveAttribute(
+        "aria-selected",
+        "false",
+      )
+    }
+  })
+
+  it("switches the content pane and aria-selected when a section is selected", async () => {
     const user = userEvent.setup()
     renderSidebar()
     await user.click(screen.getByTestId("config-toggle"))
-    const link = screen.getByTestId("nav-config-usage")
-    expect(link).toHaveAttribute("href", "/config/usage")
-    expect(link).toHaveAttribute("title", "Usage")
-    expect(link).toHaveAttribute("aria-label", "Usage")
+
+    // Export section panel renders only after selecting it.
+    expect(screen.queryByTestId("output-export-panel")).not.toBeInTheDocument()
+    await user.click(screen.getByTestId("settings-nav-export"))
+    expect(screen.getByTestId("output-export-panel")).toBeInTheDocument()
+    expect(screen.getByTestId("settings-nav-export")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+    expect(screen.getByTestId("settings-nav-usage")).toHaveAttribute(
+      "aria-selected",
+      "false",
+    )
+  })
+
+  it("resets to the first section when reopened", async () => {
+    const user = userEvent.setup()
+    renderSidebar()
+
+    await user.click(screen.getByTestId("config-toggle"))
+    await user.click(screen.getByTestId("settings-nav-export"))
+    expect(screen.getByTestId("settings-section-export")).toBeInTheDocument()
+
+    // Close (Esc) and reopen — should default back to Usage.
+    await user.keyboard("{Escape}")
+    await user.click(screen.getByTestId("config-toggle"))
+    expect(screen.getByTestId("settings-section-usage")).toBeInTheDocument()
   })
 })
