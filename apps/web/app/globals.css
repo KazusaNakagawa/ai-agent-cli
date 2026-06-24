@@ -93,7 +93,7 @@
    script (see app/layout.tsx / themeBootScript) so the rail starts in the
    correct geometry on the very first paint, before React hydrates. */
 [data-sidebar-rail] {
-  width: 15rem;
+  width: var(--sidebar-width, 15rem);
   overflow-x: hidden;
 }
 html[data-sidebar-collapsed="true"] [data-sidebar-rail] {

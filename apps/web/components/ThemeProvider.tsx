@@ -11,6 +11,10 @@ import {
 import {
   SIDEBAR_COLLAPSED_ATTR,
   SIDEBAR_COLLAPSED_KEY,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_WIDTH_KEY,
+  SIDEBAR_WIDTH_VAR,
 } from "@/lib/sidebar"
 import {
   Background,
@@ -122,6 +126,10 @@ export const themeBootScript = `
   document.documentElement.setAttribute("data-bg", b);
   var sc = localStorage.getItem(${JSON.stringify(SIDEBAR_COLLAPSED_KEY)});
   if (sc === "true") document.documentElement.setAttribute(${JSON.stringify(SIDEBAR_COLLAPSED_ATTR)}, "true");
+  var sw = parseInt(localStorage.getItem(${JSON.stringify(SIDEBAR_WIDTH_KEY)}), 10);
+  if (sw >= ${SIDEBAR_MIN_WIDTH} && sw <= ${SIDEBAR_MAX_WIDTH}) {
+    document.documentElement.style.setProperty(${JSON.stringify(SIDEBAR_WIDTH_VAR)}, sw + "px");
+  }
 }catch(e){}})();
 `
 
