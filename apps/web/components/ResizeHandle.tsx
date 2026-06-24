@@ -5,6 +5,8 @@ type Props = {
   onPointerDown: (e: React.PointerEvent) => void
   /** Which edge of the parent the handle sits on. Parent must be `relative`. */
   edge?: "right" | "left"
+  /** Accessible label; override per usage (e.g. "Resize sidebar"). */
+  ariaLabel?: string
   className?: string
   "data-testid"?: string
 }
@@ -17,6 +19,7 @@ type Props = {
 export function ResizeHandle({
   onPointerDown,
   edge = "right",
+  ariaLabel = "Resize panel",
   className,
   ...rest
 }: Props) {
@@ -24,7 +27,7 @@ export function ResizeHandle({
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize panel"
+      aria-label={ariaLabel}
       data-testid={rest["data-testid"]}
       onPointerDown={onPointerDown}
       className={cn(

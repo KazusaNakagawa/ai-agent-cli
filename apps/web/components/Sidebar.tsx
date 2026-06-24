@@ -182,6 +182,7 @@ export function Sidebar() {
       {!collapsed && (
         <ResizeHandle
           onPointerDown={onResizeStart}
+          ariaLabel="Resize sidebar"
           data-testid="sidebar-resizer"
         />
       )}

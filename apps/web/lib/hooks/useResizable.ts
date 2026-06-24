@@ -33,8 +33,13 @@ export function useResizable({
 
   // Restore persisted width on mount (client-only to avoid SSR mismatch).
   useEffect(() => {
-    const saved = Number(localStorage.getItem(storageKey))
-    if (saved >= minWidth && saved <= maxWidth) setWidth(saved)
+    try {
+      const saved = Number(localStorage.getItem(storageKey))
+      if (saved >= minWidth && saved <= maxWidth) setWidth(saved)
+    } catch {
+      // localStorage may throw (Safari private mode / strict iframe policy);
+      // fall back to the default width.
+    }
   }, [storageKey, minWidth, maxWidth])
 
   const startResize = useCallback(

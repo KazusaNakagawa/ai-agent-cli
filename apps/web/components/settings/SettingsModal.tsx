@@ -103,6 +103,7 @@ export function SettingsModal() {
           ))}
           <ResizeHandle
             onPointerDown={startResize}
+            ariaLabel="Resize settings navigation"
             data-testid="settings-nav-resizer"
           />
         </div>

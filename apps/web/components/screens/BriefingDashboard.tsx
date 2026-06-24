@@ -179,6 +179,7 @@ export function BriefingDashboard() {
         {selected && !fullSize && (
           <ResizeHandle
             onPointerDown={startResize}
+            ariaLabel="Resize briefing list"
             data-testid="briefing-list-resizer"
           />
         )}
