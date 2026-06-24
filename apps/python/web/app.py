@@ -8,6 +8,7 @@ from web.routers import (
     config,
     credentials,
     health,
+    journal,
     run,
     state,
     usage,
@@ -24,3 +25,4 @@ app.include_router(chat.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(briefing.router, prefix="/api")
 app.include_router(archive.router, prefix="/api")
+app.include_router(journal.router, prefix="/api")
