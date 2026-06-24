@@ -33,7 +33,7 @@ config/briefing.json   # Portfolio, watch sectors, geopolitical risks
 **Key design decisions**
 
 - No NewsAPI — Claude Code CLI's built-in WebSearch handles real-time search
-- No Anthropic API billing — reuses Claude Code CLI's OAuth authentication
+- No per-token Anthropic API billing — runs on the Claude Code CLI OAuth session, which requires an active paid Claude subscription (Pro/Max); the free plan cannot run this
 - Geopolitical → stock causality is baked into every daily output
 - Degraded mode — if the sector sweep fails, the main analysis is still delivered
 
