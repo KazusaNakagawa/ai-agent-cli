@@ -48,7 +48,7 @@ export function SettingsModal() {
       </DialogTrigger>
       <DialogContent
         data-testid="settings-modal"
-        className="flex h-[80vh] max-w-3xl gap-0 overflow-hidden p-0"
+        className="flex h-[80vh] w-[80vw] max-w-[80vw] gap-0 overflow-hidden p-0"
       >
         <DialogTitle className="sr-only">Config</DialogTitle>
         {/* Left: section nav */}
