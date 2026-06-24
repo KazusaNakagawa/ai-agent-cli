@@ -42,7 +42,9 @@ export function OutputExportPanel() {
     a.href = url
     a.download = name
     a.click()
-    URL.revokeObjectURL(url)
+    // Defer revocation: some browsers handle the download asynchronously, so
+    // revoking the object URL synchronously can cancel a large download.
+    setTimeout(() => URL.revokeObjectURL(url), 0)
     setStatus("success")
   }
 
