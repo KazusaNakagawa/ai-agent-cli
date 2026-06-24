@@ -15,7 +15,7 @@ from src.constants import (
 )
 from src.logger import get_logger
 from src.transient_errors import is_transient
-from src.usage_logger import log_usage
+from src.usage_logger import log_usage_from_result
 
 logger = get_logger(__name__)
 
@@ -36,15 +36,7 @@ def _parse_and_log_usage(stdout: str, label: str) -> str:
         )
         return stdout.strip()
 
-    usage = parsed.get("usage")
-    if isinstance(usage, dict):
-        log_usage(
-            label=label,
-            usage=usage,
-            cost_usd=parsed.get("total_cost_usd"),
-            duration_ms=parsed.get("duration_ms"),
-        )
-    else:
+    if not log_usage_from_result(label, parsed):
         # Calls without usage can happen in normal operation, so keep this at debug (avoid noise).
         logger.debug("no usage in claude CLI output, skipping usage log [%s]", label)
 

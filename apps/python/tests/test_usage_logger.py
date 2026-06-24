@@ -85,3 +85,42 @@ def test_log_usage_swallows_errors(monkeypatch, tmp_path):
     # json.dumps が落ちるようにして書き込み前に例外を起こす
     monkeypatch.setattr(usage_logger.json, "dumps", lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))
     usage_logger.log_usage(label="x", usage={}, cost_usd=None, duration_ms=None)  # 例外が出なければOK
+
+
+def test_log_usage_from_result_logs_when_usage_present(monkeypatch):
+    """A result record with a usage dict is forwarded to log_usage with its
+    cost / duration fields."""
+    captured = {}
+
+    def fake_log_usage(label, usage, cost_usd, duration_ms):
+        captured.update(
+            label=label, usage=usage, cost_usd=cost_usd, duration_ms=duration_ms
+        )
+
+    monkeypatch.setattr(usage_logger, "log_usage", fake_log_usage)
+
+    result = {
+        "usage": {"input_tokens": 3, "output_tokens": 5},
+        "total_cost_usd": 0.01,
+        "duration_ms": 42,
+    }
+    assert usage_logger.log_usage_from_result("chat", result) is True
+    assert captured["label"] == "chat"
+    assert captured["usage"]["output_tokens"] == 5
+    assert captured["cost_usd"] == 0.01
+    assert captured["duration_ms"] == 42
+
+
+def test_log_usage_from_result_noop_without_usage(monkeypatch):
+    """No usage dict → returns False and never calls log_usage."""
+    called = False
+
+    def fake_log_usage(*a, **k):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(usage_logger, "log_usage", fake_log_usage)
+
+    assert usage_logger.log_usage_from_result("chat", {"result": "hi"}) is False
+    assert usage_logger.log_usage_from_result("chat", None) is False
+    assert called is False
