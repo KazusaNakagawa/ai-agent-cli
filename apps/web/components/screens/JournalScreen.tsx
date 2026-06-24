@@ -172,7 +172,7 @@ export function JournalScreen() {
   )
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+    <div className="grid items-start gap-6 lg:grid-cols-[160px_1fr]">
       {/* Left: date list */}
       <aside className="flex flex-col gap-2">
         <h3 className="text-sm font-semibold text-muted-foreground">Entries</h3>
