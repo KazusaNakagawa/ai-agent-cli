@@ -135,6 +135,24 @@ async def test_days_limits_context(authed_client, journal_dir, monkeypatch):
     assert "Day one note." not in context
 
 
+async def test_context_capped_at_max_chars(authed_client, journal_dir, monkeypatch):
+    # Make each day large and set a small cap so only the newest fits.
+    (journal_dir / "2026-06-23.md").write_text("A" * 5000, encoding="utf-8")
+    (journal_dir / "2026-06-24.md").write_text("B" * 5000, encoding="utf-8")
+    monkeypatch.setattr("web.routers.chat.JOURNAL_CONTEXT_MAX_CHARS", 6000)
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    response = await authed_client.post("/api/journal/chat", json={"question": "q"})
+    assert response.status_code == 202
+
+    cmd = factory.calls[0][0]
+    context = cmd[cmd.index("--append-system-prompt") + 1]
+    # Newest day kept, older dropped once the budget is exhausted.
+    assert "B" * 5000 in context
+    assert "A" * 5000 not in context
+
+
 async def test_stream_reuses_chat_endpoint(authed_client, journal_dir, monkeypatch):
     factory = _make_popen(stdout_lines=[b"Brainstorm idea\n"])
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
