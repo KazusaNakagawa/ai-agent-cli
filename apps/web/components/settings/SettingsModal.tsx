@@ -33,6 +33,7 @@ const NAV_MAX_WIDTH = 480
 const NAV_DEFAULT_WIDTH = 192 // matches the previous fixed w-48
 
 export function SettingsModal() {
+  const [open, setOpen] = useState(false)
   const [active, setActive] = useState<string>(SECTIONS[0].key)
   const current = SECTIONS.find((s) => s.key === active) ?? SECTIONS[0]
 
@@ -75,7 +76,14 @@ export function SettingsModal() {
   }, [navWidth])
 
   return (
-    <Dialog>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        // Always default to the first section each time the modal opens.
+        if (next) setActive(SECTIONS[0].key)
+      }}
+    >
       <DialogTrigger asChild>
         <button
           type="button"
@@ -94,8 +102,12 @@ export function SettingsModal() {
         className="flex h-[80vh] w-[80vw] max-w-[80vw] gap-0 overflow-hidden p-0"
       >
         <DialogTitle className="sr-only">Config</DialogTitle>
-        {/* Left: section nav (resizable) */}
-        <nav
+        {/* Left: section nav (resizable). Tablist pattern so aria-selected is
+            semantically correct on the buttons. */}
+        <div
+          role="tablist"
+          aria-orientation="vertical"
+          aria-label="Settings sections"
           style={{ width: navWidth }}
           className="flex shrink-0 flex-col gap-1 border-r bg-card p-3"
         >
@@ -106,9 +118,12 @@ export function SettingsModal() {
             <button
               key={s.key}
               type="button"
+              role="tab"
+              id={`settings-tab-${s.key}`}
+              aria-controls="settings-content"
+              aria-selected={active === s.key}
               onClick={() => setActive(s.key)}
               data-testid={`settings-nav-${s.key}`}
-              aria-current={active === s.key}
               className={cn(
                 "flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
                 active === s.key
@@ -120,7 +135,7 @@ export function SettingsModal() {
               <span>{s.label}</span>
             </button>
           ))}
-        </nav>
+        </div>
         {/* Drag handle to resize the nav */}
         <div
           role="separator"
@@ -131,7 +146,10 @@ export function SettingsModal() {
         />
         {/* Right: active section content */}
         <div
-          data-testid="settings-content"
+          role="tabpanel"
+          id="settings-content"
+          aria-labelledby={`settings-tab-${current.key}`}
+          data-testid={`settings-section-${current.key}`}
           className="min-w-0 flex-1 overflow-y-auto p-6"
         >
           <h2 className="mb-4 text-lg font-semibold">{current.label}</h2>

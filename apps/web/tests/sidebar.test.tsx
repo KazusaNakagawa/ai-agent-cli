@@ -103,9 +103,22 @@ describe("Config settings modal", () => {
     for (const key of ["usage", "appearance", "config-file", "export"]) {
       expect(screen.getByTestId(`settings-nav-${key}`)).toBeInTheDocument()
     }
+
+    // Usage is the default active section on open.
+    expect(screen.getByTestId("settings-nav-usage")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+    expect(screen.getByTestId("settings-section-usage")).toBeInTheDocument()
+    for (const key of ["appearance", "config-file", "export"]) {
+      expect(screen.getByTestId(`settings-nav-${key}`)).toHaveAttribute(
+        "aria-selected",
+        "false",
+      )
+    }
   })
 
-  it("switches the content pane when a section is selected", async () => {
+  it("switches the content pane and aria-selected when a section is selected", async () => {
     const user = userEvent.setup()
     renderSidebar()
     await user.click(screen.getByTestId("config-toggle"))
@@ -114,5 +127,27 @@ describe("Config settings modal", () => {
     expect(screen.queryByTestId("output-export-panel")).not.toBeInTheDocument()
     await user.click(screen.getByTestId("settings-nav-export"))
     expect(screen.getByTestId("output-export-panel")).toBeInTheDocument()
+    expect(screen.getByTestId("settings-nav-export")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+    expect(screen.getByTestId("settings-nav-usage")).toHaveAttribute(
+      "aria-selected",
+      "false",
+    )
+  })
+
+  it("resets to the first section when reopened", async () => {
+    const user = userEvent.setup()
+    renderSidebar()
+
+    await user.click(screen.getByTestId("config-toggle"))
+    await user.click(screen.getByTestId("settings-nav-export"))
+    expect(screen.getByTestId("settings-section-export")).toBeInTheDocument()
+
+    // Close (Esc) and reopen — should default back to Usage.
+    await user.keyboard("{Escape}")
+    await user.click(screen.getByTestId("config-toggle"))
+    expect(screen.getByTestId("settings-section-usage")).toBeInTheDocument()
   })
 })
