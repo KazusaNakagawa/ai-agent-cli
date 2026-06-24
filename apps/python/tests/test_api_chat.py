@@ -14,6 +14,7 @@ which makes the GET-stream assertions deterministic without sleeps.
 """
 import asyncio
 import io
+import json
 import time
 from unittest.mock import MagicMock
 
@@ -22,6 +23,38 @@ import pytest
 from src import chat_job_store, credentials, state as state_mod
 
 pytestmark = pytest.mark.usefixtures("isolated_state")
+
+
+def _delta_line(text: str) -> bytes:
+    """Build one --output-format stream-json line carrying an assistant
+    ``text_delta`` (the user-facing output the SSE stream surfaces)."""
+    return (
+        json.dumps(
+            {
+                "type": "stream_event",
+                "event": {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": text},
+                },
+            }
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _result_line(
+    *, usage: dict | None = None, cost_usd: float | None = None,
+    duration_ms: int | None = None, result: str = "",
+) -> bytes:
+    """Build the terminal stream-json ``result`` record (carries usage)."""
+    rec: dict = {"type": "result", "subtype": "success", "result": result}
+    if usage is not None:
+        rec["usage"] = usage
+    if cost_usd is not None:
+        rec["total_cost_usd"] = cost_usd
+    if duration_ms is not None:
+        rec["duration_ms"] = duration_ms
+    return (json.dumps(rec) + "\n").encode("utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -276,7 +309,7 @@ async def test_chat_subprocess_env_includes_keychain_key_in_api_mode(
 async def test_chat_stream_returns_sse_content_type(
     authed_client, briefing_setup, monkeypatch
 ):
-    factory = _make_popen(stdout_lines=[b"hello\n"])
+    factory = _make_popen(stdout_lines=[_delta_line("hello"), _result_line()])
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     _, _ = await _post_and_drain_stream(
@@ -292,7 +325,9 @@ async def test_chat_stream_returns_sse_content_type(
 async def test_chat_stream_replays_stdout_lines_as_data_events(
     authed_client, briefing_setup, monkeypatch
 ):
-    factory = _make_popen(stdout_lines=[b"line1\n", b"line2\n", b"line3\n"])
+    factory = _make_popen(
+        stdout_lines=[_delta_line("line1\nline2\nline3"), _result_line()]
+    )
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     _, body = await _post_and_drain_stream(
@@ -304,13 +339,66 @@ async def test_chat_stream_replays_stdout_lines_as_data_events(
     assert "data: line3\n\n" in body
 
 
+async def test_chat_cmd_includes_stream_json_flags(
+    authed_client, briefing_setup, monkeypatch
+):
+    """The chat subprocess must request stream-json output so usage (token
+    counts) is captured, while keeping incremental partial-message streaming."""
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    cmd, _ = factory.calls[0]
+    assert "stream-json" in cmd
+    assert "--verbose" in cmd
+    assert "--include-partial-messages" in cmd
+
+
+async def test_chat_logs_usage_with_chat_label(
+    authed_client, briefing_setup, monkeypatch
+):
+    """A completed chat turn records a usage-log entry labeled ``chat`` with the
+    token counts / cost from the stream-json ``result`` record."""
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        "web.routers.chat.log_usage", lambda **kw: captured.append(kw)
+    )
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "cache_read_input_tokens": 5,
+        "cache_creation_input_tokens": 3,
+    }
+    factory = _make_popen(
+        stdout_lines=[
+            _delta_line("the answer"),
+            _result_line(usage=usage, cost_usd=0.012, duration_ms=1234),
+        ]
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    _, body = await _post_and_drain_stream(
+        authed_client, {"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert "data: the answer\n\n" in body
+    assert len(captured) == 1
+    assert captured[0]["label"] == "chat"
+    assert captured[0]["usage"]["output_tokens"] == 20
+    assert captured[0]["cost_usd"] == 0.012
+    assert captured[0]["duration_ms"] == 1234
+
+
 async def test_chat_stream_supports_concurrent_attaches(
     authed_client, briefing_setup, monkeypatch
 ):
     """Two simultaneous GET streams against the same job both see the full
     transcript. Guards the snapshot path against deque-mutation races and
     confirms a second attach isn't starved by the first."""
-    factory = _make_popen(stdout_lines=[b"x\n", b"y\n"])
+    factory = _make_popen(stdout_lines=[_delta_line("x\ny"), _result_line()])
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     post = await authed_client.post(
@@ -366,7 +454,7 @@ async def test_chat_stream_can_be_reattached_to_replay_buffer(
     """Survives a client disconnect: a second GET against the same job_id
     sees every event from the start. This is the core #112 / #126 win —
     a tab switch or page reload no longer drops the in-flight answer."""
-    factory = _make_popen(stdout_lines=[b"a\n", b"b\n"])
+    factory = _make_popen(stdout_lines=[_delta_line("a\nb"), _result_line()])
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     job_id, first = await _post_and_drain_stream(
@@ -390,8 +478,14 @@ async def test_get_chat_stream_404_when_job_unknown(authed_client, briefing_setu
 async def test_chat_stream_strips_trailing_cr_from_stdout_lines(
     authed_client, briefing_setup, monkeypatch
 ):
-    """Windows-style \\r\\n line endings must not leak into the SSE event."""
-    factory = _make_popen(stdout_lines=[b"hello world\r\n", b"line2\r\n"])
+    """Windows-style \\r\\n JSON-line endings must not leak into the SSE event."""
+    # Terminate each stream-json line with \r\n to mimic a Windows pipe.
+    factory = _make_popen(
+        stdout_lines=[
+            _delta_line("hello world\nline2").rstrip(b"\n") + b"\r\n",
+            _result_line(),
+        ]
+    )
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     _, body = await _post_and_drain_stream(

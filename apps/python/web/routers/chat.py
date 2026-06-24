@@ -66,6 +66,7 @@ from src import state as state_mod
 from src.chat_session import build_cmd, build_journal_cmd
 from src.claude_runner import build_env
 from src.logger import get_logger
+from src.usage_logger import log_usage
 from web.auth import require_bearer
 
 logger = get_logger(__name__)
@@ -90,6 +91,17 @@ CHAT_JOB_GC_GRACE_SEC = 120.0
 # events on a running job. Small enough to feel live, large enough not
 # to spin a CPU per attached client.
 _TAIL_POLL_INTERVAL_SEC = 0.05
+
+# --output-format stream-json lets us capture the per-call ``usage`` record
+# (token counts + cost) that plain-text output discards, so chat/journal turns
+# can be surfaced in the usage dashboard. ``--verbose`` is required by the CLI
+# for stream-json under ``-p``; ``--include-partial-messages`` preserves the
+# incremental (line-by-line) streaming the SSE client already expects.
+CHAT_STREAM_FLAGS = [
+    "--output-format", "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+]
 
 router = APIRouter(dependencies=[Depends(require_bearer)])
 
@@ -119,11 +131,67 @@ def _sse_event(content: str, event: str | None = None) -> bytes:
     return ("\n".join(out) + "\n\n").encode("utf-8")
 
 
+class _StreamState:
+    """Accumulator for parsing a ``--output-format stream-json`` stream.
+
+    Buffers partial assistant text into whole lines (so the SSE client's
+    join-by-newline contract is preserved) and captures the final ``usage``
+    record (token counts, cost, duration) for usage logging.
+    """
+
+    def __init__(self) -> None:
+        self.text_buf = ""
+        self.saw_text = False
+        self.usage: dict | None = None
+        self.cost_usd: float | None = None
+        self.duration_ms: int | None = None
+
+
+def _consume_stream_line(line: str, state: _StreamState) -> list[str]:
+    """Parse one stream-json line, returning newly-completed text lines.
+
+    Only user-facing assistant text (``text_delta``) is surfaced — thinking
+    deltas, hook/system events, and tool use are ignored so the streamed
+    output matches the pre-stream-json plain-text behavior. The final
+    ``result`` record's usage is stashed on ``state``; if partial-message
+    deltas never produced text (older CLI), the result text is used as a
+    fallback so the answer is never dropped.
+    """
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return []
+
+    obj_type = obj.get("type")
+    if obj_type == "stream_event":
+        event = obj.get("event") or {}
+        if event.get("type") == "content_block_delta":
+            delta = event.get("delta") or {}
+            if delta.get("type") == "text_delta":
+                state.saw_text = True
+                state.text_buf += delta.get("text", "")
+                parts = state.text_buf.split("\n")
+                state.text_buf = parts.pop()
+                return parts
+    elif obj_type == "result":
+        usage = obj.get("usage")
+        if isinstance(usage, dict):
+            state.usage = usage
+            state.cost_usd = obj.get("total_cost_usd")
+            state.duration_ms = obj.get("duration_ms")
+        if not state.saw_text and not state.text_buf:
+            result_text = obj.get("result")
+            if isinstance(result_text, str):
+                state.text_buf = result_text
+    return []
+
+
 def _run_chat_job(
     job_id: str,
     cmd: list[str],
     session_file: Path,
     env: dict[str, str],
+    label: str,
 ) -> None:
     """Background task: drive the claude subprocess to completion and
     append each stdout line into the job's replay buffer.
@@ -154,15 +222,31 @@ def _run_chat_job(
         stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
         stderr_thread.start()
 
+        state = _StreamState()
         try:
             assert proc.stdout is not None
             for line_bytes in proc.stdout:
                 line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
-                chat_job_store.append_event(job_id, _sse_event(line))
+                if not line:
+                    continue
+                for text_line in _consume_stream_line(line, state):
+                    chat_job_store.append_event(job_id, _sse_event(text_line))
         finally:
             proc.wait()
             stderr_thread.join(timeout=2)
             chat_job_store.detach_process(job_id)
+
+        # Flush the final partial line (a text block with no trailing newline).
+        if state.text_buf:
+            chat_job_store.append_event(job_id, _sse_event(state.text_buf))
+        # Record token usage for this turn (best-effort; never fails the job).
+        if state.usage is not None:
+            log_usage(
+                label=label,
+                usage=state.usage,
+                cost_usd=state.cost_usd,
+                duration_ms=state.duration_ms,
+            )
 
         if proc.returncode != 0:
             stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
@@ -246,11 +330,15 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
         raise HTTPException(status_code=404, detail=f"no briefing for {body.date}")
 
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    cmd = build_cmd(body.date, briefing_file, session_file) + ["-p", body.question]
+    cmd = (
+        build_cmd(body.date, briefing_file, session_file)
+        + ["-p", body.question]
+        + CHAT_STREAM_FLAGS
+    )
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()
-    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env)
+    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env, "chat")
     return ChatPostResponse(job_id=job.job_id, status=job.status)
 
 
@@ -312,11 +400,15 @@ def post_journal_chat(
     sessions_dir.mkdir(parents=True, exist_ok=True)
     session_file = sessions_dir / today
 
-    cmd = build_journal_cmd(today, context, session_file) + ["-p", body.question]
+    cmd = (
+        build_journal_cmd(today, context, session_file)
+        + ["-p", body.question]
+        + CHAT_STREAM_FLAGS
+    )
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()
-    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env)
+    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env, "journal")
     return ChatPostResponse(job_id=job.job_id, status=job.status)
 
 
