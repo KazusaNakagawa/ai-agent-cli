@@ -205,8 +205,10 @@ async def test_journal_logs_usage_with_journal_label(
 
     post = await authed_client.post("/api/journal/chat", json={"question": "q"})
     job_id = post.json()["job_id"]
-    await authed_client.get(f"/api/chat/{job_id}/stream")
+    stream = await authed_client.get(f"/api/chat/{job_id}/stream")
 
+    # Verify streaming still delivers assistant text even when usage logging is active.
+    assert "an idea" in stream.text
     assert len(captured) == 1
     assert captured[0]["label"] == "journal"
     assert captured[0]["usage"]["output_tokens"] == 11

@@ -160,6 +160,7 @@ def _consume_stream_line(line: str, state: _StreamState) -> list[str]:
     try:
         obj = json.loads(line)
     except json.JSONDecodeError:
+        logger.debug("stream-json: non-JSON line (truncated): %.120s", line)
         return []
 
     obj_type = obj.get("type")
@@ -182,7 +183,12 @@ def _consume_stream_line(line: str, state: _StreamState) -> list[str]:
         if not state.saw_text and not state.text_buf:
             result_text = obj.get("result")
             if isinstance(result_text, str):
-                state.text_buf = result_text
+                # Split on newlines so multi-line results are line-buffered the
+                # same way text_delta output is: all complete lines go directly
+                # to the caller, the final partial fragment stays in text_buf.
+                parts = result_text.split("\n")
+                state.text_buf = parts.pop()
+                return parts
     return []
 
 
@@ -239,14 +245,17 @@ def _run_chat_job(
         # Flush the final partial line (a text block with no trailing newline).
         if state.text_buf:
             chat_job_store.append_event(job_id, _sse_event(state.text_buf))
-        # Record token usage for this turn (best-effort; never fails the job).
+        # Record token usage for this turn (best-effort; must never fail the job).
         if state.usage is not None:
-            log_usage(
-                label=label,
-                usage=state.usage,
-                cost_usd=state.cost_usd,
-                duration_ms=state.duration_ms,
-            )
+            try:
+                log_usage(
+                    label=label,
+                    usage=state.usage,
+                    cost_usd=state.cost_usd,
+                    duration_ms=state.duration_ms,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("failed to record usage log [%s]", label, exc_info=True)
 
         if proc.returncode != 0:
             stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
@@ -330,11 +339,7 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
         raise HTTPException(status_code=404, detail=f"no briefing for {body.date}")
 
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    cmd = (
-        build_cmd(body.date, briefing_file, session_file)
-        + ["-p", body.question]
-        + CHAT_STREAM_FLAGS
-    )
+    cmd = [*build_cmd(body.date, briefing_file, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()
@@ -400,11 +405,7 @@ def post_journal_chat(
     sessions_dir.mkdir(parents=True, exist_ok=True)
     session_file = sessions_dir / today
 
-    cmd = (
-        build_journal_cmd(today, context, session_file)
-        + ["-p", body.question]
-        + CHAT_STREAM_FLAGS
-    )
+    cmd = [*build_journal_cmd(today, context, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()
