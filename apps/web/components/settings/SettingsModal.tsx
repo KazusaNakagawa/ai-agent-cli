@@ -6,6 +6,8 @@ import { ConfigFilePanel } from "@/components/ConfigFilePanel"
 import { OutputExportPanel } from "@/components/OutputExportPanel"
 import { ResizeHandle } from "@/components/ResizeHandle"
 import { UsageDashboard } from "@/components/screens/UsageDashboard"
+import { AuthPanel } from "@/components/settings/AuthPanel"
+import { CredentialsPanel } from "@/components/settings/CredentialsPanel"
 import {
   Dialog,
   DialogContent,
@@ -27,6 +29,8 @@ const SECTIONS: Section[] = [
   { key: "appearance", label: "Appearance", icon: "🎨", render: () => <AppearancePanel /> },
   { key: "config-file", label: "Config file", icon: "📁", render: () => <ConfigFilePanel /> },
   { key: "export", label: "Export data", icon: "📦", render: () => <OutputExportPanel /> },
+  { key: "credentials", label: "Credentials", icon: "📨", render: () => <CredentialsPanel /> },
+  { key: "auth", label: "Auth", icon: "🔑", render: () => <AuthPanel /> },
 ]
 
 export function SettingsModal() {

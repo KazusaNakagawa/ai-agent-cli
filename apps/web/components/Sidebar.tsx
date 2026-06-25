@@ -23,8 +23,6 @@ const ITEMS: Item[] = [
   { href: "/portfolio", label: "Portfolio", icon: "📊" },
   { href: "/watch-sectors", label: "Watch Sectors", icon: "🌐" },
   { href: "/geopolitical", label: "Geopolitical Risks", icon: "🗺️" },
-  { href: "/credentials", label: "Credentials", icon: "📨" },
-  { href: "/auth", label: "Auth", icon: "🔑" },
   { href: "/run", label: "Run", icon: "▶️" },
   { href: "/chat", label: "Q&A Chat", icon: "💬" },
   { href: "/journal", label: "Journal", icon: "📓" },
