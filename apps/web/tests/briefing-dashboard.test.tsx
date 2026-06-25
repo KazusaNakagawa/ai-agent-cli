@@ -274,12 +274,16 @@ describe("BriefingDashboard", () => {
     const user = userEvent.setup()
     await user.type(screen.getByTestId("briefing-search-input"), "content")
 
-    // search narrows the list to the two server matches
-    await waitFor(() =>
-      expect(screen.queryByTestId("briefing-row-briefing_2026-06-19.md")).not.toBeInTheDocument(),
-    )
-    expect(screen.getByTestId("briefing-row-briefing_2026-06-20.md")).toBeInTheDocument()
-    expect(screen.getByTestId("briefing-row-local_2026-06-18.md")).toBeInTheDocument()
+    // search narrows the list to the two server matches. Assert the full final
+    // state in one waitFor: the unmatched row gone AND both matches present.
+    // This only holds once results arrive, so it can't race the debounced
+    // fetch's transient empty state nor match the initial pre-search list
+    // (which also contains 2026-06-20).
+    await waitFor(() => {
+      expect(screen.queryByTestId("briefing-row-briefing_2026-06-19.md")).not.toBeInTheDocument()
+      expect(screen.getByTestId("briefing-row-briefing_2026-06-20.md")).toBeInTheDocument()
+      expect(screen.getByTestId("briefing-row-local_2026-06-18.md")).toBeInTheDocument()
+    })
     const searchUrl = fetchMock.mock.calls.map((c) => c[0]).find((u: string) => u.includes("/search"))
     expect(searchUrl).toContain("q=content")
 

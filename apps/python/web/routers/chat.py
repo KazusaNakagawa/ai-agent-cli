@@ -302,21 +302,29 @@ class JournalChatBody(BaseModel):
 
 
 def _gather_journal_context(days: int, max_chars: int | None = None) -> str:
-    """Concatenate the newest ``days`` journal files into one context blob.
+    """Concatenate journal entries from the newest ``days`` dates into a blob.
 
-    Returns "" when there are no journal entries. Entries are appended
-    newest-first and the blob is capped at ``max_chars`` (defaults to the
-    module-level ``JOURNAL_CONTEXT_MAX_CHARS``) so a long history can't blow
-    up the prompt; older entries past the budget are dropped. The whole blob
-    is wrapped as untrusted input by ``build_journal_cmd``.
+    Selection is day-based: all entries whose date falls in the most recent
+    ``days`` distinct dates are included (a single date may hold several
+    per-entry files). Entries are appended newest-first and the blob is capped
+    at ``max_chars`` (defaults to the module-level ``JOURNAL_CONTEXT_MAX_CHARS``)
+    so a long history can't blow up the prompt; entries past the budget are
+    dropped. The whole blob is wrapped as untrusted input by ``build_journal_cmd``.
     """
     if max_chars is None:
         max_chars = JOURNAL_CONTEXT_MAX_CHARS
-    dates = journal_store.list_dates()[:days]
+    # Walk entries newest-first, keeping every entry that belongs to one of the
+    # newest ``days`` distinct dates so multiple entries per day are preserved.
+    seen_dates: set[str] = set()
     sections: list[str] = []
     total = 0
-    for date in dates:
-        content = journal_store.read_entry(date)
+    for entry_id, _ in journal_store.list_files():
+        date = journal_store.date_of(entry_id)
+        if date not in seen_dates:
+            if len(seen_dates) >= days:
+                break
+            seen_dates.add(date)
+        content = journal_store.read_entry(entry_id)
         if not content:
             continue
         section = content.strip()

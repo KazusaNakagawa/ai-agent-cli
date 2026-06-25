@@ -1,12 +1,12 @@
-"""Tests for /api/journal — daily Markdown journal append + read (#271).
+"""Tests for /api/journal — per-entry Markdown journal (#271, #295).
 
 Contract:
-- ``POST /api/journal`` appends a timestamped note to the day's file,
-  creating the file if absent; returns {date}.
-- ``GET /api/journal`` returns newest-first list of {date, size}.
-- ``GET /api/journal/{date}`` returns {date, content} (raw markdown).
-- Unknown / invalid date returns 404.
+- ``POST /api/journal`` creates a new entry file; returns {id, date}.
+- ``GET /api/journal`` returns newest-first list of {id, date, size}.
+- ``GET /api/journal/{entry_id}`` returns {id, date, content} (raw markdown).
+- Unknown / invalid id returns 404.
 - Auth is required (Bearer) on all endpoints.
+- Legacy day-based files (YYYY-MM-DD.md) remain listable and readable.
 """
 import pytest
 
@@ -36,21 +36,31 @@ async def test_append_creates_file(authed_client, journal_dir):
         "/api/journal", json={"content": "First thought", "date": "2026-06-24"}
     )
     assert response.status_code == 200
-    assert response.json()["date"] == "2026-06-24"
-    path = journal_dir / "2026-06-24.md"
+    body = response.json()
+    assert body["date"] == "2026-06-24"
+    assert body["id"].startswith("2026-06-24")
+    path = journal_dir / f"{body['id']}.md"
     assert path.exists()
-    body = path.read_text(encoding="utf-8")
-    assert "# Journal 2026-06-24" in body
-    assert "First thought" in body
+    text = path.read_text(encoding="utf-8")
+    assert "# Journal 2026-06-24" in text
+    assert "First thought" in text
 
 
-async def test_append_twice_keeps_both(authed_client, journal_dir):
-    await authed_client.post("/api/journal", json={"content": "one", "date": "2026-06-24"})
-    await authed_client.post("/api/journal", json={"content": "two", "date": "2026-06-24"})
-    body = (journal_dir / "2026-06-24.md").read_text(encoding="utf-8")
-    assert "one" in body and "two" in body
-    # only one top-level heading
-    assert body.count("# Journal 2026-06-24") == 1
+async def test_append_twice_same_date_creates_two_entries(authed_client, journal_dir):
+    r1 = await authed_client.post(
+        "/api/journal", json={"content": "one", "date": "2026-06-24"}
+    )
+    r2 = await authed_client.post(
+        "/api/journal", json={"content": "two", "date": "2026-06-24"}
+    )
+    id1, id2 = r1.json()["id"], r2.json()["id"]
+    assert id1 != id2
+    # Two separate files, each with its own content.
+    files = list(journal_dir.glob("2026-06-24*.md"))
+    assert len(files) == 2
+    response = await authed_client.get("/api/journal")
+    ids = [e["id"] for e in response.json()["entries"]]
+    assert id1 in ids and id2 in ids
 
 
 async def test_append_defaults_to_today(authed_client, journal_dir):
@@ -81,36 +91,62 @@ async def test_list_newest_first(authed_client, journal_dir):
         await authed_client.post("/api/journal", json={"content": "x", "date": date})
     response = await authed_client.get("/api/journal")
     assert response.status_code == 200
-    dates = [d["date"] for d in response.json()["dates"]]
+    dates = [e["date"] for e in response.json()["entries"]]
     assert dates == ["2026-06-24", "2026-06-23", "2026-06-22"]
 
 
 async def test_list_includes_size(authed_client, journal_dir):
     await authed_client.post("/api/journal", json={"content": "x", "date": "2026-06-24"})
     response = await authed_client.get("/api/journal")
-    assert response.json()["dates"][0]["size"] > 0
+    assert response.json()["entries"][0]["size"] > 0
 
 
 async def test_list_empty_when_dir_missing(authed_client, journal_dir):
     response = await authed_client.get("/api/journal")
     assert response.status_code == 200
-    assert response.json()["dates"] == []
+    assert response.json()["entries"] == []
 
 
 async def test_get_returns_markdown(authed_client, journal_dir):
-    await authed_client.post("/api/journal", json={"content": "hello", "date": "2026-06-24"})
-    response = await authed_client.get("/api/journal/2026-06-24")
+    post = await authed_client.post(
+        "/api/journal", json={"content": "hello", "date": "2026-06-24"}
+    )
+    entry_id = post.json()["id"]
+    response = await authed_client.get(f"/api/journal/{entry_id}")
     assert response.status_code == 200
     body = response.json()
+    assert body["id"] == entry_id
     assert body["date"] == "2026-06-24"
     assert "hello" in body["content"]
 
 
-async def test_get_unknown_date_returns_404(authed_client, journal_dir):
-    response = await authed_client.get("/api/journal/2099-01-01")
+async def test_get_unknown_id_returns_404(authed_client, journal_dir):
+    response = await authed_client.get("/api/journal/2099-01-01_120000")
     assert response.status_code == 404
 
 
-async def test_get_invalid_date_returns_404(authed_client, journal_dir):
+async def test_get_invalid_id_returns_404(authed_client, journal_dir):
     response = await authed_client.get("/api/journal/not-a-date")
     assert response.status_code == 404
+
+
+async def test_legacy_day_file_is_listed_and_readable(authed_client, journal_dir):
+    """A bare YYYY-MM-DD.md file from the old model stays accessible."""
+    journal_dir.mkdir(parents=True, exist_ok=True)
+    (journal_dir / "2026-06-20.md").write_text(
+        "# Journal 2026-06-20\n\nlegacy note\n", encoding="utf-8"
+    )
+    listed = await authed_client.get("/api/journal")
+    entry = next(e for e in listed.json()["entries"] if e["id"] == "2026-06-20")
+    assert entry["date"] == "2026-06-20"
+    got = await authed_client.get("/api/journal/2026-06-20")
+    assert got.status_code == 200
+    assert "legacy note" in got.json()["content"]
+
+
+async def test_append_nonexistent_calendar_date_rejected(authed_client, journal_dir):
+    """A well-formed but impossible date (2026-99-99) is rejected."""
+    response = await authed_client.post(
+        "/api/journal", json={"content": "x", "date": "2026-99-99"}
+    )
+    assert response.status_code == 400
