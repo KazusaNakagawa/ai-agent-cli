@@ -223,7 +223,6 @@ export function JournalScreen() {
               <tr
                 key={d.date}
                 tabIndex={0}
-                aria-selected={selected === d.date}
                 onClick={() => void loadEntry(d.date)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -238,8 +237,13 @@ export function JournalScreen() {
                     : "hover:bg-accent/50",
                 )}
               >
-                <td className="px-3 py-2 tabular-nums">{d.date}</td>
-                <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                <td aria-selected={selected === d.date} className="px-3 py-2 tabular-nums">
+                  {d.date}
+                </td>
+                <td
+                  aria-selected={selected === d.date}
+                  className="px-3 py-2 tabular-nums text-muted-foreground"
+                >
                   {(d.size / 1024).toFixed(1)}
                 </td>
               </tr>
