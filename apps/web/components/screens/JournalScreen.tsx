@@ -126,6 +126,7 @@ export function JournalScreen() {
   const startCompose = () => {
     setSelected(null)
     setContent("")
+    setEntry("")
     setSaveError(null)
     setComposing(true)
   }
