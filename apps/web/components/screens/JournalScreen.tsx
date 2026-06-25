@@ -227,33 +227,31 @@ export function JournalScreen() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Size (KB)</th>
+              <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
+                <th className="px-3 py-2 text-left">Date</th>
+                <th className="px-3 py-2 text-right">Size (KB)</th>
               </tr>
             </thead>
             <tbody>
               {sortedDates.map((d) => (
-                <tr
-                  key={d.date}
-                  tabIndex={0}
-                  onClick={() => void loadEntry(d.date)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault()
-                      void loadEntry(d.date)
-                    }
-                  }}
-                  className={cn(
-                    "cursor-pointer border-b text-xs transition-colors last:border-0",
-                    selected === d.date
-                      ? "bg-accent font-medium text-accent-foreground"
-                      : "hover:bg-accent/50",
-                  )}
-                >
-                  <td className="px-3 py-2 tabular-nums">{d.date}</td>
-                  <td className="px-3 py-2 tabular-nums text-muted-foreground">
-                    {(d.size / 1024).toFixed(1)}
+                <tr key={d.date} className="border-b last:border-0">
+                  <td colSpan={2} className="p-0">
+                    <button
+                      type="button"
+                      aria-pressed={selected === d.date}
+                      onClick={() => void loadEntry(d.date)}
+                      className={cn(
+                        "flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors",
+                        selected === d.date
+                          ? "bg-accent font-medium text-accent-foreground"
+                          : "hover:bg-accent/50",
+                      )}
+                    >
+                      <span className="tabular-nums">{d.date}</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {(d.size / 1024).toFixed(1)}
+                      </span>
+                    </button>
                   </td>
                 </tr>
               ))}
