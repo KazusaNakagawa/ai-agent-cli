@@ -18,6 +18,12 @@ const PROSE =
 const HEADER_BTN =
   "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
 
+/** Extract HH:MM:SS from an entry id (YYYY-MM-DD_HHMMSS), or null for legacy day ids. */
+function entryTime(id: string): string | null {
+  const m = id.match(/^\d{4}-\d{2}-\d{2}_(\d{2})(\d{2})(\d{2})/)
+  return m ? `${m[1]}:${m[2]}:${m[3]}` : null
+}
+
 /** Join the `data:` lines of one raw SSE event block into text. */
 function parseSseEvent(raw: string): string {
   return raw
@@ -88,12 +94,17 @@ export function JournalScreen() {
   const loadEntry = useCallback(async (entryId: string) => {
     const seq = ++entryReqSeq.current
     setSelected(entryId)
-    const res = await fetch(`/api/journal/${entryId}`, { cache: "no-store" })
-    if (seq !== entryReqSeq.current) return
-    if (!res.ok) {
-      setContent("")
+    // Clear immediately so the previous entry's body can't render under the
+    // new header while the fetch is in flight (or if it fails).
+    setContent("")
+    let res: Response
+    try {
+      res = await fetch(`/api/journal/${entryId}`, { cache: "no-store" })
+    } catch {
       return
     }
+    if (seq !== entryReqSeq.current) return
+    if (!res.ok) return
     const data = (await res.json()) as { content: string }
     if (seq !== entryReqSeq.current) return
     setContent(data.content)
@@ -242,7 +253,12 @@ export function JournalScreen() {
                           : "hover:bg-accent/50",
                       )}
                     >
-                      <span className="tabular-nums">{e.date}</span>
+                      <span className="tabular-nums">
+                        {e.date}
+                        {entryTime(e.id) && (
+                          <span className="ml-2 text-muted-foreground">{entryTime(e.id)}</span>
+                        )}
+                      </span>
                       <span className="tabular-nums text-muted-foreground">
                         {(e.size / 1024).toFixed(1)}
                       </span>
@@ -268,7 +284,10 @@ export function JournalScreen() {
           {/* Panel header */}
           <div className="flex items-center justify-between border-b px-4 py-2">
             <div className="flex gap-3 text-xs text-muted-foreground">
-              <span>{selectedMeta?.date ?? selected}</span>
+              <span>
+                {selectedMeta?.date ?? selected}
+                {entryTime(selected) && ` ${entryTime(selected)}`}
+              </span>
               {selectedMeta && (
                 <span>{(selectedMeta.size / 1024).toFixed(1)} KB</span>
               )}

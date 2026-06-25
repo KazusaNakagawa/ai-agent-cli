@@ -30,6 +30,16 @@ def today() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
+def _validate_date(value: str) -> None:
+    """Raise ValueError unless value is a real calendar date (YYYY-MM-DD)."""
+    if not _DATE_RE.match(value):
+        raise ValueError(f"Invalid journal date: {value!r}")
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(f"Invalid journal date: {value!r}") from exc
+
+
 def date_of(entry_id: str) -> str:
     """Return the date (YYYY-MM-DD) embedded in an entry id."""
     m = _ENTRY_RE.match(entry_id)
@@ -57,8 +67,7 @@ def append_entry(content: str, date: str | None = None) -> str:
         raise ValueError("Journal entry content must not be empty")
 
     date = date or today()
-    if not _DATE_RE.match(date):
-        raise ValueError(f"Invalid journal date: {date!r}")
+    _validate_date(date)
     JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now()
@@ -77,7 +86,9 @@ def append_entry(content: str, date: str | None = None) -> str:
                 fh.write(body)
             return entry_id
         except FileExistsError:
-            entry_id = f"{base}-{n}"
+            # Zero-pad so reverse-lexicographic listing keeps creation order
+            # even past 9 entries in the same second (-000010 sorts after -000009).
+            entry_id = f"{base}-{n:06d}"
             n += 1
 
 

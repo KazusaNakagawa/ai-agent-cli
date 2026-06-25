@@ -142,3 +142,11 @@ async def test_legacy_day_file_is_listed_and_readable(authed_client, journal_dir
     got = await authed_client.get("/api/journal/2026-06-20")
     assert got.status_code == 200
     assert "legacy note" in got.json()["content"]
+
+
+async def test_append_nonexistent_calendar_date_rejected(authed_client, journal_dir):
+    """A well-formed but impossible date (2026-99-99) is rejected."""
+    response = await authed_client.post(
+        "/api/journal", json={"content": "x", "date": "2026-99-99"}
+    )
+    assert response.status_code == 400
