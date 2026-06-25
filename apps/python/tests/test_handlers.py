@@ -124,6 +124,7 @@ class TestBriefingHandler:
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
             patch("src.handler.save_briefing_md", side_effect=OSError("disk full")),
+            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", False),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = "tok"
@@ -152,6 +153,7 @@ class TestBriefingHandler:
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
             patch("src.handler.save_briefing_md", side_effect=ValueError("bug")),
+            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", False),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = "tok"
@@ -186,6 +188,7 @@ class TestBriefingHandler:
             patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
             patch("src.handler.generate_briefing", side_effect=RuntimeError("claude error")),
             patch("src.handler.send_to_discord"),
+            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", False),
         ):
             with pytest.raises(RuntimeError, match="claude error"):
                 briefing_handler()
@@ -251,6 +254,75 @@ class TestBriefingHandler:
         assert result["body"] == "dry-run"
         mock_stocks.assert_not_called()
         mock_gen.assert_not_called()
+
+    def test_skips_when_md_exists_today(self, tmp_path):
+        """Second run on the same day exits early without calling generate_briefing."""
+        from datetime import date
+        today_md = tmp_path / f"briefing_{date.today().strftime('%Y-%m-%d')}.md"
+        today_md.write_text("existing briefing")
+
+        with (
+            patch("src.handler.fetch_stock_moves") as mock_stocks,
+            patch("src.handler.generate_briefing") as mock_gen,
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", True),
+        ):
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        assert "skipped" in result["body"]
+        mock_stocks.assert_not_called()
+        mock_gen.assert_not_called()
+
+    def test_force_flag_runs_despite_existing_md(self, tmp_path):
+        """--force bypasses the idempotency guard even when today's MD exists."""
+        from datetime import date
+        today_md = tmp_path / f"briefing_{date.today().strftime('%Y-%m-%d')}.md"
+        today_md.write_text("existing briefing")
+
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="新しいブリーフィング"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", True),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            result = briefing_handler(force=True)
+
+        assert result["statusCode"] == 200
+        assert result["body"] != "skipped (already generated today)"
+
+    def test_skip_guard_disabled_by_constant(self, tmp_path):
+        """BRIEFING_SKIP_IF_EXISTS=False lets the pipeline run even if MD exists."""
+        from datetime import date
+        today_md = tmp_path / f"briefing_{date.today().strftime('%Y-%m-%d')}.md"
+        today_md.write_text("existing briefing")
+
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="新しいブリーフィング"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", False),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        assert "skipped" not in result["body"]
 
     def test_handler_forwards_rotation_enabled_to_save_briefing_md(self, tmp_path):
         """Verifies: BRIEFING_MD_ROTATION_ENABLED from constants is forwarded to save_briefing_md.

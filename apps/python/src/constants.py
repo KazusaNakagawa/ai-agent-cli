@@ -25,6 +25,10 @@ BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
 BRIEFING_MD_RETENTION_DAYS = 7
 # When False, _prune_old is skipped and all dated files are kept indefinitely
 BRIEFING_MD_ROTATION_ENABLED = False
+# When True, skip the pipeline if today's briefing MD already exists (prevents
+# duplicate runs from LaunchAgent wake-from-sleep + manual invocation overlap).
+# Set to False or pass --force on the CLI to re-run on the same day.
+BRIEFING_SKIP_IF_EXISTS: bool = True
 
 # Notion
 NOTION_CHAR_LIMIT = 2000
