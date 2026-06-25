@@ -40,6 +40,18 @@ def _no_api_config_mock():
 # Briefing handler
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=False)
+def disable_skip_guard():
+    """Disable BRIEFING_SKIP_IF_EXISTS for tests that don't exercise the guard.
+
+    Apply to any test that calls briefing_handler() without mocking
+    BRIEFING_OUTPUT_DIR, to prevent false-skips when today's MD already exists
+    on the developer's machine.
+    """
+    with patch("src.handler.BRIEFING_SKIP_IF_EXISTS", False):
+        yield
+
+
 class TestBriefingHandler:
     def test_success_returns_200(self, tmp_path):
         with (
@@ -111,6 +123,7 @@ class TestBriefingHandler:
         assert len(md_files) == 1
         assert md_files[0].read_text(encoding="utf-8") == "ブリーフィング本文"
 
+    @pytest.mark.usefixtures("disable_skip_guard")
     def test_md_failure_does_not_block_pipeline(self, tmp_path):
         """Verifies: if save_briefing_md raises, the handler still returns
         200 with md_written=False.
@@ -124,7 +137,6 @@ class TestBriefingHandler:
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
             patch("src.handler.save_briefing_md", side_effect=OSError("disk full")),
-            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", False),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = "tok"
@@ -138,6 +150,7 @@ class TestBriefingHandler:
         mock_discord.assert_called_once()
         mock_notion.assert_called_once()
 
+    @pytest.mark.usefixtures("disable_skip_guard")
     def test_unexpected_md_error_propagates(self, tmp_path):
         """Verifies: a non-OSError raised by save_briefing_md (e.g. a
         programming bug surfacing as ValueError) is NOT swallowed and
@@ -153,7 +166,6 @@ class TestBriefingHandler:
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
             patch("src.handler.save_briefing_md", side_effect=ValueError("bug")),
-            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", False),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = "tok"
@@ -183,12 +195,12 @@ class TestBriefingHandler:
         expected_text = briefing_text + "\n\n---\nModel: claude-haiku-4-5-20251001"
         assert mock_notion.call_args[0][0] == expected_text
 
+    @pytest.mark.usefixtures("disable_skip_guard")
     def test_briefing_failure_propagates(self):
         with (
             patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
             patch("src.handler.generate_briefing", side_effect=RuntimeError("claude error")),
             patch("src.handler.send_to_discord"),
-            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", False),
         ):
             with pytest.raises(RuntimeError, match="claude error"):
                 briefing_handler()
