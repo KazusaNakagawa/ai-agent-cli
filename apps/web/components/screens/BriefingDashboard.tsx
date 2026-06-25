@@ -7,6 +7,7 @@ import { BriefingRow } from "@/components/briefing/BriefingRow"
 import { BriefingSearch } from "@/components/briefing/BriefingSearch"
 import { ALL_TAB, BriefingTabs } from "@/components/briefing/BriefingTabs"
 import { ResizeHandle } from "@/components/ResizeHandle"
+import { RecordsTable } from "@/components/ui/records-table"
 import { BriefingFile, BriefingListResponse } from "@/lib/briefing-types"
 import { useBriefingData } from "@/lib/hooks/useBriefingData"
 import { useResizable } from "@/lib/hooks/useResizable"
@@ -131,27 +132,24 @@ export function BriefingDashboard() {
         <ArchiveButton />
         <BriefingSearch onSearch={setQuery} />
         <BriefingTabs files={files} selected={tab} onSelect={setTab} />
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2">Type</th>
-              <th className="px-3 py-2">Date</th>
-              <th className="w-8 px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {visibleFiles.map((file) => (
-              <BriefingRow
-                key={file.name}
-                file={file}
-                selected={selected?.name === file.name}
-                onOpen={fetchContent}
-                onHover={prefetch}
-              />
-            ))}
-          </tbody>
-        </table>
+        <RecordsTable
+          columns={[
+            { label: "Name" },
+            { label: "Type" },
+            { label: "Date" },
+            { label: "", className: "w-8 px-3 py-2" },
+          ]}
+        >
+          {visibleFiles.map((file) => (
+            <BriefingRow
+              key={file.name}
+              file={file}
+              selected={selected?.name === file.name}
+              onOpen={fetchContent}
+              onHover={prefetch}
+            />
+          ))}
+        </RecordsTable>
         {searching && (
           <p
             data-testid="briefing-search-loading"

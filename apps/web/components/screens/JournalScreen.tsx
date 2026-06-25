@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
+import { RecordsTable } from "@/components/ui/records-table"
 import { cn } from "@/lib/utils"
 
 type JournalDate = { date: string; size: number }
@@ -203,35 +204,49 @@ export function JournalScreen() {
     }
   }, [question, brainstorming, appendToLastAnswer, loadDates, loadEntry])
 
+  const sortedDates = [...dates].sort((a, b) => b.date.localeCompare(a.date))
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Top: date picker */}
-      <div className="flex items-center gap-3">
-        <label htmlFor="journal-date" className="text-sm font-semibold text-muted-foreground">
-          Entries
-        </label>
+      {/* Entries table */}
+      <section className="rounded-lg border bg-card">
+        <div className="px-4 pt-4 pb-2">
+          <h3 className="text-sm font-semibold">Entries</h3>
+        </div>
         {datesError ? (
-          <span className="text-sm text-destructive">{datesError}</span>
+          <p className="px-4 pb-4 text-sm text-destructive">{datesError}</p>
         ) : dates.length === 0 ? (
-          <span className="text-sm text-muted-foreground">No entries yet.</span>
+          <p className="px-4 pb-4 text-sm text-muted-foreground">No entries yet.</p>
         ) : (
-          <select
-            id="journal-date"
-            value={selected ?? ""}
-            onChange={(e) => void loadEntry(e.target.value)}
-            className="rounded-md border bg-background px-3 py-2 text-sm"
-          >
-            <option value="" disabled>
-              Select a date…
-            </option>
-            {dates.map((d) => (
-              <option key={d.date} value={d.date}>
-                {d.date}
-              </option>
+          <RecordsTable columns={[{ label: "Date" }, { label: "Size (KB)" }]}>
+            {sortedDates.map((d) => (
+              <tr
+                key={d.date}
+                tabIndex={0}
+                aria-selected={selected === d.date}
+                onClick={() => void loadEntry(d.date)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    void loadEntry(d.date)
+                  }
+                }}
+                className={cn(
+                  "cursor-pointer border-b text-xs transition-colors last:border-0",
+                  selected === d.date
+                    ? "bg-accent font-medium text-accent-foreground"
+                    : "hover:bg-accent/50",
+                )}
+              >
+                <td className="px-3 py-2 tabular-nums">{d.date}</td>
+                <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                  {(d.size / 1024).toFixed(1)}
+                </td>
+              </tr>
             ))}
-          </select>
+          </RecordsTable>
         )}
-      </div>
+      </section>
 
       {/* Full-width: record + view + brainstorm */}
       <div className="flex flex-col gap-6">
