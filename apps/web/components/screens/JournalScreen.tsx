@@ -57,6 +57,8 @@ export function JournalScreen() {
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [entriesError, setEntriesError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const [composing, setComposing] = useState(false)
+  const composeRef = useRef<HTMLTextAreaElement>(null)
   const [content, setContent] = useState("")
   const entryReqSeq = useRef(0)
   const [entry, setEntry] = useState("")
@@ -94,6 +96,7 @@ export function JournalScreen() {
   const loadEntry = useCallback(async (entryId: string) => {
     const seq = ++entryReqSeq.current
     setSelected(entryId)
+    setComposing(false)
     // Clear immediately so the previous entry's body can't render under the
     // new header while the fetch is in flight (or if it fails).
     setContent("")
@@ -114,7 +117,24 @@ export function JournalScreen() {
     void loadDates()
   }, [loadDates])
 
-  const closePanel = () => setSelected(null)
+  const closePanel = () => {
+    setSelected(null)
+    setComposing(false)
+  }
+
+  // Open a blank compose panel and focus the textarea.
+  const startCompose = () => {
+    setSelected(null)
+    setContent("")
+    setEntry("")
+    setSaveError(null)
+    setComposing(true)
+  }
+
+  // Focus the compose textarea once the panel has opened.
+  useEffect(() => {
+    if (composing) composeRef.current?.focus()
+  }, [composing])
 
   const deleteEntry = useCallback(
     async (entryId: string) => {
@@ -234,17 +254,29 @@ export function JournalScreen() {
 
   const sortedEntries = [...entries].sort((a, b) => b.id.localeCompare(a.id))
   const selectedMeta = sortedEntries.find((e) => e.id === selected)
+  const panelOpen = selected !== null || composing
 
   return (
     <div className="flex h-full">
       {/* Left: date list */}
       <div
-        style={selected ? { width: listWidth } : undefined}
+        style={panelOpen ? { width: listWidth } : undefined}
         className={cn(
           "relative flex-shrink-0 overflow-y-auto",
-          selected ? "border-r" : "flex-1",
+          panelOpen ? "border-r" : "flex-1",
         )}
       >
+        {/* New entry — explicit create path, always available */}
+        <div className="border-b p-2">
+          <button
+            type="button"
+            onClick={startCompose}
+            className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <span className="text-base leading-none">+</span> New entry
+          </button>
+        </div>
+
         {entriesError ? (
           <p className="px-3 py-4 text-sm text-destructive">{entriesError}</p>
         ) : sortedEntries.length === 0 ? (
@@ -299,7 +331,7 @@ export function JournalScreen() {
           </table>
         )}
 
-        {selected && (
+        {panelOpen && (
           <ResizeHandle
             onPointerDown={startResize}
             ariaLabel="Resize journal list"
@@ -308,17 +340,23 @@ export function JournalScreen() {
       </div>
 
       {/* Right: side panel */}
-      {selected && (
+      {panelOpen && (
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* Panel header */}
           <div className="flex items-center justify-between border-b px-4 py-2">
             <div className="flex gap-3 text-xs text-muted-foreground">
-              <span>
-                {selectedMeta?.date ?? selected}
-                {entryTime(selected) && ` ${entryTime(selected)}`}
-              </span>
-              {selectedMeta && (
-                <span>{(selectedMeta.size / 1024).toFixed(1)} KB</span>
+              {composing ? (
+                <span className="font-medium">New entry</span>
+              ) : (
+                <>
+                  <span>
+                    {selectedMeta?.date ?? selected}
+                    {selected && entryTime(selected) && ` ${entryTime(selected)}`}
+                  </span>
+                  {selectedMeta && (
+                    <span>{(selectedMeta.size / 1024).toFixed(1)} KB</span>
+                  )}
+                </>
               )}
             </div>
             <button
@@ -333,8 +371,8 @@ export function JournalScreen() {
           {/* Panel body */}
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <div className="flex flex-col gap-6">
-              {/* Entry content */}
-              {content && (
+              {/* Entry content (read view; hidden while composing a new entry) */}
+              {selected && content && (
                 <div className={PROSE}>
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
                 </div>
@@ -344,6 +382,7 @@ export function JournalScreen() {
               <section className="flex flex-col gap-2 rounded-lg border bg-card p-4">
                 <h3 className="text-sm font-semibold">Record today</h3>
                 <textarea
+                  ref={composeRef}
                   value={entry}
                   onChange={(e) => setEntry(e.target.value)}
                   placeholder="What happened today? What are you thinking about?"
@@ -363,7 +402,8 @@ export function JournalScreen() {
                 </div>
               </section>
 
-              {/* Brainstorm */}
+              {/* Brainstorm (hidden while composing a new blank entry) */}
+              {selected && (
               <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
                 <div>
                   <h3 className="text-sm font-semibold">Brainstorm with Claude</h3>
@@ -419,6 +459,7 @@ export function JournalScreen() {
                   </div>
                 </div>
               </section>
+              )}
             </div>
           </div>
         </div>
