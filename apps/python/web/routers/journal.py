@@ -75,3 +75,18 @@ def get_journal(entry_id: str) -> JournalEntryResponse:
     return JournalEntryResponse(
         id=entry_id, date=journal_store.date_of(entry_id), content=content
     )
+
+
+@router.delete("/journal/{entry_id}", status_code=204)
+def delete_journal(entry_id: str, purge: bool = False) -> None:
+    """Soft-delete an entry (move to trash), or permanently delete with ?purge=true."""
+    ok = journal_store.purge(entry_id) if purge else journal_store.soft_delete(entry_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Journal not found: {entry_id}")
+
+
+@router.post("/journal/{entry_id}/restore", status_code=204)
+def restore_journal(entry_id: str) -> None:
+    """Restore a soft-deleted entry back into the active list."""
+    if not journal_store.restore(entry_id):
+        raise HTTPException(status_code=404, detail=f"Trashed journal not found: {entry_id}")

@@ -117,3 +117,58 @@ def read_entry(entry_id: str) -> str | None:
     if not path.exists() or not path.is_file():
         return None
     return path.read_text(encoding="utf-8")
+
+
+def _deleted_dir() -> Path:
+    """Return the trash directory for soft-deleted entries."""
+    return JOURNAL_DIR / "deleted"
+
+
+def soft_delete(entry_id: str) -> bool:
+    """Move an active entry into the trash directory.
+
+    Returns True if the entry was found and moved, False if it does not exist.
+    Because ``list_files`` only globs the top-level directory, a moved entry is
+    automatically excluded from listings without any per-query filtering.
+    """
+    if not _ENTRY_RE.match(entry_id):
+        return False
+    src = JOURNAL_DIR / f"{entry_id}.md"
+    if not src.exists() or not src.is_file():
+        return False
+    trash = _deleted_dir()
+    trash.mkdir(parents=True, exist_ok=True)
+    src.replace(trash / f"{entry_id}.md")
+    return True
+
+
+def restore(entry_id: str) -> bool:
+    """Move a soft-deleted entry back into the active directory.
+
+    Returns True if a trashed entry was found and restored, False otherwise.
+    Restoring over an existing active entry is refused (returns False).
+    """
+    if not _ENTRY_RE.match(entry_id):
+        return False
+    src = _deleted_dir() / f"{entry_id}.md"
+    if not src.exists() or not src.is_file():
+        return False
+    dst = JOURNAL_DIR / f"{entry_id}.md"
+    if dst.exists():
+        return False
+    src.replace(dst)
+    return True
+
+
+def purge(entry_id: str) -> bool:
+    """Permanently delete a soft-deleted entry from the trash directory.
+
+    Returns True if a trashed entry was found and removed, False otherwise.
+    """
+    if not _ENTRY_RE.match(entry_id):
+        return False
+    path = _deleted_dir() / f"{entry_id}.md"
+    if not path.exists() or not path.is_file():
+        return False
+    path.unlink()
+    return True
