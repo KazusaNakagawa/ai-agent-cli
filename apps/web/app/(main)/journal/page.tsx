@@ -4,7 +4,7 @@ import { JournalScreen } from "@/components/screens/JournalScreen"
 
 export default function JournalPage() {
   return (
-    <div className="space-y-4">
+    <div className="flex h-full flex-col gap-4">
       <header>
         <h2 className="text-xl font-semibold">Journal</h2>
         <p className="text-sm text-muted-foreground">
@@ -12,7 +12,9 @@ export default function JournalPage() {
           per day, and you can brainstorm over them with Claude.
         </p>
       </header>
-      <JournalScreen />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <JournalScreen />
+      </div>
     </div>
   )
 }
