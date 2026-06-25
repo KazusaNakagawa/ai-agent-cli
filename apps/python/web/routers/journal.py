@@ -6,6 +6,8 @@
 
 Notes are stored under ``output/journal/`` (gitignored), one file per entry.
 """
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,18 +44,27 @@ class AppendEntryResponse(BaseModel):
     date: str
 
 
-@router.get("/journal", response_model=JournalListResponse)
-def list_journal() -> JournalListResponse:
-    """Return available journal entries, newest first."""
-    entries = [
+def _to_entries(files: list[tuple[str, Path]]) -> list[JournalEntry]:
+    return [
         JournalEntry(
             id=entry_id,
             date=journal_store.date_of(entry_id),
             size=path.stat().st_size,
         )
-        for entry_id, path in journal_store.list_files()
+        for entry_id, path in files
     ]
-    return JournalListResponse(entries=entries)
+
+
+@router.get("/journal", response_model=JournalListResponse)
+def list_journal() -> JournalListResponse:
+    """Return available journal entries, newest first."""
+    return JournalListResponse(entries=_to_entries(journal_store.list_files()))
+
+
+@router.get("/journal/trash", response_model=JournalListResponse)
+def list_trash() -> JournalListResponse:
+    """Return soft-deleted journal entries, newest first."""
+    return JournalListResponse(entries=_to_entries(journal_store.list_trashed()))
 
 
 @router.post("/journal", response_model=AppendEntryResponse)

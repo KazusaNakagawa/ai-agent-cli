@@ -56,6 +56,8 @@ async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string
 export function JournalScreen() {
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [entriesError, setEntriesError] = useState<string | null>(null)
+  const [trash, setTrash] = useState<JournalEntry[]>([])
+  const [showTrash, setShowTrash] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const composeRef = useRef<HTMLTextAreaElement>(null)
@@ -136,6 +138,20 @@ export function JournalScreen() {
     if (composing) composeRef.current?.focus()
   }, [composing])
 
+  const loadTrash = useCallback(async () => {
+    try {
+      const res = await fetch("/api/journal/trash", { cache: "no-store" })
+      if (!res.ok) {
+        setEntriesError(`Failed to load trash (HTTP ${res.status})`)
+        return
+      }
+      const data = (await res.json()) as { entries: JournalEntry[] }
+      setTrash(data.entries)
+    } catch (e) {
+      setEntriesError(`Failed to load trash: ${String(e)}`)
+    }
+  }, [])
+
   const deleteEntry = useCallback(
     async (entryId: string) => {
       if (!window.confirm("Move this entry to trash?")) return
@@ -154,6 +170,48 @@ export function JournalScreen() {
     },
     [loadDates],
   )
+
+  const restoreEntry = useCallback(
+    async (entryId: string) => {
+      try {
+        const res = await fetch(`/api/journal/${entryId}/restore`, { method: "POST" })
+        if (!res.ok) {
+          setEntriesError(`Restore failed (HTTP ${res.status})`)
+          return
+        }
+        await Promise.all([loadDates(), loadTrash()])
+      } catch (e) {
+        setEntriesError(`Restore failed: ${String(e)}`)
+      }
+    },
+    [loadDates, loadTrash],
+  )
+
+  const purgeEntry = useCallback(
+    async (entryId: string) => {
+      if (!window.confirm("Permanently delete this entry? This cannot be undone.")) return
+      try {
+        const res = await fetch(`/api/journal/${entryId}?purge=true`, { method: "DELETE" })
+        if (!res.ok) {
+          setEntriesError(`Permanent delete failed (HTTP ${res.status})`)
+          return
+        }
+        await loadTrash()
+      } catch (e) {
+        setEntriesError(`Permanent delete failed: ${String(e)}`)
+      }
+    },
+    [loadTrash],
+  )
+
+  // Toggle the trash view, loading its contents when opening.
+  const toggleTrash = () => {
+    setShowTrash((cur) => {
+      const next = !cur
+      if (next) void loadTrash()
+      return next
+    })
+  }
 
   const save = useCallback(async () => {
     const text = entry.trim()
@@ -266,19 +324,79 @@ export function JournalScreen() {
           panelOpen ? "border-r" : "flex-1",
         )}
       >
-        {/* New entry — explicit create path, always available */}
-        <div className="border-b p-2">
+        {/* Top bar: New entry create path + Trash toggle */}
+        <div className="flex items-center gap-2 border-b p-2">
           <button
             type="button"
             onClick={startCompose}
-            className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="flex flex-1 items-center justify-center gap-1 rounded-md border border-dashed px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <span className="text-base leading-none">+</span> New entry
           </button>
+          <button
+            type="button"
+            onClick={toggleTrash}
+            aria-pressed={showTrash}
+            className={cn(
+              "flex items-center gap-1 rounded-md border px-3 py-2 text-xs font-medium transition-colors",
+              showTrash
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+            )}
+          >
+            <TrashIcon /> Trash
+          </button>
         </div>
 
-        {entriesError ? (
+        {entriesError && (
           <p className="px-3 py-4 text-sm text-destructive">{entriesError}</p>
+        )}
+
+        {showTrash ? (
+          trash.length === 0 ? (
+            <p className="px-3 py-4 text-sm text-muted-foreground">Trash is empty.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
+                  <th className="px-3 py-2 text-left">Deleted</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...trash]
+                  .sort((a, b) => b.id.localeCompare(a.id))
+                  .map((e) => (
+                    <tr key={e.id} className="border-b last:border-0">
+                      <td className="px-3 py-2 text-xs tabular-nums">
+                        {e.date}
+                        {entryTime(e.id) && (
+                          <span className="ml-2 text-muted-foreground">{entryTime(e.id)}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void restoreEntry(e.id)}
+                            className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void purgeEntry(e.id)}
+                            className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          )
         ) : sortedEntries.length === 0 ? (
           <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
         ) : (
