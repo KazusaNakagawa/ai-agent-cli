@@ -3,6 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
+import { CloseIcon } from "@/components/briefing/icons"
+import { ResizeHandle } from "@/components/ResizeHandle"
+import { useResizable } from "@/lib/hooks/useResizable"
 import { cn } from "@/lib/utils"
 
 type JournalDate = { date: string; size: number }
@@ -11,6 +14,9 @@ type Turn = { question: string; answer: string }
 const PROSE =
   "prose prose-sm max-w-none dark:prose-invert prose-a:text-blue-600 " +
   "hover:prose-a:underline dark:prose-a:text-blue-400"
+
+const HEADER_BTN =
+  "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
 
 /** Join the `data:` lines of one raw SSE event block into text. */
 function parseSseEvent(raw: string): string {
@@ -37,7 +43,6 @@ async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string
       if (data) yield data
     }
   }
-  // Flush a trailing event that wasn't terminated by a final "\n\n".
   const tail = parseSseEvent(buffer)
   if (tail) yield tail
 }
@@ -46,14 +51,12 @@ export function JournalScreen() {
   const [dates, setDates] = useState<JournalDate[]>([])
   const [datesError, setDatesError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
-  // Mirror of `selected` so async callbacks (brainstorm streaming) read the
-  // live selection instead of the value captured when they started.
+  // Mirror of `selected` so async callbacks read the live selection.
   const selectedRef = useRef<string | null>(null)
   useEffect(() => {
     selectedRef.current = selected
   }, [selected])
   const [content, setContent] = useState("")
-  // Monotonic id so a slow earlier loadEntry can't overwrite a newer selection.
   const entryReqSeq = useRef(0)
   const [entry, setEntry] = useState("")
   const [saving, setSaving] = useState(false)
@@ -63,6 +66,13 @@ export function JournalScreen() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [brainstorming, setBrainstorming] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
+
+  const { width: listWidth, startResize } = useResizable({
+    storageKey: "ai-agent:journal-list-width:v1",
+    defaultWidth: 288,
+    minWidth: 200,
+    maxWidth: 480,
+  })
 
   const loadDates = useCallback(async () => {
     try {
@@ -84,7 +94,6 @@ export function JournalScreen() {
     const seq = ++entryReqSeq.current
     setSelected(date)
     const res = await fetch(`/api/journal/${date}`, { cache: "no-store" })
-    // Ignore a stale response that lost the race to a newer selection.
     if (seq !== entryReqSeq.current) return
     if (!res.ok) {
       setContent("")
@@ -98,6 +107,8 @@ export function JournalScreen() {
   useEffect(() => {
     void loadDates()
   }, [loadDates])
+
+  const closePanel = () => setSelected(null)
 
   const save = useCallback(async () => {
     const text = entry.trim()
@@ -126,7 +137,6 @@ export function JournalScreen() {
     }
   }, [entry, saving, loadDates, loadEntry])
 
-  // Append text to the answer of the most recent (in-flight) turn.
   const appendToLastAnswer = useCallback((chunk: string) => {
     setTurns((prev) => {
       if (prev.length === 0) return prev
@@ -143,8 +153,6 @@ export function JournalScreen() {
     setChatError(null)
     setTurns((prev) => [...prev, { question: q, answer: "" }])
     setQuestion("")
-    // Remove the pending placeholder turn so a failed/empty stream doesn't
-    // leave a permanent "Thinking…" bubble in the transcript.
     const dropPendingTurn = () => setTurns((prev) => prev.slice(0, -1))
     try {
       const post = await fetch("/api/journal/chat", {
@@ -179,22 +187,18 @@ export function JournalScreen() {
         dropPendingTurn()
         return
       }
-      // Auto-save the completed Q&A turn to today's journal file.
-      const content = `### Brainstorm\n\n**Q:** ${q}\n\n${answer}`
-      const res = await fetch("/api/journal", {
+      const saveRes = await fetch("/api/journal", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content: `### Brainstorm\n\n**Q:** ${q}\n\n${answer}` }),
       })
-      if (!res.ok) {
-        const body = await res.text()
-        setChatError(`Auto-save failed (HTTP ${res.status}): ${body}`)
+      if (!saveRes.ok) {
+        const body = await saveRes.text()
+        setChatError(`Auto-save failed (HTTP ${saveRes.status}): ${body}`)
         return
       }
-      const { date } = (await res.json()) as { date: string }
+      const { date } = (await saveRes.json()) as { date: string }
       await loadDates()
-      // Use the live selection (ref) so switching dates mid-stream doesn't
-      // yank the view back to a stale selection.
       if (selectedRef.current === date) await loadEntry(date)
     } catch (e) {
       setChatError(String(e))
@@ -203,133 +207,181 @@ export function JournalScreen() {
     }
   }, [question, brainstorming, appendToLastAnswer, loadDates, loadEntry])
 
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Top: date picker */}
-      <div className="flex items-center gap-3">
-        <label htmlFor="journal-date" className="text-sm font-semibold text-muted-foreground">
-          Entries
-        </label>
-        {datesError ? (
-          <span className="text-sm text-destructive">{datesError}</span>
-        ) : dates.length === 0 ? (
-          <span className="text-sm text-muted-foreground">No entries yet.</span>
-        ) : (
-          <select
-            id="journal-date"
-            value={selected ?? ""}
-            onChange={(e) => void loadEntry(e.target.value)}
-            className="rounded-md border bg-background px-3 py-2 text-sm"
-          >
-            <option value="" disabled>
-              Select a date…
-            </option>
-            {dates.map((d) => (
-              <option key={d.date} value={d.date}>
-                {d.date}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+  const sortedDates = [...dates].sort((a, b) => b.date.localeCompare(a.date))
+  const selectedMeta = sortedDates.find((d) => d.date === selected)
 
-      {/* Full-width: record + view + brainstorm */}
-      <div className="flex flex-col gap-6">
-        <section className="flex flex-col gap-2 rounded-lg border bg-card p-4">
-          <h3 className="text-sm font-semibold">Record today</h3>
-          <textarea
-            value={entry}
-            onChange={(e) => setEntry(e.target.value)}
-            placeholder="What happened today? What are you thinking about?"
-            rows={5}
-            className="w-full resize-y rounded-md border bg-background p-3 text-sm"
-          />
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={saving || entry.trim() === ""}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save entry"}
-            </button>
-            {saveError && <span className="text-sm text-destructive">{saveError}</span>}
-          </div>
-        </section>
+  return (
+    <div className="flex h-full">
+      {/* Left: date list */}
+      <div
+        style={selected ? { width: listWidth } : undefined}
+        className={cn(
+          "relative flex-shrink-0 overflow-y-auto",
+          selected ? "border-r" : "flex-1",
+        )}
+      >
+        {datesError ? (
+          <p className="px-3 py-4 text-sm text-destructive">{datesError}</p>
+        ) : sortedDates.length === 0 ? (
+          <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
+                <th className="px-3 py-2">Date</th>
+                <th className="px-3 py-2">Size (KB)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedDates.map((d) => (
+                <tr
+                  key={d.date}
+                  tabIndex={0}
+                  onClick={() => void loadEntry(d.date)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault()
+                      void loadEntry(d.date)
+                    }
+                  }}
+                  className={cn(
+                    "cursor-pointer border-b text-xs transition-colors last:border-0",
+                    selected === d.date
+                      ? "bg-accent font-medium text-accent-foreground"
+                      : "hover:bg-accent/50",
+                  )}
+                >
+                  <td className="px-3 py-2 tabular-nums">{d.date}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                    {(d.size / 1024).toFixed(1)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
         {selected && (
-          <section className="flex flex-col gap-2 rounded-lg border bg-card p-4">
-            <h3 className="text-sm font-semibold">{selected}</h3>
-            <div className={PROSE}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-            </div>
-          </section>
+          <ResizeHandle
+            onPointerDown={startResize}
+            ariaLabel="Resize journal list"
+          />
         )}
+      </div>
 
-        <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-          <div>
-            <h3 className="text-sm font-semibold">Brainstorm with Claude</h3>
-            <p className="text-xs text-muted-foreground">
-              Ask anything — Claude uses your recent journal entries as context.
-              Answers are saved to today&apos;s journal automatically.
-            </p>
+      {/* Right: side panel */}
+      {selected && (
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Panel header */}
+          <div className="flex items-center justify-between border-b px-4 py-2">
+            <div className="flex gap-3 text-xs text-muted-foreground">
+              <span>{selected}</span>
+              {selectedMeta && (
+                <span>{(selectedMeta.size / 1024).toFixed(1)} KB</span>
+              )}
+            </div>
+            <button
+              onClick={closePanel}
+              aria-label="Close panel"
+              className={HEADER_BTN}
+            >
+              <CloseIcon />
+            </button>
           </div>
 
-          {/* Conversation transcript (oldest first, like a chat thread). */}
-          {turns.length > 0 && (
-            <div className="flex flex-col gap-4">
-              {turns.map((turn, i) => (
-                <div key={i} className="flex flex-col gap-2">
-                  <div className="self-end rounded-2xl rounded-br-sm bg-primary px-4 py-2 text-sm text-primary-foreground">
-                    {turn.question}
+          {/* Panel body */}
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div className="flex flex-col gap-6">
+              {/* Entry content */}
+              {content && (
+                <div className={PROSE}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                </div>
+              )}
+
+              {/* Record today */}
+              <section className="flex flex-col gap-2 rounded-lg border bg-card p-4">
+                <h3 className="text-sm font-semibold">Record today</h3>
+                <textarea
+                  value={entry}
+                  onChange={(e) => setEntry(e.target.value)}
+                  placeholder="What happened today? What are you thinking about?"
+                  rows={5}
+                  className="w-full resize-y rounded-md border bg-background p-3 text-sm"
+                />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void save()}
+                    disabled={saving || entry.trim() === ""}
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                  >
+                    {saving ? "Saving…" : "Save entry"}
+                  </button>
+                  {saveError && <span className="text-sm text-destructive">{saveError}</span>}
+                </div>
+              </section>
+
+              {/* Brainstorm */}
+              <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Brainstorm with Claude</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Ask anything — Claude uses your recent journal entries as context.
+                    Answers are saved to today&apos;s journal automatically.
+                  </p>
+                </div>
+
+                {turns.length > 0 && (
+                  <div className="flex flex-col gap-4">
+                    {turns.map((turn, i) => (
+                      <div key={i} className="flex flex-col gap-2">
+                        <div className="self-end rounded-2xl rounded-br-sm bg-primary px-4 py-2 text-sm text-primary-foreground">
+                          {turn.question}
+                        </div>
+                        <div className={cn(PROSE, "rounded-2xl rounded-bl-sm border bg-background px-4 py-2")}>
+                          {turn.answer ? (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Thinking…</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className={cn(PROSE, "rounded-2xl rounded-bl-sm border bg-background px-4 py-2")}>
-                    {turn.answer ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">Thinking…</span>
-                    )}
+                )}
+
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault()
+                        void brainstorm()
+                      }
+                    }}
+                    placeholder="e.g. What should I focus on next based on this week?"
+                    rows={3}
+                    className="w-full resize-y rounded-md border bg-background p-3 text-sm"
+                  />
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void brainstorm()}
+                      disabled={brainstorming || question.trim() === ""}
+                      className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                    >
+                      {brainstorming ? "Thinking…" : "Brainstorm"}
+                    </button>
+                    {chatError && <span className="text-sm text-destructive">{chatError}</span>}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Composer pinned below the transcript, so follow-ups read top-down. */}
-          <div className="flex flex-col gap-2">
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                // Enter sends; Shift+Enter inserts a newline. Ignore Enter
-                // while an IME is composing (Japanese/CJK candidate confirm).
-                if (
-                  e.key === "Enter" &&
-                  !e.shiftKey &&
-                  !e.nativeEvent.isComposing
-                ) {
-                  e.preventDefault()
-                  void brainstorm()
-                }
-              }}
-              placeholder="e.g. What should I focus on next based on this week?"
-              rows={3}
-              className="w-full resize-y rounded-md border bg-background p-3 text-sm"
-            />
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => void brainstorm()}
-                disabled={brainstorming || question.trim() === ""}
-                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-              >
-                {brainstorming ? "Thinking…" : "Brainstorm"}
-              </button>
-              {chatError && <span className="text-sm text-destructive">{chatError}</span>}
+              </section>
             </div>
           </div>
-        </section>
-      </div>
+        </div>
+      )}
     </div>
   )
 }
