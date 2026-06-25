@@ -207,3 +207,16 @@ async def test_purge_permanently_deletes_from_trash(authed_client, journal_dir):
 async def test_delete_requires_auth(async_client, journal_dir):
     resp = await async_client.delete("/api/journal/2026-06-24_120000")
     assert resp.status_code == 401
+
+
+async def test_purge_param_requires_literal_true(authed_client, journal_dir):
+    """A non-'true' purge value soft-deletes (no accidental permanent delete)."""
+    post = await authed_client.post(
+        "/api/journal", json={"content": "keep recoverable", "date": "2026-06-24"}
+    )
+    entry_id = post.json()["id"]
+
+    resp = await authed_client.delete(f"/api/journal/{entry_id}?purge=1")
+    assert resp.status_code == 204
+    # Soft-deleted, not purged: still recoverable in trash.
+    assert (journal_dir / "deleted" / f"{entry_id}.md").exists()

@@ -287,7 +287,7 @@ export function JournalScreen() {
                         type="button"
                         onClick={() => void deleteEntry(e.id)}
                         aria-label={`Delete entry ${e.id}`}
-                        className="absolute right-2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                        className="absolute right-2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive focus:bg-accent focus:text-destructive focus:opacity-100 group-hover:opacity-100"
                       >
                         <TrashIcon />
                       </button>

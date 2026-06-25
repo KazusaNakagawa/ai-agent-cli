@@ -78,9 +78,16 @@ def get_journal(entry_id: str) -> JournalEntryResponse:
 
 
 @router.delete("/journal/{entry_id}", status_code=204)
-def delete_journal(entry_id: str, purge: bool = False) -> None:
-    """Soft-delete an entry (move to trash), or permanently delete with ?purge=true."""
-    ok = journal_store.purge(entry_id) if purge else journal_store.soft_delete(entry_id)
+def delete_journal(entry_id: str, purge: str | None = None) -> None:
+    """Soft-delete an entry (move to trash), or permanently delete it.
+
+    Only a literal ``?purge=true`` performs a permanent delete; any other value
+    (``?purge=1``, ``?purge=yes``, ``?purge=false``, or omission) soft-deletes.
+    The strict match guards against accidental permanent deletes from FastAPI's
+    lenient bool coercion.
+    """
+    should_purge = purge == "true"
+    ok = journal_store.purge(entry_id) if should_purge else journal_store.soft_delete(entry_id)
     if not ok:
         raise HTTPException(status_code=404, detail=f"Journal not found: {entry_id}")
 
