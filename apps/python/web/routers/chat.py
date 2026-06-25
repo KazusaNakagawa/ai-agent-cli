@@ -315,7 +315,7 @@ def _gather_journal_context(days: int, max_chars: int | None = None) -> str:
         max_chars = JOURNAL_CONTEXT_MAX_CHARS
     # Walk entries newest-first, keeping every entry that belongs to one of the
     # newest ``days`` distinct dates so multiple entries per day are preserved.
-    seen_dates: list[str] = []
+    seen_dates: set[str] = set()
     sections: list[str] = []
     total = 0
     for entry_id, _ in journal_store.list_files():
@@ -323,7 +323,7 @@ def _gather_journal_context(days: int, max_chars: int | None = None) -> str:
         if date not in seen_dates:
             if len(seen_dates) >= days:
                 break
-            seen_dates.append(date)
+            seen_dates.add(date)
         content = journal_store.read_entry(entry_id)
         if not content:
             continue
