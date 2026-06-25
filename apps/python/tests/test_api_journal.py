@@ -150,3 +150,73 @@ async def test_append_nonexistent_calendar_date_rejected(authed_client, journal_
         "/api/journal", json={"content": "x", "date": "2026-99-99"}
     )
     assert response.status_code == 400
+
+
+async def test_soft_delete_moves_to_trash_and_excludes_from_list(authed_client, journal_dir):
+    post = await authed_client.post(
+        "/api/journal", json={"content": "to delete", "date": "2026-06-24"}
+    )
+    entry_id = post.json()["id"]
+
+    resp = await authed_client.delete(f"/api/journal/{entry_id}")
+    assert resp.status_code == 204
+    # File moved under deleted/, gone from the active dir.
+    assert not (journal_dir / f"{entry_id}.md").exists()
+    assert (journal_dir / "deleted" / f"{entry_id}.md").exists()
+    # No longer listed.
+    listed = await authed_client.get("/api/journal")
+    assert all(e["id"] != entry_id for e in listed.json()["entries"])
+
+
+async def test_soft_delete_unknown_returns_404(authed_client, journal_dir):
+    resp = await authed_client.delete("/api/journal/2099-01-01_120000")
+    assert resp.status_code == 404
+
+
+async def test_restore_returns_entry_to_active_list(authed_client, journal_dir):
+    post = await authed_client.post(
+        "/api/journal", json={"content": "restore me", "date": "2026-06-24"}
+    )
+    entry_id = post.json()["id"]
+    await authed_client.delete(f"/api/journal/{entry_id}")
+
+    resp = await authed_client.post(f"/api/journal/{entry_id}/restore")
+    assert resp.status_code == 204
+    assert (journal_dir / f"{entry_id}.md").exists()
+    listed = await authed_client.get("/api/journal")
+    assert any(e["id"] == entry_id for e in listed.json()["entries"])
+
+
+async def test_restore_unknown_returns_404(authed_client, journal_dir):
+    resp = await authed_client.post("/api/journal/2099-01-01_120000/restore")
+    assert resp.status_code == 404
+
+
+async def test_purge_permanently_deletes_from_trash(authed_client, journal_dir):
+    post = await authed_client.post(
+        "/api/journal", json={"content": "purge me", "date": "2026-06-24"}
+    )
+    entry_id = post.json()["id"]
+    await authed_client.delete(f"/api/journal/{entry_id}")
+
+    resp = await authed_client.delete(f"/api/journal/{entry_id}?purge=true")
+    assert resp.status_code == 204
+    assert not (journal_dir / "deleted" / f"{entry_id}.md").exists()
+
+
+async def test_delete_requires_auth(async_client, journal_dir):
+    resp = await async_client.delete("/api/journal/2026-06-24_120000")
+    assert resp.status_code == 401
+
+
+async def test_purge_param_requires_literal_true(authed_client, journal_dir):
+    """A non-'true' purge value soft-deletes (no accidental permanent delete)."""
+    post = await authed_client.post(
+        "/api/journal", json={"content": "keep recoverable", "date": "2026-06-24"}
+    )
+    entry_id = post.json()["id"]
+
+    resp = await authed_client.delete(f"/api/journal/{entry_id}?purge=1")
+    assert resp.status_code == 204
+    # Soft-deleted, not purged: still recoverable in trash.
+    assert (journal_dir / "deleted" / f"{entry_id}.md").exists()

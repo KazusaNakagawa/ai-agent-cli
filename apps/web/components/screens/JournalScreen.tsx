@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
-import { CloseIcon } from "@/components/briefing/icons"
+import { CloseIcon, TrashIcon } from "@/components/briefing/icons"
 import { ResizeHandle } from "@/components/ResizeHandle"
 import { useResizable } from "@/lib/hooks/useResizable"
 import { cn } from "@/lib/utils"
@@ -115,6 +115,25 @@ export function JournalScreen() {
   }, [loadDates])
 
   const closePanel = () => setSelected(null)
+
+  const deleteEntry = useCallback(
+    async (entryId: string) => {
+      if (!window.confirm("Move this entry to trash?")) return
+      try {
+        const res = await fetch(`/api/journal/${entryId}`, { method: "DELETE" })
+        if (!res.ok) {
+          setEntriesError(`Delete failed (HTTP ${res.status})`)
+          return
+        }
+        // Collapse the panel if the open entry was the one removed.
+        setSelected((cur) => (cur === entryId ? null : cur))
+        await loadDates()
+      } catch (e) {
+        setEntriesError(`Delete failed: ${String(e)}`)
+      }
+    },
+    [loadDates],
+  )
 
   const save = useCallback(async () => {
     const text = entry.trim()
@@ -242,27 +261,37 @@ export function JournalScreen() {
               {sortedEntries.map((e) => (
                 <tr key={e.id} className="border-b last:border-0">
                   <td colSpan={2} className="p-0">
-                    <button
-                      type="button"
-                      aria-pressed={selected === e.id}
-                      onClick={() => void loadEntry(e.id)}
-                      className={cn(
-                        "flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors",
-                        selected === e.id
-                          ? "bg-accent font-medium text-accent-foreground"
-                          : "hover:bg-accent/50",
-                      )}
-                    >
-                      <span className="tabular-nums">
-                        {e.date}
-                        {entryTime(e.id) && (
-                          <span className="ml-2 text-muted-foreground">{entryTime(e.id)}</span>
+                    <div className="group relative flex items-center">
+                      <button
+                        type="button"
+                        aria-pressed={selected === e.id}
+                        onClick={() => void loadEntry(e.id)}
+                        className={cn(
+                          "flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors",
+                          selected === e.id
+                            ? "bg-accent font-medium text-accent-foreground"
+                            : "hover:bg-accent/50",
                         )}
-                      </span>
-                      <span className="tabular-nums text-muted-foreground">
-                        {(e.size / 1024).toFixed(1)}
-                      </span>
-                    </button>
+                      >
+                        <span className="tabular-nums">
+                          {e.date}
+                          {entryTime(e.id) && (
+                            <span className="ml-2 text-muted-foreground">{entryTime(e.id)}</span>
+                          )}
+                        </span>
+                        <span className="pr-6 tabular-nums text-muted-foreground">
+                          {(e.size / 1024).toFixed(1)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteEntry(e.id)}
+                        aria-label={`Delete entry ${e.id}`}
+                        className="absolute right-2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive focus:bg-accent focus:text-destructive focus:opacity-100 group-hover:opacity-100"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
