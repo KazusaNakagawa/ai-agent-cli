@@ -212,3 +212,22 @@ async def test_journal_logs_usage_with_journal_label(
     assert len(captured) == 1
     assert captured[0]["label"] == "journal"
     assert captured[0]["usage"]["output_tokens"] == 11
+
+
+def test_gather_context_is_day_based(tmp_path, monkeypatch):
+    """`days` caps by distinct dates; multiple entries on a day all load."""
+    from web.routers.chat import _gather_journal_context
+
+    d = tmp_path / "journal"
+    d.mkdir()
+    # Two entries on the newest date, one each on the two older dates.
+    (d / "2026-06-24_090000.md").write_text("note A", encoding="utf-8")
+    (d / "2026-06-24_100000.md").write_text("note B", encoding="utf-8")
+    (d / "2026-06-23_090000.md").write_text("note C", encoding="utf-8")
+    (d / "2026-06-22_090000.md").write_text("note D", encoding="utf-8")
+    monkeypatch.setattr(journal_store, "JOURNAL_DIR", d)
+
+    # days=2 → newest two dates (06-24, 06-23): both 06-24 entries + the 06-23 one.
+    blob = _gather_journal_context(days=2)
+    assert "note A" in blob and "note B" in blob and "note C" in blob
+    assert "note D" not in blob

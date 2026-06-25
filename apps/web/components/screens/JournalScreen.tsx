@@ -49,7 +49,7 @@ async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string
 
 export function JournalScreen() {
   const [entries, setEntries] = useState<JournalEntry[]>([])
-  const [datesError, setDatesError] = useState<string | null>(null)
+  const [entriesError, setEntriesError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [content, setContent] = useState("")
   const entryReqSeq = useRef(0)
@@ -71,17 +71,17 @@ export function JournalScreen() {
 
   const loadDates = useCallback(async () => {
     try {
-      setDatesError(null)
+      setEntriesError(null)
       const res = await fetch("/api/journal", { cache: "no-store" })
       if (!res.ok) {
-        setDatesError(`Failed to load entries (HTTP ${res.status})`)
+        setEntriesError(`Failed to load entries (HTTP ${res.status})`)
         return
       }
       const data = (await res.json()) as { entries: JournalEntry[] }
       setEntries(data.entries)
       return data.entries
     } catch (e) {
-      setDatesError(`Failed to load entries: ${String(e)}`)
+      setEntriesError(`Failed to load entries: ${String(e)}`)
     }
   }, [])
 
@@ -215,8 +215,8 @@ export function JournalScreen() {
           selected ? "border-r" : "flex-1",
         )}
       >
-        {datesError ? (
-          <p className="px-3 py-4 text-sm text-destructive">{datesError}</p>
+        {entriesError ? (
+          <p className="px-3 py-4 text-sm text-destructive">{entriesError}</p>
         ) : sortedEntries.length === 0 ? (
           <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
         ) : (
