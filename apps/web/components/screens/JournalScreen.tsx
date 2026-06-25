@@ -8,7 +8,7 @@ import { ResizeHandle } from "@/components/ResizeHandle"
 import { useResizable } from "@/lib/hooks/useResizable"
 import { cn } from "@/lib/utils"
 
-type JournalDate = { date: string; size: number }
+type JournalEntry = { id: string; date: string; size: number }
 type Turn = { question: string; answer: string }
 
 const PROSE =
@@ -48,14 +48,9 @@ async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string
 }
 
 export function JournalScreen() {
-  const [dates, setDates] = useState<JournalDate[]>([])
+  const [entries, setEntries] = useState<JournalEntry[]>([])
   const [datesError, setDatesError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
-  // Mirror of `selected` so async callbacks read the live selection.
-  const selectedRef = useRef<string | null>(null)
-  useEffect(() => {
-    selectedRef.current = selected
-  }, [selected])
   const [content, setContent] = useState("")
   const entryReqSeq = useRef(0)
   const [entry, setEntry] = useState("")
@@ -82,18 +77,18 @@ export function JournalScreen() {
         setDatesError(`Failed to load entries (HTTP ${res.status})`)
         return
       }
-      const data = (await res.json()) as { dates: JournalDate[] }
-      setDates(data.dates)
-      return data.dates
+      const data = (await res.json()) as { entries: JournalEntry[] }
+      setEntries(data.entries)
+      return data.entries
     } catch (e) {
       setDatesError(`Failed to load entries: ${String(e)}`)
     }
   }, [])
 
-  const loadEntry = useCallback(async (date: string) => {
+  const loadEntry = useCallback(async (entryId: string) => {
     const seq = ++entryReqSeq.current
-    setSelected(date)
-    const res = await fetch(`/api/journal/${date}`, { cache: "no-store" })
+    setSelected(entryId)
+    const res = await fetch(`/api/journal/${entryId}`, { cache: "no-store" })
     if (seq !== entryReqSeq.current) return
     if (!res.ok) {
       setContent("")
@@ -126,10 +121,10 @@ export function JournalScreen() {
         setSaveError(`Save failed (HTTP ${res.status}): ${body}`)
         return
       }
-      const { date } = (await res.json()) as { date: string }
+      const { id } = (await res.json()) as { id: string }
       setEntry("")
       await loadDates()
-      await loadEntry(date)
+      await loadEntry(id)
     } catch (e) {
       setSaveError(String(e))
     } finally {
@@ -197,18 +192,18 @@ export function JournalScreen() {
         setChatError(`Auto-save failed (HTTP ${saveRes.status}): ${body}`)
         return
       }
-      const { date } = (await saveRes.json()) as { date: string }
       await loadDates()
-      if (selectedRef.current === date) await loadEntry(date)
+      // The brainstorm answer is saved as its own entry; the transcript above
+      // already shows it, so leave the current selection untouched.
     } catch (e) {
       setChatError(String(e))
     } finally {
       setBrainstorming(false)
     }
-  }, [question, brainstorming, appendToLastAnswer, loadDates, loadEntry])
+  }, [question, brainstorming, appendToLastAnswer, loadDates])
 
-  const sortedDates = [...dates].sort((a, b) => b.date.localeCompare(a.date))
-  const selectedMeta = sortedDates.find((d) => d.date === selected)
+  const sortedEntries = [...entries].sort((a, b) => b.id.localeCompare(a.id))
+  const selectedMeta = sortedEntries.find((e) => e.id === selected)
 
   return (
     <div className="flex h-full">
@@ -222,7 +217,7 @@ export function JournalScreen() {
       >
         {datesError ? (
           <p className="px-3 py-4 text-sm text-destructive">{datesError}</p>
-        ) : sortedDates.length === 0 ? (
+        ) : sortedEntries.length === 0 ? (
           <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
         ) : (
           <table className="w-full text-sm">
@@ -233,23 +228,23 @@ export function JournalScreen() {
               </tr>
             </thead>
             <tbody>
-              {sortedDates.map((d) => (
-                <tr key={d.date} className="border-b last:border-0">
+              {sortedEntries.map((e) => (
+                <tr key={e.id} className="border-b last:border-0">
                   <td colSpan={2} className="p-0">
                     <button
                       type="button"
-                      aria-pressed={selected === d.date}
-                      onClick={() => void loadEntry(d.date)}
+                      aria-pressed={selected === e.id}
+                      onClick={() => void loadEntry(e.id)}
                       className={cn(
                         "flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors",
-                        selected === d.date
+                        selected === e.id
                           ? "bg-accent font-medium text-accent-foreground"
                           : "hover:bg-accent/50",
                       )}
                     >
-                      <span className="tabular-nums">{d.date}</span>
+                      <span className="tabular-nums">{e.date}</span>
                       <span className="tabular-nums text-muted-foreground">
-                        {(d.size / 1024).toFixed(1)}
+                        {(e.size / 1024).toFixed(1)}
                       </span>
                     </button>
                   </td>
@@ -273,7 +268,7 @@ export function JournalScreen() {
           {/* Panel header */}
           <div className="flex items-center justify-between border-b px-4 py-2">
             <div className="flex gap-3 text-xs text-muted-foreground">
-              <span>{selected}</span>
+              <span>{selectedMeta?.date ?? selected}</span>
               {selectedMeta && (
                 <span>{(selectedMeta.size / 1024).toFixed(1)} KB</span>
               )}

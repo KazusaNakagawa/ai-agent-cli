@@ -1,11 +1,14 @@
-"""Journal store — append and read daily Markdown notes.
+"""Journal store — one Markdown file per entry.
 
-The journaling agent accumulates free-form daily notes (thoughts, what
-happened today) so they can later be used as context for brainstorming.
+Each journal entry is a standalone Markdown file under ``JOURNAL_DIR`` named
+``YYYY-MM-DD_HHMMSS.md`` (the file stem is the entry id). A single day can
+therefore hold many independent entries, and an entry can be removed by
+deleting its file.
 
-Storage layout: one Markdown file per day under ``JOURNAL_DIR`` named
-``YYYY-MM-DD.md``. Each appended note becomes a timestamped section so a
-single day can hold many entries while staying human-readable.
+Backward compatibility: legacy day-based files named ``YYYY-MM-DD.md`` (one
+file per day from the previous append-only model) are still listed and
+readable. Their entry id is the bare date. No one-shot migration is required —
+old files are picked up on read, new entries use the per-entry naming.
 
 ``JOURNAL_DIR`` lives under ``output/`` which is gitignored, so personal
 notes are never committed (matches the briefing output convention).
@@ -16,8 +19,9 @@ from pathlib import Path
 
 JOURNAL_DIR = Path(__file__).parents[1] / "output" / "journal"
 
-# Journal file names are exactly a date: YYYY-MM-DD.md (no path separators).
-_FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
+# Entry id: a date, optionally followed by "_<suffix>" (time and/or collision
+# counter). Legacy day files (bare "YYYY-MM-DD") match with no suffix.
+_ENTRY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:_[0-9A-Za-z-]+)?$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -26,72 +30,79 @@ def today() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
-def _path_for(date: str) -> Path:
-    """Return the file path for a date, validating the date format first."""
-    if not _DATE_RE.match(date):
-        raise ValueError(f"Invalid journal date: {date!r}")
-    return JOURNAL_DIR / f"{date}.md"
+def date_of(entry_id: str) -> str:
+    """Return the date (YYYY-MM-DD) embedded in an entry id."""
+    m = _ENTRY_RE.match(entry_id)
+    if not m:
+        raise ValueError(f"Invalid journal entry id: {entry_id!r}")
+    return m.group(1)
+
+
+def _path_for(entry_id: str) -> Path:
+    """Return the file path for an entry id, validating its format first."""
+    if not _ENTRY_RE.match(entry_id):
+        raise ValueError(f"Invalid journal entry id: {entry_id!r}")
+    return JOURNAL_DIR / f"{entry_id}.md"
 
 
 def append_entry(content: str, date: str | None = None) -> str:
-    """Append a timestamped note to the day's file, creating it if absent.
+    """Create a new entry file for the given date and return its entry id.
 
-    Returns the date (YYYY-MM-DD) the note was written to. A new file is
-    seeded with a ``# Journal {date}`` heading before the first section.
+    Each call writes a distinct file named ``{date}_{HHMMSS}.md``; if that name
+    is already taken (two entries within the same second), a ``-N`` counter is
+    appended so no entry overwrites another.
     """
     text = content.strip()
     if not text:
         raise ValueError("Journal entry content must not be empty")
 
     date = date or today()
-    path = _path_for(date)
+    if not _DATE_RE.match(date):
+        raise ValueError(f"Invalid journal date: {date!r}")
     JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    section = f"## {timestamp}\n\n{text}\n"
+    now = datetime.now()
+    base = f"{date}_{now.strftime('%H%M%S')}"
+    timestamp = now.strftime("%H:%M:%S")
+    body = f"# Journal {date}\n\n## {timestamp}\n\n{text}\n"
 
-    # Append-only writes so concurrent appends cannot read-modify-write over
-    # each other and silently drop entries. The day heading is seeded once,
-    # on first creation, via exclusive-create ("x") which no-ops if the file
-    # already exists.
-    try:
-        with open(path, "x", encoding="utf-8") as fh:
-            fh.write(f"# Journal {date}\n")
-    except FileExistsError:
-        pass
-
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(f"\n{section}")
-    return date
+    # Exclusive create ("x") guarantees a fresh file; on collision bump the
+    # counter and retry so concurrent appends within the same second don't
+    # clobber each other.
+    entry_id = base
+    n = 1
+    while True:
+        try:
+            with open(JOURNAL_DIR / f"{entry_id}.md", "x", encoding="utf-8") as fh:
+                fh.write(body)
+            return entry_id
+        except FileExistsError:
+            entry_id = f"{base}-{n}"
+            n += 1
 
 
 def list_files() -> list[tuple[str, Path]]:
-    """Return (date, path) for available journal files, newest first.
+    """Return (entry_id, path) for available entries, newest first.
 
-    Returning the globbed ``Path`` lets callers reuse it (e.g. for ``stat()``)
-    instead of rebuilding the path from the date string.
+    Entry ids start with the date and embed the time, so a reverse
+    lexicographic sort yields newest-first ordering.
     """
     if not JOURNAL_DIR.exists():
         return []
     files = [
-        (m.group(1), path)
+        (path.stem, path)
         for path in JOURNAL_DIR.glob("*.md")
-        if path.is_file() and (m := _FILE_RE.match(path.name))
+        if path.is_file() and _ENTRY_RE.match(path.stem)
     ]
     files.sort(key=lambda f: f[0], reverse=True)
     return files
 
 
-def list_dates() -> list[str]:
-    """Return available journal dates, newest first."""
-    return [date for date, _ in list_files()]
-
-
-def read_entry(date: str) -> str | None:
-    """Return the Markdown body for a date, or None if it does not exist."""
-    if not _DATE_RE.match(date):
+def read_entry(entry_id: str) -> str | None:
+    """Return the Markdown body for an entry id, or None if it does not exist."""
+    if not _ENTRY_RE.match(entry_id):
         return None
-    path = JOURNAL_DIR / f"{date}.md"
+    path = JOURNAL_DIR / f"{entry_id}.md"
     if not path.exists() or not path.is_file():
         return None
     return path.read_text(encoding="utf-8")

@@ -312,11 +312,11 @@ def _gather_journal_context(days: int, max_chars: int | None = None) -> str:
     """
     if max_chars is None:
         max_chars = JOURNAL_CONTEXT_MAX_CHARS
-    dates = journal_store.list_dates()[:days]
+    entry_ids = [entry_id for entry_id, _ in journal_store.list_files()][:days]
     sections: list[str] = []
     total = 0
-    for date in dates:
-        content = journal_store.read_entry(date)
+    for entry_id in entry_ids:
+        content = journal_store.read_entry(entry_id)
         if not content:
             continue
         section = content.strip()
