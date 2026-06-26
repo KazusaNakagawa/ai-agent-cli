@@ -92,21 +92,31 @@ def append_entry(content: str, date: str | None = None) -> str:
             n += 1
 
 
-def list_files() -> list[tuple[str, Path]]:
-    """Return (entry_id, path) for available entries, newest first.
+def _list_entry_files(directory: Path) -> list[tuple[str, Path]]:
+    """Return (entry_id, path) for entry files in a directory, newest first.
 
     Entry ids start with the date and embed the time, so a reverse
     lexicographic sort yields newest-first ordering.
     """
-    if not JOURNAL_DIR.exists():
+    if not directory.exists():
         return []
     files = [
         (path.stem, path)
-        for path in JOURNAL_DIR.glob("*.md")
+        for path in directory.glob("*.md")
         if path.is_file() and _ENTRY_RE.match(path.stem)
     ]
     files.sort(key=lambda f: f[0], reverse=True)
     return files
+
+
+def list_files() -> list[tuple[str, Path]]:
+    """Return (entry_id, path) for available entries, newest first."""
+    return _list_entry_files(JOURNAL_DIR)
+
+
+def list_trashed() -> list[tuple[str, Path]]:
+    """Return (entry_id, path) for soft-deleted entries, newest first."""
+    return _list_entry_files(_deleted_dir())
 
 
 def read_entry(entry_id: str) -> str | None:

@@ -220,3 +220,33 @@ async def test_purge_param_requires_literal_true(authed_client, journal_dir):
     assert resp.status_code == 204
     # Soft-deleted, not purged: still recoverable in trash.
     assert (journal_dir / "deleted" / f"{entry_id}.md").exists()
+
+
+async def test_trash_lists_soft_deleted_entries(authed_client, journal_dir):
+    post = await authed_client.post(
+        "/api/journal", json={"content": "trash me", "date": "2026-06-24"}
+    )
+    entry_id = post.json()["id"]
+    await authed_client.delete(f"/api/journal/{entry_id}")
+
+    resp = await authed_client.get("/api/journal/trash")
+    assert resp.status_code == 200
+    trashed = resp.json()["entries"]
+    assert any(e["id"] == entry_id for e in trashed)
+    row = next(e for e in trashed if e["id"] == entry_id)
+    assert row["date"] == "2026-06-24"
+    assert row["size"] > 0
+    # Active list does not include the trashed entry.
+    active = await authed_client.get("/api/journal")
+    assert all(e["id"] != entry_id for e in active.json()["entries"])
+
+
+async def test_trash_empty_when_nothing_deleted(authed_client, journal_dir):
+    resp = await authed_client.get("/api/journal/trash")
+    assert resp.status_code == 200
+    assert resp.json()["entries"] == []
+
+
+async def test_trash_requires_auth(async_client, journal_dir):
+    resp = await async_client.get("/api/journal/trash")
+    assert resp.status_code == 401
