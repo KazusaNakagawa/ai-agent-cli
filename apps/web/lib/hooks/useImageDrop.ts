@@ -13,40 +13,38 @@ export function useImageDrop(
   onAttachRef.current = onAttach
 
   useEffect(() => {
-    const el = ref.current
-    if (!el) return
-
-    // Block browser file-navigation at the document level.
-    // Without this, dropping outside the textarea navigates to the file in a new tab.
-    function blockDocDragOver(e: DragEvent) {
-      if (e.dataTransfer?.types.includes("Files")) e.preventDefault()
+    // Handlers live on `document`, not on the textarea, so they work even when
+    // the textarea mounts later (e.g. the Journal brainstorm box only renders
+    // once an entry is selected — element-scoped listeners would never attach).
+    // The drop is claimed only when the event target is inside `ref.current`;
+    // everywhere else we still preventDefault to stop the browser from opening
+    // the dropped file in a new tab.
+    function isFileDrag(e: DragEvent): boolean {
+      return e.dataTransfer?.types.includes("Files") ?? false
     }
-    function blockDocDrop(e: DragEvent) {
-      e.preventDefault()
-    }
-    document.addEventListener("dragover", blockDocDragOver)
-    document.addEventListener("drop", blockDocDrop)
 
-    function onDragEnter(e: DragEvent) {
-      e.preventDefault()
-      e.stopPropagation()
+    function insideTarget(e: DragEvent): boolean {
+      const el = ref.current
+      return !!el && e.target instanceof Node && el.contains(e.target)
     }
 
     function onDragOver(e: DragEvent) {
-      if (!e.dataTransfer?.types.includes("Files")) return
+      if (!isFileDrag(e)) return
+      // Always block the browser default so a near-miss drop never navigates.
       e.preventDefault()
-      e.stopPropagation()
-      setIsDragging(true)
+      setIsDragging(insideTarget(e))
     }
 
-    function onDragLeave() {
-      setIsDragging(false)
+    function onDragLeave(e: DragEvent) {
+      // relatedTarget is null when the cursor leaves the window entirely.
+      if (!e.relatedTarget) setIsDragging(false)
     }
 
     async function onDrop(e: DragEvent) {
+      if (!isFileDrag(e)) return
       e.preventDefault()
-      e.stopPropagation()
       setIsDragging(false)
+      if (!insideTarget(e)) return
       const file = e.dataTransfer?.files[0]
       if (!file || !file.type.startsWith("image/")) return
       try {
@@ -57,17 +55,13 @@ export function useImageDrop(
       }
     }
 
-    el.addEventListener("dragenter", onDragEnter)
-    el.addEventListener("dragover", onDragOver)
-    el.addEventListener("dragleave", onDragLeave)
-    el.addEventListener("drop", onDrop)
+    document.addEventListener("dragover", onDragOver)
+    document.addEventListener("dragleave", onDragLeave)
+    document.addEventListener("drop", onDrop)
     return () => {
-      document.removeEventListener("dragover", blockDocDragOver)
-      document.removeEventListener("drop", blockDocDrop)
-      el.removeEventListener("dragenter", onDragEnter)
-      el.removeEventListener("dragover", onDragOver)
-      el.removeEventListener("dragleave", onDragLeave)
-      el.removeEventListener("drop", onDrop)
+      document.removeEventListener("dragover", onDragOver)
+      document.removeEventListener("dragleave", onDragLeave)
+      document.removeEventListener("drop", onDrop)
     }
   }, [ref])
 
