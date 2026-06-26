@@ -562,3 +562,4 @@ class TestRunClaudeAuthMode:
                 run_claude("prompt", "test")
 
         assert "ANTHROPIC_API_KEY" not in captured["env"]
+

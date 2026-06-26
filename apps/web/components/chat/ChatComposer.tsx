@@ -1,8 +1,11 @@
 "use client"
-import { useRef, type KeyboardEvent } from "react"
+import { useState, useRef, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
+import { useImageDrop } from "@/lib/hooks/useImageDrop"
+import type { ImageAttachment } from "@/lib/types/image"
 
 type Props = {
   input: string
@@ -10,13 +13,9 @@ type Props = {
   busy: boolean
   supportsMic: boolean
   listening: boolean
-  // Receives the textarea's current value at toggle-on time so the mic
-  // hook can append transcripts to whatever the user already typed.
   onToggleMic: (prefix: string) => void
-  onSend: () => void
+  onSend: (imagePath?: string) => void
   onCancel: () => void
-  // Optional Up/Down/Esc history recall (Issue #117). When provided, runs
-  // after the IME + Enter guards so Enter-to-send still wins.
   onHistoryKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
 }
 
@@ -31,14 +30,26 @@ export function ChatComposer({
   onCancel,
   onHistoryKeyDown,
 }: Props) {
-  // Tracks IME composition so Enter doesn't submit while picking kanji.
   const composingRef = useRef(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null)
+  const { isDragging } = useImageDrop(textareaRef, setAttachedImage)
+
+  function handleSend() {
+    // Guard the keyboard path: ChatForm.send no-ops on empty input, so without
+    // this the Enter key would clear the attachment without ever sending it.
+    if (input.trim().length === 0) return
+    const path = attachedImage?.path
+    setAttachedImage(null)
+    onSend(path)
+  }
 
   return (
     <Card>
       <CardContent className="space-y-2 pt-6">
         <div className="flex items-end gap-2">
           <textarea
+            ref={textareaRef}
             aria-label="Chat message"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -49,19 +60,17 @@ export function ChatComposer({
               composingRef.current = false
             }}
             onKeyDown={(e) => {
-              // IME guard covers both Enter-to-send and history recall — Up/Down
-              // during kanji selection must move the suggestion cursor, not nav.
               if (composingRef.current || e.nativeEvent.isComposing) return
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
-                onSend()
+                handleSend()
                 return
               }
               onHistoryKeyDown?.(e)
             }}
             placeholder="Ask about today's briefing…"
             rows={2}
-            className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm"
+            className={`flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm${isDragging ? " ring-2 ring-primary" : ""}`}
             data-testid="chat-input"
           />
           {supportsMic && (
@@ -89,7 +98,7 @@ export function ChatComposer({
             </Button>
           ) : (
             <Button
-              onClick={onSend}
+              onClick={handleSend}
               disabled={input.trim().length === 0}
               data-testid="send-button"
             >
@@ -97,6 +106,13 @@ export function ChatComposer({
             </Button>
           )}
         </div>
+        <ImageAttachArea
+          attachedImage={attachedImage}
+          onAttach={setAttachedImage}
+          onRemove={() => setAttachedImage(null)}
+          disabled={busy}
+          isDragging={isDragging}
+        />
         {!supportsMic && (
           <p
             className="text-xs text-muted-foreground"

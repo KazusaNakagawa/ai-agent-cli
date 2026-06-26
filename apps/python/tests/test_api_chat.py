@@ -961,3 +961,54 @@ async def test_chat_notion_import_requires_bearer(async_client):
         json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
     )
     assert response.status_code == 401
+
+
+class TestChatWithImagePath:
+    async def test_post_chat_with_image_uses_stdin_pipe(
+        self, authed_client, briefing_setup, monkeypatch, tmp_path
+    ):
+        """POST /api/chat with image_path starts subprocess with stdin=PIPE and -p -."""
+        import subprocess as sp
+
+        # Point IMAGES_ROOT at a tmp dir so the test stays hermetic — no stray
+        # file is written under the real apps/python/input/images tree.
+        images_root = tmp_path / "images"
+        date_dir = images_root / "2026-06-26"
+        date_dir.mkdir(parents=True, exist_ok=True)
+        img = date_dir / "test-vision.png"
+        img.write_bytes(b"PNG_FAKE_DATA")
+        monkeypatch.setattr("web.routers.chat.IMAGES_ROOT", images_root)
+
+        captured: dict = {}
+
+        def factory(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["stdin"] = kwargs.get("stdin")
+            return FakePopen(cmd, stdout_lines=[], **kwargs)
+
+        monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+        response = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Describe this image", "image_path": str(img)},
+        )
+
+        assert response.status_code == 202
+        assert captured["stdin"] == sp.PIPE
+        cmd = captured["cmd"]
+        # Image goes through stream-json input so the CLI parses the base64
+        # envelope from stdin instead of treating it as a text prompt.
+        assert "-p" in cmd
+        assert "--input-format" in cmd
+        assert cmd[cmd.index("--input-format") + 1] == "stream-json"
+
+
+class TestChatVision:
+    async def test_post_chat_rejects_traversal_image_path(self, authed_client, briefing_setup):
+        """image_path outside IMAGES_ROOT is rejected with 400."""
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_path": "/etc/passwd"},
+        )
+        assert resp.status_code == 400
+        assert "Invalid image path" in resp.json()["detail"]

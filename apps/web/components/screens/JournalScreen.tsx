@@ -5,7 +5,10 @@ import remarkGfm from "remark-gfm"
 
 import { CloseIcon, TrashIcon } from "@/components/briefing/icons"
 import { ResizeHandle } from "@/components/ResizeHandle"
+import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
+import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { useResizable } from "@/lib/hooks/useResizable"
+import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
 
 type JournalEntry = { id: string; date: string; size: number }
@@ -61,6 +64,9 @@ export function JournalScreen() {
   const [selected, setSelected] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const composeRef = useRef<HTMLTextAreaElement>(null)
+  const brainstormRef = useRef<HTMLTextAreaElement>(null)
+  const [brainstormImage, setBrainstormImage] = useState<ImageAttachment | null>(null)
+  const { isDragging: isBrainstormDragging } = useImageDrop(brainstormRef, setBrainstormImage)
   const [content, setContent] = useState("")
   const entryReqSeq = useRef(0)
   const [entry, setEntry] = useState("")
@@ -261,7 +267,10 @@ export function JournalScreen() {
       const post = await fetch("/api/journal/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: q }),
+        body: JSON.stringify({
+          question: q,
+          ...(brainstormImage ? { image_path: brainstormImage.path } : {}),
+        }),
       })
       if (!post.ok) {
         const body = await post.text()
@@ -307,8 +316,9 @@ export function JournalScreen() {
       setChatError(String(e))
     } finally {
       setBrainstorming(false)
+      setBrainstormImage(null)
     }
-  }, [question, brainstorming, appendToLastAnswer, loadDates])
+  }, [question, brainstorming, brainstormImage, appendToLastAnswer, loadDates])
 
   const sortedEntries = [...entries].sort((a, b) => b.id.localeCompare(a.id))
   const selectedMeta = sortedEntries.find((e) => e.id === selected)
@@ -556,6 +566,7 @@ export function JournalScreen() {
 
                 <div className="flex flex-col gap-2">
                   <textarea
+                    ref={brainstormRef}
                     value={question}
                     onChange={(e) => setQuestion(e.target.value)}
                     onKeyDown={(e) => {
@@ -566,7 +577,13 @@ export function JournalScreen() {
                     }}
                     placeholder="e.g. What should I focus on next based on this week?"
                     rows={3}
-                    className="w-full resize-y rounded-md border bg-background p-3 text-sm"
+                    className={`w-full resize-y rounded-md border bg-background p-3 text-sm${isBrainstormDragging ? " ring-2 ring-primary" : ""}`}
+                  />
+                  <ImageAttachArea
+                    attachedImage={brainstormImage}
+                    onAttach={setBrainstormImage}
+                    onRemove={() => setBrainstormImage(null)}
+                    isDragging={isBrainstormDragging}
                   />
                   <div className="flex items-center gap-3">
                     <button

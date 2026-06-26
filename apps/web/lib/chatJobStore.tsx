@@ -34,7 +34,7 @@ export type ChatJobState = {
   staleSession: boolean
 }
 
-export type ChatJobStartOpts = { question: string; date: string }
+export type ChatJobStartOpts = { question: string; date: string; image_path?: string }
 
 export type ChatJobStateContextValue = ChatJobState & {
   isBackgrounded: boolean
@@ -105,7 +105,7 @@ const { Provider, useStore } = createJobStoreProvider<
     staleSession: false,
   }),
 
-  start: async ({ question, date }, { setState }) => {
+  start: async ({ question, date, image_path }, { setState }) => {
     setState(() => ({
       ...initialState,
       status: "pending",
@@ -117,7 +117,7 @@ const { Provider, useStore } = createJobStoreProvider<
         method: "POST",
         cache: "no-store",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ date, question }),
+        body: JSON.stringify({ date, question, ...(image_path ? { image_path } : {}) }),
       })
       if (post.status === 401) {
         setState(() => ({ ...initialState, sessionExpired: true }))

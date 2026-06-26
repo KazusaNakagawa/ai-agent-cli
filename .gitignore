@@ -17,7 +17,8 @@ apps/python/.venv/
 log/
 apps/python/log/
 
-# 出力
+# 入出力
+input/
 output/
 apps/python/output/
 

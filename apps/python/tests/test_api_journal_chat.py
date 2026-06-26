@@ -231,3 +231,14 @@ def test_gather_context_is_day_based(tmp_path, monkeypatch):
     blob = _gather_journal_context(days=2)
     assert "note A" in blob and "note B" in blob and "note C" in blob
     assert "note D" not in blob
+
+
+class TestJournalChatVision:
+    async def test_journal_chat_rejects_traversal_image_path(self, authed_client, journal_dir):
+        """image_path outside IMAGES_ROOT is rejected with 400."""
+        resp = await authed_client.post(
+            "/api/journal/chat",
+            json={"question": "Q", "image_path": "/etc/passwd"},
+        )
+        assert resp.status_code == 400
+        assert "Invalid image path" in resp.json()["detail"]
