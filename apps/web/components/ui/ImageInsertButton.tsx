@@ -1,13 +1,14 @@
 "use client"
 import { useRef, useState } from "react"
+import type { ImageAttachment } from "@/lib/types/image"
 import { uploadImage } from "@/lib/imageUpload"
 
 type Props = {
-  onInsert: (snippet: string) => void
+  onAttach: (image: ImageAttachment) => void
   disabled?: boolean
 }
 
-export function ImageInsertButton({ onInsert, disabled }: Props) {
+export function ImageInsertButton({ onAttach, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -18,13 +19,12 @@ export function ImageInsertButton({ onInsert, disabled }: Props) {
     setError(null)
     setUploading(true)
     try {
-      const snippet = await uploadImage(file)
-      onInsert(snippet)
+      const attachment = await uploadImage(file)
+      onAttach(attachment)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed, please try again")
     } finally {
       setUploading(false)
-      // Reset so the same file can be re-selected
       if (inputRef.current) inputRef.current.value = ""
     }
   }
@@ -40,16 +40,14 @@ export function ImageInsertButton({ onInsert, disabled }: Props) {
       />
       <button
         type="button"
-        aria-label="Insert image"
+        aria-label="Attach image"
         disabled={disabled || uploading}
         onClick={() => inputRef.current?.click()}
         className="flex h-8 w-8 items-center justify-center rounded-md border bg-background text-sm font-medium hover:bg-accent disabled:opacity-50"
       >
         {uploading ? "…" : "+"}
       </button>
-      {error && (
-        <p className="text-xs text-destructive">{error}</p>
-      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   )
 }

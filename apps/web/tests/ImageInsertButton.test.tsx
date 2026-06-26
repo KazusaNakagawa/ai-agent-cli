@@ -1,40 +1,41 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import type { ImageAttachment } from "@/lib/types/image"
 import { ImageInsertButton } from "@/components/ui/ImageInsertButton"
 
-vi.mock("@/lib/imageUpload", () => ({
-  uploadImage: vi.fn(),
-}))
-
+vi.mock("@/lib/imageUpload", () => ({ uploadImage: vi.fn() }))
 import { uploadImage } from "@/lib/imageUpload"
+
+const ATTACHMENT: ImageAttachment = {
+  url: "/api/images/2026-06-26/x.png",
+  path: "/abs/input/images/2026-06-26/x.png",
+}
 
 describe("ImageInsertButton", () => {
   afterEach(() => vi.clearAllMocks())
 
   it("renders a + button", () => {
-    render(<ImageInsertButton onInsert={vi.fn()} />)
-    expect(screen.getByRole("button", { name: /insert image/i })).toBeInTheDocument()
+    render(<ImageInsertButton onAttach={vi.fn()} />)
+    expect(screen.getByRole("button", { name: /attach image/i })).toBeInTheDocument()
   })
 
-  it("calls onInsert with snippet after successful upload", async () => {
-    vi.mocked(uploadImage).mockResolvedValue("![image](/api/images/2026-06-26/x.png)")
-    const onInsert = vi.fn()
-    render(<ImageInsertButton onInsert={onInsert} />)
+  it("calls onAttach with ImageAttachment after successful upload", async () => {
+    vi.mocked(uploadImage).mockResolvedValue(ATTACHMENT)
+    const onAttach = vi.fn()
+    render(<ImageInsertButton onAttach={onAttach} />)
 
     const input = document.querySelector("input[type=file]") as HTMLInputElement
-    const file = new File(["x"], "photo.png", { type: "image/png" })
-    fireEvent.change(input, { target: { files: [file] } })
+    fireEvent.change(input, { target: { files: [new File(["x"], "photo.png", { type: "image/png" })] } })
 
-    await waitFor(() => expect(onInsert).toHaveBeenCalledWith("![image](/api/images/2026-06-26/x.png)"))
+    await waitFor(() => expect(onAttach).toHaveBeenCalledWith(ATTACHMENT))
   })
 
   it("shows error message when upload fails", async () => {
     vi.mocked(uploadImage).mockRejectedValue(new Error("Image must be under 5 MB"))
-    render(<ImageInsertButton onInsert={vi.fn()} />)
+    render(<ImageInsertButton onAttach={vi.fn()} />)
 
     const input = document.querySelector("input[type=file]") as HTMLInputElement
-    const file = new File(["x"], "big.png", { type: "image/png" })
-    fireEvent.change(input, { target: { files: [file] } })
+    fireEvent.change(input, { target: { files: [new File(["x"], "big.png", { type: "image/png" })] } })
 
     await waitFor(() =>
       expect(screen.getByText("Image must be under 5 MB")).toBeInTheDocument()
@@ -42,7 +43,7 @@ describe("ImageInsertButton", () => {
   })
 
   it("is disabled when disabled prop is true", () => {
-    render(<ImageInsertButton onInsert={vi.fn()} disabled />)
-    expect(screen.getByRole("button", { name: /insert image/i })).toBeDisabled()
+    render(<ImageInsertButton onAttach={vi.fn()} disabled />)
+    expect(screen.getByRole("button", { name: /attach image/i })).toBeDisabled()
   })
 })
