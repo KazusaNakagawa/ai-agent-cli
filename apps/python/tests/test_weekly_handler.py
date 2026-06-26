@@ -1,5 +1,5 @@
 """週次ハンドラと Notion ページ取得のテスト。"""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch, call
 
 import pytest
@@ -306,8 +306,10 @@ class TestWeeklyHandler:
         ):
             weekly_handler()
 
+        expected = f"weekly-summary_{date.today().strftime('%Y-%m-%d')}.md"
         written = list(self._out_dir.glob("weekly-summary_*.md"))
         assert len(written) == 1
+        assert written[0].name == expected
         assert written[0].read_text(encoding="utf-8") == "サマリー本文"
 
     def test_notion_post_includes_weekly_tag(self):

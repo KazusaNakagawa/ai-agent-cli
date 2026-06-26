@@ -33,12 +33,17 @@ def weekly_handler(event=None, context=None):
     # Persist locally so the recap shows up in the Briefing viewer alongside
     # daily briefings. Type prefix "weekly-summary" matches the briefing API's
     # filename convention, so listing/search/tabs work with no API change.
-    local_path = write_md_file(
-        BRIEFING_OUTPUT_DIR,
-        f"weekly-summary_{date.today().strftime('%Y-%m-%d')}.md",
-        summary,
-    )
-    logger.info("local weekly MD: %s", local_path)
+    # Best-effort: a local write failure must not block the Notion post.
+    try:
+        local_path = write_md_file(
+            BRIEFING_OUTPUT_DIR,
+            f"weekly-summary_{date.today().strftime('%Y-%m-%d')}.md",
+            summary,
+        )
+    except OSError:
+        logger.exception("failed to persist local weekly MD")
+    else:
+        logger.info("local weekly MD: %s", local_path)
 
     logger.info("creating Notion page...")
     page_url = send_to_notion(
