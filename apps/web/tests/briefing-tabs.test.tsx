@@ -22,6 +22,7 @@ describe("briefingTypeLabel", () => {
   it("maps known types and capitalizes unknown ones", () => {
     expect(briefingTypeLabel("briefing")).toBe("Briefing")
     expect(briefingTypeLabel("local")).toBe("Local")
+    expect(briefingTypeLabel("weekly-summary")).toBe("Weekly")
     expect(briefingTypeLabel("market")).toBe("Market")
   })
 })

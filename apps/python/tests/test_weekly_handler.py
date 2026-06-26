@@ -1,5 +1,5 @@
 """週次ハンドラと Notion ページ取得のテスト。"""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch, call
 
 import pytest
@@ -255,6 +255,13 @@ class TestFetchWeeklyPages:
 # ---------------------------------------------------------------------------
 
 class TestWeeklyHandler:
+    @pytest.fixture(autouse=True)
+    def _isolate_output_dir(self, tmp_path):
+        """Redirect local MD writes to tmp_path so tests never touch the repo's output dir."""
+        with patch("src.weekly_handler.BRIEFING_OUTPUT_DIR", tmp_path):
+            self._out_dir = tmp_path
+            yield
+
     def test_success_returns_200(self):
         pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
         with (
@@ -288,6 +295,22 @@ class TestWeeklyHandler:
         ):
             result = weekly_handler()
         assert result["statusCode"] == 500
+
+    def test_saves_local_weekly_md(self):
+        """The recap is written locally as weekly-summary_<date>.md for the Briefing viewer."""
+        pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
+        with (
+            patch("src.weekly_handler.fetch_weekly_pages", return_value=pages),
+            patch("src.weekly_handler.generate_weekly_summary", return_value="サマリー本文"),
+            patch("src.weekly_handler.send_to_notion", return_value="https://notion.so/w"),
+        ):
+            weekly_handler()
+
+        expected = f"weekly-summary_{date.today().strftime('%Y-%m-%d')}.md"
+        written = list(self._out_dir.glob("weekly-summary_*.md"))
+        assert len(written) == 1
+        assert written[0].name == expected
+        assert written[0].read_text(encoding="utf-8") == "サマリー本文"
 
     def test_notion_post_includes_weekly_tag(self):
         pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
