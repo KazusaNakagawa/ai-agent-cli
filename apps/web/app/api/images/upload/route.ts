@@ -53,5 +53,5 @@ export async function POST(req: Request) {
   await writeFile(filepath, Buffer.from(bytes))
 
   const url = `/api/images/${today}/${filename}`
-  return NextResponse.json({ url })
+  return NextResponse.json({ url, path: filepath })
 }
