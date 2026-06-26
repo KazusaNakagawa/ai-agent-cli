@@ -9,9 +9,8 @@ import {
   SIDEBAR_COLLAPSED_KEY as COLLAPSED_KEY,
 } from "@/lib/sidebar"
 
-vi.mock("next/navigation", () => ({
-  usePathname: () => "/portfolio",
-}))
+let mockPathname = "/portfolio"
+vi.mock("next/navigation", () => ({ usePathname: () => mockPathname }))
 
 function renderSidebar() {
   return render(
@@ -26,6 +25,7 @@ describe("Sidebar collapse", () => {
     localStorage.clear()
     sessionStorage.clear()
     document.documentElement.removeAttribute(HTML_ATTR)
+    mockPathname = "/portfolio"
   })
   afterEach(() => {
     localStorage.clear()
@@ -98,6 +98,10 @@ describe("Sidebar collapse", () => {
 })
 
 describe("Config settings modal", () => {
+  beforeEach(() => {
+    mockPathname = "/portfolio"
+  })
+
   it("opens a modal with the four settings sections when Config is clicked", async () => {
     const user = userEvent.setup()
     renderSidebar()
@@ -157,5 +161,45 @@ describe("Config settings modal", () => {
     await user.keyboard("{Escape}")
     await user.click(screen.getByTestId("config-toggle"))
     expect(screen.getByTestId("settings-section-usage")).toBeInTheDocument()
+  })
+})
+
+describe("Sidebar service items", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    document.documentElement.removeAttribute(HTML_ATTR)
+    mockPathname = "/portfolio"
+  })
+
+  const BRIEFING_NAV_IDS = [
+    "nav-portfolio",
+    "nav-watch-sectors",
+    "nav-geopolitical",
+    "nav-run",
+    "nav-chat",
+    "nav-briefing",
+  ]
+  const JOURNAL_NAV_IDS = ["nav-journal"]
+
+  it("shows the six Briefing items and hides Journal on a briefing route", () => {
+    mockPathname = "/portfolio"
+    renderSidebar()
+    for (const id of BRIEFING_NAV_IDS) {
+      expect(screen.getByTestId(id)).toBeInTheDocument()
+    }
+    for (const id of JOURNAL_NAV_IDS) {
+      expect(screen.queryByTestId(id)).not.toBeInTheDocument()
+    }
+  })
+
+  it("shows only the Journal item and hides Briefing on a journal route", () => {
+    mockPathname = "/journal"
+    renderSidebar()
+    for (const id of JOURNAL_NAV_IDS) {
+      expect(screen.getByTestId(id)).toBeInTheDocument()
+    }
+    for (const id of BRIEFING_NAV_IDS) {
+      expect(screen.queryByTestId(id)).not.toBeInTheDocument()
+    }
   })
 })

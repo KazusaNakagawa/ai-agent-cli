@@ -15,22 +15,12 @@ import {
   SIDEBAR_WIDTH_KEY,
   SIDEBAR_WIDTH_VAR,
 } from "@/lib/sidebar"
+import { serviceForPath } from "@/lib/services"
 import { cn } from "@/lib/utils"
-
-type Item = { href: string; label: string; icon: string }
-
-const ITEMS: Item[] = [
-  { href: "/portfolio", label: "Portfolio", icon: "📊" },
-  { href: "/watch-sectors", label: "Watch Sectors", icon: "🌐" },
-  { href: "/geopolitical", label: "Geopolitical Risks", icon: "🗺️" },
-  { href: "/run", label: "Run", icon: "▶️" },
-  { href: "/chat", label: "Q&A Chat", icon: "💬" },
-  { href: "/journal", label: "Journal", icon: "📓" },
-  { href: "/briefing", label: "Briefing", icon: "📚" },
-]
 
 export function Sidebar() {
   const pathname = usePathname()
+  const items = serviceForPath(pathname).items
   const { isBackgrounded: runJobActive } = useJobState()
   // Initialize to false so SSR and the first client render agree (avoiding
   // a hydration mismatch on data-collapsed / aria-expanded / title). The
@@ -136,7 +126,7 @@ export function Sidebar() {
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
       <section className="flex flex-col gap-1">
         <nav className="flex flex-col gap-1">
-          {ITEMS.map((item) => {
+          {items.map((item) => {
             const active = pathname === item.href
             const showRunDot = item.href === "/run" && runJobActive
             return (
