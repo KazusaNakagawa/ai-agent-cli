@@ -45,6 +45,7 @@ skill via the ``claude`` CLI (subprocess + ``--output-format stream-json``),
 so the skill definition under ``.claude/skills/notion-import/SKILL.md``
 remains the single source of truth — no duplicate Python implementation.
 """
+import base64
 import json
 import os
 import re
@@ -174,9 +175,9 @@ def _run_chat_job(
             env=env,
         )
         if image_message:
-            assert proc.stdin is not None
-            proc.stdin.write(image_message.encode())
-            proc.stdin.close()
+            if proc.stdin is not None:
+                proc.stdin.write(image_message.encode())
+                proc.stdin.close()
         chat_job_store.attach_process(job_id, proc)
 
         # Drain stderr concurrently — without this, a large stderr write would
@@ -305,8 +306,7 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
     img_path = _validate_image_path(body.image_path)
     image_message: str | None = None
     if img_path:
-        import base64 as _b64
-        b64 = _b64.b64encode(img_path.read_bytes()).decode()
+        b64 = base64.b64encode(img_path.read_bytes()).decode()
         ext = img_path.suffix.lstrip(".").lower()
         media = {
             "jpg": "image/jpeg", "jpeg": "image/jpeg",
@@ -399,8 +399,7 @@ def post_journal_chat(
     img_path = _validate_image_path(body.image_path)
     image_message: str | None = None
     if img_path:
-        import base64 as _b64
-        b64 = _b64.b64encode(img_path.read_bytes()).decode()
+        b64 = base64.b64encode(img_path.read_bytes()).decode()
         ext = img_path.suffix.lstrip(".").lower()
         media = {
             "jpg": "image/jpeg", "jpeg": "image/jpeg",

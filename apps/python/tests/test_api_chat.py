@@ -963,6 +963,42 @@ async def test_chat_notion_import_requires_bearer(async_client):
     assert response.status_code == 401
 
 
+class TestChatWithImagePath:
+    async def test_post_chat_with_image_uses_stdin_pipe(
+        self, authed_client, briefing_setup, monkeypatch
+    ):
+        """POST /api/chat with image_path starts subprocess with stdin=PIPE and -p -."""
+        import subprocess as sp
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[3]
+        images_root = repo_root / "apps" / "python" / "input" / "images"
+        date_dir = images_root / "2026-06-26"
+        date_dir.mkdir(parents=True, exist_ok=True)
+        img = date_dir / "test-vision.png"
+        img.write_bytes(b"PNG_FAKE_DATA")
+
+        captured: dict = {}
+
+        def factory(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["stdin"] = kwargs.get("stdin")
+            return FakePopen(cmd, stdout_lines=[], **kwargs)
+
+        monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+        response = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Describe this image", "image_path": str(img)},
+        )
+
+        assert response.status_code == 202
+        assert captured["stdin"] == sp.PIPE
+        cmd = captured["cmd"]
+        p_idx = cmd.index("-p")
+        assert cmd[p_idx + 1] == "-"
+
+
 class TestChatVision:
     async def test_post_chat_rejects_traversal_image_path(self, authed_client, briefing_setup):
         """image_path outside IMAGES_ROOT is rejected with 400."""
