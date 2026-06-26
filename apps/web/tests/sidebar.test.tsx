@@ -9,9 +9,8 @@ import {
   SIDEBAR_COLLAPSED_KEY as COLLAPSED_KEY,
 } from "@/lib/sidebar"
 
-vi.mock("next/navigation", () => ({
-  usePathname: () => "/portfolio",
-}))
+let mockPathname = "/portfolio"
+vi.mock("next/navigation", () => ({ usePathname: () => mockPathname }))
 
 function renderSidebar() {
   return render(
@@ -157,5 +156,29 @@ describe("Config settings modal", () => {
     await user.keyboard("{Escape}")
     await user.click(screen.getByTestId("config-toggle"))
     expect(screen.getByTestId("settings-section-usage")).toBeInTheDocument()
+  })
+})
+
+describe("Sidebar service items", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    document.documentElement.removeAttribute(HTML_ATTR)
+    mockPathname = "/portfolio"
+  })
+
+  it("shows the six Briefing items on a briefing route", () => {
+    mockPathname = "/portfolio"
+    renderSidebar()
+    expect(screen.getByTestId("nav-portfolio")).toBeInTheDocument()
+    expect(screen.getByTestId("nav-chat")).toBeInTheDocument()
+    expect(screen.getByTestId("nav-briefing")).toBeInTheDocument()
+    expect(screen.queryByTestId("nav-journal")).not.toBeInTheDocument()
+  })
+
+  it("shows only the Journal item on a journal route", () => {
+    mockPathname = "/journal"
+    renderSidebar()
+    expect(screen.getByTestId("nav-journal")).toBeInTheDocument()
+    expect(screen.queryByTestId("nav-portfolio")).not.toBeInTheDocument()
   })
 })
