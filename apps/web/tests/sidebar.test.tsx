@@ -25,6 +25,7 @@ describe("Sidebar collapse", () => {
     localStorage.clear()
     sessionStorage.clear()
     document.documentElement.removeAttribute(HTML_ATTR)
+    mockPathname = "/portfolio"
   })
   afterEach(() => {
     localStorage.clear()
@@ -97,6 +98,10 @@ describe("Sidebar collapse", () => {
 })
 
 describe("Config settings modal", () => {
+  beforeEach(() => {
+    mockPathname = "/portfolio"
+  })
+
   it("opens a modal with the four settings sections when Config is clicked", async () => {
     const user = userEvent.setup()
     renderSidebar()
