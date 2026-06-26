@@ -80,6 +80,15 @@
       );
   }
 
+  /* On Soft background the default light-theme border (91.4% lightness) is
+     nearly invisible against the gradient. Drop it to 78% so dividers,
+     dashed outlines, and table headers stay legible. Dark theme is unaffected
+     because .dark already sets --border to 17.5% lightness. */
+  html[data-bg="soft"]:not(.dark) {
+    --border: 214.3 31.8% 78%;
+    --input: 214.3 31.8% 78%;
+  }
+
 }
 
 /* Dark mode prose body text — override Tailwind Typography's default gray-300
