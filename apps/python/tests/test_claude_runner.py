@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import subprocess
@@ -562,3 +563,66 @@ class TestRunClaudeAuthMode:
                 run_claude("prompt", "test")
 
         assert "ANTHROPIC_API_KEY" not in captured["env"]
+
+
+class TestRunClaudeWithImage:
+    def test_builds_multimodal_stdin_and_returns_result(self, tmp_path, monkeypatch):
+        """run_claude_with_image encodes the image and pipes JSON to claude stdin."""
+        img_file = tmp_path / "photo.png"
+        img_file.write_bytes(b"PNG_DATA")
+        expected_b64 = base64.b64encode(b"PNG_DATA").decode()
+
+        captured = {}
+
+        def fake_run(cmd, *, input=None, capture_output, text, timeout, env, **kw):
+            captured["input"] = input
+            captured["cmd"] = cmd
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = json.dumps({"result": "nice image!", "usage": {}})
+            return result
+
+        monkeypatch.setattr("src.claude_runner.subprocess.run", fake_run)
+        monkeypatch.setattr("src.claude_runner.shutil.which", lambda _: "/usr/bin/claude")
+
+        from src.claude_runner import run_claude_with_image
+        text = run_claude_with_image("What is this?", str(img_file), "test-vision")
+
+        assert text == "nice image!"
+        msg = json.loads(captured["input"])
+        assert msg["role"] == "user"
+        content = msg["content"]
+        assert content[0]["type"] == "image"
+        assert content[0]["source"]["type"] == "base64"
+        assert content[0]["source"]["media_type"] == "image/png"
+        assert content[0]["source"]["data"] == expected_b64
+        assert content[1]["type"] == "text"
+        assert content[1]["text"] == "What is this?"
+        # Must use -p - (read prompt from stdin)
+        assert "-p" in captured["cmd"]
+        assert "-" in captured["cmd"]
+
+    def test_raises_on_nonzero_returncode(self, tmp_path, monkeypatch):
+        img_file = tmp_path / "photo.png"
+        img_file.write_bytes(b"data")
+
+        def fake_run(cmd, *, input=None, **kw):
+            result = MagicMock()
+            result.returncode = 1
+            result.stdout = ""
+            result.stderr = "vision not supported"
+            return result
+
+        monkeypatch.setattr("src.claude_runner.subprocess.run", fake_run)
+        monkeypatch.setattr("src.claude_runner.shutil.which", lambda _: "/usr/bin/claude")
+
+        from src.claude_runner import run_claude_with_image
+        with pytest.raises(RuntimeError, match="vision not supported"):
+            run_claude_with_image("Q", str(img_file), "test")
+
+    def test_raises_if_image_file_not_found(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("src.claude_runner.shutil.which", lambda _: "/usr/bin/claude")
+
+        from src.claude_runner import run_claude_with_image
+        with pytest.raises((FileNotFoundError, OSError)):
+            run_claude_with_image("Q", str(tmp_path / "missing.png"), "test")
