@@ -17,6 +17,17 @@ const PROSE_CLASS =
 const HEADER_BTN =
   "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
 
+// Open links rendered inside briefing content in a new tab. `rel` guards
+// against reverse-tabnabbing on the opened page. In-app navigation lives in the
+// sidebar/routes (not markdown), so it is unaffected.
+const MARKDOWN_COMPONENTS = {
+  a: ({ children, ...props }: React.ComponentPropsWithoutRef<"a">) => (
+    <a {...props} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+}
+
 // Track the heading currently scrolled into view within `containerRef`.
 // `content` is the trigger: when it changes the rendered headings change, so the
 // observer is rebuilt against the new DOM nodes.
@@ -139,6 +150,7 @@ export function BriefingPanel({
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeHeadingIds, [rehypeSanitize, sanitizeSchema]]}
+                components={MARKDOWN_COMPONENTS}
               >
                 {content}
               </ReactMarkdown>
