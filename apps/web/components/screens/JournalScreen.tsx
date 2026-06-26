@@ -5,7 +5,10 @@ import remarkGfm from "remark-gfm"
 
 import { CloseIcon, TrashIcon } from "@/components/briefing/icons"
 import { ResizeHandle } from "@/components/ResizeHandle"
+import { ImageInsertButton } from "@/components/ui/ImageInsertButton"
+import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { useResizable } from "@/lib/hooks/useResizable"
+import { insertAtCursor } from "@/lib/insertAtCursor"
 import { cn } from "@/lib/utils"
 
 type JournalEntry = { id: string; date: string; size: number }
@@ -61,6 +64,13 @@ export function JournalScreen() {
   const [selected, setSelected] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const composeRef = useRef<HTMLTextAreaElement>(null)
+  const brainstormRef = useRef<HTMLTextAreaElement>(null)
+  const { isDragging: isComposeDragging } = useImageDrop(composeRef, (snippet) =>
+    insertAtCursor(composeRef, setEntry, snippet)
+  )
+  const { isDragging: isBrainstormDragging } = useImageDrop(brainstormRef, (snippet) =>
+    insertAtCursor(brainstormRef, setQuestion, snippet)
+  )
   const [content, setContent] = useState("")
   const entryReqSeq = useRef(0)
   const [entry, setEntry] = useState("")
@@ -509,8 +519,14 @@ export function JournalScreen() {
                   onChange={(e) => setEntry(e.target.value)}
                   placeholder="What happened today? What are you thinking about?"
                   rows={5}
-                  className="w-full resize-y rounded-md border bg-background p-3 text-sm"
+                  className={`w-full resize-y rounded-md border bg-background p-3 text-sm${isComposeDragging ? " ring-2 ring-primary" : ""}`}
                 />
+                <div className="flex items-center gap-2">
+                  <ImageInsertButton
+                    onInsert={(snippet) => insertAtCursor(composeRef, setEntry, snippet)}
+                    disabled={saving}
+                  />
+                </div>
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
@@ -556,6 +572,7 @@ export function JournalScreen() {
 
                 <div className="flex flex-col gap-2">
                   <textarea
+                    ref={brainstormRef}
                     value={question}
                     onChange={(e) => setQuestion(e.target.value)}
                     onKeyDown={(e) => {
@@ -566,8 +583,13 @@ export function JournalScreen() {
                     }}
                     placeholder="e.g. What should I focus on next based on this week?"
                     rows={3}
-                    className="w-full resize-y rounded-md border bg-background p-3 text-sm"
+                    className={`w-full resize-y rounded-md border bg-background p-3 text-sm${isBrainstormDragging ? " ring-2 ring-primary" : ""}`}
                   />
+                  <div className="flex items-center gap-2">
+                    <ImageInsertButton
+                      onInsert={(snippet) => insertAtCursor(brainstormRef, setQuestion, snippet)}
+                    />
+                  </div>
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
