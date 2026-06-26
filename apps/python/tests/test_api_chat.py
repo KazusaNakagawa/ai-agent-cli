@@ -961,3 +961,14 @@ async def test_chat_notion_import_requires_bearer(async_client):
         json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
     )
     assert response.status_code == 401
+
+
+class TestChatVision:
+    async def test_post_chat_rejects_traversal_image_path(self, authed_client, briefing_setup):
+        """image_path outside IMAGES_ROOT is rejected with 400."""
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_path": "/etc/passwd"},
+        )
+        assert resp.status_code == 400
+        assert "Invalid image path" in resp.json()["detail"]

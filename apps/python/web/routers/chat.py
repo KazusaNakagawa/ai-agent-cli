@@ -46,6 +46,7 @@ so the skill definition under ``.claude/skills/notion-import/SKILL.md``
 remains the single source of truth — no duplicate Python implementation.
 """
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -73,6 +74,7 @@ from web.auth import require_bearer
 logger = get_logger(__name__)
 # apps/python/web/routers/chat.py → repo root is parents[3] (chat.py → routers → web → python → apps → repo).
 REPO_ROOT = Path(__file__).resolve().parents[4]
+IMAGES_ROOT = REPO_ROOT / "apps" / "python" / "input" / "images"
 NOTION_URL_RE = re.compile(r"https://www\.notion\.so/[A-Za-z0-9\-]+")
 NOTION_IMPORT_TIMEOUT_SEC = 120
 # Allow-list of model aliases the user can pick from the UI. Anything else
@@ -107,11 +109,24 @@ CHAT_STREAM_FLAGS = [
 router = APIRouter(dependencies=[Depends(require_bearer)])
 
 
+def _validate_image_path(image_path: str | None) -> Path | None:
+    """Return resolved Path if image_path is inside IMAGES_ROOT, else raise 400."""
+    if image_path is None:
+        return None
+    resolved = Path(image_path).resolve()
+    if not str(resolved).startswith(str(IMAGES_ROOT) + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid image path")
+    if not resolved.exists():
+        raise HTTPException(status_code=400, detail="Image file not found")
+    return resolved
+
+
 class ChatBody(BaseModel):
     # Pinned to YYYY-MM-DD so user input can't path-traverse into
     # SESSIONS_DIR (e.g. "../foo").
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     question: str = Field(min_length=1)
+    image_path: str | None = None
 
 
 class ChatPostResponse(BaseModel):
@@ -139,6 +154,7 @@ def _run_chat_job(
     session_file: Path,
     env: dict[str, str],
     label: str,
+    image_message: str | None = None,
 ) -> None:
     """Background task: drive the claude subprocess to completion and
     append each stdout line into the job's replay buffer.
@@ -149,12 +165,18 @@ def _run_chat_job(
     """
     chat_job_store.mark_running(job_id)
     try:
+        stdin_mode = subprocess.PIPE if image_message else subprocess.DEVNULL
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            stdin=stdin_mode,
             env=env,
         )
+        if image_message:
+            assert proc.stdin is not None
+            proc.stdin.write(image_message.encode())
+            proc.stdin.close()
         chat_job_store.attach_process(job_id, proc)
 
         # Drain stderr concurrently — without this, a large stderr write would
@@ -280,11 +302,30 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
         raise HTTPException(status_code=404, detail=f"no briefing for {body.date}")
 
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    cmd = [*build_cmd(body.date, briefing_file, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
+    img_path = _validate_image_path(body.image_path)
+    image_message: str | None = None
+    if img_path:
+        import base64 as _b64
+        b64 = _b64.b64encode(img_path.read_bytes()).decode()
+        ext = img_path.suffix.lstrip(".").lower()
+        media = {
+            "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "png": "image/png", "gif": "image/gif", "webp": "image/webp",
+        }.get(ext, "image/png")
+        image_message = json.dumps({
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}},
+                {"type": "text", "text": body.question},
+            ],
+        })
+        cmd = [*build_cmd(body.date, briefing_file, session_file), "-p", "-", *CHAT_STREAM_FLAGS]
+    else:
+        cmd = [*build_cmd(body.date, briefing_file, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()
-    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env, "chat")
+    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env, "chat", image_message)
     return ChatPostResponse(job_id=job.job_id, status=job.status)
 
 
@@ -299,6 +340,7 @@ class JournalChatBody(BaseModel):
     question: str = Field(min_length=1)
     # How many most-recent journal days to load as brainstorm context.
     days: int = Field(default=7, ge=1, le=31)
+    image_path: str | None = None
 
 
 def _gather_journal_context(days: int, max_chars: int | None = None) -> str:
@@ -354,11 +396,30 @@ def post_journal_chat(
     sessions_dir.mkdir(parents=True, exist_ok=True)
     session_file = sessions_dir / today
 
-    cmd = [*build_journal_cmd(today, context, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
+    img_path = _validate_image_path(body.image_path)
+    image_message: str | None = None
+    if img_path:
+        import base64 as _b64
+        b64 = _b64.b64encode(img_path.read_bytes()).decode()
+        ext = img_path.suffix.lstrip(".").lower()
+        media = {
+            "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "png": "image/png", "gif": "image/gif", "webp": "image/webp",
+        }.get(ext, "image/png")
+        image_message = json.dumps({
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}},
+                {"type": "text", "text": body.question},
+            ],
+        })
+        cmd = [*build_journal_cmd(today, context, session_file), "-p", "-", *CHAT_STREAM_FLAGS]
+    else:
+        cmd = [*build_journal_cmd(today, context, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()
-    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env, "journal")
+    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env, "journal", image_message)
     return ChatPostResponse(job_id=job.job_id, status=job.status)
 
 
