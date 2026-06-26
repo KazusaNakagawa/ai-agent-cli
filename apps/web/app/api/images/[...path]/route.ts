@@ -3,8 +3,8 @@ import { NextResponse } from "next/server"
 import path from "path"
 
 const STORAGE_ROOT = path.resolve(
-  __dirname,
-  "../../../../../../apps/python/input/images"
+  process.cwd(),
+  "../../apps/python/input/images"
 )
 
 const MIME: Record<string, string> = {
