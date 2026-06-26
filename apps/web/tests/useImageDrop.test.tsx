@@ -1,12 +1,15 @@
 import { act, renderHook } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import type { ImageAttachment } from "@/lib/types/image"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
 
-vi.mock("@/lib/imageUpload", () => ({
-  uploadImage: vi.fn(),
-}))
-
+vi.mock("@/lib/imageUpload", () => ({ uploadImage: vi.fn() }))
 import { uploadImage } from "@/lib/imageUpload"
+
+const ATTACHMENT: ImageAttachment = {
+  url: "/api/images/2026-06-26/x.png",
+  path: "/abs/input/2026-06-26/x.png",
+}
 
 function makeTextarea() {
   const el = document.createElement("textarea")
@@ -16,62 +19,49 @@ function makeTextarea() {
 
 describe("useImageDrop", () => {
   let el: HTMLTextAreaElement
-
-  beforeEach(() => {
-    el = makeTextarea()
-  })
-
-  afterEach(() => {
-    el.remove()
-    vi.clearAllMocks()
-  })
+  beforeEach(() => { el = makeTextarea() })
+  afterEach(() => { el.remove(); vi.clearAllMocks() })
 
   it("isDragging is false initially", () => {
-    const ref = { current: el }
-    const { result } = renderHook(() => useImageDrop(ref, vi.fn()))
+    const { result } = renderHook(() => useImageDrop({ current: el }, vi.fn()))
     expect(result.current.isDragging).toBe(false)
   })
 
-  it("sets isDragging true on dragover with image file", () => {
-    const ref = { current: el }
-    const { result } = renderHook(() => useImageDrop(ref, vi.fn()))
-
+  it("sets isDragging true on dragover with Files", () => {
+    const { result } = renderHook(() => useImageDrop({ current: el }, vi.fn()))
     act(() => {
-      // jsdom does not support DragEvent or DataTransfer; use a plain Event
-      // with dataTransfer injected via Object.defineProperty.
-      const dragoverEvent = new Event("dragover", { bubbles: true })
-      Object.defineProperty(dragoverEvent, "dataTransfer", {
-        value: { types: ["Files"] },
-      })
-      el.dispatchEvent(dragoverEvent)
+      const e = new Event("dragover", { bubbles: true }) as any
+      e.dataTransfer = { types: ["Files"] }
+      el.dispatchEvent(e)
     })
-
     expect(result.current.isDragging).toBe(true)
   })
 
-  it("calls onInsert with snippet on drop", async () => {
-    vi.mocked(uploadImage).mockResolvedValue("![image](/api/images/2026-06-26/x.png)")
-    const onInsert = vi.fn()
-    const ref = { current: el }
-    renderHook(() => useImageDrop(ref, onInsert))
+  it("prevents default and stops propagation on dragenter", () => {
+    renderHook(() => useImageDrop({ current: el }, vi.fn()))
+    const e = new Event("dragenter", { bubbles: true }) as any
+    e.preventDefault = vi.fn()
+    e.stopPropagation = vi.fn()
+    act(() => { el.dispatchEvent(e) })
+    expect(e.preventDefault).toHaveBeenCalled()
+    expect(e.stopPropagation).toHaveBeenCalled()
+  })
+
+  it("calls onAttach with ImageAttachment on drop", async () => {
+    vi.mocked(uploadImage).mockResolvedValue(ATTACHMENT)
+    const onAttach = vi.fn()
+    renderHook(() => useImageDrop({ current: el }, onAttach))
 
     const file = new File(["x"], "photo.png", { type: "image/png" })
-
-    // jsdom does not support DataTransfer.items.add(), so build a minimal mock
-    // that satisfies the hook's e.dataTransfer?.files[0] access path.
-    const mockDataTransfer = {
-      files: [file],
-      types: ["Files"],
-    }
-
     await act(async () => {
-      // jsdom does not support DragEvent; use a plain Event with dataTransfer injected
-      const dropEvent = new Event("drop", { bubbles: true })
-      Object.defineProperty(dropEvent, "dataTransfer", { value: mockDataTransfer })
-      el.dispatchEvent(dropEvent)
+      const e = new Event("drop", { bubbles: true }) as any
+      e.preventDefault = vi.fn()
+      e.stopPropagation = vi.fn()
+      e.dataTransfer = { files: [file] }
+      el.dispatchEvent(e)
       await Promise.resolve()
     })
 
-    expect(onInsert).toHaveBeenCalledWith("![image](/api/images/2026-06-26/x.png)")
+    expect(onAttach).toHaveBeenCalledWith(ATTACHMENT)
   })
 })
