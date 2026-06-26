@@ -16,6 +16,17 @@ export function useImageDrop(
     const el = ref.current
     if (!el) return
 
+    // Block browser file-navigation at the document level.
+    // Without this, dropping outside the textarea navigates to the file in a new tab.
+    function blockDocDragOver(e: DragEvent) {
+      if (e.dataTransfer?.types.includes("Files")) e.preventDefault()
+    }
+    function blockDocDrop(e: DragEvent) {
+      e.preventDefault()
+    }
+    document.addEventListener("dragover", blockDocDragOver)
+    document.addEventListener("drop", blockDocDrop)
+
     function onDragEnter(e: DragEvent) {
       e.preventDefault()
       e.stopPropagation()
@@ -51,6 +62,8 @@ export function useImageDrop(
     el.addEventListener("dragleave", onDragLeave)
     el.addEventListener("drop", onDrop)
     return () => {
+      document.removeEventListener("dragover", blockDocDragOver)
+      document.removeEventListener("drop", blockDocDrop)
       el.removeEventListener("dragenter", onDragEnter)
       el.removeEventListener("dragover", onDragOver)
       el.removeEventListener("dragleave", onDragLeave)
