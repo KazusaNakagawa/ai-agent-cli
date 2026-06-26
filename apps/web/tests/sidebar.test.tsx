@@ -171,19 +171,35 @@ describe("Sidebar service items", () => {
     mockPathname = "/portfolio"
   })
 
-  it("shows the six Briefing items on a briefing route", () => {
+  const BRIEFING_NAV_IDS = [
+    "nav-portfolio",
+    "nav-watch-sectors",
+    "nav-geopolitical",
+    "nav-run",
+    "nav-chat",
+    "nav-briefing",
+  ]
+  const JOURNAL_NAV_IDS = ["nav-journal"]
+
+  it("shows the six Briefing items and hides Journal on a briefing route", () => {
     mockPathname = "/portfolio"
     renderSidebar()
-    expect(screen.getByTestId("nav-portfolio")).toBeInTheDocument()
-    expect(screen.getByTestId("nav-chat")).toBeInTheDocument()
-    expect(screen.getByTestId("nav-briefing")).toBeInTheDocument()
-    expect(screen.queryByTestId("nav-journal")).not.toBeInTheDocument()
+    for (const id of BRIEFING_NAV_IDS) {
+      expect(screen.getByTestId(id)).toBeInTheDocument()
+    }
+    for (const id of JOURNAL_NAV_IDS) {
+      expect(screen.queryByTestId(id)).not.toBeInTheDocument()
+    }
   })
 
-  it("shows only the Journal item on a journal route", () => {
+  it("shows only the Journal item and hides Briefing on a journal route", () => {
     mockPathname = "/journal"
     renderSidebar()
-    expect(screen.getByTestId("nav-journal")).toBeInTheDocument()
-    expect(screen.queryByTestId("nav-portfolio")).not.toBeInTheDocument()
+    for (const id of JOURNAL_NAV_IDS) {
+      expect(screen.getByTestId(id)).toBeInTheDocument()
+    }
+    for (const id of BRIEFING_NAV_IDS) {
+      expect(screen.queryByTestId(id)).not.toBeInTheDocument()
+    }
   })
 })
