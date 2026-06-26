@@ -1,10 +1,8 @@
-import base64
 import json
 import os
 import shutil
 import subprocess
 import time
-from pathlib import Path
 
 from src import config as config_mod
 from src import credentials as cred_mod
@@ -174,73 +172,3 @@ def run_claude(
     raise RuntimeError(f"claude CLI error [{label}] rc={last_returncode}: {last_detail}")
 
 
-_MEDIA_TYPES = {
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "png": "image/png",
-    "gif": "image/gif",
-    "webp": "image/webp",
-}
-
-
-def run_claude_with_image(
-    prompt: str,
-    image_path: str,
-    label: str,
-    timeout: int = 300,
-    max_attempts: int = RETRY_MAX_ATTEMPTS,
-) -> str:
-    """Invoke claude CLI with a vision content block piped via stdin.
-
-    Encodes the image at ``image_path`` as base64 and builds a multimodal
-    JSON message compatible with the Claude Messages API format. The message
-    is piped to ``claude -p -`` which reads the prompt from stdin.
-    Works with cli (OAuth) auth — no API key required.
-    """
-    claude_path = shutil.which("claude")
-    if claude_path is None:
-        raise RuntimeError("claude CLI not found. Check your PATH.")
-
-    img_bytes = Path(image_path).read_bytes()
-    b64 = base64.b64encode(img_bytes).decode()
-    ext = Path(image_path).suffix.lstrip(".").lower()
-    media_type = _MEDIA_TYPES.get(ext, "image/png")
-
-    message = json.dumps({
-        "role": "user",
-        "content": [
-            {
-                "type": "image",
-                "source": {"type": "base64", "media_type": media_type, "data": b64},
-            },
-            {"type": "text", "text": prompt},
-        ],
-    })
-
-    env = build_env(auth_mode=state_mod.read_state().auth_mode)
-    model = get_model()
-    cmd = [
-        claude_path, "-p", "-",
-        "--output-format", "json",
-        "--model", model,
-    ]
-
-    logger.info("claude vision call start: %s (timeout=%ds)", label, timeout)
-    result = subprocess.run(
-        cmd,
-        input=message,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=env,
-    )
-
-    if result.returncode != 0:
-        logger.error(
-            "claude vision error [%s] rc=%d\nstderr=%s",
-            label, result.returncode, result.stderr,
-        )
-        raise RuntimeError(result.stderr or result.stdout or "claude vision call failed")
-
-    logger.info("claude vision done: %s (%d chars)", label, len(result.stdout))
-    return _parse_and_log_usage(result.stdout, label)

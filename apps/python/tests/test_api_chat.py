@@ -995,8 +995,11 @@ class TestChatWithImagePath:
         assert response.status_code == 202
         assert captured["stdin"] == sp.PIPE
         cmd = captured["cmd"]
-        p_idx = cmd.index("-p")
-        assert cmd[p_idx + 1] == "-"
+        # Image goes through stream-json input so the CLI parses the base64
+        # envelope from stdin instead of treating it as a text prompt.
+        assert "-p" in cmd
+        assert "--input-format" in cmd
+        assert cmd[cmd.index("--input-format") + 1] == "stream-json"
 
 
 class TestChatVision:

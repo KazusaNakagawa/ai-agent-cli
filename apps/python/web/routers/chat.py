@@ -122,6 +122,43 @@ def _validate_image_path(image_path: str | None) -> Path | None:
     return resolved
 
 
+# Reading a base64 image requires the stream-json *input* format. The default
+# "text" input treats piped stdin as a plain prompt string, so the JSON (and
+# the image) is never parsed — claude just sees gibberish. Pairs with the
+# stream-json output already in CHAT_STREAM_FLAGS.
+IMAGE_INPUT_FLAGS = ["--input-format", "stream-json"]
+
+_IMAGE_MEDIA_TYPES = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
+
+
+def _build_image_message(img_path: Path, question: str) -> str:
+    """Build a stream-json input envelope carrying a base64 image + the question.
+
+    The claude CLI's stream-json input expects newline-delimited
+    ``{"type":"user","message":{...}}`` objects whose ``content`` uses the
+    Messages API block format. The trailing newline terminates the record.
+    """
+    b64 = base64.b64encode(img_path.read_bytes()).decode()
+    ext = img_path.suffix.lstrip(".").lower()
+    media = _IMAGE_MEDIA_TYPES.get(ext, "image/png")
+    return json.dumps({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}},
+                {"type": "text", "text": question},
+            ],
+        },
+    }) + "\n"
+
+
 class ChatBody(BaseModel):
     # Pinned to YYYY-MM-DD so user input can't path-traverse into
     # SESSIONS_DIR (e.g. "../foo").
@@ -306,20 +343,8 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
     img_path = _validate_image_path(body.image_path)
     image_message: str | None = None
     if img_path:
-        b64 = base64.b64encode(img_path.read_bytes()).decode()
-        ext = img_path.suffix.lstrip(".").lower()
-        media = {
-            "jpg": "image/jpeg", "jpeg": "image/jpeg",
-            "png": "image/png", "gif": "image/gif", "webp": "image/webp",
-        }.get(ext, "image/png")
-        image_message = json.dumps({
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}},
-                {"type": "text", "text": body.question},
-            ],
-        })
-        cmd = [*build_cmd(body.date, briefing_file, session_file), "-p", "-", *CHAT_STREAM_FLAGS]
+        image_message = _build_image_message(img_path, body.question)
+        cmd = [*build_cmd(body.date, briefing_file, session_file), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
     else:
         cmd = [*build_cmd(body.date, briefing_file, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
@@ -399,20 +424,8 @@ def post_journal_chat(
     img_path = _validate_image_path(body.image_path)
     image_message: str | None = None
     if img_path:
-        b64 = base64.b64encode(img_path.read_bytes()).decode()
-        ext = img_path.suffix.lstrip(".").lower()
-        media = {
-            "jpg": "image/jpeg", "jpeg": "image/jpeg",
-            "png": "image/png", "gif": "image/gif", "webp": "image/webp",
-        }.get(ext, "image/png")
-        image_message = json.dumps({
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}},
-                {"type": "text", "text": body.question},
-            ],
-        })
-        cmd = [*build_journal_cmd(today, context, session_file), "-p", "-", *CHAT_STREAM_FLAGS]
+        image_message = _build_image_message(img_path, body.question)
+        cmd = [*build_journal_cmd(today, context, session_file), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
     else:
         cmd = [*build_journal_cmd(today, context, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
