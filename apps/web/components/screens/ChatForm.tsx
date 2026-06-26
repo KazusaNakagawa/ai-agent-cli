@@ -80,13 +80,13 @@ export function ChatForm() {
     [committedMessages, inFlightTurn],
   )
 
-  const send = useCallback(() => {
+  const send = useCallback((imagePath?: string) => {
     const question = input.trim()
     if (!question || busy) return
     setInput("")
     setRetrying(false)
     retriedRef.current = false
-    void chatJob.startJob({ question, date: today() })
+    void chatJob.startJob({ question, date: today(), ...(imagePath ? { image_path: imagePath } : {}) })
   }, [busy, chatJob, input, setInput])
 
   // Cancel: terminate the backend job, commit the partial answer as a

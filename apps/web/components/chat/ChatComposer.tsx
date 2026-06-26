@@ -1,11 +1,11 @@
 "use client"
-import { useRef, type KeyboardEvent } from "react"
+import { useState, useRef, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { ImageInsertButton } from "@/components/ui/ImageInsertButton"
+import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
-import { insertAtCursor } from "@/lib/insertAtCursor"
+import type { ImageAttachment } from "@/lib/types/image"
 
 type Props = {
   input: string
@@ -14,7 +14,7 @@ type Props = {
   supportsMic: boolean
   listening: boolean
   onToggleMic: (prefix: string) => void
-  onSend: () => void
+  onSend: (imagePath?: string) => void
   onCancel: () => void
   onHistoryKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
 }
@@ -32,9 +32,14 @@ export function ChatComposer({
 }: Props) {
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { isDragging } = useImageDrop(textareaRef, (snippet) =>
-    insertAtCursor(textareaRef, setInput, snippet)
-  )
+  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null)
+  const { isDragging } = useImageDrop(textareaRef, setAttachedImage)
+
+  function handleSend() {
+    const path = attachedImage?.path
+    setAttachedImage(null)
+    onSend(path)
+  }
 
   return (
     <Card>
@@ -55,7 +60,7 @@ export function ChatComposer({
               if (composingRef.current || e.nativeEvent.isComposing) return
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
-                onSend()
+                handleSend()
                 return
               }
               onHistoryKeyDown?.(e)
@@ -90,7 +95,7 @@ export function ChatComposer({
             </Button>
           ) : (
             <Button
-              onClick={onSend}
+              onClick={handleSend}
               disabled={input.trim().length === 0}
               data-testid="send-button"
             >
@@ -98,12 +103,13 @@ export function ChatComposer({
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <ImageInsertButton
-            onInsert={(snippet) => insertAtCursor(textareaRef, setInput, snippet)}
-            disabled={busy}
-          />
-        </div>
+        <ImageAttachArea
+          attachedImage={attachedImage}
+          onAttach={setAttachedImage}
+          onRemove={() => setAttachedImage(null)}
+          disabled={busy}
+          isDragging={isDragging}
+        />
         {!supportsMic && (
           <p
             className="text-xs text-muted-foreground"
