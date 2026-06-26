@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { createRef } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ImageAttachment } from "@/lib/types/image"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
@@ -13,13 +12,11 @@ const ATTACHMENT: ImageAttachment = {
 }
 
 describe("ImageAttachArea", () => {
-  const ref = createRef<HTMLTextAreaElement>()
   afterEach(() => vi.clearAllMocks())
 
   it("renders + button when no image attached", () => {
     render(
       <ImageAttachArea
-        textareaRef={ref}
         attachedImage={null}
         onAttach={vi.fn()}
         onRemove={vi.fn()}
@@ -32,7 +29,6 @@ describe("ImageAttachArea", () => {
   it("renders thumbnail and remove button when image attached", () => {
     render(
       <ImageAttachArea
-        textareaRef={ref}
         attachedImage={ATTACHMENT}
         onAttach={vi.fn()}
         onRemove={vi.fn()}
@@ -46,7 +42,6 @@ describe("ImageAttachArea", () => {
     const onRemove = vi.fn()
     render(
       <ImageAttachArea
-        textareaRef={ref}
         attachedImage={ATTACHMENT}
         onAttach={vi.fn()}
         onRemove={onRemove}
@@ -61,7 +56,6 @@ describe("ImageAttachArea", () => {
     const onAttach = vi.fn()
     render(
       <ImageAttachArea
-        textareaRef={ref}
         attachedImage={null}
         onAttach={onAttach}
         onRemove={vi.fn()}
@@ -77,7 +71,6 @@ describe("ImageAttachArea", () => {
   it("applies drag ring class when isDragging is true", () => {
     const { container } = render(
       <ImageAttachArea
-        textareaRef={ref}
         attachedImage={null}
         onAttach={vi.fn()}
         onRemove={vi.fn()}

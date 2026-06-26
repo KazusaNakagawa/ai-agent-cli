@@ -1,11 +1,9 @@
 "use client"
-import type { RefObject } from "react"
 import type { ImageAttachment } from "@/lib/types/image"
 import { ImageInsertButton } from "@/components/ui/ImageInsertButton"
 import { ImageAttachmentPreview } from "@/components/ui/ImageAttachmentPreview"
 
 type Props = {
-  textareaRef: RefObject<HTMLTextAreaElement>
   attachedImage: ImageAttachment | null
   onAttach: (image: ImageAttachment) => void
   onRemove: () => void
