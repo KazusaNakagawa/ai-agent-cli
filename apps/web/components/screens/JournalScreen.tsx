@@ -65,9 +65,7 @@ export function JournalScreen() {
   const [composing, setComposing] = useState(false)
   const composeRef = useRef<HTMLTextAreaElement>(null)
   const brainstormRef = useRef<HTMLTextAreaElement>(null)
-  const [composeImage, setComposeImage] = useState<ImageAttachment | null>(null)
   const [brainstormImage, setBrainstormImage] = useState<ImageAttachment | null>(null)
-  const { isDragging: isComposeDragging } = useImageDrop(composeRef, setComposeImage)
   const { isDragging: isBrainstormDragging } = useImageDrop(brainstormRef, setBrainstormImage)
   const [content, setContent] = useState("")
   const entryReqSeq = useRef(0)
@@ -521,14 +519,7 @@ export function JournalScreen() {
                   onChange={(e) => setEntry(e.target.value)}
                   placeholder="What happened today? What are you thinking about?"
                   rows={5}
-                  className={`w-full resize-y rounded-md border bg-background p-3 text-sm${isComposeDragging ? " ring-2 ring-primary" : ""}`}
-                />
-                <ImageAttachArea
-                  attachedImage={composeImage}
-                  onAttach={setComposeImage}
-                  onRemove={() => setComposeImage(null)}
-                  disabled={saving}
-                  isDragging={isComposeDragging}
+                  className="w-full resize-y rounded-md border bg-background p-3 text-sm"
                 />
                 <div className="flex items-center gap-3">
                   <button
