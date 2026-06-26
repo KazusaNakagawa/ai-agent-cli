@@ -965,18 +965,19 @@ async def test_chat_notion_import_requires_bearer(async_client):
 
 class TestChatWithImagePath:
     async def test_post_chat_with_image_uses_stdin_pipe(
-        self, authed_client, briefing_setup, monkeypatch
+        self, authed_client, briefing_setup, monkeypatch, tmp_path
     ):
         """POST /api/chat with image_path starts subprocess with stdin=PIPE and -p -."""
         import subprocess as sp
-        from pathlib import Path
 
-        repo_root = Path(__file__).resolve().parents[3]
-        images_root = repo_root / "apps" / "python" / "input" / "images"
+        # Point IMAGES_ROOT at a tmp dir so the test stays hermetic — no stray
+        # file is written under the real apps/python/input/images tree.
+        images_root = tmp_path / "images"
         date_dir = images_root / "2026-06-26"
         date_dir.mkdir(parents=True, exist_ok=True)
         img = date_dir / "test-vision.png"
         img.write_bytes(b"PNG_FAKE_DATA")
+        monkeypatch.setattr("web.routers.chat.IMAGES_ROOT", images_root)
 
         captured: dict = {}
 

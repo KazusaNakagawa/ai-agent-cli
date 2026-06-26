@@ -36,6 +36,9 @@ export function ChatComposer({
   const { isDragging } = useImageDrop(textareaRef, setAttachedImage)
 
   function handleSend() {
+    // Guard the keyboard path: ChatForm.send no-ops on empty input, so without
+    // this the Enter key would clear the attachment without ever sending it.
+    if (input.trim().length === 0) return
     const path = attachedImage?.path
     setAttachedImage(null)
     onSend(path)

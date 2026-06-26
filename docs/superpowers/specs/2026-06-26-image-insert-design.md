@@ -90,7 +90,7 @@ This is called by both `onInsert` handlers.
 
 ## Constraints
 
-- Allowed types: `jpg`, `jpeg`, `png`, `gif`, `webp` (validated server-side by extension + MIME sniff)
+- Allowed types: `jpg`, `jpeg`, `png`, `gif`, `webp` (validated server-side by file extension)
 - Max size: 5 MB (checked via `Content-Length` and stream byte count)
 - Storage path: `apps/python/input/images/YYYY-MM-DD/<uuid>.<ext>` (gitignored)
 - URL pattern: `/api/images/YYYY-MM-DD/<uuid>.<ext>`

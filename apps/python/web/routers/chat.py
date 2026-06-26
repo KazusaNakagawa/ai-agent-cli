@@ -117,7 +117,9 @@ def _validate_image_path(image_path: str | None) -> Path | None:
     resolved = Path(image_path).resolve()
     if not str(resolved).startswith(str(IMAGES_ROOT) + os.sep):
         raise HTTPException(status_code=400, detail="Invalid image path")
-    if not resolved.exists():
+    # is_file() (not exists()) so a directory path inside IMAGES_ROOT yields a
+    # clean 400 instead of an IsADirectoryError 500 at read_bytes() time.
+    if not resolved.is_file():
         raise HTTPException(status_code=400, detail="Image file not found")
     return resolved
 
