@@ -140,6 +140,7 @@ export function JournalScreen() {
 
   const loadTrash = useCallback(async () => {
     try {
+      setEntriesError(null)
       const res = await fetch("/api/journal/trash", { cache: "no-store" })
       if (!res.ok) {
         setEntriesError(`Failed to load trash (HTTP ${res.status})`)
@@ -204,14 +205,13 @@ export function JournalScreen() {
     [loadTrash],
   )
 
-  // Toggle the trash view, loading its contents when opening.
-  const toggleTrash = () => {
-    setShowTrash((cur) => {
-      const next = !cur
-      if (next) void loadTrash()
-      return next
-    })
-  }
+  // Toggle the trash view, loading its contents when opening. Side effects stay
+  // out of the state updater: compute `next`, set it, then conditionally load.
+  const toggleTrash = useCallback(() => {
+    const next = !showTrash
+    setShowTrash(next)
+    if (next) void loadTrash()
+  }, [showTrash, loadTrash])
 
   const save = useCallback(async () => {
     const text = entry.trim()
@@ -360,6 +360,7 @@ export function JournalScreen() {
               <thead>
                 <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
                   <th className="px-3 py-2 text-left">Deleted</th>
+                  <th className="px-3 py-2 text-right">Size (KB)</th>
                   <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
               </thead>
@@ -373,6 +374,9 @@ export function JournalScreen() {
                         {entryTime(e.id) && (
                           <span className="ml-2 text-muted-foreground">{entryTime(e.id)}</span>
                         )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs tabular-nums text-muted-foreground">
+                        {(e.size / 1024).toFixed(1)}
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-2">
