@@ -41,6 +41,10 @@ class AppendEntryRequest(BaseModel):
     item: str | None = None  # optional short label (≤20 chars)
 
 
+class PatchEntryRequest(BaseModel):
+    content: str = Field(min_length=1)
+
+
 class AppendEntryResponse(BaseModel):
     id: str
     date: str
@@ -93,6 +97,18 @@ def append_journal(req: AppendEntryRequest) -> AppendEntryResponse:
         except Exception:
             pass  # item label is best-effort; entry is already committed
     return AppendEntryResponse(id=entry_id, date=journal_store.date_of(entry_id))
+
+
+@router.patch("/journal/{entry_id}", status_code=204)
+def patch_journal(entry_id: str, req: PatchEntryRequest) -> None:
+    """Append additional content to an existing journal entry.
+
+    Used when a brainstorm session continues: subsequent turns are appended to
+    the same file rather than creating a new one.
+    """
+    ok = journal_store.append_to_entry(entry_id, req.content)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Journal not found: {entry_id}")
 
 
 @router.get("/journal/{entry_id}", response_model=JournalEntryResponse)

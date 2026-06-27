@@ -60,6 +60,7 @@ async def test_zip_excludes_noise(authed_client, output_dir):
 
 async def test_empty_output_returns_empty_zip(authed_client, tmp_path, monkeypatch):
     monkeypatch.setattr(export_router, "OUTPUT_DIR", tmp_path / "nonexistent")
+    monkeypatch.setattr(export_router, "INPUT_DIR", tmp_path / "nonexistent_input")
     response = await authed_client.get("/api/export")
     assert response.status_code == 200
     zf = zipfile.ZipFile(io.BytesIO(response.content))
