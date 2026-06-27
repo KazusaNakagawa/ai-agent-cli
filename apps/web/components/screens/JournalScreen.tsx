@@ -11,7 +11,7 @@ import { useResizable } from "@/lib/hooks/useResizable"
 import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
 
-type JournalEntry = { id: string; date: string; size: number }
+type JournalEntry = { id: string; date: string; size: number; item: string }
 type Turn = { question: string; answer: string }
 
 const PROSE =
@@ -63,15 +63,11 @@ export function JournalScreen() {
   const [showTrash, setShowTrash] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
-  const composeRef = useRef<HTMLTextAreaElement>(null)
   const brainstormRef = useRef<HTMLTextAreaElement>(null)
   const [brainstormImage, setBrainstormImage] = useState<ImageAttachment | null>(null)
   const { isDragging: isBrainstormDragging } = useImageDrop(brainstormRef, setBrainstormImage)
   const [content, setContent] = useState("")
   const entryReqSeq = useRef(0)
-  const [entry, setEntry] = useState("")
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
 
   const [question, setQuestion] = useState("")
   const [turns, setTurns] = useState<Turn[]>([])
@@ -130,19 +126,10 @@ export function JournalScreen() {
     setComposing(false)
   }
 
-  // Open a blank compose panel and focus the textarea.
   const startCompose = () => {
     setSelected(null)
-    setContent("")
-    setEntry("")
-    setSaveError(null)
     setComposing(true)
   }
-
-  // Focus the compose textarea once the panel has opened.
-  useEffect(() => {
-    if (composing) composeRef.current?.focus()
-  }, [composing])
 
   const loadTrash = useCallback(async () => {
     try {
@@ -161,7 +148,6 @@ export function JournalScreen() {
 
   const deleteEntry = useCallback(
     async (entryId: string) => {
-      if (!window.confirm("Move this entry to trash?")) return
       try {
         const res = await fetch(`/api/journal/${entryId}`, { method: "DELETE" })
         if (!res.ok) {
@@ -196,7 +182,6 @@ export function JournalScreen() {
 
   const purgeEntry = useCallback(
     async (entryId: string) => {
-      if (!window.confirm("Permanently delete this entry? This cannot be undone.")) return
       try {
         const res = await fetch(`/api/journal/${entryId}?purge=true`, { method: "DELETE" })
         if (!res.ok) {
@@ -218,33 +203,6 @@ export function JournalScreen() {
     setShowTrash(next)
     if (next) void loadTrash()
   }, [showTrash, loadTrash])
-
-  const save = useCallback(async () => {
-    const text = entry.trim()
-    if (!text || saving) return
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const res = await fetch("/api/journal", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content: text }),
-      })
-      if (!res.ok) {
-        const body = await res.text()
-        setSaveError(`Save failed (HTTP ${res.status}): ${body}`)
-        return
-      }
-      const { id } = (await res.json()) as { id: string }
-      setEntry("")
-      await loadDates()
-      await loadEntry(id)
-    } catch (e) {
-      setSaveError(String(e))
-    } finally {
-      setSaving(false)
-    }
-  }, [entry, saving, loadDates, loadEntry])
 
   const appendToLastAnswer = useCallback((chunk: string) => {
     setTurns((prev) => {
@@ -302,7 +260,10 @@ export function JournalScreen() {
       const saveRes = await fetch("/api/journal", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content: `### Brainstorm\n\n**Q:** ${q}\n\n${answer}` }),
+        body: JSON.stringify({
+          content: `### Brainstorm\n\n**Q:** ${q}\n\n${answer}`,
+          item: q.slice(0, 20),
+        }),
       })
       if (!saveRes.ok) {
         const body = await saveRes.text()
@@ -334,14 +295,14 @@ export function JournalScreen() {
           panelOpen ? "border-r" : "flex-1",
         )}
       >
-        {/* Top bar: New entry create path + Trash toggle */}
+        {/* Top bar: New entry + Trash toggle */}
         <div className="flex items-center gap-2 border-b p-2">
           <button
             type="button"
             onClick={startCompose}
             className="flex flex-1 items-center justify-center gap-1 rounded-md border border-dashed px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
-            <span className="text-base leading-none">+</span> New entry
+            <span className="text-base leading-none">+</span> New
           </button>
           <button
             type="button"
@@ -369,6 +330,7 @@ export function JournalScreen() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
+                  <th className="px-3 py-2 text-left">Item</th>
                   <th className="px-3 py-2 text-left">Deleted</th>
                   <th className="px-3 py-2 text-right">Size (KB)</th>
                   <th className="px-3 py-2 text-right">Actions</th>
@@ -379,6 +341,9 @@ export function JournalScreen() {
                   .sort((a, b) => b.id.localeCompare(a.id))
                   .map((e) => (
                     <tr key={e.id} className="border-b last:border-0">
+                      <td className="w-[7rem] max-w-[7rem] truncate px-3 py-2 text-xs">
+                        {e.item || "—"}
+                      </td>
                       <td className="px-3 py-2 text-xs tabular-nums">
                         {e.date}
                         {entryTime(e.id) && (
@@ -417,45 +382,42 @@ export function JournalScreen() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
+                <th className="px-3 py-2 text-left">Item</th>
                 <th className="px-3 py-2 text-left">Date</th>
                 <th className="px-3 py-2 text-right">Size (KB)</th>
               </tr>
             </thead>
             <tbody>
               {sortedEntries.map((e) => (
-                <tr key={e.id} className="border-b last:border-0">
-                  <td colSpan={2} className="p-0">
-                    <div className="group relative flex items-center">
-                      <button
-                        type="button"
-                        aria-pressed={selected === e.id}
-                        onClick={() => void loadEntry(e.id)}
-                        className={cn(
-                          "flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors",
-                          selected === e.id
-                            ? "bg-accent font-medium text-accent-foreground"
-                            : "hover:bg-accent/50",
-                        )}
-                      >
-                        <span className="tabular-nums">
-                          {e.date}
-                          {entryTime(e.id) && (
-                            <span className="ml-2 text-muted-foreground">{entryTime(e.id)}</span>
-                          )}
-                        </span>
-                        <span className="pr-6 tabular-nums text-muted-foreground">
-                          {(e.size / 1024).toFixed(1)}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void deleteEntry(e.id)}
-                        aria-label={`Delete entry ${e.id}`}
-                        className="absolute right-2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive focus:bg-accent focus:text-destructive focus:opacity-100 group-hover:opacity-100"
-                      >
-                        <TrashIcon />
-                      </button>
-                    </div>
+                <tr
+                  key={e.id}
+                  onClick={() => void loadEntry(e.id)}
+                  className={cn(
+                    "group cursor-pointer border-b last:border-0 text-xs transition-colors",
+                    selected === e.id
+                      ? "bg-accent font-medium text-accent-foreground"
+                      : "hover:bg-accent/50",
+                  )}
+                >
+                  <td className="max-w-[7rem] truncate px-3 py-2">
+                    {e.item || "—"}
+                  </td>
+                  <td className="truncate px-3 py-2 tabular-nums text-muted-foreground">
+                    {e.date}
+                    {entryTime(e.id) && (
+                      <span className="ml-1">{entryTime(e.id)}</span>
+                    )}
+                  </td>
+                  <td className="relative px-3 py-2 text-right tabular-nums text-muted-foreground">
+                    {(e.size / 1024).toFixed(1)}
+                    <button
+                      type="button"
+                      onClick={(ev) => { ev.stopPropagation(); void deleteEntry(e.id) }}
+                      aria-label={`Delete entry ${e.id}`}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive focus:bg-accent focus:text-destructive focus:opacity-100 group-hover:opacity-100"
+                    >
+                      <TrashIcon />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -477,7 +439,7 @@ export function JournalScreen() {
           {/* Panel header */}
           <div className="flex items-center justify-between border-b px-4 py-2">
             <div className="flex gap-3 text-xs text-muted-foreground">
-              {composing ? (
+              {composing && !selected ? (
                 <span className="font-medium">New entry</span>
               ) : (
                 <>
@@ -510,32 +472,7 @@ export function JournalScreen() {
                 </div>
               )}
 
-              {/* Record today */}
-              <section className="flex flex-col gap-2 rounded-lg border bg-card p-4">
-                <h3 className="text-sm font-semibold">Record today</h3>
-                <textarea
-                  ref={composeRef}
-                  value={entry}
-                  onChange={(e) => setEntry(e.target.value)}
-                  placeholder="What happened today? What are you thinking about?"
-                  rows={5}
-                  className="w-full resize-y rounded-md border bg-background p-3 text-sm"
-                />
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => void save()}
-                    disabled={saving || entry.trim() === ""}
-                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-                  >
-                    {saving ? "Saving…" : "Save entry"}
-                  </button>
-                  {saveError && <span className="text-sm text-destructive">{saveError}</span>}
-                </div>
-              </section>
-
-              {/* Brainstorm (hidden while composing a new blank entry) */}
-              {selected && (
+              {/* Brainstorm with Claude */}
               <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
                 <div>
                   <h3 className="text-sm font-semibold">Brainstorm with Claude</h3>
@@ -598,7 +535,6 @@ export function JournalScreen() {
                   </div>
                 </div>
               </section>
-              )}
             </div>
           </div>
         </div>
