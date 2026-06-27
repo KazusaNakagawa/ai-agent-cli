@@ -68,6 +68,11 @@ export function JournalScreen() {
   const { isDragging: isBrainstormDragging } = useImageDrop(brainstormRef, setBrainstormImage)
   const [content, setContent] = useState("")
   const entryReqSeq = useRef(0)
+  // Read-only preview of a trashed entry (so the user can inspect before
+  // restoring or permanently deleting it).
+  const [trashPreview, setTrashPreview] = useState<string | null>(null)
+  const [trashContent, setTrashContent] = useState("")
+  const trashReqSeq = useRef(0)
 
   const [question, setQuestion] = useState("")
   const [turns, setTurns] = useState<Turn[]>([])
@@ -123,6 +128,23 @@ export function JournalScreen() {
     setContent(data.content)
   }, [])
 
+  const loadTrashEntry = useCallback(async (entryId: string) => {
+    const seq = ++trashReqSeq.current
+    setTrashPreview(entryId)
+    setTrashContent("")
+    let res: Response
+    try {
+      res = await fetch(`/api/journal/trash/${entryId}`, { cache: "no-store" })
+    } catch {
+      return
+    }
+    if (seq !== trashReqSeq.current) return
+    if (!res.ok) return
+    const data = (await res.json()) as { content: string }
+    if (seq !== trashReqSeq.current) return
+    setTrashContent(data.content)
+  }, [])
+
   useEffect(() => {
     void loadDates()
   }, [loadDates])
@@ -130,11 +152,13 @@ export function JournalScreen() {
   const closePanel = () => {
     setSelected(null)
     setComposing(false)
+    setTrashPreview(null)
     brainstormEntryId.current = null
   }
 
   const startCompose = () => {
     setSelected(null)
+    setTrashPreview(null)
     setComposing(true)
   }
 
@@ -179,6 +203,7 @@ export function JournalScreen() {
           setEntriesError(`Restore failed (HTTP ${res.status})`)
           return
         }
+        setTrashPreview((cur) => (cur === entryId ? null : cur))
         await Promise.all([loadDates(), loadTrash()])
       } catch (e) {
         setEntriesError(`Restore failed: ${String(e)}`)
@@ -195,6 +220,7 @@ export function JournalScreen() {
           setEntriesError(`Permanent delete failed (HTTP ${res.status})`)
           return
         }
+        setTrashPreview((cur) => (cur === entryId ? null : cur))
         await loadTrash()
       } catch (e) {
         setEntriesError(`Permanent delete failed: ${String(e)}`)
@@ -208,6 +234,10 @@ export function JournalScreen() {
   const toggleTrash = useCallback(() => {
     const next = !showTrash
     setShowTrash(next)
+    // Switching views closes any open panel/preview so the two modes don't mix.
+    setSelected(null)
+    setComposing(false)
+    setTrashPreview(null)
     if (next) void loadTrash()
   }, [showTrash, loadTrash])
 
@@ -305,7 +335,8 @@ export function JournalScreen() {
 
   const sortedEntries = [...entries].sort((a, b) => b.id.localeCompare(a.id))
   const selectedMeta = sortedEntries.find((e) => e.id === selected)
-  const panelOpen = selected !== null || composing
+  const trashMeta = trash.find((e) => e.id === trashPreview)
+  const panelOpen = selected !== null || composing || trashPreview !== null
 
   return (
     <div className="flex h-full">
@@ -362,7 +393,16 @@ export function JournalScreen() {
                 {[...trash]
                   .sort((a, b) => b.id.localeCompare(a.id))
                   .map((e) => (
-                    <tr key={e.id} className="border-b last:border-0">
+                    <tr
+                      key={e.id}
+                      onClick={() => void loadTrashEntry(e.id)}
+                      className={cn(
+                        "cursor-pointer border-b last:border-0 transition-colors",
+                        trashPreview === e.id
+                          ? "bg-accent font-medium text-accent-foreground"
+                          : "hover:bg-accent/50",
+                      )}
+                    >
                       <td className="w-[7rem] max-w-[7rem] truncate px-3 py-2 text-xs">
                         {e.item || "—"}
                       </td>
@@ -379,14 +419,14 @@ export function JournalScreen() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => void restoreEntry(e.id)}
+                            onClick={(ev) => { ev.stopPropagation(); void restoreEntry(e.id) }}
                             className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                           >
                             Restore
                           </button>
                           <button
                             type="button"
-                            onClick={() => void purgeEntry(e.id)}
+                            onClick={(ev) => { ev.stopPropagation(); void purgeEntry(e.id) }}
                             className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
                           >
                             Delete
@@ -460,8 +500,19 @@ export function JournalScreen() {
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* Panel header */}
           <div className="flex items-center justify-between border-b px-4 py-2">
-            <div className="flex gap-3 text-xs text-muted-foreground">
-              {composing && !selected ? (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              {trashPreview ? (
+                <>
+                  <span className="font-medium text-destructive">Trash</span>
+                  <span>
+                    {trashMeta?.date ?? trashPreview}
+                    {entryTime(trashPreview) && ` ${entryTime(trashPreview)}`}
+                  </span>
+                  {trashMeta && (
+                    <span>{(trashMeta.size / 1024).toFixed(1)} KB</span>
+                  )}
+                </>
+              ) : composing && !selected ? (
                 <span className="font-medium">New entry</span>
               ) : (
                 <>
@@ -475,17 +526,47 @@ export function JournalScreen() {
                 </>
               )}
             </div>
-            <button
-              onClick={closePanel}
-              aria-label="Close panel"
-              className={HEADER_BTN}
-            >
-              <CloseIcon />
-            </button>
+            <div className="flex items-center gap-2">
+              {trashPreview && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void restoreEntry(trashPreview)}
+                    className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    Restore
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void purgeEntry(trashPreview)}
+                    className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+              <button
+                onClick={closePanel}
+                aria-label="Close panel"
+                className={HEADER_BTN}
+              >
+                <CloseIcon />
+              </button>
+            </div>
           </div>
 
           {/* Panel body */}
           <div className="flex-1 overflow-y-auto px-4 py-4">
+            {trashPreview ? (
+              /* Read-only preview of a trashed entry — no brainstorm here. */
+              trashContent ? (
+                <div className={PROSE}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{trashContent}</ReactMarkdown>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              )
+            ) : (
             <div className="flex flex-col gap-6">
               {/* Entry content (read view; hidden while composing a new entry) */}
               {selected && content && (
@@ -550,6 +631,7 @@ export function JournalScreen() {
                 </div>
               </section>
             </div>
+            )}
           </div>
         </div>
       )}

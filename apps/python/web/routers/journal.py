@@ -84,6 +84,18 @@ def list_trash() -> JournalListResponse:
     return JournalListResponse(entries=entries)
 
 
+@router.get("/journal/trash/{entry_id}", response_model=JournalEntryResponse)
+def get_trashed_journal(entry_id: str) -> JournalEntryResponse:
+    """Return the Markdown body for a soft-deleted entry, so the user can
+    preview its content before restoring or permanently deleting it."""
+    content = journal_store.read_trashed_entry(entry_id)
+    if content is None:
+        raise HTTPException(status_code=404, detail=f"Trashed journal not found: {entry_id}")
+    return JournalEntryResponse(
+        id=entry_id, date=journal_store.date_of(entry_id), content=content
+    )
+
+
 @router.post("/journal", response_model=AppendEntryResponse)
 def append_journal(req: AppendEntryRequest) -> AppendEntryResponse:
     """Create a new journal entry file and return its id."""
