@@ -72,16 +72,13 @@ echo "created: $ZIP_PATH (${#files[@]} briefing files)"
 
 # Include input/ directory contents if it exists and is non-empty.
 if [ -d "$INPUT_DIR" ]; then
-    regular_input_files=()
-    shopt -s nullglob
-    input_files=( "$INPUT_DIR"/** )
-    shopt -u nullglob
-    for f in "${input_files[@]+"${input_files[@]}"}"; do
-        [ -f "$f" ] && regular_input_files+=( "$f" )
-    done
-    if [ ${#regular_input_files[@]} -gt 0 ]; then
-        zip -j "$ZIP_PATH" "${regular_input_files[@]}"
-        echo "added input/: ${#regular_input_files[@]} files"
+    input_count=0
+    while IFS= read -r -d '' f; do
+        zip -j "$ZIP_PATH" "$f"
+        input_count=$(( input_count + 1 ))
+    done < <(find "$INPUT_DIR" -type f -print0)
+    if [ "$input_count" -gt 0 ]; then
+        echo "added input/: $input_count files"
     fi
 fi
 
