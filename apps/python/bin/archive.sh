@@ -17,7 +17,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 BRIEFING_DIR="${ARCHIVE_BRIEFING_DIR:-$PROJECT_ROOT/apps/python/output/briefing}"
-INPUT_DIR="${ARCHIVE_INPUT_DIR:-$PROJECT_ROOT/apps/python/input}"
 OUTPUT_DIR="${ARCHIVE_OUTPUT_DIR:-$PROJECT_ROOT/apps/python/output/archive}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-gdrive}"
 RCLONE_PATH="${RCLONE_PATH:-ai-agent/briefing}"
@@ -68,19 +67,7 @@ mkdir -p "$OUTPUT_DIR"
 ZIP_PATH="$OUTPUT_DIR/briefing_$MONTH.zip"
 rm -f "$ZIP_PATH"
 zip -j "$ZIP_PATH" "${files[@]}"
-echo "created: $ZIP_PATH (${#files[@]} briefing files)"
-
-# Include input/ directory contents if it exists and is non-empty.
-if [ -d "$INPUT_DIR" ]; then
-    input_count=0
-    while IFS= read -r -d '' f; do
-        zip -j "$ZIP_PATH" "$f"
-        input_count=$(( input_count + 1 ))
-    done < <(find "$INPUT_DIR" -type f -print0)
-    if [ "$input_count" -gt 0 ]; then
-        echo "added input/: $input_count files"
-    fi
-fi
+echo "created: $ZIP_PATH (${#files[@]} files)"
 
 if ! rclone copy "$ZIP_PATH" "$RCLONE_REMOTE:$RCLONE_PATH/"; then
     echo "error: rclone upload failed. Check that remote '$RCLONE_REMOTE' is configured:" >&2

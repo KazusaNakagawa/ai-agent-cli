@@ -30,16 +30,9 @@ def _fake_rclone(bin_dir: Path) -> None:
     stub.chmod(0o755)
 
 
-def _seed_inputs(input_dir: Path) -> None:
-    input_dir.mkdir(parents=True, exist_ok=True)
-    (input_dir / "prompt_template.txt").write_text("template", encoding="utf-8")
-    (input_dir / "data.csv").write_text("a,b\n1,2", encoding="utf-8")
-
-
 def _run(tmp_path, *args, env_extra=None):
     env = os.environ.copy()
     env["ARCHIVE_BRIEFING_DIR"] = str(tmp_path / "briefing")
-    env["ARCHIVE_INPUT_DIR"] = str(tmp_path / "input")
     env["ARCHIVE_OUTPUT_DIR"] = str(tmp_path / "archive")
     if env_extra:
         env.update(env_extra)
@@ -67,54 +60,6 @@ def test_archives_only_target_month(tmp_path):
     names = sorted(zipfile.ZipFile(zip_path).namelist())
     # Only May md files, not June and not the .txt.
     assert names == ["briefing_2026-05-01.md", "local_2026-05-15.md"]
-
-
-def test_input_dir_included_in_archive(tmp_path):
-    _seed_briefings(tmp_path / "briefing")
-    _seed_inputs(tmp_path / "input")
-    fake_bin = tmp_path / "bin"
-    _fake_rclone(fake_bin)
-
-    result = _run(
-        tmp_path, "--month", "2026-05",
-        env_extra={"PATH": f"{fake_bin}:{os.environ['PATH']}"},
-    )
-    assert result.returncode == 0, result.stderr
-    assert "added input/" in result.stdout
-
-    zip_path = tmp_path / "archive" / "briefing_2026-05.zip"
-    names = sorted(zipfile.ZipFile(zip_path).namelist())
-    assert "data.csv" in names
-    assert "prompt_template.txt" in names
-
-
-def test_missing_input_dir_does_not_fail(tmp_path):
-    _seed_briefings(tmp_path / "briefing")
-    # input/ dir is intentionally absent
-    fake_bin = tmp_path / "bin"
-    _fake_rclone(fake_bin)
-
-    result = _run(
-        tmp_path, "--month", "2026-05",
-        env_extra={"PATH": f"{fake_bin}:{os.environ['PATH']}"},
-    )
-    assert result.returncode == 0, result.stderr
-    zip_path = tmp_path / "archive" / "briefing_2026-05.zip"
-    assert zip_path.exists()
-
-
-def test_empty_input_dir_skipped_silently(tmp_path):
-    _seed_briefings(tmp_path / "briefing")
-    (tmp_path / "input").mkdir()  # empty
-    fake_bin = tmp_path / "bin"
-    _fake_rclone(fake_bin)
-
-    result = _run(
-        tmp_path, "--month", "2026-05",
-        env_extra={"PATH": f"{fake_bin}:{os.environ['PATH']}"},
-    )
-    assert result.returncode == 0, result.stderr
-    assert "added input/" not in result.stdout
 
 
 def test_no_files_skips_with_zero_exit(tmp_path):
