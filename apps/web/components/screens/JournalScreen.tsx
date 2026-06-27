@@ -62,6 +62,7 @@ export function JournalScreen() {
   const [trash, setTrash] = useState<JournalEntry[]>([])
   const [showTrash, setShowTrash] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
+  const [composing, setComposing] = useState(false)
   const brainstormRef = useRef<HTMLTextAreaElement>(null)
   const [brainstormImage, setBrainstormImage] = useState<ImageAttachment | null>(null)
   const { isDragging: isBrainstormDragging } = useImageDrop(brainstormRef, setBrainstormImage)
@@ -99,6 +100,7 @@ export function JournalScreen() {
   const loadEntry = useCallback(async (entryId: string) => {
     const seq = ++entryReqSeq.current
     setSelected(entryId)
+    setComposing(false)
     // Clear immediately so the previous entry's body can't render under the
     // new header while the fetch is in flight (or if it fails).
     setContent("")
@@ -121,6 +123,12 @@ export function JournalScreen() {
 
   const closePanel = () => {
     setSelected(null)
+    setComposing(false)
+  }
+
+  const startCompose = () => {
+    setSelected(null)
+    setComposing(true)
   }
 
   const loadTrash = useCallback(async () => {
@@ -277,7 +285,7 @@ export function JournalScreen() {
 
   const sortedEntries = [...entries].sort((a, b) => b.id.localeCompare(a.id))
   const selectedMeta = sortedEntries.find((e) => e.id === selected)
-  const panelOpen = selected !== null
+  const panelOpen = selected !== null || composing
 
   return (
     <div className="flex h-full">
@@ -289,8 +297,15 @@ export function JournalScreen() {
           panelOpen ? "border-r" : "flex-1",
         )}
       >
-        {/* Top bar: Trash toggle */}
+        {/* Top bar: New entry + Trash toggle */}
         <div className="flex items-center gap-2 border-b p-2">
+          <button
+            type="button"
+            onClick={startCompose}
+            className="flex flex-1 items-center justify-center gap-1 rounded-md border border-dashed px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <span className="text-base leading-none">+</span> New
+          </button>
           <button
             type="button"
             onClick={toggleTrash}
@@ -429,12 +444,18 @@ export function JournalScreen() {
           {/* Panel header */}
           <div className="flex items-center justify-between border-b px-4 py-2">
             <div className="flex gap-3 text-xs text-muted-foreground">
-              <span>
-                {selectedMeta?.date ?? selected}
-                {selected && entryTime(selected) && ` ${entryTime(selected)}`}
-              </span>
-              {selectedMeta && (
-                <span>{(selectedMeta.size / 1024).toFixed(1)} KB</span>
+              {composing && !selected ? (
+                <span className="font-medium">New entry</span>
+              ) : (
+                <>
+                  <span>
+                    {selectedMeta?.date ?? selected}
+                    {selected && entryTime(selected) && ` ${entryTime(selected)}`}
+                  </span>
+                  {selectedMeta && (
+                    <span>{(selectedMeta.size / 1024).toFixed(1)} KB</span>
+                  )}
+                </>
               )}
             </div>
             <button
