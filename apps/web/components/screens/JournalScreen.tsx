@@ -104,6 +104,9 @@ export function JournalScreen() {
     const seq = ++entryReqSeq.current
     setSelected(entryId)
     setComposing(false)
+    // Bind the brainstorm session to this entry so subsequent turns append here.
+    brainstormEntryId.current = entryId
+    setTurns([])
     // Clear immediately so the previous entry's body can't render under the
     // new header while the fetch is in flight (or if it fails).
     setContent("")
