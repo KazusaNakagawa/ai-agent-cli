@@ -73,6 +73,9 @@ export function JournalScreen() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [brainstorming, setBrainstorming] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
+  // Tracks the journal entry id for the current brainstorm session so that
+  // subsequent turns append to the same entry instead of creating new ones.
+  const brainstormEntryId = useRef<string | null>(null)
 
   const { width: listWidth, startResize } = useResizable({
     storageKey: "ai-agent:journal-list-width:v1",
@@ -124,6 +127,7 @@ export function JournalScreen() {
   const closePanel = () => {
     setSelected(null)
     setComposing(false)
+    brainstormEntryId.current = null
   }
 
   const startCompose = () => {
@@ -257,15 +261,30 @@ export function JournalScreen() {
         dropPendingTurn()
         return
       }
-      const saveRes = await fetch("/api/journal", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          content: `### Brainstorm\n\n**Q:** ${q}\n\n${answer}`,
-          item: q.slice(0, 20),
-        }),
-      })
+      const qaBlock = `### Brainstorm\n\n**Q:** ${q}\n\n${answer}`
+      let saveRes: Response
+      if (brainstormEntryId.current) {
+        // Append to the existing entry for this brainstorm session.
+        saveRes = await fetch(`/api/journal/${brainstormEntryId.current}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: qaBlock }),
+        })
+      } else {
+        // First turn: create a new entry and remember its id.
+        saveRes = await fetch("/api/journal", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: qaBlock, item: q.slice(0, 20) }),
+        })
+        if (saveRes.ok) {
+          const saved = (await saveRes.json()) as { id: string }
+          brainstormEntryId.current = saved.id
+        }
+      }
       if (!saveRes.ok) {
+        // 404 means the entry was deleted — reset so the next turn creates fresh.
+        if (saveRes.status === 404) brainstormEntryId.current = null
         const body = await saveRes.text()
         setChatError(`Auto-save failed (HTTP ${saveRes.status}): ${body}`)
         return

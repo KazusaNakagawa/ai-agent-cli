@@ -137,6 +137,26 @@ def append_entry(content: str, date: str | None = None) -> str:
             n += 1
 
 
+def append_to_entry(entry_id: str, content: str) -> bool:
+    """Append additional content to an existing entry file.
+
+    Returns True if the entry was found and updated, False if it does not exist.
+    Used when a brainstorm session continues: subsequent turns are appended to
+    the same file rather than creating a new one.
+    """
+    text = content.strip()
+    if not text:
+        return False
+    if not _ENTRY_RE.match(entry_id):
+        return False
+    path = JOURNAL_DIR / f"{entry_id}.md"
+    if not path.exists() or not path.is_file():
+        return False
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(f"\n\n---\n\n{text}\n")
+    return True
+
+
 def _list_entry_files(directory: Path) -> list[tuple[str, Path]]:
     """Return (entry_id, path) for entry files in a directory, newest first.
 
