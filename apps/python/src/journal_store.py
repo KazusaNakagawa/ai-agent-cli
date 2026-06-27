@@ -194,6 +194,25 @@ def read_entry(entry_id: str) -> str | None:
     return path.read_text(encoding="utf-8")
 
 
+def read_trashed_entry(entry_id: str) -> str | None:
+    """Return the Markdown body for a soft-deleted entry, or None if absent.
+
+    Mirrors ``read_entry`` but reads from the trash directory so the UI can
+    preview an entry's content before deciding whether to restore or purge it.
+    """
+    if not _ENTRY_RE.match(entry_id):
+        return None
+    path = _deleted_dir() / f"{entry_id}.md"
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        # Restore/purge can move or delete the file between the check above and
+        # the read; treat that race as a normal not-found rather than a 500.
+        return None
+
+
 def _deleted_dir() -> Path:
     """Return the trash directory for soft-deleted entries."""
     return JOURNAL_DIR / "deleted"

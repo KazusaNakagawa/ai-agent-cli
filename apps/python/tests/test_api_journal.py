@@ -192,6 +192,36 @@ async def test_restore_unknown_returns_404(authed_client, journal_dir):
     assert resp.status_code == 404
 
 
+async def test_get_trashed_entry_returns_content(authed_client, journal_dir):
+    post = await authed_client.post(
+        "/api/journal", json={"content": "preview me", "date": "2026-06-24"}
+    )
+    entry_id = post.json()["id"]
+    await authed_client.delete(f"/api/journal/{entry_id}")
+
+    resp = await authed_client.get(f"/api/journal/trash/{entry_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == entry_id
+    assert "preview me" in body["content"]
+
+
+async def test_get_trashed_unknown_returns_404(authed_client, journal_dir):
+    resp = await authed_client.get("/api/journal/trash/2099-01-01_120000")
+    assert resp.status_code == 404
+
+
+async def test_get_trashed_active_entry_returns_404(authed_client, journal_dir):
+    # An entry that is still active (not trashed) must not be readable via the
+    # trash preview endpoint.
+    post = await authed_client.post(
+        "/api/journal", json={"content": "still active", "date": "2026-06-24"}
+    )
+    entry_id = post.json()["id"]
+    resp = await authed_client.get(f"/api/journal/trash/{entry_id}")
+    assert resp.status_code == 404
+
+
 async def test_purge_permanently_deletes_from_trash(authed_client, journal_dir):
     post = await authed_client.post(
         "/api/journal", json={"content": "purge me", "date": "2026-06-24"}
