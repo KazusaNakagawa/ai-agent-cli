@@ -67,7 +67,17 @@ def list_journal() -> JournalListResponse:
 @router.get("/journal/trash", response_model=JournalListResponse)
 def list_trash() -> JournalListResponse:
     """Return soft-deleted journal entries, newest first."""
-    return JournalListResponse(entries=_to_entries(journal_store.list_trashed()))
+    files = journal_store.list_trashed()
+    entries = [
+        JournalEntry(
+            id=entry_id,
+            date=journal_store.date_of(entry_id),
+            size=path.stat().st_size,
+            item=journal_store.get_trashed_item(entry_id),
+        )
+        for entry_id, path in files
+    ]
+    return JournalListResponse(entries=entries)
 
 
 @router.post("/journal", response_model=AppendEntryResponse)

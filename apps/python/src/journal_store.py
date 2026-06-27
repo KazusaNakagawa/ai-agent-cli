@@ -71,12 +71,27 @@ def save_item(entry_id: str, item: str) -> None:
 
 
 def get_item(entry_id: str) -> str:
-    """Return the stored item label for an entry, or empty string if absent."""
+    """Return the stored item label for an active entry, or empty string if absent."""
     import json
 
     if not _ENTRY_RE.match(entry_id):
         return ""
     p = _item_path(entry_id)
+    if not p.exists():
+        return ""
+    try:
+        return json.loads(p.read_text(encoding="utf-8")).get("item", "")
+    except Exception:
+        return ""
+
+
+def get_trashed_item(entry_id: str) -> str:
+    """Return the stored item label for a soft-deleted entry, or empty string."""
+    import json
+
+    if not _ENTRY_RE.match(entry_id):
+        return ""
+    p = _deleted_dir() / f"{entry_id}.json"
     if not p.exists():
         return ""
     try:
