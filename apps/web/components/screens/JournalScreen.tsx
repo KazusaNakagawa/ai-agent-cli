@@ -493,13 +493,7 @@ export function JournalScreen() {
 
               {/* Brainstorm with Claude */}
               <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-                <div>
-                  <h3 className="text-sm font-semibold">Brainstorm with Claude</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Ask anything — Claude uses your recent journal entries as context.
-                    Answers are saved to today&apos;s journal automatically.
-                  </p>
-                </div>
+                <h3 className="text-sm font-semibold">Brainstorm with Claude</h3>
 
                 {turns.length > 0 && (
                   <div className="flex flex-col gap-4">
@@ -508,7 +502,7 @@ export function JournalScreen() {
                         <div className="self-end rounded-2xl rounded-br-sm bg-primary px-4 py-2 text-sm text-primary-foreground">
                           {turn.question}
                         </div>
-                        <div className={cn(PROSE, "rounded-2xl rounded-bl-sm border bg-background px-4 py-2")}>
+                        <div className={cn(PROSE, "self-start rounded-2xl rounded-bl-sm border bg-background px-4 py-2")}>
                           {turn.answer ? (
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
                           ) : (
