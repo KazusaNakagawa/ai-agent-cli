@@ -404,7 +404,7 @@ export function JournalScreen() {
                         <span className="w-[7rem] flex-shrink-0 truncate">
                           {e.item || "—"}
                         </span>
-                        <span className="w-[5rem] flex-shrink-0 whitespace-nowrap tabular-nums text-muted-foreground">
+                        <span className="w-[5rem] flex-shrink-0 truncate tabular-nums text-muted-foreground">
                           {e.date}
                           {entryTime(e.id) && (
                             <span className="ml-1">{entryTime(e.id)}</span>

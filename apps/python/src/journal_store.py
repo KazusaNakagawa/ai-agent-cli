@@ -63,6 +63,8 @@ def save_item(entry_id: str, item: str) -> None:
     """Persist a short item label (≤20 chars) alongside the entry markdown."""
     import json
 
+    if not _ENTRY_RE.match(entry_id):
+        raise ValueError(f"Invalid journal entry id: {entry_id!r}")
     _item_path(entry_id).write_text(
         json.dumps({"item": item[:20]}, ensure_ascii=False), encoding="utf-8"
     )
@@ -72,6 +74,8 @@ def get_item(entry_id: str) -> str:
     """Return the stored item label for an entry, or empty string if absent."""
     import json
 
+    if not _ENTRY_RE.match(entry_id):
+        return ""
     p = _item_path(entry_id)
     if not p.exists():
         return ""

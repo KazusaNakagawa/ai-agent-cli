@@ -78,7 +78,10 @@ def append_journal(req: AppendEntryRequest) -> AppendEntryResponse:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if req.item:
-        journal_store.save_item(entry_id, req.item)
+        try:
+            journal_store.save_item(entry_id, req.item)
+        except Exception:
+            pass  # item label is best-effort; entry is already committed
     return AppendEntryResponse(id=entry_id, date=journal_store.date_of(entry_id))
 
 
