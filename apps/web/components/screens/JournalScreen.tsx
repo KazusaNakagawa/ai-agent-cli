@@ -391,42 +391,35 @@ export function JournalScreen() {
             </thead>
             <tbody>
               {sortedEntries.map((e) => (
-                <tr key={e.id} className="border-b last:border-0">
-                  <td colSpan={3} className="p-0">
-                    <div className="group relative flex items-center">
-                      <button
-                        type="button"
-                        aria-pressed={selected === e.id}
-                        onClick={() => void loadEntry(e.id)}
-                        className={cn(
-                          "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
-                          selected === e.id
-                            ? "bg-accent font-medium text-accent-foreground"
-                            : "hover:bg-accent/50",
-                        )}
-                      >
-                        <span className="w-[7rem] flex-shrink-0 truncate">
-                          {e.item || "—"}
-                        </span>
-                        <span className="w-[5rem] flex-shrink-0 truncate tabular-nums text-muted-foreground">
-                          {e.date}
-                          {entryTime(e.id) && (
-                            <span className="ml-1">{entryTime(e.id)}</span>
-                          )}
-                        </span>
-                        <span className="flex-1 whitespace-nowrap pr-6 text-right tabular-nums text-muted-foreground">
-                          {(e.size / 1024).toFixed(1)}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void deleteEntry(e.id)}
-                        aria-label={`Delete entry ${e.id}`}
-                        className="absolute right-2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive focus:bg-accent focus:text-destructive focus:opacity-100 group-hover:opacity-100"
-                      >
-                        <TrashIcon />
-                      </button>
-                    </div>
+                <tr
+                  key={e.id}
+                  onClick={() => void loadEntry(e.id)}
+                  className={cn(
+                    "group cursor-pointer border-b last:border-0 text-xs transition-colors",
+                    selected === e.id
+                      ? "bg-accent font-medium text-accent-foreground"
+                      : "hover:bg-accent/50",
+                  )}
+                >
+                  <td className="max-w-[7rem] truncate px-3 py-2">
+                    {e.item || "—"}
+                  </td>
+                  <td className="truncate px-3 py-2 tabular-nums text-muted-foreground">
+                    {e.date}
+                    {entryTime(e.id) && (
+                      <span className="ml-1">{entryTime(e.id)}</span>
+                    )}
+                  </td>
+                  <td className="relative px-3 py-2 text-right tabular-nums text-muted-foreground">
+                    {(e.size / 1024).toFixed(1)}
+                    <button
+                      type="button"
+                      onClick={(ev) => { ev.stopPropagation(); void deleteEntry(e.id) }}
+                      aria-label={`Delete entry ${e.id}`}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive focus:bg-accent focus:text-destructive focus:opacity-100 group-hover:opacity-100"
+                    >
+                      <TrashIcon />
+                    </button>
                   </td>
                 </tr>
               ))}
