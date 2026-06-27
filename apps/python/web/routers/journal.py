@@ -22,6 +22,7 @@ class JournalEntry(BaseModel):
     id: str  # entry id (file stem), e.g. 2026-06-24_153045
     date: str  # YYYY-MM-DD
     size: int  # bytes
+    item: str  # short label ≤20 chars, empty for legacy entries
 
 
 class JournalListResponse(BaseModel):
@@ -37,6 +38,7 @@ class JournalEntryResponse(BaseModel):
 class AppendEntryRequest(BaseModel):
     content: str = Field(min_length=1)
     date: str | None = None  # defaults to today when omitted
+    item: str | None = None  # optional short label (≤20 chars)
 
 
 class AppendEntryResponse(BaseModel):
@@ -50,6 +52,7 @@ def _to_entries(files: list[tuple[str, Path]]) -> list[JournalEntry]:
             id=entry_id,
             date=journal_store.date_of(entry_id),
             size=path.stat().st_size,
+            item=journal_store.get_item(entry_id),
         )
         for entry_id, path in files
     ]
@@ -74,6 +77,8 @@ def append_journal(req: AppendEntryRequest) -> AppendEntryResponse:
         entry_id = journal_store.append_entry(req.content, req.date)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if req.item:
+        journal_store.save_item(entry_id, req.item)
     return AppendEntryResponse(id=entry_id, date=journal_store.date_of(entry_id))
 
 
