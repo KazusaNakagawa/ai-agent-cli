@@ -261,7 +261,7 @@ export function JournalScreen() {
         dropPendingTurn()
         return
       }
-      const qaBlock = `### Brainstorm\n\n**Q:** ${q}\n\n${answer}`
+      const qaBlock = `${q}\n\n${answer}`
       let saveRes: Response
       if (brainstormEntryId.current) {
         // Append to the existing entry for this brainstorm session.
@@ -493,13 +493,11 @@ export function JournalScreen() {
 
               {/* Brainstorm with Claude */}
               <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-                <h3 className="text-sm font-semibold">Brainstorm with Claude</h3>
-
                 {turns.length > 0 && (
                   <div className="flex flex-col gap-4">
                     {turns.map((turn, i) => (
                       <div key={i} className="flex flex-col gap-2">
-                        <div className="self-end rounded-2xl rounded-br-sm bg-primary px-4 py-2 text-sm text-primary-foreground">
+                        <div className="self-end rounded-2xl rounded-br-sm bg-muted px-4 py-2 text-sm text-foreground">
                           {turn.question}
                         </div>
                         <div className={cn(PROSE, "self-start rounded-2xl rounded-bl-sm border bg-background px-4 py-2")}>
