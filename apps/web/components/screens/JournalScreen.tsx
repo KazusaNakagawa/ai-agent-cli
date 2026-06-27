@@ -127,6 +127,7 @@ export function JournalScreen() {
   const closePanel = () => {
     setSelected(null)
     setComposing(false)
+    brainstormEntryId.current = null
   }
 
   const startCompose = () => {
@@ -282,6 +283,8 @@ export function JournalScreen() {
         }
       }
       if (!saveRes.ok) {
+        // 404 means the entry was deleted — reset so the next turn creates fresh.
+        if (saveRes.status === 404) brainstormEntryId.current = null
         const body = await saveRes.text()
         setChatError(`Auto-save failed (HTTP ${saveRes.status}): ${body}`)
         return

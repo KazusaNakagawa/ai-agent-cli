@@ -144,13 +144,16 @@ def append_to_entry(entry_id: str, content: str) -> bool:
     Used when a brainstorm session continues: subsequent turns are appended to
     the same file rather than creating a new one.
     """
+    text = content.strip()
+    if not text:
+        return False
     if not _ENTRY_RE.match(entry_id):
         return False
     path = JOURNAL_DIR / f"{entry_id}.md"
     if not path.exists() or not path.is_file():
         return False
     with path.open("a", encoding="utf-8") as fh:
-        fh.write(f"\n\n---\n\n{content.strip()}\n")
+        fh.write(f"\n\n---\n\n{text}\n")
     return True
 
 

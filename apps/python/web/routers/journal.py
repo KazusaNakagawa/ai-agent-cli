@@ -106,6 +106,8 @@ def patch_journal(entry_id: str, req: PatchEntryRequest) -> None:
     Used when a brainstorm session continues: subsequent turns are appended to
     the same file rather than creating a new one.
     """
+    if not req.content.strip():
+        raise HTTPException(status_code=400, detail="content must not be blank")
     ok = journal_store.append_to_entry(entry_id, req.content)
     if not ok:
         raise HTTPException(status_code=404, detail=f"Journal not found: {entry_id}")
