@@ -148,7 +148,6 @@ export function JournalScreen() {
 
   const deleteEntry = useCallback(
     async (entryId: string) => {
-      if (!window.confirm("Move this entry to trash?")) return
       try {
         const res = await fetch(`/api/journal/${entryId}`, { method: "DELETE" })
         if (!res.ok) {
@@ -183,7 +182,6 @@ export function JournalScreen() {
 
   const purgeEntry = useCallback(
     async (entryId: string) => {
-      if (!window.confirm("Permanently delete this entry? This cannot be undone.")) return
       try {
         const res = await fetch(`/api/journal/${entryId}?purge=true`, { method: "DELETE" })
         if (!res.ok) {
