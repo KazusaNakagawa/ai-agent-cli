@@ -51,7 +51,7 @@ export function OutputExportPanel() {
   return (
     <div className="space-y-2" data-testid="output-export-panel">
       <p className="text-xs text-muted-foreground">
-        Download all output files (briefing, journal, eval…) as a zip for backup
+        Download all output and input files (briefing, journal, eval, images…) as a zip for backup
         or migration.
       </p>
       <Button

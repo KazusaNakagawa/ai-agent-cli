@@ -1,10 +1,10 @@
-"""GET /api/export — download the whole output/ tree as a single zip.
+"""GET /api/export — download output/ and input/ trees as a single zip.
 
-Bundles ``apps/python/output`` (briefing, journal, eval, archive, ...) into an
-in-memory zip and streams it back as an attachment so the operator can move
-all generated data to another machine in one click. Noise that isn't user
-data is skipped: ``.DS_Store`` files and the ``.sessions`` dirs that hold
-internal claude session ids.
+Bundles ``apps/python/output`` and ``apps/python/input`` into an in-memory zip
+and streams it back as an attachment so the operator can move all generated and
+input data to another machine in one click. Noise that isn't user data is
+skipped: ``.DS_Store`` files and the ``.sessions`` dirs that hold internal
+claude session ids.
 """
 import io
 import zipfile
@@ -18,31 +18,38 @@ from web.auth import require_bearer
 
 router = APIRouter(dependencies=[Depends(require_bearer)])
 
-OUTPUT_DIR = Path(__file__).parents[2] / "output"
+_BASE = Path(__file__).parents[2]
+OUTPUT_DIR = _BASE / "output"
+INPUT_DIR = _BASE / "input"
 
 # Names skipped anywhere in the tree: macOS cruft + internal session state.
 _EXCLUDED_NAMES = {".DS_Store", ".sessions"}
 
 
-def _build_zip(root: Path) -> bytes:
-    """Zip every file under ``root``, keeping paths relative to its parent."""
+def _add_dir(zf: zipfile.ZipFile, root: Path) -> None:
+    """Add every file under ``root`` to ``zf``, keeping paths relative to its parent."""
+    if not root.exists():
+        return
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if _EXCLUDED_NAMES & set(path.relative_to(root).parts):
+            continue
+        zf.write(path, arcname=path.relative_to(root.parent))
+
+
+def _build_zip(roots: list[Path]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        if root.exists():
-            for path in sorted(root.rglob("*")):
-                if not path.is_file():
-                    continue
-                # Skip if any path segment is excluded (covers .sessions dirs).
-                if _EXCLUDED_NAMES & set(path.relative_to(root).parts):
-                    continue
-                zf.write(path, arcname=path.relative_to(root.parent))
+        for root in roots:
+            _add_dir(zf, root)
     return buf.getvalue()
 
 
 @router.get("/export")
 def get_export() -> StreamingResponse:
-    """Return the output/ tree as a downloadable zip attachment."""
-    data = _build_zip(OUTPUT_DIR)
+    """Return the output/ and input/ trees as a downloadable zip attachment."""
+    data = _build_zip([OUTPUT_DIR, INPUT_DIR])
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"archive-{stamp}.zip"
     return StreamingResponse(
