@@ -484,6 +484,13 @@ export function JournalScreen() {
           {/* Panel body */}
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <div className="flex flex-col gap-6">
+              {/* Entry content (read view; hidden while composing a new entry) */}
+              {selected && content && (
+                <div className={PROSE}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                </div>
+              )}
+
               {/* Brainstorm with Claude */}
               <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
                 {turns.length > 0 && (
