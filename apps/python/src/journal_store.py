@@ -205,7 +205,12 @@ def read_trashed_entry(entry_id: str) -> str | None:
     path = _deleted_dir() / f"{entry_id}.md"
     if not path.exists() or not path.is_file():
         return None
-    return path.read_text(encoding="utf-8")
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        # Restore/purge can move or delete the file between the check above and
+        # the read; treat that race as a normal not-found rather than a 500.
+        return None
 
 
 def _deleted_dir() -> Path:

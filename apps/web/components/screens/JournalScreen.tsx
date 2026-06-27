@@ -159,6 +159,8 @@ export function JournalScreen() {
   const startCompose = () => {
     setSelected(null)
     setTrashPreview(null)
+    brainstormEntryId.current = null
+    setTurns([])
     setComposing(true)
   }
 
@@ -238,6 +240,8 @@ export function JournalScreen() {
     setSelected(null)
     setComposing(false)
     setTrashPreview(null)
+    brainstormEntryId.current = null
+    setTurns([])
     if (next) void loadTrash()
   }, [showTrash, loadTrash])
 
@@ -257,6 +261,9 @@ export function JournalScreen() {
     setChatError(null)
     setTurns((prev) => [...prev, { question: q, answer: "" }])
     setQuestion("")
+    // Snapshot the target entry now so later navigation (loadEntry/startCompose/
+    // toggleTrash) can't retarget this in-flight save to a different entry.
+    const targetEntryId = brainstormEntryId.current
     const dropPendingTurn = () => setTurns((prev) => prev.slice(0, -1))
     try {
       const post = await fetch("/api/journal/chat", {
@@ -296,9 +303,9 @@ export function JournalScreen() {
       }
       const qaBlock = `${q}\n\n${answer}`
       let saveRes: Response
-      if (brainstormEntryId.current) {
-        // Append to the existing entry for this brainstorm session.
-        saveRes = await fetch(`/api/journal/${brainstormEntryId.current}`, {
+      if (targetEntryId) {
+        // Append to the entry this session was bound to when it started.
+        saveRes = await fetch(`/api/journal/${targetEntryId}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ content: qaBlock }),
@@ -312,12 +319,18 @@ export function JournalScreen() {
         })
         if (saveRes.ok) {
           const saved = (await saveRes.json()) as { id: string }
-          brainstormEntryId.current = saved.id
+          // Only adopt the new id if navigation hasn't started a different
+          // session in the meantime (ref still on this session's snapshot).
+          if (brainstormEntryId.current === targetEntryId) {
+            brainstormEntryId.current = saved.id
+          }
         }
       }
       if (!saveRes.ok) {
         // 404 means the entry was deleted — reset so the next turn creates fresh.
-        if (saveRes.status === 404) brainstormEntryId.current = null
+        if (saveRes.status === 404 && brainstormEntryId.current === targetEntryId) {
+          brainstormEntryId.current = null
+        }
         const body = await saveRes.text()
         setChatError(`Auto-save failed (HTTP ${saveRes.status}): ${body}`)
         return
@@ -395,9 +408,18 @@ export function JournalScreen() {
                   .map((e) => (
                     <tr
                       key={e.id}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Preview trashed entry ${e.item || e.id}`}
                       onClick={() => void loadTrashEntry(e.id)}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault()
+                          void loadTrashEntry(e.id)
+                        }
+                      }}
                       className={cn(
-                        "cursor-pointer border-b last:border-0 transition-colors",
+                        "cursor-pointer border-b last:border-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                         trashPreview === e.id
                           ? "bg-accent font-medium text-accent-foreground"
                           : "hover:bg-accent/50",
