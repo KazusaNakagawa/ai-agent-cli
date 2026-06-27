@@ -44,7 +44,7 @@ def get_export() -> StreamingResponse:
     """Return the output/ tree as a downloadable zip attachment."""
     data = _build_zip(OUTPUT_DIR)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"output-export-{stamp}.zip"
+    filename = f"archive-{stamp}.zip"
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/zip",

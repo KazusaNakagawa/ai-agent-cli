@@ -35,7 +35,7 @@ export function OutputExportPanel() {
     const blob = await res.blob()
     const name = filenameFrom(
       res.headers.get("content-disposition"),
-      "output-export.zip",
+      "archive.zip",
     )
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -61,7 +61,7 @@ export function OutputExportPanel() {
         disabled={busy}
         data-testid="output-export"
       >
-        {busy ? "Preparing…" : "Download output zip"}
+        {busy ? "Preparing…" : "Download archive zip"}
       </Button>
       {status === "success" && (
         <p
