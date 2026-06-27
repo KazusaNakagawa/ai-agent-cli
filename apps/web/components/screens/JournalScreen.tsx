@@ -332,6 +332,7 @@ export function JournalScreen() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
+                  <th className="px-3 py-2 text-left">Item</th>
                   <th className="px-3 py-2 text-left">Deleted</th>
                   <th className="px-3 py-2 text-right">Size (KB)</th>
                   <th className="px-3 py-2 text-right">Actions</th>
@@ -342,6 +343,9 @@ export function JournalScreen() {
                   .sort((a, b) => b.id.localeCompare(a.id))
                   .map((e) => (
                     <tr key={e.id} className="border-b last:border-0">
+                      <td className="w-[7rem] max-w-[7rem] truncate px-3 py-2 text-xs">
+                        {e.item || "—"}
+                      </td>
                       <td className="px-3 py-2 text-xs tabular-nums">
                         {e.date}
                         {entryTime(e.id) && (
