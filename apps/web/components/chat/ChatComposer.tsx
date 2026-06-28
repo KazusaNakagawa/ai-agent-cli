@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
+import { insertAtCursor } from "@/lib/insertAtCursor"
 import type { ImageAttachment } from "@/lib/types/image"
 
 type Props = {
@@ -112,6 +113,9 @@ export function ChatComposer({
           onRemove={() => setAttachedImage(null)}
           disabled={busy}
           isDragging={isDragging}
+          onInsertFile={(markdown) =>
+            setInput(insertAtCursor(textareaRef.current, input, markdown))
+          }
         />
         {!supportsMic && (
           <p

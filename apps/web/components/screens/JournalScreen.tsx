@@ -7,6 +7,7 @@ import { CloseIcon, TrashIcon } from "@/components/briefing/icons"
 import { ResizeHandle } from "@/components/ResizeHandle"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
+import { insertAtCursor } from "@/lib/insertAtCursor"
 import { useResizable } from "@/lib/hooks/useResizable"
 import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
@@ -638,6 +639,9 @@ export function JournalScreen() {
                     onAttach={setBrainstormImage}
                     onRemove={() => setBrainstormImage(null)}
                     isDragging={isBrainstormDragging}
+                    onInsertFile={(markdown) =>
+                      setQuestion(insertAtCursor(brainstormRef.current, question, markdown))
+                    }
                   />
                   <div className="flex items-center gap-3">
                     <button
