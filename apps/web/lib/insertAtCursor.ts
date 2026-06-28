@@ -7,9 +7,14 @@ export function insertAtCursor(
   text: string,
 ): string {
   if (!textarea) return value + text
-  const start = textarea.selectionStart ?? value.length
-  const end = textarea.selectionEnd ?? value.length
-  const next = value.slice(0, start) + text + value.slice(end)
+  // Slice against the live DOM value, not the passed `value`. The caller may
+  // have captured `value` at render time (e.g. before an async upload), but the
+  // caret indices come from the live element — reading the base string from the
+  // same source keeps them in sync so characters typed mid-upload aren't lost.
+  const base = textarea.value
+  const start = textarea.selectionStart ?? base.length
+  const end = textarea.selectionEnd ?? base.length
+  const next = base.slice(0, start) + text + base.slice(end)
   // Restore the caret after React re-renders with the new value.
   const caret = start + text.length
   requestAnimationFrame(() => {
