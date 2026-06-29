@@ -53,7 +53,8 @@ export const USAGE_RANGE_DAYS: Record<UsageRange, number | null> = {
 // Keep only summary rows within `range` calendar days of `today` (ISO
 // YYYY-MM-DD). Comparison is lexicographic on ISO date strings, which is
 // correct for fixed-width YYYY-MM-DD. The cutoff is `today - (days - 1)` so a
-// 7-day window includes today plus the previous six days.
+// 7-day window includes today plus the previous six days; rows dated after
+// `today` are excluded so the window stays bounded on both ends.
 export function filterSummaryByRange(
   summary: UsageDailySummary[],
   range: UsageRange,
@@ -64,7 +65,7 @@ export function filterSummaryByRange(
   const base = new Date(`${today}T00:00:00`)
   base.setDate(base.getDate() - (days - 1))
   const cutoff = formatLocalDate(base)
-  return summary.filter((d) => d.date >= cutoff)
+  return summary.filter((d) => d.date >= cutoff && d.date <= today)
 }
 
 // Numeric fields a user can chart on the y-axis.

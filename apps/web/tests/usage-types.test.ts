@@ -65,6 +65,12 @@ describe("filterSummaryByRange", () => {
     expect(result.map((d) => d.date)).toEqual(["2026-06-23", "2026-06-29"])
   })
 
+  it("drops future-dated rows past today for bounded ranges", () => {
+    const withFuture = [...summary, day("2026-07-01")]
+    const result = filterSummaryByRange(withFuture, "7d", "2026-06-29")
+    expect(result.map((d) => d.date)).toEqual(["2026-06-23", "2026-06-29"])
+  })
+
   it("returns all rows for the 'all' range", () => {
     const result = filterSummaryByRange(summary, "all", "2026-06-29")
     expect(result).toHaveLength(3)

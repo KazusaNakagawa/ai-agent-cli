@@ -124,10 +124,15 @@ export function filterSummaryByRange(
   if (days === null) return summary
   const base = new Date(`${today}T00:00:00`)
   base.setDate(base.getDate() - (days - 1))
-  const cutoff = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")}`
-  return summary.filter((d) => d.date >= cutoff)
+  // Reuse the shared local-ISO formatter so cutoff/today use one source of truth.
+  const cutoff = formatLocalDate(base)
+  return summary.filter((d) => d.date >= cutoff && d.date <= today)
 }
 ```
+
+> 実装メモ: `formatLocalDate` は `@/lib/utils` から import する（手書きの YYYY-MM-DD
+> 組み立てを避け一元化）。フィルタは下限 `cutoff` に加え上限 `today` も課し、未来日の
+> 行が窓に残らないようにする。
 
 - [ ] **Step 4: Run the tests to verify they pass**
 

@@ -268,7 +268,7 @@ describe("UsageDashboard", () => {
       const rangeSelect = await screen.findByTestId("usage-range-select")
       expect((rangeSelect as HTMLSelectElement).value).toBe("7d")
 
-      // 2026-06-19/20 are >7 days before 2026-07-15, so no trend points render.
+      // 2026-06-23/24 are >7 days before 2026-07-15, so no trend points render.
       await waitFor(() => {
         expect(screen.queryByTestId("usage-trend-point-0")).toBeNull()
       })
