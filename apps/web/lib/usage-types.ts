@@ -1,3 +1,5 @@
+import { formatLocalDate } from "@/lib/utils"
+
 export type UsageRecord = {
   timestamp: string
   label: string
@@ -61,7 +63,7 @@ export function filterSummaryByRange(
   if (days === null) return summary
   const base = new Date(`${today}T00:00:00`)
   base.setDate(base.getDate() - (days - 1))
-  const cutoff = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")}`
+  const cutoff = formatLocalDate(base)
   return summary.filter((d) => d.date >= cutoff)
 }
 
