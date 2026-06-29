@@ -1,5 +1,6 @@
 requests
 yfinance
+matplotlib
 python-dotenv
 notion-client
 pytest
