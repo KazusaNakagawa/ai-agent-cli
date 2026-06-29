@@ -1,9 +1,11 @@
 """Generate english_learn_app word-set JSON via the claude CLI."""
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import pathlib
+import time
 import uuid
 
 from pydantic import ValidationError
@@ -16,6 +18,7 @@ logger = logging.getLogger(__name__)
 PROMPTS_DIR = pathlib.Path(__file__).resolve().parents[1].parent / "prompts"
 FEWSHOT_PATH = PROMPTS_DIR / "wordset_fewshot.json"
 TIMEOUT = 300
+OUTPUT_DIR = pathlib.Path(__file__).resolve().parents[1].parent / "output"
 
 
 def _load_fewshot() -> str:
@@ -124,3 +127,56 @@ def generate_wordset(
             ws = dedup(ws, {w.word for w in existing.words})
         return ws
     raise ValueError(f"failed to generate valid word set after {max_retries} attempts: {last_error}")
+
+
+def load_existing(path: pathlib.Path | None) -> WordSet | None:
+    """Load an existing word set file, or return None if path is None/missing."""
+    if path is None or not path.exists():
+        return None
+    return WordSet.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def merge_into(existing: WordSet, new: WordSet) -> WordSet:
+    """Merge new words into existing word set by appending."""
+    return WordSet(words=[*existing.words, *new.words])
+
+
+def write_output(ws: WordSet, out_dir: pathlib.Path) -> pathlib.Path:
+    """Write word set to a timestamped JSON file in out_dir."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"word_set_{int(time.time())}.json"
+    out.write_text(
+        json.dumps(ws.model_dump(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return out
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point for generating word sets."""
+    parser = argparse.ArgumentParser(description="Generate word-set JSON via claude CLI.")
+    parser.add_argument("--words", help="comma-separated words")
+    parser.add_argument("--theme", help="theme for generated words")
+    parser.add_argument("--count", type=int, default=10)
+    parser.add_argument("--existing", type=pathlib.Path, help="existing word_set.json for dedup/merge")
+    parser.add_argument("--merge", action="store_true", help="merge result into the existing file")
+    args = parser.parse_args(argv)
+
+    if not args.words and not args.theme:
+        parser.error("provide --words or --theme")
+
+    words = [w.strip() for w in args.words.split(",")] if args.words else None
+    existing = load_existing(args.existing)
+    result = generate_wordset(words, args.theme, args.count, existing)
+
+    if args.merge and existing is not None:
+        result = merge_into(existing, result)
+
+    out = write_output(result, OUTPUT_DIR)
+    logger.info("wrote %d words to %s", len(result.words), out)
+    print(out)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

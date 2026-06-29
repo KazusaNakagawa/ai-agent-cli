@@ -91,3 +91,32 @@ def test_generate_raises_after_max_retries():
         with pytest.raises(ValueError):
             wordset.generate_wordset(words=["rarity"], theme=None, count=1,
                                      existing=None, max_retries=2)
+
+
+def test_write_output_creates_file(tmp_path):
+    from src.generator.wordset import write_output
+    from src.generator.wordset_schema import WordSet, Word, Sentence
+    ws = WordSet(words=[Word(id="w", word="x", meaning="y", sentences=[
+        Sentence(id=f"s{i}", english="e", japanese="j", category="ビジネス") for i in range(15)
+    ])])
+    out = write_output(ws, tmp_path)
+    assert out.exists()
+    reloaded = WordSet.model_validate_json(out.read_text(encoding="utf-8"))
+    assert reloaded.words[0].word == "x"
+    assert "x" in out.read_text(encoding="utf-8")
+
+
+def test_merge_into_appends(tmp_path):
+    from src.generator.wordset import merge_into
+    from src.generator.wordset_schema import WordSet, Word, Sentence
+    def mk(w):
+        return Word(id=w, word=w, meaning="m", sentences=[
+            Sentence(id=f"{w}{i}", english="e", japanese="j", category="ビジネス") for i in range(15)
+        ])
+    merged = merge_into(WordSet(words=[mk("a")]), WordSet(words=[mk("b")]))
+    assert [w.word for w in merged.words] == ["a", "b"]
+
+
+def test_load_existing_none_returns_none():
+    from src.generator.wordset import load_existing
+    assert load_existing(None) is None
