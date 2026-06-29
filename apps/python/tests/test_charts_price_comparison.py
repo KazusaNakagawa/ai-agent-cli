@@ -79,6 +79,30 @@ def test_generate_writes_dated_png(tmp_path, monkeypatch):
     assert out.exists() and out.stat().st_size > 0
 
 
+def _yf_single_ticker_flat(ticker: str) -> pd.DataFrame:
+    """Mimic yfinance.download() for a single ticker: flat DataFrame with plain
+    column names (e.g. 'Close', 'Open') — NOT a MultiIndex."""
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"])
+    return pd.DataFrame(
+        {"Close": [10.0, 11.0, 12.0], "Open": [9.0, 10.0, 11.0]},
+        index=idx,
+    )
+
+
+def test_generate_single_ticker_writes_dated_png(tmp_path, monkeypatch):
+    """Single-ticker download returns a flat frame; _extract_close must name
+    the column after the ticker so the present-filter keeps it."""
+    ticker = "PLTR"
+    monkeypatch.setattr(
+        pc_module.yf, "download",
+        lambda *a, **k: _yf_single_ticker_flat(ticker),
+    )
+    out = generate_price_comparison([ticker], tmp_path)
+    expected = tmp_path / f"price-comparison-{datetime.now():%Y%m%d}.png"
+    assert out == expected
+    assert out.exists() and out.stat().st_size > 0
+
+
 def test_generate_raises_when_no_usable_data(tmp_path, monkeypatch):
     tickers = ["PLTR", "NVDA"]
     monkeypatch.setattr(

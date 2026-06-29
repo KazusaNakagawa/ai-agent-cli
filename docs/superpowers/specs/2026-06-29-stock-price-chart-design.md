@@ -111,7 +111,7 @@ def generate_price_comparison(
 
 - 1 本/銘柄の折れ線。凡例に ticker 名。
 - Y 軸: 正規化指数（始点=100）。X 軸: 日付。
-- タイトル: `Price comparison (normalized, last {period})`。
+- タイトル: `Price comparison (normalized to 100)`。
 - グリッド表示。`fig.savefig(out_path, dpi=120, bbox_inches="tight")` 後に
   `plt.close(fig)` で確実に解放（メモリリーク防止）。
 
