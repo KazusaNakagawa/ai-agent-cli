@@ -67,14 +67,24 @@ def _yf_multiindex(tickers, with_data=True):
     return pd.DataFrame(data, index=idx, columns=cols)
 
 
+class _FixedDateTime:
+    """Stub for pc_module.datetime so the filename date is deterministic
+    (avoids midnight-boundary flakiness between the call and the assertion)."""
+
+    @classmethod
+    def now(cls):
+        return datetime(2026, 6, 29)
+
+
 def test_generate_writes_dated_png(tmp_path, monkeypatch):
     tickers = ["PLTR", "NVDA"]
+    monkeypatch.setattr(pc_module, "datetime", _FixedDateTime)
     monkeypatch.setattr(
         pc_module.yf, "download",
         lambda *a, **k: _yf_multiindex(tickers),
     )
     out = generate_price_comparison(tickers, tmp_path)
-    expected = tmp_path / f"price-comparison-{datetime.now():%Y%m%d}.png"
+    expected = tmp_path / "price-comparison-20260629.png"
     assert out == expected
     assert out.exists() and out.stat().st_size > 0
 
@@ -93,12 +103,13 @@ def test_generate_single_ticker_writes_dated_png(tmp_path, monkeypatch):
     """Single-ticker download returns a flat frame; _extract_close must name
     the column after the ticker so the present-filter keeps it."""
     ticker = "PLTR"
+    monkeypatch.setattr(pc_module, "datetime", _FixedDateTime)
     monkeypatch.setattr(
         pc_module.yf, "download",
         lambda *a, **k: _yf_single_ticker_flat(ticker),
     )
     out = generate_price_comparison([ticker], tmp_path)
-    expected = tmp_path / f"price-comparison-{datetime.now():%Y%m%d}.png"
+    expected = tmp_path / "price-comparison-20260629.png"
     assert out == expected
     assert out.exists() and out.stat().st_size > 0
 
@@ -109,5 +120,16 @@ def test_generate_raises_when_no_usable_data(tmp_path, monkeypatch):
         pc_module.yf, "download",
         lambda *a, **k: _yf_multiindex(tickers, with_data=False),
     )
+    with pytest.raises(ValueError):
+        generate_price_comparison(tickers, tmp_path)
+
+
+def test_generate_raises_valueerror_when_close_column_absent(tmp_path, monkeypatch):
+    """An empty / invalid-ticker download lacking a 'Close' column must surface
+    as the documented ValueError, not a raw KeyError."""
+    tickers = ["PLTR", "NVDA"]
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    no_close = pd.DataFrame({"Open": [1.0, 2.0]}, index=idx)
+    monkeypatch.setattr(pc_module.yf, "download", lambda *a, **k: no_close)
     with pytest.raises(ValueError):
         generate_price_comparison(tickers, tmp_path)

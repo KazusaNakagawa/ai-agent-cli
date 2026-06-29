@@ -52,7 +52,12 @@ def render_price_comparison(close_df: pd.DataFrame, out_path: Path) -> Path:
 def _extract_close(raw: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
     """Pull the Close frame out of a yfinance.download() result and keep
     only the requested tickers that are actually present, as columns."""
-    close = raw["Close"]
+    try:
+        close = raw["Close"]
+    except KeyError:
+        # Empty / invalid-ticker downloads may lack a "Close" column entirely;
+        # normalize to an empty frame so the caller's ValueError contract holds.
+        return pd.DataFrame(index=raw.index)
     if isinstance(close, pd.Series):
         # Single-ticker download returns a flat Series; name the column after
         # the ticker so the downstream present-filter can find it.

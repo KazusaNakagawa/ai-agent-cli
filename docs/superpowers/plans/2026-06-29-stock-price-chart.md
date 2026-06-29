@@ -268,9 +268,14 @@ Expected: FAIL — `ImportError: cannot import name 'generate_price_comparison'`
 def _extract_close(raw: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
     """Pull the Close frame out of a yfinance.download() result and keep
     only the requested tickers that are actually present, as columns."""
-    close = raw["Close"]
+    try:
+        close = raw["Close"]
+    except KeyError:
+        return pd.DataFrame(index=raw.index)
     if isinstance(close, pd.Series):
-        close = close.to_frame()
+        # Single-ticker download returns a flat Series; name the column after
+        # the ticker so the downstream present-filter can find it.
+        close = close.to_frame(name=tickers[0])
     present = [t for t in tickers if t in close.columns]
     return close.reindex(columns=present)
 
@@ -283,9 +288,14 @@ def generate_price_comparison(
     """Fetch Close prices via yfinance, render a normalized comparison chart,
     and save it to output_dir/price-comparison-YYYYMMDD.png. Returns the saved
     path. Raises ValueError if no usable ticker data was fetched."""
-    raw = yf.download(tickers, period=period, progress=False)
+    try:
+        raw = yf.download(tickers, period=period, progress=False)
+    except Exception as e:
+        logger.warning("price fetch failed for %s: %s", tickers, e)
+        raise ValueError("no usable ticker data for chart") from e
     close = _extract_close(raw, tickers)
     if normalize_to_index(close).columns.empty:
+        logger.warning("no usable close data for tickers %s", tickers)
         raise ValueError("no usable ticker data for chart")
     out_path = output_dir / f"price-comparison-{datetime.now():%Y%m%d}.png"
     return render_price_comparison(close, out_path)

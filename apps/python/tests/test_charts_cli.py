@@ -48,3 +48,27 @@ def test_price_defaults_to_config_tickers(tmp_path, monkeypatch):
 
     assert rc == 0
     assert captured["tickers"] == ["AAA", "BBB"]
+
+
+def test_help_exits_zero():
+    # argparse raises SystemExit(0) for --help; main must preserve that.
+    assert cli.main(["--help"]) == 0
+    assert cli.main(["price", "--help"]) == 0
+
+
+def test_parse_error_returns_two():
+    # Unknown subcommand is a parse error → argparse SystemExit(2).
+    assert cli.main(["bogus"]) == 2
+
+
+def test_price_reports_value_error_and_returns_three(tmp_path, monkeypatch, capsys):
+    def fake_generate(tickers, output_dir, period):
+        raise ValueError("no usable ticker data for chart")
+
+    monkeypatch.setattr(cli, "generate_price_comparison", fake_generate)
+
+    rc = cli.main(["price", "--tickers", "ZZZ", "--output-dir", str(tmp_path)])
+
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "error:" in err and "ZZZ" in err

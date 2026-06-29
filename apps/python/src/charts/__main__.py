@@ -43,8 +43,9 @@ def main(argv: list[str]) -> int:
 
     try:
         args = parser.parse_args(argv)
-    except SystemExit:
-        return 2
+    except SystemExit as e:
+        # Preserve argparse's real exit status (0 for --help, 2 for parse errors).
+        return int(e.code) if e.code is not None else 0
 
     if args.cmd == "price":
         tickers = args.tickers
@@ -53,7 +54,15 @@ def main(argv: list[str]) -> int:
             from src.config import CONFIG
 
             tickers = list(CONFIG.portfolio.tickers)
-        out_path = generate_price_comparison(tickers, args.output_dir, args.period)
+        try:
+            out_path = generate_price_comparison(tickers, args.output_dir, args.period)
+        except ValueError as exc:
+            tickers_str = ", ".join(tickers)
+            print(
+                f"error: {exc} (tickers={tickers_str}, period={args.period})",
+                file=sys.stderr,
+            )
+            return 3
         print(f"saved: {out_path}")
     return 0
 
