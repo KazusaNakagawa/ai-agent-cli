@@ -1,6 +1,5 @@
 import json
 import pathlib
-import json as _json
 from unittest.mock import patch
 import pytest
 
@@ -36,7 +35,7 @@ def _raw_response(word="rarity", n_sentences=16):
             }
         ]
     }
-    return "```json\n" + _json.dumps(obj, ensure_ascii=False) + "\n```"
+    return "```json\n" + json.dumps(obj, ensure_ascii=False) + "\n```"
 
 
 def test_extract_json_handles_fences():
@@ -78,6 +77,12 @@ def test_generate_retries_on_invalid_then_succeeds():
     assert m.call_count == 2
     assert ws.words[0].word == "rarity"
     assert ws.words[0].id != "x"  # ids reassigned
+
+
+def test_generate_raises_without_words_or_theme():
+    from src.generator import wordset
+    with pytest.raises(ValueError, match="provide words or theme"):
+        wordset.generate_wordset(None, None, 1, None)
 
 
 def test_generate_raises_after_max_retries():

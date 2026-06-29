@@ -6,6 +6,8 @@ import logging
 import pathlib
 import uuid
 
+from pydantic import ValidationError
+
 from src.claude_runner import run_claude
 from src.generator.wordset_schema import KNOWN_CATEGORIES, WordSet
 
@@ -100,13 +102,15 @@ def generate_wordset(
     max_retries: int = 2,
 ) -> WordSet:
     """Generate a validated word set, retrying on extraction/validation failure."""
+    if not words and not theme:
+        raise ValueError("provide words or theme")
     prompt = _build_prompt(words, theme, count)
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
         raw = run_claude(prompt, "wordset generation", timeout=TIMEOUT)
         try:
             ws = WordSet.model_validate(extract_json(raw))
-        except (ValueError, Exception) as exc:  # noqa: BLE001 - validation/extract
+        except (ValueError, ValidationError) as exc:
             last_error = exc
             logger.warning("wordset attempt %d/%d failed: %s", attempt, max_retries, exc)
             prompt = (
