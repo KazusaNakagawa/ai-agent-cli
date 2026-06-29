@@ -1,10 +1,12 @@
-import math
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from src.charts import price_comparison as pc_module
 from src.charts.price_comparison import (
+    generate_price_comparison,
     normalize_to_index,
     render_price_comparison,
 )
@@ -45,3 +47,43 @@ def test_render_writes_a_nonempty_png(tmp_path: Path):
     assert result == out_path
     assert out_path.exists()
     assert out_path.stat().st_size > 0
+
+
+def _yf_multiindex(tickers, with_data=True):
+    """Mimic yfinance.download() output: columns are a MultiIndex
+    (field, ticker) including a top-level 'Close'."""
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"])
+    cols = pd.MultiIndex.from_product([["Close", "Open"], tickers])
+    if with_data:
+        data = {
+            ("Close", tickers[0]): [10.0, 11.0, 12.0],
+            ("Close", tickers[1]): [100.0, 90.0, 110.0],
+            ("Open", tickers[0]): [9.0, 10.0, 11.0],
+            ("Open", tickers[1]): [99.0, 89.0, 109.0],
+        }
+    else:
+        nan = [float("nan")] * 3
+        data = {(f, t): nan for f in ["Close", "Open"] for t in tickers}
+    return pd.DataFrame(data, index=idx, columns=cols)
+
+
+def test_generate_writes_dated_png(tmp_path, monkeypatch):
+    tickers = ["PLTR", "NVDA"]
+    monkeypatch.setattr(
+        pc_module.yf, "download",
+        lambda *a, **k: _yf_multiindex(tickers),
+    )
+    out = generate_price_comparison(tickers, tmp_path)
+    expected = tmp_path / f"price-comparison-{datetime.now():%Y%m%d}.png"
+    assert out == expected
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_generate_raises_when_no_usable_data(tmp_path, monkeypatch):
+    tickers = ["PLTR", "NVDA"]
+    monkeypatch.setattr(
+        pc_module.yf, "download",
+        lambda *a, **k: _yf_multiindex(tickers, with_data=False),
+    )
+    with pytest.raises(ValueError):
+        generate_price_comparison(tickers, tmp_path)

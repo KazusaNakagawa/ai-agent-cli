@@ -45,3 +45,29 @@ def render_price_comparison(close_df: pd.DataFrame, out_path: Path) -> Path:
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
     return out_path
+
+
+def _extract_close(raw: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
+    """Pull the Close frame out of a yfinance.download() result and keep
+    only the requested tickers that are actually present, as columns."""
+    close = raw["Close"]
+    if isinstance(close, pd.Series):
+        close = close.to_frame()
+    present = [t for t in tickers if t in close.columns]
+    return close.reindex(columns=present)
+
+
+def generate_price_comparison(
+    tickers: list[str],
+    output_dir: Path,
+    period: str = "3mo",
+) -> Path:
+    """Fetch Close prices via yfinance, render a normalized comparison chart,
+    and save it to output_dir/price-comparison-YYYYMMDD.png. Returns the saved
+    path. Raises ValueError if no usable ticker data was fetched."""
+    raw = yf.download(tickers, period=period, progress=False)
+    close = _extract_close(raw, tickers)
+    if normalize_to_index(close).columns.empty:
+        raise ValueError("no usable ticker data for chart")
+    out_path = output_dir / f"price-comparison-{datetime.now():%Y%m%d}.png"
+    return render_price_comparison(close, out_path)
