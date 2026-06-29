@@ -3,7 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 
 import { UsageBarChart } from "@/components/UsageBarChart"
 import { UsageTrendChart } from "@/components/UsageTrendChart"
+import { formatLocalDate } from "@/lib/utils"
 import {
+  filterSummaryByRange,
   formatUsageField,
   UsageChartMetric,
   UsageDailySummary,
@@ -12,6 +14,8 @@ import {
   USAGE_CHART_METRIC_LABELS,
   USAGE_FIELD_LABELS,
   USAGE_FIELD_ORDER,
+  UsageRange,
+  USAGE_RANGE_LABELS,
   UsageRecord,
   UsageSummaryResponse,
 } from "@/lib/usage-types"
@@ -32,6 +36,7 @@ export function UsageDashboard() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [records, setRecords] = useState<UsageRecord[]>([])
   const [metric, setMetric] = useState<UsageChartMetric>("cost_usd")
+  const [range, setRange] = useState<UsageRange>("7d")
   const [summary, setSummary] = useState<UsageDailySummary[]>([])
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -122,6 +127,7 @@ export function UsageDashboard() {
     )
   }
 
+  const visibleSummary = filterSummaryByRange(summary, range, formatLocalDate())
   const activeRecord = activeIndex !== null ? records[activeIndex] : null
 
   return (
@@ -138,6 +144,21 @@ export function UsageDashboard() {
             {dates.map((d) => (
               <option key={d} value={d}>
                 {d}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          Range
+          <select
+            data-testid="usage-range-select"
+            value={range}
+            onChange={(e) => setRange(e.target.value as UsageRange)}
+            className="rounded-md border bg-background px-2 py-1 text-sm"
+          >
+            {(Object.keys(USAGE_RANGE_LABELS) as UsageRange[]).map((r) => (
+              <option key={r} value={r}>
+                {USAGE_RANGE_LABELS[r]}
               </option>
             ))}
           </select>
@@ -177,12 +198,12 @@ export function UsageDashboard() {
         )}
       </section>
 
-      {summary.length > 0 && metric !== "all" && (
+      {visibleSummary.length > 0 && metric !== "all" && (
         <section className="space-y-1">
           <h3 className="text-sm font-medium text-muted-foreground">
-            Daily trend — {USAGE_CHART_METRIC_LABELS[metric]}
+            Daily trend ({USAGE_RANGE_LABELS[range]}) — {USAGE_CHART_METRIC_LABELS[metric]}
           </h3>
-          <UsageTrendChart summary={summary} metric={metric} />
+          <UsageTrendChart summary={visibleSummary} metric={metric} />
         </section>
       )}
 

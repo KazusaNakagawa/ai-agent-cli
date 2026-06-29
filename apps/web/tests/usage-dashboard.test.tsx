@@ -34,7 +34,7 @@ const DAY_20620 = {
 const SUMMARY = {
   summary: [
     {
-      date: "2026-06-19",
+      date: "2026-06-23",
       calls: 3,
       input_tokens: 100,
       output_tokens: 2000,
@@ -43,7 +43,7 @@ const SUMMARY = {
       cost_usd: 0.5,
     },
     {
-      date: "2026-06-20",
+      date: "2026-06-24",
       calls: 2,
       input_tokens: 200,
       output_tokens: 10607,
@@ -235,6 +235,36 @@ describe("UsageDashboard", () => {
     await waitFor(() => {
       expect(screen.getByTestId("usage-trend-chart")).toBeInTheDocument()
     })
+  })
+
+  it("defaults to a 7-day range and drops out-of-window trend points", async () => {
+    // Fix 'today' far past the SUMMARY dates so the 7-day default hides them.
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(2026, 6, 15)) // 2026-07-15 local
+    try {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.startsWith("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+        if (url.startsWith("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
+        return Promise.resolve(jsonResponse(DAY_20620))
+      })
+      render(<UsageDashboard />)
+
+      const rangeSelect = await screen.findByTestId("usage-range-select")
+      expect((rangeSelect as HTMLSelectElement).value).toBe("7d")
+
+      // 2026-06-19/20 are >7 days before 2026-07-15, so no trend points render.
+      await waitFor(() => {
+        expect(screen.queryByTestId("usage-trend-point-0")).toBeNull()
+      })
+
+      // Switching to All time brings the points back.
+      await userEvent.selectOptions(rangeSelect, "all")
+      await waitFor(() => {
+        expect(screen.getByTestId("usage-trend-point-0")).toBeInTheDocument()
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("ignores a stale slow response when the date changed", async () => {
