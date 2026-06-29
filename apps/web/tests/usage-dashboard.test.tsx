@@ -108,21 +108,29 @@ describe("UsageDashboard", () => {
   })
 
   it("renders the daily trend chart from the summary endpoint", async () => {
-    fetchMock.mockImplementation((url: string) => {
-      if (url.includes("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
-      if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
-      return Promise.resolve(jsonResponse(DAY_20620))
-    })
+    // Pin the clock so 2026-06-23/24 (SUMMARY fixture dates) always fall within
+    // the default 7-day window, regardless of when the test actually runs.
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(2026, 5, 25)) // 2026-06-25 local
+    try {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
+        if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+        return Promise.resolve(jsonResponse(DAY_20620))
+      })
 
-    render(<UsageDashboard />)
+      render(<UsageDashboard />)
 
-    await waitFor(() => {
-      expect(screen.getByTestId("usage-trend-chart")).toBeInTheDocument()
-    })
-    // One point per summary day; line drawn for >1 point.
-    expect(screen.getByTestId("usage-trend-point-0")).toBeInTheDocument()
-    expect(screen.getByTestId("usage-trend-point-1")).toBeInTheDocument()
-    expect(screen.getByTestId("usage-trend-line")).toBeInTheDocument()
+      await waitFor(() => {
+        expect(screen.getByTestId("usage-trend-chart")).toBeInTheDocument()
+      })
+      // One point per summary day; line drawn for >1 point.
+      expect(screen.getByTestId("usage-trend-point-0")).toBeInTheDocument()
+      expect(screen.getByTestId("usage-trend-point-1")).toBeInTheDocument()
+      expect(screen.getByTestId("usage-trend-line")).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("shows formatted key/value detail when a bar is hovered", async () => {
@@ -206,6 +214,11 @@ describe("UsageDashboard", () => {
   })
 
   it("renders stacked segments and legend when metric is 'all'; restores trend on switch back", async () => {
+    // Pin the clock so 2026-06-23/24 (SUMMARY fixture dates) always fall within
+    // the default 7-day window, regardless of when the test actually runs.
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(2026, 5, 25)) // 2026-06-25 local
+    try {
     fetchMock.mockImplementation((url: string) => {
       if (url.includes("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
       if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
@@ -235,6 +248,9 @@ describe("UsageDashboard", () => {
     await waitFor(() => {
       expect(screen.getByTestId("usage-trend-chart")).toBeInTheDocument()
     })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("defaults to a 7-day range and drops out-of-window trend points", async () => {

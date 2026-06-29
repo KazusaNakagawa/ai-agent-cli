@@ -149,21 +149,6 @@ export function UsageDashboard() {
           </select>
         </label>
         <label className="flex items-center gap-2 text-sm">
-          Range
-          <select
-            data-testid="usage-range-select"
-            value={range}
-            onChange={(e) => setRange(e.target.value as UsageRange)}
-            className="rounded-md border bg-background px-2 py-1 text-sm"
-          >
-            {(Object.keys(USAGE_RANGE_LABELS) as UsageRange[]).map((r) => (
-              <option key={r} value={r}>
-                {USAGE_RANGE_LABELS[r]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-2 text-sm">
           Metric
           <select
             data-testid="usage-metric-select"
@@ -174,6 +159,21 @@ export function UsageDashboard() {
             {METRICS.map((m) => (
               <option key={m} value={m}>
                 {USAGE_CHART_METRIC_LABELS[m]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          Range
+          <select
+            data-testid="usage-range-select"
+            value={range}
+            onChange={(e) => setRange(e.target.value as UsageRange)}
+            className="rounded-md border bg-background px-2 py-1 text-sm"
+          >
+            {(Object.keys(USAGE_RANGE_LABELS) as UsageRange[]).map((r) => (
+              <option key={r} value={r}>
+                {USAGE_RANGE_LABELS[r]}
               </option>
             ))}
           </select>
