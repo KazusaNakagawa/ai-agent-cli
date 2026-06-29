@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { niceScale } from "@/lib/usage-types"
+import {
+  filterSummaryByRange,
+  niceScale,
+  UsageDailySummary,
+} from "@/lib/usage-types"
 
 describe("niceScale", () => {
   it("rounds a max of 14 to a step of 2", () => {
@@ -33,5 +37,46 @@ describe("niceScale", () => {
 
   it("falls back to a 0..1 scale for non-positive input", () => {
     expect(niceScale(0)).toEqual({ niceMax: 1, step: 1, ticks: [0, 1] })
+  })
+})
+
+function day(date: string): UsageDailySummary {
+  return {
+    date,
+    calls: 1,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_creation_tokens: 0,
+    cost_usd: 0,
+  }
+}
+
+describe("filterSummaryByRange", () => {
+  // today = 2026-06-29; 7d window keeps 2026-06-23..2026-06-29 inclusive.
+  const summary = [
+    day("2026-06-22"), // out (8 days back)
+    day("2026-06-23"), // boundary in (6 days back)
+    day("2026-06-29"), // today, in
+  ]
+
+  it("keeps the boundary day and drops the day before it for 7d", () => {
+    const result = filterSummaryByRange(summary, "7d", "2026-06-29")
+    expect(result.map((d) => d.date)).toEqual(["2026-06-23", "2026-06-29"])
+  })
+
+  it("returns all rows for the 'all' range", () => {
+    const result = filterSummaryByRange(summary, "all", "2026-06-29")
+    expect(result).toHaveLength(3)
+  })
+
+  it("keeps a 30-day window", () => {
+    const result = filterSummaryByRange(summary, "30d", "2026-06-29")
+    // 2026-06-22 is 7 days back, well within 30 days.
+    expect(result).toHaveLength(3)
+  })
+
+  it("handles an empty summary", () => {
+    expect(filterSummaryByRange([], "7d", "2026-06-29")).toEqual([])
   })
 })

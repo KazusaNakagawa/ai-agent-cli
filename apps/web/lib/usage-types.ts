@@ -32,6 +32,39 @@ export type UsageSummaryResponse = {
   summary: UsageDailySummary[]
 }
 
+// Time-range options for filtering the daily trend chart.
+export type UsageRange = "7d" | "30d" | "all"
+
+export const USAGE_RANGE_LABELS: Record<UsageRange, string> = {
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
+  all: "All time",
+}
+
+// Number of calendar days to keep (inclusive of today); null = no limit.
+export const USAGE_RANGE_DAYS: Record<UsageRange, number | null> = {
+  "7d": 7,
+  "30d": 30,
+  all: null,
+}
+
+// Keep only summary rows within `range` calendar days of `today` (ISO
+// YYYY-MM-DD). Comparison is lexicographic on ISO date strings, which is
+// correct for fixed-width YYYY-MM-DD. The cutoff is `today - (days - 1)` so a
+// 7-day window includes today plus the previous six days.
+export function filterSummaryByRange(
+  summary: UsageDailySummary[],
+  range: UsageRange,
+  today: string,
+): UsageDailySummary[] {
+  const days = USAGE_RANGE_DAYS[range]
+  if (days === null) return summary
+  const base = new Date(`${today}T00:00:00`)
+  base.setDate(base.getDate() - (days - 1))
+  const cutoff = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")}`
+  return summary.filter((d) => d.date >= cutoff)
+}
+
 // Numeric fields a user can chart on the y-axis.
 export type UsageMetric =
   | "cost_usd"
