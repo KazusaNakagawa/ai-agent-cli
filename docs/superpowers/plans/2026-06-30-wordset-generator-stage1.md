@@ -165,7 +165,7 @@ git commit -m "feat: add word-set pydantic schema"
 - Test: `apps/python/tests/generator/test_wordset.py` (asset-load test only in this task)
 
 **Interfaces:**
-- Produces: a JSON file whose top-level shape matches `WordSet` (one word, `important`, with 5 sentences) — consumed by Task 3's prompt builder.
+- Produces: a JSON file whose top-level shape matches `WordSet` (one word, `important`, with 15 sentences) — consumed by Task 3's prompt builder.
 
 - [ ] **Step 1: Write the failing test**
 
