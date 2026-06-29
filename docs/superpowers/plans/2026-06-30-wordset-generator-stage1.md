@@ -14,7 +14,7 @@
 - Route all claude CLI calls through `run_claude()` — never `subprocess.run(["claude", ...])`.
 - Output files go to `apps/python/output/` (existing convention).
 - Target schema (verbatim): `{"words": [{"id", "word", "meaning", "phonetic"(optional), "sentences": [{"id", "english", "japanese", "category"}]}]}`.
-- Each word carries **5–6** sentences.
+- Each word carries **15–20** sentences.
 - `id` values are **self-assigned UUIDs** (string form), never taken from the model output.
 - `category`: prompt instructs the model to prefer the known set (`一般的な使い方`, `ビジネス`, `日常会話`, `教育`, `テクノロジー`, `人生の教訓`, `健康`, `IT`); validation requires a non-empty string and logs a warning (does NOT reject) when outside the known set.
 - All work branches from `dev`.
@@ -39,7 +39,7 @@
 - Test: `apps/python/tests/generator/test_wordset_schema.py`
 
 **Interfaces:**
-- Produces: `Sentence(BaseModel)` fields `id: str, english: str, japanese: str, category: str`; `Word(BaseModel)` fields `id: str, word: str, meaning: str, phonetic: str | None = None, sentences: list[Sentence]`; `WordSet(BaseModel)` field `words: list[Word]`. Constant `KNOWN_CATEGORIES: frozenset[str]`. `Word` validates `5 <= len(sentences) <= 6`.
+- Produces: `Sentence(BaseModel)` fields `id: str, english: str, japanese: str, category: str`; `Word(BaseModel)` fields `id: str, word: str, meaning: str, phonetic: str | None = None, sentences: list[Sentence]`; `WordSet(BaseModel)` field `words: list[Word]`. Constant `KNOWN_CATEGORIES: frozenset[str]`. `Word` validates `15 <= len(sentences) <= 20`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -58,26 +58,26 @@ def _sentences(n: int) -> list[dict]:
     ]
 
 
-def test_valid_word_with_five_sentences():
+def test_valid_word_with_fifteen_sentences():
     word = Word(id="w1", word="important", meaning="重要な",
-                phonetic="ɪmˈpɔːr.tənt", sentences=_sentences(5))
+                phonetic="ɪmˈpɔːr.tənt", sentences=_sentences(15))
     assert word.phonetic == "ɪmˈpɔːr.tənt"
-    assert len(word.sentences) == 5
+    assert len(word.sentences) == 15
 
 
 def test_phonetic_is_optional():
-    word = Word(id="w1", word="x", meaning="y", sentences=_sentences(6))
+    word = Word(id="w1", word="x", meaning="y", sentences=_sentences(20))
     assert word.phonetic is None
 
 
 def test_too_few_sentences_rejected():
     with pytest.raises(ValidationError):
-        Word(id="w1", word="x", meaning="y", sentences=_sentences(4))
+        Word(id="w1", word="x", meaning="y", sentences=_sentences(14))
 
 
 def test_too_many_sentences_rejected():
     with pytest.raises(ValidationError):
-        Word(id="w1", word="x", meaning="y", sentences=_sentences(7))
+        Word(id="w1", word="x", meaning="y", sentences=_sentences(21))
 
 
 def test_empty_category_rejected():
@@ -91,7 +91,7 @@ def test_known_categories_nonempty():
 
 
 def test_wordset_round_trips():
-    ws = WordSet(words=[Word(id="w1", word="x", meaning="y", sentences=_sentences(5))])
+    ws = WordSet(words=[Word(id="w1", word="x", meaning="y", sentences=_sentences(15))])
     assert WordSet.model_validate(ws.model_dump()) == ws
 ```
 
@@ -134,9 +134,9 @@ class Word(BaseModel):
 
     @field_validator("sentences")
     @classmethod
-    def _five_or_six(cls, v: list[Sentence]) -> list[Sentence]:
-        if not 5 <= len(v) <= 6:
-            raise ValueError("each word must have 5 to 6 sentences")
+    def _fifteen_to_twenty(cls, v: list[Sentence]) -> list[Sentence]:
+        if not 15 <= len(v) <= 20:
+            raise ValueError("each word must have 15 to 20 sentences")
         return v
 
 
@@ -182,7 +182,7 @@ def test_fewshot_asset_matches_schema():
     data = json.loads((PROMPTS / "wordset_fewshot.json").read_text(encoding="utf-8"))
     ws = WordSet.model_validate(data)
     assert ws.words[0].word == "important"
-    assert 5 <= len(ws.words[0].sentences) <= 6
+    assert 15 <= len(ws.words[0].sentences) <= 20
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -205,7 +205,17 @@ Expected: FAIL — `FileNotFoundError` for `wordset_fewshot.json`
         {"id": "example-id", "english": "Education is important for everyone.", "japanese": "教育は誰にとっても重要だ。", "category": "教育"},
         {"id": "example-id", "english": "It's important to be on time.", "japanese": "時間を守ることは重要だ。", "category": "日常会話"},
         {"id": "example-id", "english": "This document contains important information.", "japanese": "この文書には重要な情報が含まれている。", "category": "ビジネス"},
-        {"id": "example-id", "english": "Staying healthy is important.", "japanese": "健康でいることは重要だ。", "category": "健康"}
+        {"id": "example-id", "english": "Staying healthy is important.", "japanese": "健康でいることは重要だ。", "category": "健康"},
+        {"id": "example-id", "english": "It is important to read the manual first.", "japanese": "まず説明書を読むことが重要だ。", "category": "テクノロジー"},
+        {"id": "example-id", "english": "Backups are important in IT operations.", "japanese": "IT運用ではバックアップが重要だ。", "category": "IT"},
+        {"id": "example-id", "english": "Patience is an important life lesson.", "japanese": "忍耐は重要な人生の教訓だ。", "category": "人生の教訓"},
+        {"id": "example-id", "english": "This meeting is important for the project.", "japanese": "この会議はプロジェクトにとって重要だ。", "category": "ビジネス"},
+        {"id": "example-id", "english": "Sleep is important for your health.", "japanese": "睡眠は健康にとって重要だ。", "category": "健康"},
+        {"id": "example-id", "english": "It is important to listen carefully.", "japanese": "注意深く聞くことが重要だ。", "category": "日常会話"},
+        {"id": "example-id", "english": "Teachers play an important role.", "japanese": "教師は重要な役割を担う。", "category": "教育"},
+        {"id": "example-id", "english": "Security updates are important.", "japanese": "セキュリティ更新は重要だ。", "category": "テクノロジー"},
+        {"id": "example-id", "english": "It is important to set clear goals.", "japanese": "明確な目標を立てることが重要だ。", "category": "ビジネス"},
+        {"id": "example-id", "english": "Honesty is important in any relationship.", "japanese": "どんな関係でも誠実さは重要だ。", "category": "人生の教訓"}
       ]
     }
   ]
@@ -244,22 +254,33 @@ git commit -m "feat: add word-set few-shot exemplar"
 
 ```python
 # append to apps/python/tests/generator/test_wordset.py
+import json as _json
 from unittest.mock import patch
 import pytest
 
 
-def _raw_response(word="rarity"):
-    return (
-        "```json\n"
-        '{"words":[{"id":"x","word":"%s","meaning":"希少性",'
-        '"phonetic":"ˈrer.ə.t̬i","sentences":['
-        '{"id":"x","english":"Its rarity makes it valuable.","japanese":"その希少性が価値を生む。","category":"一般的な使い方"},'
-        '{"id":"x","english":"Rarity drives demand.","japanese":"希少性が需要を生む。","category":"ビジネス"},'
-        '{"id":"x","english":"He studied the rarity of the species.","japanese":"彼はその種の希少性を研究した。","category":"教育"},'
-        '{"id":"x","english":"Rarity is common in collectibles.","japanese":"収集品では希少性はよくある。","category":"日常会話"},'
-        '{"id":"x","english":"The rarity surprised everyone.","japanese":"その希少性は皆を驚かせた。","category":"一般的な使い方"}'
-        "]}]}\n```"
-    ) % word
+def _raw_response(word="rarity", n_sentences=16):
+    """Build a fenced JSON response with n_sentences (default 16, inside 15-20)."""
+    obj = {
+        "words": [
+            {
+                "id": "x",
+                "word": word,
+                "meaning": "希少性",
+                "phonetic": "ˈrer.ə.t̬i",
+                "sentences": [
+                    {
+                        "id": "x",
+                        "english": f"Its rarity makes example {i} valuable.",
+                        "japanese": f"その希少性が例{i}の価値を生む。",
+                        "category": "一般的な使い方",
+                    }
+                    for i in range(n_sentences)
+                ],
+            }
+        ]
+    }
+    return "```json\n" + _json.dumps(obj, ensure_ascii=False) + "\n```"
 
 
 def test_extract_json_handles_fences():
@@ -398,7 +419,7 @@ def _build_prompt(words: list[str] | None, theme: str | None, count: int) -> str
         f"{target}\n\n"
         "Rules:\n"
         "- Output ONLY a JSON object, no prose.\n"
-        "- Each word needs 5 to 6 example sentences.\n"
+        "- Each word needs 15 to 20 example sentences.\n"
         "- Each sentence has english, japanese, and a category.\n"
         f"- Prefer these categories: {categories}.\n"
         "- The id fields can be any placeholder; they will be reassigned.\n\n"
@@ -481,7 +502,7 @@ def test_write_output_creates_file(tmp_path):
     from src.generator.wordset import write_output
     from src.generator.wordset_schema import WordSet, Word, Sentence
     ws = WordSet(words=[Word(id="w", word="x", meaning="y", sentences=[
-        Sentence(id=f"s{i}", english="e", japanese="j", category="ビジネス") for i in range(5)
+        Sentence(id=f"s{i}", english="e", japanese="j", category="ビジネス") for i in range(15)
     ])])
     out = write_output(ws, tmp_path)
     assert out.exists()
@@ -495,7 +516,7 @@ def test_merge_into_appends(tmp_path):
     from src.generator.wordset_schema import WordSet, Word, Sentence
     def mk(w):
         return Word(id=w, word=w, meaning="m", sentences=[
-            Sentence(id=f"{w}{i}", english="e", japanese="j", category="ビジネス") for i in range(5)
+            Sentence(id=f"{w}{i}", english="e", japanese="j", category="ビジネス") for i in range(15)
         ])
     merged = merge_into(WordSet(words=[mk("a")]), WordSet(words=[mk("b")]))
     assert [w.word for w in merged.words] == ["a", "b"]
