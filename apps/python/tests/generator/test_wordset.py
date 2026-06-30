@@ -93,6 +93,20 @@ def test_generate_raises_after_max_retries():
                                      existing=None, max_retries=2)
 
 
+def test_generate_logs_raw_response_on_terminal_failure(caplog):
+    """On exhausting all retries, the raw model response must be logged at ERROR."""
+    import logging
+    from src.generator import wordset
+
+    garbage = "THIS_IS_GARBAGE_RAW_RESPONSE"
+    with patch.object(wordset, "run_claude", return_value=garbage):
+        with caplog.at_level(logging.ERROR, logger="src.generator.wordset"):
+            with pytest.raises(ValueError):
+                wordset.generate_wordset(words=["rarity"], theme=None, count=1,
+                                         existing=None, max_retries=2)
+    assert garbage in caplog.text
+
+
 def test_write_output_creates_file(tmp_path):
     from src.generator.wordset import write_output
     from src.generator.wordset_schema import WordSet, Word, Sentence

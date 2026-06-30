@@ -109,8 +109,10 @@ def generate_wordset(
         raise ValueError("provide words or theme")
     prompt = _build_prompt(words, theme, count)
     last_error: Exception | None = None
+    last_raw: str = ""
     for attempt in range(1, max_retries + 1):
         raw = run_claude(prompt, "wordset generation", timeout=TIMEOUT)
+        last_raw = raw
         try:
             ws = WordSet.model_validate(extract_json(raw))
         except (ValueError, ValidationError) as exc:
@@ -126,6 +128,11 @@ def generate_wordset(
         if existing is not None:
             ws = dedup(ws, {w.word for w in existing.words})
         return ws
+    logger.error(
+        "wordset generation failed after %d attempts; last raw response: %s",
+        max_retries,
+        last_raw,
+    )
     raise ValueError(f"failed to generate valid word set after {max_retries} attempts: {last_error}")
 
 
