@@ -26,23 +26,19 @@ def _load_fewshot() -> str:
 
 
 def extract_json(text: str) -> dict:
-    """Extract the first balanced JSON object from a raw model response."""
+    """Extract the first JSON object from a raw model response.
+
+    Uses a string-aware decoder so braces inside JSON string values do not
+    confuse the boundary detection.
+    """
     start = text.find("{")
     if start == -1:
         raise ValueError("no JSON object found in response")
-    depth = 0
-    for i in range(start, len(text)):
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-            if depth == 0:
-                candidate = text[start : i + 1]
-                try:
-                    return json.loads(candidate)
-                except json.JSONDecodeError as exc:
-                    raise ValueError(f"invalid JSON object: {exc}") from exc
-    raise ValueError("unbalanced JSON braces in response")
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text[start:])
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON object: {exc}") from exc
+    return obj
 
 
 def assign_ids(ws: WordSet) -> WordSet:
@@ -137,9 +133,16 @@ def generate_wordset(
 
 
 def load_existing(path: pathlib.Path | None) -> WordSet | None:
-    """Load an existing word set file, or return None if path is None/missing."""
-    if path is None or not path.exists():
+    """Load an existing word set file.
+
+    Returns None when no path is given. Raises FileNotFoundError when a path
+    is provided but does not exist, so a typo'd --existing fails fast instead
+    of silently producing a fresh output.
+    """
+    if path is None:
         return None
+    if not path.exists():
+        raise FileNotFoundError(f"existing word set not found: {path}")
     return WordSet.model_validate_json(path.read_text(encoding="utf-8"))
 
 
@@ -151,7 +154,7 @@ def merge_into(existing: WordSet, new: WordSet) -> WordSet:
 def write_output(ws: WordSet, out_dir: pathlib.Path) -> pathlib.Path:
     """Write word set to a timestamped JSON file in out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"word_set_{int(time.time())}.json"
+    out = out_dir / f"word_set_{time.time_ns()}.json"
     out.write_text(
         json.dumps(ws.model_dump(), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -172,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.words and not args.theme:
         parser.error("provide --words or --theme")
 
-    words = [w.strip() for w in args.words.split(",")] if args.words else None
+    words = [w.strip() for w in args.words.split(",") if w.strip()] if args.words else None
     existing = load_existing(args.existing)
     result = generate_wordset(words, args.theme, args.count, existing)
 

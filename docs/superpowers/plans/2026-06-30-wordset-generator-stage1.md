@@ -449,7 +449,7 @@ def generate_wordset(
         raw = run_claude(prompt, "wordset generation", timeout=TIMEOUT)
         try:
             ws = WordSet.model_validate(extract_json(raw))
-        except (ValueError, Exception) as exc:  # noqa: BLE001 - validation/extract
+        except (ValueError, ValidationError) as exc:  # extract/validation failures only
             last_error = exc
             logger.warning("wordset attempt %d/%d failed: %s", attempt, max_retries, exc)
             prompt = (

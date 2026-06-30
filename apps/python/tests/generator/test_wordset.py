@@ -50,6 +50,20 @@ def test_extract_json_raises_on_garbage():
         extract_json("no json here")
 
 
+def test_extract_json_handles_braces_inside_strings():
+    from src.generator.wordset import extract_json
+    # A sentence value containing literal braces must not break boundary detection.
+    raw = (
+        'prose before {"words": [{"id": "x", "word": "set", "meaning": "集合", '
+        '"phonetic": "set", "sentences": ['
+        '{"id": "x", "english": "Use {braces} carefully.", '
+        '"japanese": "{波括弧}に注意。", "category": "IT"}]}]} trailing prose'
+    )
+    data = extract_json(raw)
+    assert data["words"][0]["word"] == "set"
+    assert data["words"][0]["sentences"][0]["english"] == "Use {braces} carefully."
+
+
 def test_assign_ids_replaces_all_ids():
     from src.generator.wordset import extract_json, assign_ids
     from src.generator.wordset_schema import WordSet
@@ -110,14 +124,18 @@ def test_generate_logs_raw_response_on_terminal_failure(caplog):
 def test_write_output_creates_file(tmp_path):
     from src.generator.wordset import write_output
     from src.generator.wordset_schema import WordSet, Word, Sentence
-    ws = WordSet(words=[Word(id="w", word="x", meaning="y", sentences=[
-        Sentence(id=f"s{i}", english="e", japanese="j", category="ビジネス") for i in range(15)
+    ws = WordSet(words=[Word(id="w", word="x", meaning="重要な", sentences=[
+        Sentence(id=f"s{i}", english="e", japanese="重要な", category="ビジネス") for i in range(15)
     ])])
     out = write_output(ws, tmp_path)
     assert out.exists()
-    reloaded = WordSet.model_validate_json(out.read_text(encoding="utf-8"))
+    contents = out.read_text(encoding="utf-8")
+    reloaded = WordSet.model_validate_json(contents)
     assert reloaded.words[0].word == "x"
-    assert "x" in out.read_text(encoding="utf-8")
+    assert reloaded.words[0].meaning == "重要な"
+    # ensure_ascii=False must preserve non-ASCII characters, not escape them
+    assert "重要な" in contents
+    assert "\\u91cd\\u8981\\u306a" not in contents
 
 
 def test_merge_into_appends(tmp_path):
@@ -134,3 +152,28 @@ def test_merge_into_appends(tmp_path):
 def test_load_existing_none_returns_none():
     from src.generator.wordset import load_existing
     assert load_existing(None) is None
+
+
+def test_load_existing_missing_path_raises(tmp_path):
+    from src.generator.wordset import load_existing
+    with pytest.raises(FileNotFoundError):
+        load_existing(tmp_path / "missing.json")
+
+
+def test_main_filters_empty_words(monkeypatch, tmp_path):
+    from src.generator import wordset
+    from src.generator.wordset_schema import WordSet, Word, Sentence
+
+    captured = {}
+
+    def fake_generate(words, theme, count, existing):
+        captured["words"] = words
+        return WordSet(words=[Word(id="w", word="foo", meaning="m", sentences=[
+            Sentence(id=f"s{i}", english="e", japanese="j", category="ビジネス")
+            for i in range(15)
+        ])])
+
+    monkeypatch.setattr(wordset, "generate_wordset", fake_generate)
+    monkeypatch.setattr(wordset, "OUTPUT_DIR", tmp_path)
+    wordset.main(["--words", "foo,,bar, "])
+    assert captured["words"] == ["foo", "bar"]
