@@ -53,10 +53,9 @@ def run(
         return {"status": "skipped", "reason": "no new entries"}
 
     existing_profile = _load_profile(profile_path)
-    result = generate_self_profile_update(new_entries, existing_profile)
-    if result is None:
-        return {"status": "skipped", "reason": "no new entries"}
-    report, diff = result
+    # generate_self_profile_update only returns None for an empty new_entries
+    # list, which is already excluded by the guard above.
+    report, diff = generate_self_profile_update(new_entries, existing_profile)
 
     # Write the local report first: keep it on disk even if Notion delivery raises.
     report_path = _write_report(report, output_dir)
