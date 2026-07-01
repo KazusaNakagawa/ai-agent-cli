@@ -37,11 +37,12 @@ def parse_response(raw: str) -> tuple[str, str]:
     Raises ValueError if either section marker is missing, so the caller can
     retry with the parse error fed back into the prompt.
     """
-    if REPORT_MARKER not in raw or DIFF_MARKER not in raw:
-        raise ValueError("response missing required section markers")
-    report_part, _, diff_part = raw.partition(DIFF_MARKER)
-    report = report_part.split(REPORT_MARKER, 1)[1].strip()
-    diff = diff_part.strip()
+    report_idx = raw.find(REPORT_MARKER)
+    diff_idx = raw.find(DIFF_MARKER)
+    if report_idx == -1 or diff_idx == -1 or diff_idx < report_idx:
+        raise ValueError("response missing required section markers in the expected order")
+    report = raw[report_idx + len(REPORT_MARKER) : diff_idx].strip()
+    diff = raw[diff_idx + len(DIFF_MARKER) :].strip()
     return report, diff
 
 
@@ -55,6 +56,8 @@ def generate_self_profile_update(
     Skipping empty weeks avoids generating a hollow "nothing happened" report
     every time the judgment log hasn't grown.
     """
+    if max_retries < 1:
+        raise ValueError(f"max_retries must be >= 1 (got {max_retries})")
     if not new_entries:
         return None
 
