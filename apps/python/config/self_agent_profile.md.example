@@ -7,8 +7,7 @@ is never committed.
 ## How to seed this file
 
 Copy the content of your existing Claude Code project-memory persona file
-(a markdown memory file under `~/.claude/projects/<project>/memory/`, if you
-have one) into `config/self_agent_profile.md` as the initial value. Do not
+into `apps/python/config/self_agent_profile.md` as the initial value. Do not
 commit that file's path or content anywhere in this repo.
 
 ## Expected sections

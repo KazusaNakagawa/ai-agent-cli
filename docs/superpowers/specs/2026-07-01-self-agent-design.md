@@ -15,7 +15,7 @@ apps/python/bin/self_agent.py → apps/python/src/self_agent_handler.py
   ├── src/fetcher/judgment_log.py      # judgments.jsonl を読み込み、前回watermark以降の新規ログを抽出
   ├── src/generator/self_profile.py    # プロンプト構築 → run_claude() → 週次気づき生成 → プロファイル差分抽出
   └── src/notifier/notion.py           # 既存Notifierを流用してNotionページへ配信
-config/
+apps/python/config/
   self_agent_profile.md          # 蓄積される人格プロファイル(gitignore対象)
   self_agent_profile.md.example  # スキーマ・記載例(トラッキング対象)
 apps/python/output/
@@ -32,7 +32,7 @@ apps/python/output/
 
 ## データフロー
 
-0. **(初回セットアップのみ)** `kazusa-thinking-patterns.md`を`config/self_agent_profile.md`にコピーして初期値とする。以降のステップでは触れない
+0. **(初回セットアップのみ)** 既存のClaude Codeプロジェクトメモリ人格ファイルを`apps/python/config/self_agent_profile.md`にコピーして初期値とする。以降のステップでは触れない
 1. `judgments.jsonl`を読み込み、`.self-agent-watermark`ファイル(`$JUDGMENT_LOOP_DIR`配下)以降の新規ログのみ抽出
 2. 新規ログ0件なら何もせず終了(ログなし週はスキップ)
 3. 新規ログ + 既存`self_agent_profile.md`(あれば)をプロンプトに渡し、`run_claude()`で以下2種を生成:
