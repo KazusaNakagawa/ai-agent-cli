@@ -41,6 +41,8 @@ bin/chat.sh   # Launch chat session
 | `apps/python/config/briefing.json` | Real batch execution config (personal data) | Ignored |
 | `apps/python/config/briefing.json.example` | Schema documentation and template | Tracked |
 | `apps/python/tests/config/briefing.json` | Fixture config for CI and local tests | Tracked |
+| `apps/python/config/self_agent_profile.md` | self-agent's persistent persona profile (personal data) | Ignored |
+| `apps/python/config/self_agent_profile.md.example` | Schema documentation and template | Tracked |
 
 - `apps/python/config/briefing.json` is **never committed**.
 - CI and local `pytest` always load `apps/python/tests/config/briefing.json` — `conftest.py` sets `BRIEFING_CONFIG_PATH` before any import of `src.config`.

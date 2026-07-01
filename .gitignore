@@ -3,6 +3,7 @@
 
 # ローカル設定（個人用）
 briefing.json
+self_agent_profile.md
 *.bk
 
 # Claude Code
