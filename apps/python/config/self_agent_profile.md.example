@@ -1,0 +1,38 @@
+# Example self_agent_profile.md
+
+This is a template showing the expected structure of the persistent persona
+profile. The real `self_agent_profile.md` is gitignored (personal data) and
+is never committed.
+
+## How to seed this file
+
+Copy the content of your existing Claude Code project-memory persona file
+(a markdown memory file under `~/.claude/projects/<project>/memory/`, if you
+have one) into `config/self_agent_profile.md` as the initial value. Do not
+commit that file's path or content anywhere in this repo.
+
+## Expected sections
+
+```markdown
+---
+name: self-agent-profile
+description: One-line summary of the persona this profile tracks
+metadata:
+  type: user
+---
+
+# Core motivations (updated weekly)
+
+- <durable pattern 1>
+- <durable pattern 2>
+
+# Behavior patterns
+
+- <durable pattern observed from judgment-loop logs>
+
+# Recent notes (most recent week first)
+
+## <date>
+
+- <notable but not-yet-durable observation>
+```
