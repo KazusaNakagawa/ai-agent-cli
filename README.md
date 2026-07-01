@@ -68,6 +68,23 @@ bin/chat.sh --list     # list saved sessions
 .venv/bin/python bin/xss_intel.py --dry-run
 ```
 
+### Batch scripts (`bin/`)
+
+Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
+
+| Script | Purpose |
+|---|---|
+| `run.sh` | Run both agents (briefing + XSS intel) |
+| `chat.sh` | Interactive Q&A on a briefing session |
+| `serve.sh` | Launch the Web UI (uvicorn); `PORT` overridable |
+| `briefing_api.sh` | Generate a briefing via the API entry point |
+| `chart.sh` | Generate charts (e.g. stock price comparison) |
+| `gen_wordset.sh` | Generate word-set JSON (Stage 1) |
+| `evaluate.sh` | Run the briefing evaluation pipeline |
+| `eval_report.sh` | Extract → score → report evaluation results |
+| `local_llm.sh` | Local LLM mode (Ollama + Chroma) |
+| `archive.sh` | Archive a month's briefings to Google Drive via rclone |
+
 ---
 
 ## Docs
