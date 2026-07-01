@@ -26,7 +26,10 @@ def test_run_skips_when_no_new_entries(tmp_path):
 def test_run_writes_report_and_delivers_to_notion(tmp_path):
     profile_path = tmp_path / "profile.md"
     output_dir = tmp_path / "out"
-    entries = [{"id": "j_1"}, {"id": "j_2"}]
+    entries = [
+        {"id": "j_1", "tags": ["verification", "external-cli"]},
+        {"id": "j_2", "tags": ["model-selection", "verification"]},
+    ]
 
     with patch.object(self_agent_handler, "fetch_new_entries", return_value=entries), \
          patch.object(self_agent_handler, "generate_self_profile_update", return_value=("report body", "diff body")), \
@@ -41,6 +44,11 @@ def test_run_writes_report_and_delivers_to_notion(tmp_path):
     assert report_path.read_text(encoding="utf-8") == "report body"
     assert profile_path.read_text(encoding="utf-8") == "\n\ndiff body\n"
     mock_notion.assert_called_once()
+    assert mock_notion.call_args.kwargs["tags"] == [
+        "external-cli",
+        "model-selection",
+        "verification",
+    ]
     mock_write_wm.assert_called_once_with("j_2")
 
 
@@ -84,3 +92,12 @@ def test_apply_profile_diff_noop_on_empty_diff(tmp_path):
     profile_path = tmp_path / "profile.md"
     self_agent_handler._apply_profile_diff("", profile_path)
     assert not profile_path.exists()
+
+
+def test_collect_tags_dedupes_and_sorts_across_entries():
+    entries = [
+        {"id": "j_1", "tags": ["security", "docs"]},
+        {"id": "j_2", "tags": ["docs"]},
+        {"id": "j_3"},  # no tags field
+    ]
+    assert self_agent_handler._collect_tags(entries) == ["docs", "security"]
