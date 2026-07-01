@@ -10,7 +10,7 @@
 
 ## アーキテクチャ
 
-```
+```bash
 apps/python/bin/self_agent.py → apps/python/src/self_agent_handler.py
   ├── src/fetcher/judgment_log.py      # judgments.jsonl を読み込み、前回watermark以降の新規ログを抽出
   ├── src/generator/self_profile.py    # プロンプト構築 → run_claude() → 週次気づき生成 → プロファイル差分抽出
@@ -28,9 +28,11 @@ apps/python/output/
 
 - `${JUDGMENT_LOOP_DIR:-~/.local/share/judgment-loop}/judgments.jsonl`(read-only。書き込みは行わない。dotfiles-claude側の`judgment-distill`スキルが別途rules.jsonlへ書き込むが、self-agentはそれと独立)
 - 既存の`self_agent_profile.md`(前回までの蓄積プロファイル。初回はなし)
+- **初回シード**: Claude Codeのプロジェクト別メモリとして既に存在する人格メモリファイル(`auto-agent-llm`リポジトリの`worldview-3d` POCが参照しているもの。会話ログ+リポジトリ観測から抽出済み)。実際のファイルパスは`.claude/projects/`配下にユーザー名・リポジトリパスを含む個人環境依存の絶対パスになるため、本書には記載しない。初回セットアップ時に手元で`self_agent_profile.md`の初期値としてコピーするのみで、以降の自動処理では再読み込みしない(手動更新分の反映が必要な場合はセットアップ時の再コピーで対応)
 
 ## データフロー
 
+0. **(初回セットアップのみ)** `kazusa-thinking-patterns.md`を`config/self_agent_profile.md`にコピーして初期値とする。以降のステップでは触れない
 1. `judgments.jsonl`を読み込み、`.self-agent-watermark`ファイル(`$JUDGMENT_LOOP_DIR`配下)以降の新規ログのみ抽出
 2. 新規ログ0件なら何もせず終了(ログなし週はスキップ)
 3. 新規ログ + 既存`self_agent_profile.md`(あれば)をプロンプトに渡し、`run_claude()`で以下2種を生成:
@@ -65,4 +67,5 @@ apps/python/output/
 
 - Discord配信
 - judgment-distillのルール抽出ロジックへの変更
-- judgments.jsonl以外のデータソース(Claude Code会話ログ全体、手動テキスト等)の取り込み — 将来の拡張候補として保留
+- judgments.jsonl以外のデータソース(Claude Code会話ログ全体、手動テキスト等)の継続的な取り込み — 将来の拡張候補として保留(初回シードとなる人格メモリファイルは対象外)
+- `worldview-3d`(auto-agent-llmリポジトリ)との連携・データ形式の統合 — 将来の拡張候補として保留
