@@ -42,6 +42,19 @@ def _apply_profile_diff(diff: str, path: pathlib.Path) -> None:
         f.write("\n\n" + diff + "\n")
 
 
+def _collect_tags(entries: list[dict]) -> list[str]:
+    """Aggregate the unique judgment-log tags covered by this run's entries.
+
+    Tags come straight from the source log (`judge --tags`), not from the
+    LLM: the log entries already carry accurate, human-assigned tags, so
+    reusing them is more reliable than asking the model to invent new ones.
+    """
+    tags: set[str] = set()
+    for entry in entries:
+        tags.update(entry.get("tags") or [])
+    return sorted(tags)
+
+
 def run(
     profile_path: pathlib.Path = PROFILE_PATH,
     output_dir: pathlib.Path = OUTPUT_DIR,
@@ -68,6 +81,7 @@ def run(
                 CONFIG.notion_api_key,
                 CONFIG.notion_database_id,
                 title="Self-Agent Weekly Report",
+                tags=_collect_tags(new_entries),
             )
         except Exception as exc:
             logger.warning(
