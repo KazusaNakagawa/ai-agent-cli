@@ -1,4 +1,5 @@
 import json
+import logging
 
 from src.fetcher import judgment_log
 
@@ -34,11 +35,18 @@ def test_fetch_new_entries_watermark_at_latest_returns_empty(tmp_path):
     assert judgment_log.fetch_new_entries(tmp_path) == []
 
 
-def test_fetch_new_entries_unknown_watermark_returns_all(tmp_path):
+def test_fetch_new_entries_unknown_watermark_returns_all(tmp_path, caplog):
     entries = [{"id": "j_1"}, {"id": "j_2"}]
     _write_log(tmp_path, entries)
     judgment_log.write_watermark("j_missing", tmp_path)
-    assert judgment_log.fetch_new_entries(tmp_path) == entries
+
+    with caplog.at_level(logging.WARNING):
+        assert judgment_log.fetch_new_entries(tmp_path) == entries
+
+    assert any(
+        record.levelname == "WARNING" and "j_missing" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_read_watermark_missing_returns_none(tmp_path):

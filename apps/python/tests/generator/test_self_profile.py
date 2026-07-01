@@ -25,6 +25,12 @@ def test_parse_response_raises_on_missing_markers():
         parse_response("no markers here")
 
 
+def test_parse_response_raises_when_markers_are_out_of_order():
+    reversed_response = f"{DIFF_MARKER}\ndiff text\n\n{REPORT_MARKER}\nreport text\n"
+    with pytest.raises(ValueError):
+        parse_response(reversed_response)
+
+
 def test_generate_self_profile_update_returns_none_for_no_new_entries():
     with patch("src.generator.self_profile.run_claude") as mock_run:
         result = generate_self_profile_update([], existing_profile="existing")
@@ -49,6 +55,8 @@ def test_generate_self_profile_update_retries_then_succeeds():
         result = generate_self_profile_update([{"id": "j_1"}])
     assert result == ("今週の気づき", "恒常的な傾向")
     assert mock_run.call_count == 2
+    retry_prompt = mock_run.call_args_list[1][0][0]
+    assert "Your previous output was invalid" in retry_prompt
 
 
 def test_generate_self_profile_update_raises_after_max_retries():
@@ -58,3 +66,10 @@ def test_generate_self_profile_update_raises_after_max_retries():
         with pytest.raises(ValueError):
             generate_self_profile_update([{"id": "j_1"}], max_retries=2)
     assert mock_run.call_count == 2
+
+
+def test_generate_self_profile_update_rejects_max_retries_below_one():
+    with patch("src.generator.self_profile.run_claude") as mock_run:
+        with pytest.raises(ValueError):
+            generate_self_profile_update([{"id": "j_1"}], max_retries=0)
+    mock_run.assert_not_called()
