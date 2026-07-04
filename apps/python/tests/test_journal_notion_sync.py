@@ -69,6 +69,7 @@ class TestSyncNewEntry:
 
         mock_notion.pages.create.assert_called_once()
         assert journal_store.get_notion_meta(entry_id) == "page-1"
+        assert journal_store.get_notion_url(entry_id) == "https://notion.so/page-1"
 
     def test_page_creation_failure_does_not_raise(self, journal_dir, mock_notion):
         mock_notion.pages.create.side_effect = Exception("boom")

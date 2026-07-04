@@ -344,3 +344,28 @@ class TestNotionSync:
                 f"/api/journal/{entry_id}", json={"content": "more"}
             )
         assert response.status_code == 204
+
+    async def test_list_exposes_notion_url_once_synced(self, authed_client, journal_dir):
+        """The UI needs a link to the synced Notion page so users don't reach for
+        the unrelated /notion-import skill (which targets the Briefing DB)."""
+        from src import journal_store
+
+        post = await authed_client.post(
+            "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+        )
+        entry_id = post.json()["id"]
+        journal_store.save_notion_meta(entry_id, "page-1", "https://notion.so/page-1")
+
+        response = await authed_client.get("/api/journal")
+        entry = next(e for e in response.json()["entries"] if e["id"] == entry_id)
+        assert entry["notion_url"] == "https://notion.so/page-1"
+
+    async def test_list_notion_url_empty_when_not_synced(self, authed_client, journal_dir):
+        post = await authed_client.post(
+            "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+        )
+        entry_id = post.json()["id"]
+
+        response = await authed_client.get("/api/journal")
+        entry = next(e for e in response.json()["entries"] if e["id"] == entry_id)
+        assert entry["notion_url"] == ""

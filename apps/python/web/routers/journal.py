@@ -27,6 +27,7 @@ class JournalEntry(BaseModel):
     date: str  # YYYY-MM-DD
     size: int  # bytes
     item: str  # short label ≤20 chars, empty for legacy entries
+    notion_url: str  # synced Notion page URL, empty if not yet synced
 
 
 class JournalListResponse(BaseModel):
@@ -61,6 +62,7 @@ def _to_entries(files: list[tuple[str, Path]]) -> list[JournalEntry]:
             date=journal_store.date_of(entry_id),
             size=path.stat().st_size,
             item=journal_store.get_item(entry_id),
+            notion_url=journal_store.get_notion_url(entry_id),
         )
         for entry_id, path in files
     ]
@@ -82,6 +84,7 @@ def list_trash() -> JournalListResponse:
             date=journal_store.date_of(entry_id),
             size=path.stat().st_size,
             item=journal_store.get_trashed_item(entry_id),
+            notion_url="",  # trashed entries aren't sync-linked in the UI
         )
         for entry_id, path in files
     ]

@@ -117,11 +117,14 @@ def get_item(entry_id: str) -> str:
     return _read_sidecar(_item_path(entry_id)).get("item", "")
 
 
-def save_notion_meta(entry_id: str, page_id: str) -> None:
-    """Persist the Notion page id created for this entry, alongside the sidecar."""
+def save_notion_meta(entry_id: str, page_id: str, url: str = "") -> None:
+    """Persist the Notion page id (and page url, for UI display) for this entry."""
     if not _ENTRY_RE.match(entry_id):
         raise ValueError(f"Invalid journal entry id: {entry_id!r}")
-    _merge_sidecar(entry_id, {"notion_page_id": page_id})
+    updates = {"notion_page_id": page_id}
+    if url:
+        updates["notion_url"] = url
+    _merge_sidecar(entry_id, updates)
 
 
 def get_notion_meta(entry_id: str) -> str:
@@ -129,6 +132,13 @@ def get_notion_meta(entry_id: str) -> str:
     if not _ENTRY_RE.match(entry_id):
         return ""
     return _read_sidecar(_item_path(entry_id)).get("notion_page_id", "")
+
+
+def get_notion_url(entry_id: str) -> str:
+    """Return the entry's synced Notion page URL, or empty string if not yet synced."""
+    if not _ENTRY_RE.match(entry_id):
+        return ""
+    return _read_sidecar(_item_path(entry_id)).get("notion_url", "")
 
 
 def get_trashed_item(entry_id: str) -> str:

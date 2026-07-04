@@ -38,7 +38,7 @@ def sync_new_entry(entry_id: str, content: str, api_key: str, database_id: str) 
     title = title_from_content(content, journal_store.date_of(entry_id))
     response = _create_page(notion, database_id, title, markdown_to_notion_blocks(content))
     if response:
-        journal_store.save_notion_meta(entry_id, response["id"])
+        journal_store.save_notion_meta(entry_id, response["id"], response.get("url", ""))
 
 
 def sync_append(entry_id: str, content: str, api_key: str, database_id: str) -> None:
@@ -55,4 +55,4 @@ def sync_append(entry_id: str, content: str, api_key: str, database_id: str) -> 
     title = title_from_content(content, journal_store.date_of(entry_id))
     response = _create_page(notion, database_id, title, blocks)
     if response:
-        journal_store.save_notion_meta(entry_id, response["id"])
+        journal_store.save_notion_meta(entry_id, response["id"], response.get("url", ""))
