@@ -26,6 +26,7 @@ const FIELDS: Field[] = [
   { name: "CHANNEL_ID", label: "Discord channel id", secret: false },
   { name: "NOTION_API_KEY", label: "Notion integration key", secret: true },
   { name: "NOTION_DATABASE_ID", label: "Notion database id", secret: false },
+  { name: "NOTION_DATABASE_ID_JOURNAL", label: "Notion journal database id", secret: false },
   { name: "ANTHROPIC_API_KEY", label: "Anthropic API key", secret: true },
 ]
 

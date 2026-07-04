@@ -122,6 +122,18 @@ def load_config() -> BriefingConfig:
         ) from e
 
 
+def get_journal_notion_credentials() -> tuple[str, str]:
+    """Return (api_key, database_id) for Journal <-> Notion sync.
+
+    Unlike CONFIG, this reads credentials directly and does not require
+    briefing.json to exist — Journal sync is independent of the briefing batch.
+    """
+    return (
+        get_credential("NOTION_API_KEY") or "",
+        get_credential("NOTION_DATABASE_ID_JOURNAL") or "",
+    )
+
+
 _CONFIG_CACHE: BriefingConfig | None = None
 
 

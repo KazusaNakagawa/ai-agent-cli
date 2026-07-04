@@ -39,6 +39,73 @@ def _resolve_title_prop(notion: Client, database_id: str, sample_title: str) -> 
 # Public API
 # ---------------------------------------------------------------------------
 
+def _append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
+    """Append blocks to an existing page, batching at the Notion 100-block limit."""
+    for i in range(0, len(blocks), 100):
+        try:
+            notion.blocks.children.append(
+                block_id=page_id,
+                children=blocks[i:i + 100],
+            )
+        except Exception:
+            logger.exception("failed to append Notion blocks (page_id=%s, index=%d)", page_id, i)
+
+
+def _create_page(
+    notion: Client,
+    database_id: str,
+    title: str,
+    blocks: list[dict],
+    tags: list[str] | None = None,
+    extra_properties: dict | None = None,
+) -> dict | None:
+    """Create a page with title/blocks in a Notion database. Return the created page, or None on failure."""
+    # Get the title property key via databases.retrieve. On failure, try name candidates in order.
+    title_prop_name: str | None = None
+    try:
+        db = notion.databases.retrieve(database_id)
+        properties = db.get("properties") or {}
+        title_prop_name = next(
+            (k for k, v in properties.items() if v.get("type") == "title"),
+            None,
+        )
+    except Exception:
+        logger.exception("failed to retrieve Notion database schema (database_id=%s)", database_id)
+
+    if title_prop_name is None:
+        title_prop_name = _resolve_title_prop(notion, database_id, title)
+    if title_prop_name is None:
+        logger.error("failed to identify the Notion title property (database_id=%s)", database_id)
+        return None
+
+    # The Notion API only accepts children 100 blocks at a time.
+    first_batch = blocks[:100]
+    remaining = blocks[100:]
+
+    properties: dict = {
+        title_prop_name: {
+            "title": [{"type": "text", "text": {"content": title}}]
+        }
+    }
+    if tags:
+        properties["Tags"] = {"multi_select": [{"name": t} for t in tags]}
+    if extra_properties:
+        properties.update(extra_properties)
+
+    try:
+        response = notion.pages.create(
+            parent={"database_id": database_id},
+            properties=properties,
+            children=first_batch,
+        )
+    except Exception:
+        logger.exception("failed to create Notion page (database_id=%s, title=%s)", database_id, title)
+        return None
+
+    _append_blocks(notion, response["id"], remaining)
+    return response
+
+
 def send_to_notion(
     text: str,
     api_key: str,
@@ -56,58 +123,9 @@ def send_to_notion(
     page_title = title or f"Report — {date.today().strftime('%Y-%m-%d')}"
     blocks = markdown_to_notion_blocks(text)
 
-    # Get the title property key via databases.retrieve. On failure, try name candidates in order.
-    title_prop_name: str | None = None
-    try:
-        db = notion.databases.retrieve(database_id)
-        properties = db.get("properties") or {}
-        title_prop_name = next(
-            (k for k, v in properties.items() if v.get("type") == "title"),
-            None,
-        )
-    except Exception:
-        logger.exception("failed to retrieve Notion database schema (database_id=%s)", database_id)
-
-    if title_prop_name is None:
-        title_prop_name = _resolve_title_prop(notion, database_id, page_title)
-    if title_prop_name is None:
-        logger.error("failed to identify the Notion title property (database_id=%s)", database_id)
+    response = _create_page(notion, database_id, page_title, blocks, tags, extra_properties)
+    if not response:
         return ""
-
-    # The Notion API only accepts children 100 blocks at a time.
-    first_batch = blocks[:100]
-    remaining = blocks[100:]
-
-    properties: dict = {
-        title_prop_name: {
-            "title": [{"type": "text", "text": {"content": page_title}}]
-        }
-    }
-    if tags:
-        properties["Tags"] = {"multi_select": [{"name": t} for t in tags]}
-    if extra_properties:
-        properties.update(extra_properties)
-
-    try:
-        response = notion.pages.create(
-            parent={"database_id": database_id},
-            properties=properties,
-            children=first_batch,
-        )
-    except Exception:
-        logger.exception("failed to create Notion page (database_id=%s, title=%s)", database_id, page_title)
-        return ""
-
-    page_id = response["id"]
-
-    for i in range(0, len(remaining), 100):
-        try:
-            notion.blocks.children.append(
-                block_id=page_id,
-                children=remaining[i:i + 100],
-            )
-        except Exception:
-            logger.exception("failed to append Notion blocks (page_id=%s, index=%d)", page_id, i)
 
     page_url = response.get("url", "")
     logger.info("Notion page created: %s", page_url)

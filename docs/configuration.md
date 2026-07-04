@@ -47,6 +47,7 @@ cp .env.example .env
 | `CHANNEL_ID` | Right-click channel → Copy ID | Target channel |
 | `NOTION_API_KEY` | Notion integrations page | API authentication |
 | `NOTION_DATABASE_ID` | Database URL | Target database |
+| `NOTION_DATABASE_ID_JOURNAL` | Database URL | Target database for Journal ↔ Notion sync (separate from `NOTION_DATABASE_ID`) |
 | `BRAVE_API_KEY` | [api-dashboard.search.brave.com](https://api-dashboard.search.brave.com/) | Local LLM briefing web search |
 
 ### Credential Management

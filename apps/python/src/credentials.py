@@ -19,6 +19,7 @@ ALLOWED_KEYS: tuple[str, ...] = (
     "CHANNEL_ID",
     "NOTION_API_KEY",
     "NOTION_DATABASE_ID",
+    "NOTION_DATABASE_ID_JOURNAL",
     "ANTHROPIC_API_KEY",
 )
 

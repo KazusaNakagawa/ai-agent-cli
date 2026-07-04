@@ -59,30 +59,57 @@ def _item_path(entry_id: str) -> Path:
     return JOURNAL_DIR / f"{entry_id}.json"
 
 
-def save_item(entry_id: str, item: str) -> None:
-    """Persist a short item label (≤20 chars) alongside the entry markdown."""
+def _read_sidecar(path: Path) -> dict:
     import json
 
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _merge_sidecar(entry_id: str, updates: dict) -> None:
+    """Merge ``updates`` into the entry's JSON sidecar, preserving other keys.
+
+    ``item`` (short label) and ``notion_page_id`` (Notion sync) share this same
+    file, so a write from one must not clobber a value written by the other.
+    """
+    import json
+
+    path = _item_path(entry_id)
+    data = _read_sidecar(path)
+    data.update(updates)
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def save_item(entry_id: str, item: str) -> None:
+    """Persist a short item label (≤20 chars) alongside the entry markdown."""
     if not _ENTRY_RE.match(entry_id):
         raise ValueError(f"Invalid journal entry id: {entry_id!r}")
-    _item_path(entry_id).write_text(
-        json.dumps({"item": item[:20]}, ensure_ascii=False), encoding="utf-8"
-    )
+    _merge_sidecar(entry_id, {"item": item[:20]})
 
 
 def get_item(entry_id: str) -> str:
     """Return the stored item label for an active entry, or empty string if absent."""
-    import json
-
     if not _ENTRY_RE.match(entry_id):
         return ""
-    p = _item_path(entry_id)
-    if not p.exists():
+    return _read_sidecar(_item_path(entry_id)).get("item", "")
+
+
+def save_notion_meta(entry_id: str, page_id: str) -> None:
+    """Persist the Notion page id created for this entry, alongside the sidecar."""
+    if not _ENTRY_RE.match(entry_id):
+        raise ValueError(f"Invalid journal entry id: {entry_id!r}")
+    _merge_sidecar(entry_id, {"notion_page_id": page_id})
+
+
+def get_notion_meta(entry_id: str) -> str:
+    """Return the entry's synced Notion page id, or empty string if not yet synced."""
+    if not _ENTRY_RE.match(entry_id):
         return ""
-    try:
-        return json.loads(p.read_text(encoding="utf-8")).get("item", "")
-    except Exception:
-        return ""
+    return _read_sidecar(_item_path(entry_id)).get("notion_page_id", "")
 
 
 def get_trashed_item(entry_id: str) -> str:
