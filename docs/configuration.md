@@ -62,6 +62,7 @@ cd apps/python
 from src.credentials import set_credential
 set_credential('NOTION_API_KEY', 'ntn_xxx...')
 set_credential('NOTION_DATABASE_ID', 'xxx...')
+set_credential('NOTION_DATABASE_ID_JOURNAL', 'xxx...')
 "
 ```
 

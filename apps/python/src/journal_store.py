@@ -14,10 +14,19 @@ old files are picked up on read, new entries use the per-entry naming.
 notes are never committed (matches the briefing output convention).
 """
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 
+from src.logger import get_logger
+
+logger = get_logger(__name__)
+
 JOURNAL_DIR = Path(__file__).parents[1] / "output" / "journal"
+
+# Serializes sidecar read-modify-write so concurrent save_item/save_notion_meta
+# calls for the same entry can't clobber each other's update.
+_SIDECAR_LOCK = threading.Lock()
 
 # Entry id: a date, optionally followed by "_<suffix>" (time and/or collision
 # counter). Legacy day files (bare "YYYY-MM-DD") match with no suffix.
@@ -65,8 +74,14 @@ def _read_sidecar(path: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        logger.warning("failed to read journal sidecar at %s; treating as empty", path, exc_info=True)
+        return {}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("failed to decode journal sidecar JSON at %s; treating as empty", path, exc_info=True)
         return {}
 
 
@@ -75,13 +90,17 @@ def _merge_sidecar(entry_id: str, updates: dict) -> None:
 
     ``item`` (short label) and ``notion_page_id`` (Notion sync) share this same
     file, so a write from one must not clobber a value written by the other.
+    The read-modify-write is serialized by ``_SIDECAR_LOCK`` so concurrent
+    updates (e.g. an item label saved while a background Notion sync writes
+    the page id) can't race each other.
     """
     import json
 
     path = _item_path(entry_id)
-    data = _read_sidecar(path)
-    data.update(updates)
-    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    with _SIDECAR_LOCK:
+        data = _read_sidecar(path)
+        data.update(updates)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
 def save_item(entry_id: str, item: str) -> None:

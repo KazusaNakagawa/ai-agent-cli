@@ -16,13 +16,6 @@ from src import journal_store
 from src.notifier import journal_sync
 
 
-@pytest.fixture
-def journal_dir(tmp_path, monkeypatch):
-    d = tmp_path / "journal"
-    monkeypatch.setattr(journal_store, "JOURNAL_DIR", d)
-    return d
-
-
 def _make_notion_mock(title_prop="Name", page_id="page-1"):
     mock = MagicMock()
     mock.databases.retrieve.return_value = {

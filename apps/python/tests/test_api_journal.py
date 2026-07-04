@@ -10,17 +10,7 @@ Contract:
 """
 from unittest.mock import patch
 
-import pytest
-
 from src import journal_store
-
-
-@pytest.fixture
-def journal_dir(tmp_path, monkeypatch):
-    """Point the journal store at a tmp dir."""
-    d = tmp_path / "journal"
-    monkeypatch.setattr(journal_store, "JOURNAL_DIR", d)
-    return d
 
 
 async def test_list_requires_auth(async_client, journal_dir):

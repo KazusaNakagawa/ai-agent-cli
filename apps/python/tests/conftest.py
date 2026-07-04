@@ -8,11 +8,19 @@ os.environ.setdefault("BRIEFING_CONFIG_PATH", str(Path(__file__).parent / "confi
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src import credentials, state as state_mod
+from src import credentials, journal_store, state as state_mod
 from web import auth
 from web.app import app
 
 TEST_TOKEN = "test-token-123"
+
+
+@pytest.fixture
+def journal_dir(tmp_path, monkeypatch):
+    """Point the journal store at a tmp dir."""
+    d = tmp_path / "journal"
+    monkeypatch.setattr(journal_store, "JOURNAL_DIR", d)
+    return d
 
 
 @pytest.fixture

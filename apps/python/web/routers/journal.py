@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from src import config, journal_store
 from src.logger import get_logger
@@ -100,8 +100,28 @@ def get_trashed_journal(entry_id: str) -> JournalEntryResponse:
     )
 
 
+def _sync_new_entry_task(entry_id: str, content: str) -> None:
+    """Best-effort background sync: credential lookup and Notion call both guarded."""
+    try:
+        api_key, database_id = config.get_journal_notion_credentials()
+        if database_id:
+            journal_sync.sync_new_entry(entry_id, content, api_key, database_id)
+    except Exception:
+        logger.exception("Notion journal sync failed for new entry %s", entry_id)
+
+
+def _sync_append_task(entry_id: str, content: str) -> None:
+    """Best-effort background sync: credential lookup and Notion call both guarded."""
+    try:
+        api_key, database_id = config.get_journal_notion_credentials()
+        if database_id:
+            journal_sync.sync_append(entry_id, content, api_key, database_id)
+    except Exception:
+        logger.exception("Notion journal sync failed for append %s", entry_id)
+
+
 @router.post("/journal", response_model=AppendEntryResponse)
-def append_journal(req: AppendEntryRequest) -> AppendEntryResponse:
+def append_journal(req: AppendEntryRequest, background_tasks: BackgroundTasks) -> AppendEntryResponse:
     """Create a new journal entry file and return its id."""
     try:
         entry_id = journal_store.append_entry(req.content, req.date)
@@ -112,17 +132,12 @@ def append_journal(req: AppendEntryRequest) -> AppendEntryResponse:
             journal_store.save_item(entry_id, req.item)
         except Exception:
             pass  # item label is best-effort; entry is already committed
-    api_key, database_id = config.get_journal_notion_credentials()
-    if database_id:
-        try:
-            journal_sync.sync_new_entry(entry_id, req.content, api_key, database_id)
-        except Exception:
-            logger.exception("Notion journal sync failed for new entry %s", entry_id)
+    background_tasks.add_task(_sync_new_entry_task, entry_id, req.content)
     return AppendEntryResponse(id=entry_id, date=journal_store.date_of(entry_id))
 
 
 @router.patch("/journal/{entry_id}", status_code=204)
-def patch_journal(entry_id: str, req: PatchEntryRequest) -> None:
+def patch_journal(entry_id: str, req: PatchEntryRequest, background_tasks: BackgroundTasks) -> None:
     """Append additional content to an existing journal entry.
 
     Used when a brainstorm session continues: subsequent turns are appended to
@@ -133,12 +148,7 @@ def patch_journal(entry_id: str, req: PatchEntryRequest) -> None:
     ok = journal_store.append_to_entry(entry_id, req.content)
     if not ok:
         raise HTTPException(status_code=404, detail=f"Journal not found: {entry_id}")
-    api_key, database_id = config.get_journal_notion_credentials()
-    if database_id:
-        try:
-            journal_sync.sync_append(entry_id, req.content, api_key, database_id)
-        except Exception:
-            logger.exception("Notion journal sync failed for append %s", entry_id)
+    background_tasks.add_task(_sync_append_task, entry_id, req.content)
 
 
 @router.get("/journal/{entry_id}", response_model=JournalEntryResponse)
