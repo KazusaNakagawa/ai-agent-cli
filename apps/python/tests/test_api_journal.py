@@ -8,17 +8,9 @@ Contract:
 - Auth is required (Bearer) on all endpoints.
 - Legacy day-based files (YYYY-MM-DD.md) remain listable and readable.
 """
-import pytest
+from unittest.mock import patch
 
 from src import journal_store
-
-
-@pytest.fixture
-def journal_dir(tmp_path, monkeypatch):
-    """Point the journal store at a tmp dir."""
-    d = tmp_path / "journal"
-    monkeypatch.setattr(journal_store, "JOURNAL_DIR", d)
-    return d
 
 
 async def test_list_requires_auth(async_client, journal_dir):
@@ -280,3 +272,100 @@ async def test_trash_empty_when_nothing_deleted(authed_client, journal_dir):
 async def test_trash_requires_auth(async_client, journal_dir):
     resp = await async_client.get("/api/journal/trash")
     assert resp.status_code == 401
+
+
+class TestNotionSync:
+    """Notion sync is triggered when configured, and never breaks the API (best-effort)."""
+
+    def _creds(self, database_id):
+        return ("key", database_id)
+
+    async def test_no_database_id_skips_sync(self, authed_client, journal_dir):
+        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")), \
+             patch("web.routers.journal.journal_sync.sync_new_entry") as mock_sync:
+            response = await authed_client.post(
+                "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+            )
+        assert response.status_code == 200
+        mock_sync.assert_not_called()
+
+    async def test_new_entry_triggers_sync(self, authed_client, journal_dir):
+        with patch(
+            "web.routers.journal.config.get_journal_notion_credentials",
+            return_value=self._creds("db-id"),
+        ), patch("web.routers.journal.journal_sync.sync_new_entry") as mock_sync:
+            response = await authed_client.post(
+                "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+            )
+        assert response.status_code == 200
+        entry_id = response.json()["id"]
+        mock_sync.assert_called_once_with(entry_id, "hi", "key", "db-id")
+
+    async def test_sync_failure_does_not_break_create(self, authed_client, journal_dir):
+        with patch(
+            "web.routers.journal.config.get_journal_notion_credentials",
+            return_value=self._creds("db-id"),
+        ), patch(
+            "web.routers.journal.journal_sync.sync_new_entry", side_effect=Exception("boom")
+        ):
+            response = await authed_client.post(
+                "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+            )
+        assert response.status_code == 200
+        assert (journal_dir / f"{response.json()['id']}.md").exists()
+
+    async def test_append_triggers_sync(self, authed_client, journal_dir):
+        post = await authed_client.post(
+            "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+        )
+        entry_id = post.json()["id"]
+        with patch(
+            "web.routers.journal.config.get_journal_notion_credentials",
+            return_value=self._creds("db-id"),
+        ), patch("web.routers.journal.journal_sync.sync_append") as mock_sync:
+            response = await authed_client.patch(
+                f"/api/journal/{entry_id}", json={"content": "more"}
+            )
+        assert response.status_code == 204
+        mock_sync.assert_called_once_with(entry_id, "more", "key", "db-id")
+
+    async def test_append_sync_failure_does_not_break_patch(self, authed_client, journal_dir):
+        post = await authed_client.post(
+            "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+        )
+        entry_id = post.json()["id"]
+        with patch(
+            "web.routers.journal.config.get_journal_notion_credentials",
+            return_value=self._creds("db-id"),
+        ), patch(
+            "web.routers.journal.journal_sync.sync_append", side_effect=Exception("boom")
+        ):
+            response = await authed_client.patch(
+                f"/api/journal/{entry_id}", json={"content": "more"}
+            )
+        assert response.status_code == 204
+
+    async def test_list_exposes_notion_url_once_synced(self, authed_client, journal_dir):
+        """The UI needs a link to the synced Notion page so users don't reach for
+        the unrelated /notion-import skill (which targets the Briefing DB)."""
+        from src import journal_store
+
+        post = await authed_client.post(
+            "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+        )
+        entry_id = post.json()["id"]
+        journal_store.save_notion_meta(entry_id, "page-1", "https://notion.so/page-1")
+
+        response = await authed_client.get("/api/journal")
+        entry = next(e for e in response.json()["entries"] if e["id"] == entry_id)
+        assert entry["notion_url"] == "https://notion.so/page-1"
+
+    async def test_list_notion_url_empty_when_not_synced(self, authed_client, journal_dir):
+        post = await authed_client.post(
+            "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+        )
+        entry_id = post.json()["id"]
+
+        response = await authed_client.get("/api/journal")
+        entry = next(e for e in response.json()["entries"] if e["id"] == entry_id)
+        assert entry["notion_url"] == ""

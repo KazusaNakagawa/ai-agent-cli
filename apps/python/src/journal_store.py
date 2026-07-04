@@ -14,10 +14,19 @@ old files are picked up on read, new entries use the per-entry naming.
 notes are never committed (matches the briefing output convention).
 """
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 
+from src.logger import get_logger
+
+logger = get_logger(__name__)
+
 JOURNAL_DIR = Path(__file__).parents[1] / "output" / "journal"
+
+# Serializes sidecar read-modify-write so concurrent save_item/save_notion_meta
+# calls for the same entry can't clobber each other's update.
+_SIDECAR_LOCK = threading.Lock()
 
 # Entry id: a date, optionally followed by "_<suffix>" (time and/or collision
 # counter). Legacy day files (bare "YYYY-MM-DD") match with no suffix.
@@ -59,30 +68,77 @@ def _item_path(entry_id: str) -> Path:
     return JOURNAL_DIR / f"{entry_id}.json"
 
 
-def save_item(entry_id: str, item: str) -> None:
-    """Persist a short item label (≤20 chars) alongside the entry markdown."""
+def _read_sidecar(path: Path) -> dict:
     import json
 
+    if not path.exists():
+        return {}
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        logger.warning("failed to read journal sidecar at %s; treating as empty", path, exc_info=True)
+        return {}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("failed to decode journal sidecar JSON at %s; treating as empty", path, exc_info=True)
+        return {}
+
+
+def _merge_sidecar(entry_id: str, updates: dict) -> None:
+    """Merge ``updates`` into the entry's JSON sidecar, preserving other keys.
+
+    ``item`` (short label) and ``notion_page_id`` (Notion sync) share this same
+    file, so a write from one must not clobber a value written by the other.
+    The read-modify-write is serialized by ``_SIDECAR_LOCK`` so concurrent
+    updates (e.g. an item label saved while a background Notion sync writes
+    the page id) can't race each other.
+    """
+    import json
+
+    path = _item_path(entry_id)
+    with _SIDECAR_LOCK:
+        data = _read_sidecar(path)
+        data.update(updates)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def save_item(entry_id: str, item: str) -> None:
+    """Persist a short item label (≤20 chars) alongside the entry markdown."""
     if not _ENTRY_RE.match(entry_id):
         raise ValueError(f"Invalid journal entry id: {entry_id!r}")
-    _item_path(entry_id).write_text(
-        json.dumps({"item": item[:20]}, ensure_ascii=False), encoding="utf-8"
-    )
+    _merge_sidecar(entry_id, {"item": item[:20]})
 
 
 def get_item(entry_id: str) -> str:
     """Return the stored item label for an active entry, or empty string if absent."""
-    import json
-
     if not _ENTRY_RE.match(entry_id):
         return ""
-    p = _item_path(entry_id)
-    if not p.exists():
+    return _read_sidecar(_item_path(entry_id)).get("item", "")
+
+
+def save_notion_meta(entry_id: str, page_id: str, url: str = "") -> None:
+    """Persist the Notion page id (and page url, for UI display) for this entry."""
+    if not _ENTRY_RE.match(entry_id):
+        raise ValueError(f"Invalid journal entry id: {entry_id!r}")
+    updates = {"notion_page_id": page_id}
+    if url:
+        updates["notion_url"] = url
+    _merge_sidecar(entry_id, updates)
+
+
+def get_notion_meta(entry_id: str) -> str:
+    """Return the entry's synced Notion page id, or empty string if not yet synced."""
+    if not _ENTRY_RE.match(entry_id):
         return ""
-    try:
-        return json.loads(p.read_text(encoding="utf-8")).get("item", "")
-    except Exception:
+    return _read_sidecar(_item_path(entry_id)).get("notion_page_id", "")
+
+
+def get_notion_url(entry_id: str) -> str:
+    """Return the entry's synced Notion page URL, or empty string if not yet synced."""
+    if not _ENTRY_RE.match(entry_id):
         return ""
+    return _read_sidecar(_item_path(entry_id)).get("notion_url", "")
 
 
 def get_trashed_item(entry_id: str) -> str:

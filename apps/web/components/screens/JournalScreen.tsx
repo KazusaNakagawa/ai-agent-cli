@@ -12,7 +12,7 @@ import { useResizable } from "@/lib/hooks/useResizable"
 import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
 
-type JournalEntry = { id: string; date: string; size: number; item: string }
+type JournalEntry = { id: string; date: string; size: number; item: string; notion_url: string }
 type Turn = { question: string; answer: string }
 
 const PROSE =
@@ -545,6 +545,22 @@ export function JournalScreen() {
                   </span>
                   {selectedMeta && (
                     <span>{(selectedMeta.size / 1024).toFixed(1)} KB</span>
+                  )}
+                  {selectedMeta?.notion_url ? (
+                    <a
+                      href={selectedMeta.notion_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      Synced to Notion ↗
+                    </a>
+                  ) : (
+                    selectedMeta && (
+                      <span title="Syncs automatically once NOTION_DATABASE_ID_JOURNAL is configured">
+                        Not synced to Notion
+                      </span>
+                    )
                   )}
                 </>
               )}
