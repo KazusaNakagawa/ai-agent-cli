@@ -38,9 +38,17 @@ function parseSseEvent(raw: string): string {
     .join("\n")
 }
 
-/** Parse a Server-Sent Events stream, yielding the joined `data:` text per event. */
-async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+/** Parse a Server-Sent Events stream, yielding the joined `data:` text per event.
+ *
+ * When `signal` aborts, the reader is cancelled so the pending read resolves
+ * and the generator ends cleanly (callers check `signal.aborted` afterwards).
+ */
+async function* readSse(
+  body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
   const reader = body.getReader()
+  signal?.addEventListener("abort", () => void reader.cancel().catch(() => {}))
   const decoder = new TextDecoder()
   let buffer = ""
   while (true) {
@@ -83,6 +91,9 @@ export function JournalScreen() {
   // Tracks the journal entry id for the current brainstorm session so that
   // subsequent turns append to the same entry instead of creating new ones.
   const brainstormEntryId = useRef<string | null>(null)
+  // Abort handle + backend job id for the in-flight brainstorm, so the user
+  // can cancel an accidentally sent question before the answer lands.
+  const brainstormAbort = useRef<{ controller: AbortController; jobId: string | null } | null>(null)
 
   const { width: listWidth, startResize } = useResizable({
     storageKey: "ai-agent:journal-list-width:v1",
@@ -267,6 +278,13 @@ export function JournalScreen() {
     // toggleTrash) can't retarget this in-flight save to a different entry.
     const targetEntryId = brainstormEntryId.current
     const dropPendingTurn = () => setTurns((prev) => prev.slice(0, -1))
+    const controller = new AbortController()
+    brainstormAbort.current = { controller, jobId: null }
+    // Cancelled: drop the pending turn and restore the question for re-edit.
+    const handleAbort = () => {
+      dropPendingTurn()
+      setQuestion(q)
+    }
     try {
       const post = await fetch("/api/journal/chat", {
         method: "POST",
@@ -275,6 +293,7 @@ export function JournalScreen() {
           question: q,
           ...(brainstormImage ? { image_path: brainstormImage.path } : {}),
         }),
+        signal: controller.signal,
       })
       if (!post.ok) {
         const body = await post.text()
@@ -287,16 +306,26 @@ export function JournalScreen() {
         return
       }
       const { job_id } = (await post.json()) as { job_id: string }
-      const stream = await fetch(`/api/chat/${job_id}/stream`, { cache: "no-store" })
+      if (brainstormAbort.current?.controller === controller) {
+        brainstormAbort.current.jobId = job_id
+      }
+      const stream = await fetch(`/api/chat/${job_id}/stream`, {
+        cache: "no-store",
+        signal: controller.signal,
+      })
       if (!stream.ok || !stream.body) {
         setChatError(`Stream failed (HTTP ${stream.status})`)
         dropPendingTurn()
         return
       }
       let answer = ""
-      for await (const chunk of readSse(stream.body)) {
+      for await (const chunk of readSse(stream.body, controller.signal)) {
         answer = answer ? `${answer}\n${chunk}` : chunk
         appendToLastAnswer(chunk)
+      }
+      if (controller.signal.aborted) {
+        handleAbort()
+        return
       }
       if (!answer) {
         setChatError("Brainstorm returned an empty answer.")
@@ -341,12 +370,43 @@ export function JournalScreen() {
       // The brainstorm answer is saved as its own entry; the transcript above
       // already shows it, so leave the current selection untouched.
     } catch (e) {
-      setChatError(String(e))
+      if (controller.signal.aborted) {
+        handleAbort()
+      } else {
+        setChatError(String(e))
+      }
     } finally {
+      brainstormAbort.current = null
       setBrainstorming(false)
-      setBrainstormImage(null)
+      // Keep the attached image on cancel so the restored question can be
+      // resent as-is; clear it only after a completed turn.
+      if (!controller.signal.aborted) setBrainstormImage(null)
     }
   }, [question, brainstorming, brainstormImage, appendToLastAnswer, loadDates])
+
+  // Abort the in-flight brainstorm and terminate the backend job. DELETE is
+  // fire-and-forget — the UI switches immediately, cleanup is best-effort.
+  const cancelBrainstorm = useCallback(() => {
+    const inflight = brainstormAbort.current
+    if (!inflight) return
+    if (inflight.jobId) {
+      void fetch(`/api/chat/${inflight.jobId}`, { method: "DELETE", cache: "no-store" })
+    }
+    inflight.controller.abort()
+  }, [])
+
+  // Esc cancels the in-flight brainstorm (matches Q&A ChatForm behavior).
+  useEffect(() => {
+    if (!brainstorming) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        cancelBrainstorm()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [brainstorming, cancelBrainstorm])
 
   const sortedEntries = [...entries].sort((a, b) => b.id.localeCompare(a.id))
   const selectedMeta = sortedEntries.find((e) => e.id === selected)
@@ -669,6 +729,16 @@ export function JournalScreen() {
                     >
                       {brainstorming ? "Thinking…" : "Brainstorm"}
                     </button>
+                    {brainstorming && (
+                      <button
+                        type="button"
+                        onClick={cancelBrainstorm}
+                        className="rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
+                        title="Cancel (Esc)"
+                      >
+                        Stop
+                      </button>
+                    )}
                     {chatError && <span className="text-sm text-destructive">{chatError}</span>}
                   </div>
                 </div>
