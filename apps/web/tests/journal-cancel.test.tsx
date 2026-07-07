@@ -79,6 +79,46 @@ describe("JournalScreen brainstorm cancel", () => {
     expect(screen.queryByText(/failed|error/i)).toBeNull()
   })
 
+  it("cancelling before the job id arrives still DELETEs the job", async () => {
+    // Hold the POST response until after Stop is clicked, so cancel runs
+    // while jobId is still unknown.
+    let releasePost: (r: Response) => void = () => {}
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === "/api/journal" && (!init || !init.method || init.method === "GET")) {
+        return Promise.resolve(jsonResponse({ entries: [] }))
+      }
+      if (url === "/api/journal/chat") {
+        return new Promise<Response>((resolve) => {
+          releasePost = resolve
+        })
+      }
+      if (url === "/api/chat/job-1" && init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(jsonResponse({}, 404))
+    })
+
+    render(<JournalScreen />)
+    fireEvent.click(screen.getByRole("button", { name: /new/i }))
+    const textarea = screen.getByPlaceholderText(/what should i focus on/i)
+    fireEvent.change(textarea, { target: { value: "race me" } })
+    fireEvent.click(screen.getByRole("button", { name: "Brainstorm" }))
+
+    const stopBtn = await screen.findByRole("button", { name: "Stop" })
+    fireEvent.click(stopBtn)
+    // POST resolves only after the cancel — the job id was unknown at cancel time.
+    releasePost(jsonResponse({ job_id: "job-1" }, 202))
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/chat/job-1",
+        expect.objectContaining({ method: "DELETE" }),
+      )
+      expect((textarea as HTMLTextAreaElement).value).toBe("race me")
+    })
+  })
+
   it("Esc cancels the in-flight brainstorm", async () => {
     render(<JournalScreen />)
     fireEvent.click(screen.getByRole("button", { name: /new/i }))

@@ -270,6 +270,13 @@ export function JournalScreen() {
         return
       }
       const { job_id } = (await post.json()) as { job_id: string }
+      // Cancelled between POST and job id arrival: cancelBrainstorm couldn't
+      // send DELETE (jobId was still null), so terminate the job here.
+      if (controller.signal.aborted) {
+        void fetch(`/api/chat/${job_id}`, { method: "DELETE", cache: "no-store" })
+        handleAbort()
+        return
+      }
       if (brainstormAbort.current?.controller === controller) {
         brainstormAbort.current.jobId = job_id
       }
