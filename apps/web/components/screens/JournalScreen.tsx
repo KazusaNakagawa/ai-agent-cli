@@ -9,6 +9,7 @@ import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { insertAtCursor } from "@/lib/insertAtCursor"
 import { formatQaBlock } from "@/lib/journalQa"
+import { readSseEvents } from "@/lib/sse"
 import { useResizable } from "@/lib/hooks/useResizable"
 import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
@@ -27,43 +28,6 @@ const HEADER_BTN =
 function entryTime(id: string): string | null {
   const m = id.match(/^\d{4}-\d{2}-\d{2}_(\d{2})(\d{2})(\d{2})/)
   return m ? `${m[1]}:${m[2]}:${m[3]}` : null
-}
-
-/** Join the `data:` lines of one raw SSE event block into text. */
-function parseSseEvent(raw: string): string {
-  return raw
-    .split("\n")
-    .filter((l) => l.startsWith("data:"))
-    .map((l) => l.slice(5).replace(/^ /, ""))
-    .join("\n")
-}
-
-/** Parse a Server-Sent Events stream, yielding the joined `data:` text per event.
- *
- * When `signal` aborts, the reader is cancelled so the pending read resolves
- * and the generator ends cleanly (callers check `signal.aborted` afterwards).
- */
-async function* readSse(
-  body: ReadableStream<Uint8Array>,
-  signal?: AbortSignal,
-): AsyncGenerator<string> {
-  const reader = body.getReader()
-  signal?.addEventListener("abort", () => void reader.cancel().catch(() => {}))
-  const decoder = new TextDecoder()
-  let buffer = ""
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let sep: number
-    while ((sep = buffer.indexOf("\n\n")) !== -1) {
-      const data = parseSseEvent(buffer.slice(0, sep))
-      buffer = buffer.slice(sep + 2)
-      if (data) yield data
-    }
-  }
-  const tail = parseSseEvent(buffer)
-  if (tail) yield tail
 }
 
 export function JournalScreen() {
@@ -319,9 +283,12 @@ export function JournalScreen() {
         return
       }
       let answer = ""
-      for await (const chunk of readSse(stream.body, controller.signal)) {
-        answer = answer ? `${answer}\n${chunk}` : chunk
-        appendToLastAnswer(chunk)
+      for await (const ev of readSseEvents(stream.body, controller.signal)) {
+        // Only default "message" events carry answer text; control events
+        // (e.g. stale_session) are ignored here.
+        if (ev.type !== "message" || !ev.data) continue
+        answer = answer ? `${answer}\n${ev.data}` : ev.data
+        appendToLastAnswer(ev.data)
       }
       if (controller.signal.aborted) {
         handleAbort()

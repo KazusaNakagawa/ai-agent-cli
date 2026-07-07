@@ -2,6 +2,7 @@
 import type { ReactNode } from "react"
 
 import { createJobStoreProvider } from "./createJobStoreProvider"
+import { parseSseChunk } from "./sse"
 
 /**
  * Chat-flavored job-backed store. Owns the *currently in-flight* chat turn
@@ -60,27 +61,6 @@ const initialState: ChatJobState = {
 
 const isInFlightStatus = (s: ChatJobStatus) =>
   s === "pending" || s === "running"
-
-type SSEEvent = { type: string; data: string }
-
-// Streaming SSE parser: events end at "\n\n"; multi-line ``data:`` fields join with "\n".
-function parseSSE(buffer: string): { events: SSEEvent[]; rest: string } {
-  const events: SSEEvent[] = []
-  let rest = buffer
-  let idx
-  while ((idx = rest.indexOf("\n\n")) !== -1) {
-    const raw = rest.slice(0, idx)
-    rest = rest.slice(idx + 2)
-    let type = "message"
-    const data: string[] = []
-    for (const line of raw.split("\n")) {
-      if (line.startsWith("event: ")) type = line.slice(7)
-      else if (line.startsWith("data: ")) data.push(line.slice(6))
-    }
-    events.push({ type, data: data.join("\n") })
-  }
-  return { events, rest }
-}
 
 const { Provider, useStore } = createJobStoreProvider<
   ChatJobState,
@@ -213,7 +193,7 @@ const { Provider, useStore } = createJobStoreProvider<
         if (done) break
         if (signal.aborted) return
         buffer += decoder.decode(value, { stream: true })
-        const { events, rest } = parseSSE(buffer)
+        const { events, rest } = parseSseChunk(buffer)
         buffer = rest
         for (const ev of events) {
           if (signal.aborted) return
