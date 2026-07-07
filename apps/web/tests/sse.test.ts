@@ -47,6 +47,21 @@ describe("readSseEvents", () => {
     ])
   })
 
+  it("skips empty blocks and keeps typed control events without data", async () => {
+    const { events } = parseSseChunk("\n\ndata: a\n\n\n\nevent: stale_session\n\n")
+    expect(events).toEqual([
+      { type: "message", data: "a" },
+      { type: "stale_session", data: "" },
+    ])
+  })
+
+  it("emits nothing for a stream ending in a trailing separator or comments", async () => {
+    const events = await collect(
+      readSseEvents(streamOf(["data: a\n\n", ": keep-alive comment\n\n", "\n\n"])),
+    )
+    expect(events).toEqual([{ type: "message", data: "a" }])
+  })
+
   it("ends cleanly when the signal aborts mid-stream", async () => {
     const controller = new AbortController()
     // A stream that emits one event then stays open.

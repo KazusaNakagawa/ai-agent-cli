@@ -285,6 +285,9 @@ export function JournalScreen() {
         signal: controller.signal,
       })
       if (!stream.ok || !stream.body) {
+        // The job was created but its stream is unusable — terminate it so it
+        // doesn't keep running (and burning tokens) unattended.
+        void fetch(`/api/chat/${job_id}`, { method: "DELETE", cache: "no-store" })
         setChatError(`Stream failed (HTTP ${stream.status})`)
         dropPendingTurn()
         return

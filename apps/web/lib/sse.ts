@@ -14,7 +14,10 @@ export function parseSseChunk(buffer: string): { events: SseEvent[]; rest: strin
   while ((idx = rest.indexOf("\n\n")) !== -1) {
     const event = parseSseEventBlock(rest.slice(0, idx))
     rest = rest.slice(idx + 2)
-    events.push(event)
+    // Skip fully-empty blocks (stray separators / comment-only blocks) so
+    // consumers don't see spurious `{type: "message", data: ""}` events.
+    // Typed events are kept even with empty data — they carry control meaning.
+    if (event.data || event.type !== "message") events.push(event)
   }
   return { events, rest }
 }
