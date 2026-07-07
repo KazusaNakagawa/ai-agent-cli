@@ -8,6 +8,7 @@ import { ResizeHandle } from "@/components/ResizeHandle"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { insertAtCursor } from "@/lib/insertAtCursor"
+import { formatQaBlock } from "@/lib/journalQa"
 import { useResizable } from "@/lib/hooks/useResizable"
 import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
@@ -302,7 +303,7 @@ export function JournalScreen() {
         dropPendingTurn()
         return
       }
-      const qaBlock = `${q}\n\n${answer}`
+      const qaBlock = formatQaBlock(q, answer)
       let saveRes: Response
       if (targetEntryId) {
         // Append to the entry this session was bound to when it started.
