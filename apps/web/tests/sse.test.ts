@@ -62,6 +62,44 @@ describe("readSseEvents", () => {
     expect(events).toEqual([{ type: "message", data: "a" }])
   })
 
+  it("flushes a trailing typed control event with no data and no separator", async () => {
+    const events = await collect(
+      readSseEvents(streamOf(["data: a\n\n", "event: stale_session"])),
+    )
+    expect(events).toEqual([
+      { type: "message", data: "a" },
+      { type: "stale_session", data: "" },
+    ])
+  })
+
+  it("swallows AbortError from reader.read after the signal is aborted", async () => {
+    const abortController = new AbortController()
+    const abortError = new DOMException("The operation was aborted.", "AbortError")
+    const stream = {
+      getReader: () => ({
+        read: () => Promise.reject(abortError),
+        cancel: () => Promise.resolve(),
+      }),
+    } as unknown as ReadableStream<Uint8Array>
+
+    abortController.abort()
+
+    const events = await collect(readSseEvents(stream, abortController.signal))
+    expect(events).toEqual([])
+  })
+
+  it("propagates non-AbortError rejections from reader.read", async () => {
+    const error = new Error("boom")
+    const stream = {
+      getReader: () => ({
+        read: () => Promise.reject(error),
+        cancel: () => Promise.resolve(),
+      }),
+    } as unknown as ReadableStream<Uint8Array>
+
+    await expect(collect(readSseEvents(stream))).rejects.toBe(error)
+  })
+
   it("ends cleanly when the signal aborts mid-stream", async () => {
     const controller = new AbortController()
     // A stream that emits one event then stays open.

@@ -65,9 +65,11 @@ export async function* readSseEvents(
       buffer = rest
       for (const ev of events) yield ev
     }
-    // Flush a final event that arrived without a trailing "\n\n".
+    // Flush a final event that arrived without a trailing "\n\n". Keep the
+    // same filter as parseSseChunk so a trailing typed control event with no
+    // data (e.g. `event: stale_session`) isn't silently dropped.
     const tail = parseSseEventBlock(buffer)
-    if (tail.data) yield tail
+    if (tail.data || tail.type !== "message") yield tail
   } finally {
     signal?.removeEventListener("abort", onAbort)
   }
