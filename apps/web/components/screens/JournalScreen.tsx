@@ -141,7 +141,11 @@ export function JournalScreen() {
     setSelected(null)
     setTrashPreview(null)
     viewEpoch.current += 1
-    journalChat.reset()
+    // Don't reset journalChat here so that persisted turns from a saved new-entry
+    // composition remain visible when opening the compose panel. A viewEpoch bump
+    // is sufficient to hide any pending job from a previous view.
+    // journalChat.reset() is still called when explicitly needed via the reset()
+    // method or when switching to/from other views (see closePanel, loadEntry, toggleTrash).
     setComposing(true)
   }
 
