@@ -11,12 +11,18 @@ allowed-tools: Write, mcp__claude_ai_Notion__notion-search, mcp__claude_ai_Notio
 
 ## Usage
 
-```bash
+```
 /notion-import <topic-slug>
 ```
 
 - `<topic-slug>` はファイル名用の kebab-case 識別子（例: `distyl-ai-ipo-check`, `tsmc-2nm-update`）
 - 追記する内容は **直前の assistant 回答** を正本とする（ユーザーから別途指定がなければ）
+
+## 動作ポリシー（確認なし・自動追記）
+
+- **事前確認は一切しない。** 追記の可否やトピック slug、内容を聞き返さず、直前の回答をそのまま正本として即座に追記する。
+- slug が未指定なら、直前の回答内容から自動で kebab-case の slug を生成する。
+- 追記する本文を改めてチャットに再掲しない（やりとりを省く）。完了報告だけを 1〜2 行で返す。
 
 ## Workflow
 
@@ -72,7 +78,7 @@ content の冒頭テンプレート:
 
 ### 4. 完了報告
 
-ユーザーに 1〜2 行で:
+ユーザーに 1〜2 行で（本文の再掲はしない）:
 - 保存した md パス
 - Notion ページの URL（`https://www.notion.so/<id-without-dashes>`）
 
