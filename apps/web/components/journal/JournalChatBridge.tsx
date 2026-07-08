@@ -43,11 +43,13 @@ export function JournalChatBridge(): null {
             })
       } catch (e) {
         job.setError(e instanceof Error ? e.message : "Auto-save network error")
+        processing.current.delete(job.jobId!)
         return
       }
       if (!saveRes.ok) {
         const body = await saveRes.text().catch(() => "")
         job.setError(`Auto-save failed (HTTP ${saveRes.status}): ${body}`)
+        processing.current.delete(job.jobId!)
         return
       }
       let entryId = targetEntryId
@@ -58,6 +60,7 @@ export function JournalChatBridge(): null {
       journalChat.addTurn({ question, answer: assistantContent })
       journalChat.setEntryId(entryId)
       job.reset()
+      processing.current.delete(job.jobId!)
     })()
   }, [job, journalChat])
 
