@@ -8,14 +8,13 @@ import { ResizeHandle } from "@/components/ResizeHandle"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { insertAtCursor } from "@/lib/insertAtCursor"
-import { formatQaBlock } from "@/lib/journalQa"
-import { readSseEvents } from "@/lib/sse"
+import { useJournalChatJobState } from "@/lib/journalChatJobStore"
+import { useJournalChatState } from "@/lib/journalChatStore"
 import { useResizable } from "@/lib/hooks/useResizable"
 import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
 
 type JournalEntry = { id: string; date: string; size: number; item: string; notion_url: string }
-type Turn = { question: string; answer: string }
 
 const PROSE =
   "prose prose-sm max-w-none dark:prose-invert prose-a:text-blue-600 " +
@@ -49,15 +48,19 @@ export function JournalScreen() {
   const trashReqSeq = useRef(0)
 
   const [question, setQuestion] = useState("")
-  const [turns, setTurns] = useState<Turn[]>([])
-  const [brainstorming, setBrainstorming] = useState(false)
-  const [chatError, setChatError] = useState<string | null>(null)
-  // Tracks the journal entry id for the current brainstorm session so that
-  // subsequent turns append to the same entry instead of creating new ones.
-  const brainstormEntryId = useRef<string | null>(null)
-  // Abort handle + backend job id for the in-flight brainstorm, so the user
-  // can cancel an accidentally sent question before the answer lands.
-  const brainstormAbort = useRef<{ controller: AbortController; jobId: string | null } | null>(null)
+  const journalChat = useJournalChatState()
+  const job = useJournalChatJobState()
+  const brainstorming = job.status === "pending" || job.status === "running"
+  const chatError = job.error
+  // Bumped on every entry switch/compose/trash toggle so a pending job
+  // started under a previous view doesn't reappear if the id-matching
+  // heuristic below can't distinguish "same view" from "new view" (e.g. two
+  // successive new-entry sessions both have targetEntryId=null). Reset to 0
+  // on every JournalScreen mount, which is exactly the state a fresh
+  // navigation back to Journal starts from — so a job started before
+  // navigating away still shows on return.
+  const viewEpoch = useRef(0)
+  const brainstormEpoch = useRef(0)
 
   const { width: listWidth, startResize } = useResizable({
     storageKey: "ai-agent:journal-list-width:v1",
@@ -86,9 +89,10 @@ export function JournalScreen() {
     const seq = ++entryReqSeq.current
     setSelected(entryId)
     setComposing(false)
+    viewEpoch.current += 1
     // Bind the brainstorm session to this entry so subsequent turns append here.
-    brainstormEntryId.current = entryId
-    setTurns([])
+    journalChat.reset()
+    journalChat.setEntryId(entryId)
     // Clear immediately so the previous entry's body can't render under the
     // new header while the fetch is in flight (or if it fails).
     setContent("")
@@ -103,7 +107,7 @@ export function JournalScreen() {
     const data = (await res.json()) as { content: string }
     if (seq !== entryReqSeq.current) return
     setContent(data.content)
-  }, [])
+  }, [journalChat])
 
   const loadTrashEntry = useCallback(async (entryId: string) => {
     const seq = ++trashReqSeq.current
@@ -130,14 +134,14 @@ export function JournalScreen() {
     setSelected(null)
     setComposing(false)
     setTrashPreview(null)
-    brainstormEntryId.current = null
+    journalChat.setEntryId(null)
   }
 
   const startCompose = () => {
     setSelected(null)
     setTrashPreview(null)
-    brainstormEntryId.current = null
-    setTurns([])
+    viewEpoch.current += 1
+    journalChat.reset()
     setComposing(true)
   }
 
@@ -217,160 +221,37 @@ export function JournalScreen() {
     setSelected(null)
     setComposing(false)
     setTrashPreview(null)
-    brainstormEntryId.current = null
-    setTurns([])
+    viewEpoch.current += 1
+    journalChat.reset()
     if (next) void loadTrash()
-  }, [showTrash, loadTrash])
-
-  const appendToLastAnswer = useCallback((chunk: string) => {
-    setTurns((prev) => {
-      if (prev.length === 0) return prev
-      const last = prev[prev.length - 1]
-      const answer = last.answer ? `${last.answer}\n${chunk}` : chunk
-      return [...prev.slice(0, -1), { ...last, answer }]
-    })
-  }, [])
+  }, [showTrash, loadTrash, journalChat])
 
   const brainstorm = useCallback(async () => {
     const q = question.trim()
     if (!q || brainstorming) return
-    setBrainstorming(true)
-    setChatError(null)
-    setTurns((prev) => [...prev, { question: q, answer: "" }])
     setQuestion("")
-    // Snapshot the target entry now so later navigation (loadEntry/startCompose/
-    // toggleTrash) can't retarget this in-flight save to a different entry.
-    const targetEntryId = brainstormEntryId.current
-    const dropPendingTurn = () => setTurns((prev) => prev.slice(0, -1))
-    const controller = new AbortController()
-    brainstormAbort.current = { controller, jobId: null }
-    // Cancelled: drop the pending turn and restore the question for re-edit.
-    const handleAbort = () => {
-      dropPendingTurn()
-      setQuestion(q)
-    }
-    try {
-      const post = await fetch("/api/journal/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          question: q,
-          ...(brainstormImage ? { image_path: brainstormImage.path } : {}),
-        }),
-        signal: controller.signal,
-      })
-      if (!post.ok) {
-        const body = await post.text()
-        setChatError(
-          post.status === 404
-            ? "No journal entries yet — record something first."
-            : `Brainstorm failed (HTTP ${post.status}): ${body}`,
-        )
-        dropPendingTurn()
-        return
-      }
-      const { job_id } = (await post.json()) as { job_id: string }
-      // Cancelled between POST and job id arrival: cancelBrainstorm couldn't
-      // send DELETE (jobId was still null), so terminate the job here.
-      if (controller.signal.aborted) {
-        void fetch(`/api/chat/${job_id}`, { method: "DELETE", cache: "no-store" })
-        handleAbort()
-        return
-      }
-      if (brainstormAbort.current?.controller === controller) {
-        brainstormAbort.current.jobId = job_id
-      }
-      const stream = await fetch(`/api/chat/${job_id}/stream`, {
-        cache: "no-store",
-        signal: controller.signal,
-      })
-      if (!stream.ok || !stream.body) {
-        // The job was created but its stream is unusable — terminate it so it
-        // doesn't keep running (and burning tokens) unattended.
-        void fetch(`/api/chat/${job_id}`, { method: "DELETE", cache: "no-store" })
-        setChatError(`Stream failed (HTTP ${stream.status})`)
-        dropPendingTurn()
-        return
-      }
-      let answer = ""
-      for await (const ev of readSseEvents(stream.body, controller.signal)) {
-        // Only default "message" events carry answer text; control events
-        // (e.g. stale_session) are ignored here.
-        if (ev.type !== "message" || !ev.data) continue
-        answer = answer ? `${answer}\n${ev.data}` : ev.data
-        appendToLastAnswer(ev.data)
-      }
-      if (controller.signal.aborted) {
-        handleAbort()
-        return
-      }
-      if (!answer) {
-        setChatError("Brainstorm returned an empty answer.")
-        dropPendingTurn()
-        return
-      }
-      const qaBlock = formatQaBlock(q, answer)
-      let saveRes: Response
-      if (targetEntryId) {
-        // Append to the entry this session was bound to when it started.
-        saveRes = await fetch(`/api/journal/${targetEntryId}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ content: qaBlock }),
-        })
-      } else {
-        // First turn: create a new entry and remember its id.
-        saveRes = await fetch("/api/journal", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ content: qaBlock, item: q.slice(0, 20) }),
-        })
-        if (saveRes.ok) {
-          const saved = (await saveRes.json()) as { id: string }
-          // Only adopt the new id if navigation hasn't started a different
-          // session in the meantime (ref still on this session's snapshot).
-          if (brainstormEntryId.current === targetEntryId) {
-            brainstormEntryId.current = saved.id
-          }
-        }
-      }
-      if (!saveRes.ok) {
-        // 404 means the entry was deleted — reset so the next turn creates fresh.
-        if (saveRes.status === 404 && brainstormEntryId.current === targetEntryId) {
-          brainstormEntryId.current = null
-        }
-        const body = await saveRes.text()
-        setChatError(`Auto-save failed (HTTP ${saveRes.status}): ${body}`)
-        return
-      }
-      await loadDates()
-      // The brainstorm answer is saved as its own entry; the transcript above
-      // already shows it, so leave the current selection untouched.
-    } catch (e) {
-      if (controller.signal.aborted) {
-        handleAbort()
-      } else {
-        setChatError(String(e))
-      }
-    } finally {
-      brainstormAbort.current = null
-      setBrainstorming(false)
-      // Keep the attached image on cancel so the restored question can be
-      // resent as-is; clear it only after a completed turn.
-      if (!controller.signal.aborted) setBrainstormImage(null)
-    }
-  }, [question, brainstorming, brainstormImage, appendToLastAnswer, loadDates])
+    brainstormEpoch.current = viewEpoch.current
+    await job.startJob({
+      question: q,
+      imagePath: brainstormImage?.path ?? null,
+      targetEntryId: journalChat.entryId,
+    })
+    // Cleared unconditionally (including on cancel/failure) — simpler than
+    // threading the outcome back through startJob's return value, and
+    // re-attaching an image to a retyped question is a minor inconvenience
+    // compared to the state this replaces.
+    setBrainstormImage(null)
+  }, [question, brainstorming, brainstormImage, job, journalChat.entryId])
 
-  // Abort the in-flight brainstorm and terminate the backend job. DELETE is
-  // fire-and-forget — the UI switches immediately, cleanup is best-effort.
+  // Abort the in-flight brainstorm and terminate the backend job — works
+  // whether or not the backend job_id has arrived yet (journalChatJobStore
+  // queues the cancel and fires the DELETE once it does).
   const cancelBrainstorm = useCallback(() => {
-    const inflight = brainstormAbort.current
-    if (!inflight) return
-    if (inflight.jobId) {
-      void fetch(`/api/chat/${inflight.jobId}`, { method: "DELETE", cache: "no-store" })
-    }
-    inflight.controller.abort()
-  }, [])
+    if (job.status === "idle") return
+    const q = job.question
+    job.cancelJob()
+    setQuestion(q)
+  }, [job])
 
   // Esc cancels the in-flight brainstorm (matches Q&A ChatForm behavior).
   useEffect(() => {
@@ -384,6 +265,15 @@ export function JournalScreen() {
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [brainstorming, cancelBrainstorm])
+
+  // The in-flight job only renders as a pending bubble while the view it
+  // was started from is still current — matches the pre-refactor behavior
+  // where switching entries/composing/trash cleared the visible transcript
+  // even though the backend job kept running in the background.
+  const showPendingTurn = job.jobId !== null && brainstormEpoch.current === viewEpoch.current
+  const displayTurns = showPendingTurn
+    ? [...journalChat.turns, { question: job.question, answer: job.assistantContent }]
+    : journalChat.turns
 
   const sortedEntries = [...entries].sort((a, b) => b.id.localeCompare(a.id))
   const selectedMeta = sortedEntries.find((e) => e.id === selected)
@@ -654,9 +544,9 @@ export function JournalScreen() {
 
               {/* Brainstorm with Claude */}
               <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-                {turns.length > 0 && (
+                {displayTurns.length > 0 && (
                   <div className="flex flex-col gap-4">
-                    {turns.map((turn, i) => (
+                    {displayTurns.map((turn, i) => (
                       <div key={i} className="flex flex-col gap-2">
                         <div className="self-end rounded-2xl rounded-br-sm bg-muted px-4 py-2 text-sm text-foreground">
                           {turn.question}
