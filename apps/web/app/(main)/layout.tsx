@@ -3,9 +3,12 @@ import { redirect } from "next/navigation"
 import { apiFetch } from "@/lib/api"
 import { Sidebar } from "@/components/Sidebar"
 import { ServiceTabs } from "@/components/ServiceTabs"
+import { JournalChatBridge } from "@/components/journal/JournalChatBridge"
 import { ChatJobStateProvider } from "@/lib/chatJobStore"
 import { ChatStateProvider } from "@/lib/chatStore"
 import { JobStateProvider } from "@/lib/jobStore"
+import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
+import { JournalChatStateProvider } from "@/lib/journalChatStore"
 
 async function isOnboarded(): Promise<boolean> {
   try {
@@ -31,13 +34,18 @@ export default async function MainLayout({
     <JobStateProvider>
       <ChatStateProvider>
         <ChatJobStateProvider>
-          <div className="flex h-dvh overflow-hidden">
-            <Sidebar />
-            <main className="flex flex-1 flex-col overflow-hidden">
-              <ServiceTabs />
-              <div className="flex-1 overflow-y-auto p-8">{children}</div>
-            </main>
-          </div>
+          <JournalChatStateProvider>
+            <JournalChatJobStateProvider>
+              <JournalChatBridge />
+              <div className="flex h-dvh overflow-hidden">
+                <Sidebar />
+                <main className="flex flex-1 flex-col overflow-hidden">
+                  <ServiceTabs />
+                  <div className="flex-1 overflow-y-auto p-8">{children}</div>
+                </main>
+              </div>
+            </JournalChatJobStateProvider>
+          </JournalChatStateProvider>
         </ChatJobStateProvider>
       </ChatStateProvider>
     </JobStateProvider>
