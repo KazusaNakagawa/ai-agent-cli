@@ -125,6 +125,21 @@ describe("JournalChatBridge", () => {
     expect(latestChat.turns).toEqual([])
   })
 
+  it("marks the job failed and does not commit a turn when the PATCH save fails", async () => {
+    on("/api/journal/chat", () => jsonResponse({ job_id: "j5" }, 202))
+    on("/api/chat/j5/stream", () => sseStream([{ data: "answer" }]))
+    on("/api/journal/existing-entry", () => new Response("boom", { status: 500 }))
+
+    renderTree()
+    await act(async () => {
+      await latestJob.startJob({ question: "Q", targetEntryId: "existing-entry" })
+    })
+
+    await waitFor(() => expect(latestJob.status).toBe("failed"))
+    expect(latestJob.error).toContain("Auto-save failed")
+    expect(latestChat.turns).toEqual([])
+  })
+
   it("does not double-save when the done state re-renders", async () => {
     on("/api/journal/chat", () => jsonResponse({ job_id: "j4" }, 202))
     on("/api/chat/j4/stream", () => sseStream([{ data: "once" }]))

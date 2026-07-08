@@ -19,12 +19,13 @@ export function JournalChatBridge(): null {
   // save is in flight) — without this a slow save could fire twice.
   const processing = useRef(new Set<string>())
 
-  useEffect(() => {
-    if (job.status !== "done" || !job.jobId) return
-    if (processing.current.has(job.jobId)) return
-    processing.current.add(job.jobId)
+  const { status, jobId, question, assistantContent, targetEntryId, setError, reset } = job
+  const { addTurn, setEntryId } = journalChat
 
-    const { question, assistantContent, targetEntryId } = job
+  useEffect(() => {
+    if (status !== "done" || !jobId) return
+    if (processing.current.has(jobId)) return
+    processing.current.add(jobId)
 
     void (async () => {
       const qaBlock = formatQaBlock(question, assistantContent)
@@ -42,14 +43,14 @@ export function JournalChatBridge(): null {
               body: JSON.stringify({ content: qaBlock, item: question.slice(0, 20) }),
             })
       } catch (e) {
-        job.setError(e instanceof Error ? e.message : "Auto-save network error")
-        processing.current.delete(job.jobId!)
+        setError(e instanceof Error ? e.message : "Auto-save network error")
+        processing.current.delete(jobId)
         return
       }
       if (!saveRes.ok) {
         const body = await saveRes.text().catch(() => "")
-        job.setError(`Auto-save failed (HTTP ${saveRes.status}): ${body}`)
-        processing.current.delete(job.jobId!)
+        setError(`Auto-save failed (HTTP ${saveRes.status}): ${body}`)
+        processing.current.delete(jobId)
         return
       }
       let entryId = targetEntryId
@@ -57,12 +58,12 @@ export function JournalChatBridge(): null {
         const saved = (await saveRes.json()) as { id: string }
         entryId = saved.id
       }
-      journalChat.addTurn({ question, answer: assistantContent })
-      journalChat.setEntryId(entryId)
-      job.reset()
-      processing.current.delete(job.jobId!)
+      addTurn({ question, answer: assistantContent })
+      setEntryId(entryId)
+      reset()
+      processing.current.delete(jobId)
     })()
-  }, [job, journalChat])
+  }, [status, jobId, question, assistantContent, targetEntryId, setError, reset, addTurn, setEntryId])
 
   return null
 }

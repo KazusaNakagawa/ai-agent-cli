@@ -268,6 +268,9 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
     if (state.jobId) {
       void fetch(`/api/chat/${state.jobId}`, { method: "DELETE", cache: "no-store" })
       setState(initialState)
+      // Clear immediately: waiting for the persist effect leaves a window
+      // where a reload could rehydrate the cancelled job.
+      clearPersisted()
     } else {
       cancelRequested.current = true
     }
