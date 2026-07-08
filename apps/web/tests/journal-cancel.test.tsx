@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { JournalScreen } from "@/components/screens/JournalScreen"
+import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
+import { JournalChatStateProvider } from "@/lib/journalChatStore"
 
 // A stream that stays open (never closes) so the brainstorm stays in the
 // "Thinking…" state until the test aborts it.
@@ -17,10 +19,21 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function renderJournalScreen() {
+  return render(
+    <JournalChatStateProvider>
+      <JournalChatJobStateProvider>
+        <JournalScreen />
+      </JournalChatJobStateProvider>
+    </JournalChatStateProvider>,
+  )
+}
+
 describe("JournalScreen brainstorm cancel", () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
+    window.sessionStorage.clear()
     vi.stubGlobal("fetch", fetchMock)
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -52,10 +65,11 @@ describe("JournalScreen brainstorm cancel", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.clearAllMocks()
+    window.sessionStorage.clear()
   })
 
   it("Stop aborts the stream, deletes the job, and restores the question", async () => {
-    render(<JournalScreen />)
+    renderJournalScreen()
     fireEvent.click(screen.getByRole("button", { name: /new/i }))
 
     const textarea = screen.getByPlaceholderText(/what should i focus on/i)
@@ -99,7 +113,7 @@ describe("JournalScreen brainstorm cancel", () => {
       return Promise.resolve(jsonResponse({}, 404))
     })
 
-    render(<JournalScreen />)
+    renderJournalScreen()
     fireEvent.click(screen.getByRole("button", { name: /new/i }))
     const textarea = screen.getByPlaceholderText(/what should i focus on/i)
     fireEvent.change(textarea, { target: { value: "race me" } })
@@ -120,7 +134,7 @@ describe("JournalScreen brainstorm cancel", () => {
   })
 
   it("Esc cancels the in-flight brainstorm", async () => {
-    render(<JournalScreen />)
+    renderJournalScreen()
     fireEvent.click(screen.getByRole("button", { name: /new/i }))
 
     const textarea = screen.getByPlaceholderText(/what should i focus on/i)
