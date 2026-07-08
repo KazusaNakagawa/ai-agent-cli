@@ -16,18 +16,26 @@ from src.notifier.notion import _append_blocks, _create_page
 logger = get_logger(__name__)
 
 _LEADING_MARKS_RE = re.compile(r"^[\s#\-*]+")
-_TITLE_MAX_LEN = 60
+_ROLE_LABEL_RE = re.compile(r"^\*\*(You|AI):\*\*$")
+_TITLE_MAX_LEN = 50
 
 
 def title_from_content(content: str, fallback: str) -> str:
-    """Derive a Notion page title from an entry's first non-blank line.
+    """Derive a Notion page title from an entry's first non-blank content line.
 
-    Strips leading heading/list markers, then falls back to ``fallback`` (the
-    entry's date) if nothing remains, and truncates to 60 chars.
+    Skips role-label lines (e.g. ``**You:**``, ``**AI:**``) produced by
+    apps/web/lib/journalQa.ts, strips leading heading/list markers from the
+    first remaining line, falls back to ``fallback`` (the entry's date) if
+    nothing remains, and truncates to 50 chars.
     """
-    first_line = next((line for line in content.splitlines() if line.strip()), "")
-    title = _LEADING_MARKS_RE.sub("", first_line).strip()
-    return (title or fallback)[:_TITLE_MAX_LEN]
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or _ROLE_LABEL_RE.match(stripped):
+            continue
+        title = _LEADING_MARKS_RE.sub("", stripped).strip()
+        if title:
+            return title[:_TITLE_MAX_LEN]
+    return fallback[:_TITLE_MAX_LEN]
 
 
 def sync_new_entry(entry_id: str, content: str, api_key: str, database_id: str) -> None:

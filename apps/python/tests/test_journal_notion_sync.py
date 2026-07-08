@@ -5,8 +5,9 @@ Contract:
 - Append to an entry with a saved ``notion_page_id`` -> blocks appended to that page.
 - Append to an entry without one (pre-sync entry) -> falls back to creating a page.
 - Notion failures are best-effort: the local journal write always succeeds.
-- Title is derived from the entry's first line (heading/list markers stripped,
-  truncated to 60 chars, falls back to the entry's date when empty).
+- Title is derived from the entry's first non-blank, non-role-label line
+  (heading/list markers stripped, truncated to 50 chars, falls back to the
+  entry's date when empty).
 """
 from unittest.mock import MagicMock, patch
 
@@ -46,13 +47,25 @@ class TestTitleFromContent:
     def test_falls_back_to_date_when_empty(self):
         assert journal_sync.title_from_content("### \n\n", "2026-07-03") == "2026-07-03"
 
-    def test_truncated_to_60_chars(self):
+    def test_truncated_to_50_chars(self):
         long_line = "a" * 100
         result = journal_sync.title_from_content(long_line, "2026-07-03")
-        assert len(result) == 60
+        assert len(result) == 50
 
     def test_skips_leading_blank_lines(self):
         assert journal_sync.title_from_content("\n\nfirst real line", "2026-07-03") == "first real line"
+
+    def test_skips_user_role_label(self):
+        content = "**You:**\n\nwhat should I focus on today?\n\n**AI:**\n\nfocus on X"
+        assert journal_sync.title_from_content(content, "2026-07-03") == "what should I focus on today?"
+
+    def test_skips_ai_role_label_only(self):
+        content = "**AI:**\n\nhere is my answer"
+        assert journal_sync.title_from_content(content, "2026-07-03") == "here is my answer"
+
+    def test_falls_back_to_date_when_only_role_labels(self):
+        content = "**You:**\n\n**AI:**\n\n"
+        assert journal_sync.title_from_content(content, "2026-07-03") == "2026-07-03"
 
 
 class TestSyncNewEntry:
