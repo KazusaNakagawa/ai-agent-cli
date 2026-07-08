@@ -54,7 +54,9 @@ bin/chat.sh   # Launch chat session
 
 ## Git Conventions
 
-Branch naming: `feat/` `fix/` `refactor/` `docs/` `chore/`
+Branch naming: `feature/` `fix/` `refactor/` `docs/` `chore/`
+
+Branch flow: `dev` is the working branch. Feature branches fork from `dev`, and PRs target `dev` as base. `main` is synced only via `dev` → `main` PRs.
 
 Commit format ([Conventional Commits](https://www.conventionalcommits.org/)):
 ```
