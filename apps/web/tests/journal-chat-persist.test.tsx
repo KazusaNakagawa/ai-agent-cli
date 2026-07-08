@@ -126,11 +126,9 @@ describe("Journal chat survives navigation away and back", () => {
     // Navigate back.
     rerender(<Shell showJournal={true} />)
 
-    // Click the "New" button to open the compose panel. The saved brainstorm result
-    // should appear in the panel thanks to the persisted turns in sessionStorage.
-    fireEvent.click(screen.getByRole("button", { name: /new/i }))
-
+    // The panel should auto-open once the stores hydrate and the effect fires.
     // The question and answer should now appear in the brainstorm section
+    // thanks to the persisted turns in sessionStorage.
     await waitFor(
       () => {
         expect(screen.getByText("what should I do")).toBeInTheDocument()

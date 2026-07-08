@@ -130,6 +130,17 @@ export function JournalScreen() {
     void loadDates()
   }, [loadDates])
 
+  // Auto-open the compose panel on mount if there is persisted chat state to show.
+  // The stores hydrate from sessionStorage in their own effects, so this effect reads
+  // their current values and opens the panel once they are populated (if not already open).
+  useEffect(() => {
+    const hasChatState = journalChat.turns.length > 0 || job.jobId !== null
+    const panelClosed = selected === null && !composing && trashPreview === null
+    if (hasChatState && panelClosed) {
+      setComposing(true)
+    }
+  }, [journalChat.turns.length, job.jobId, selected, composing, trashPreview])
+
   const closePanel = () => {
     setSelected(null)
     setComposing(false)
@@ -141,11 +152,7 @@ export function JournalScreen() {
     setSelected(null)
     setTrashPreview(null)
     viewEpoch.current += 1
-    // Don't reset journalChat here so that persisted turns from a saved new-entry
-    // composition remain visible when opening the compose panel. A viewEpoch bump
-    // is sufficient to hide any pending job from a previous view.
-    // journalChat.reset() is still called when explicitly needed via the reset()
-    // method or when switching to/from other views (see closePanel, loadEntry, toggleTrash).
+    journalChat.reset()
     setComposing(true)
   }
 
