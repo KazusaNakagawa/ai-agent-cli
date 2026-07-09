@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { JournalScreen } from "@/components/screens/JournalScreen"
@@ -72,11 +72,30 @@ describe("JournalScreen voice input", () => {
     fireEvent.click(screen.getByRole("button", { name: /new/i }))
 
     const micButton = screen.getByTestId("mic-button")
+
+    // Initial state: not listening.
+    expect(micButton).toHaveAttribute("aria-pressed", "false")
+    expect(micButton).toHaveAttribute("aria-label", "音声入力開始")
+    expect(within(micButton).getByText("🎤")).toBeInTheDocument()
+
     fireEvent.click(micButton)
+
+    // FakeRecognition.start() emits synchronously, so the transcript lands
+    // before we assert the toggled-on state below.
+    expect(micButton).toHaveAttribute("aria-pressed", "true")
+    expect(micButton).toHaveAttribute("aria-label", "音声入力停止")
+    expect(within(micButton).getByText("🛑")).toBeInTheDocument()
 
     const textarea = screen.getByPlaceholderText(
       /what should i focus on/i,
     ) as HTMLTextAreaElement
     expect(textarea.value).toBe("hello from voice")
+
+    // Toggle off again and confirm the state resets.
+    fireEvent.click(micButton)
+
+    expect(micButton).toHaveAttribute("aria-pressed", "false")
+    expect(micButton).toHaveAttribute("aria-label", "音声入力開始")
+    expect(within(micButton).getByText("🎤")).toBeInTheDocument()
   })
 })
