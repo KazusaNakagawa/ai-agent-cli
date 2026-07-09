@@ -11,6 +11,7 @@ import { insertAtCursor } from "@/lib/insertAtCursor"
 import { useJournalChatJobState } from "@/lib/journalChatJobStore"
 import { useJournalChatState } from "@/lib/journalChatStore"
 import { useResizable } from "@/lib/hooks/useResizable"
+import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition"
 import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
 
@@ -48,6 +49,9 @@ export function JournalScreen() {
   const trashReqSeq = useRef(0)
 
   const [question, setQuestion] = useState("")
+  const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
+    onTranscript: setQuestion,
+  })
   const journalChat = useJournalChatState()
   const job = useJournalChatJobState()
   const brainstorming = job.status === "pending" || job.status === "running"
@@ -607,6 +611,24 @@ export function JournalScreen() {
                     >
                       {brainstorming ? "Thinking…" : "Brainstorm"}
                     </button>
+                    {supportsMic && (
+                      <button
+                        type="button"
+                        onClick={() => toggleMic(question)}
+                        data-testid="mic-button"
+                        aria-label={listening ? "音声入力停止" : "音声入力開始"}
+                        aria-pressed={listening}
+                        title={listening ? "音声入力停止" : "音声入力開始 (ja-JP)"}
+                        className={cn(
+                          "rounded-md border px-3 py-2 text-sm transition-colors",
+                          listening
+                            ? "border-destructive bg-destructive text-destructive-foreground"
+                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                        )}
+                      >
+                        {listening ? "🛑" : "🎤"}
+                      </button>
+                    )}
                     {brainstorming && (
                       <button
                         type="button"
@@ -619,6 +641,14 @@ export function JournalScreen() {
                     )}
                     {chatError && <span className="text-sm text-destructive">{chatError}</span>}
                   </div>
+                  {!supportsMic && (
+                    <p
+                      className="text-xs text-muted-foreground"
+                      data-testid="mic-unsupported"
+                    >
+                      Voice input is unavailable in this browser (Chrome / Edge supported).
+                    </p>
+                  )}
                 </div>
               </section>
             </div>
