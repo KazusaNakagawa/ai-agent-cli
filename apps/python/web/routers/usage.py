@@ -7,6 +7,7 @@
 import datetime
 import json
 import re
+import threading
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -144,6 +145,9 @@ _ISO_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
 _MONITOR_CACHE_TTL_SECONDS = 60.0
 _MONITOR_CACHE_MAX_ENTRIES = 32
 _monitor_cache: dict[tuple[str, str | None, str | None], tuple[float, "MonitorResponse"]] = {}
+# ``def`` endpoints run in FastAPI's threadpool, so concurrent requests can
+# read/write _monitor_cache from different threads at once. Guard it.
+_monitor_cache_lock = threading.Lock()
 
 
 @router.get("/usage/monitor", response_model=MonitorResponse)
@@ -170,9 +174,10 @@ def get_monitor(
 
     root = usage_monitor.DEFAULT_ROOT
     cache_key = (str(root), since, until)
-    cached = _monitor_cache.get(cache_key)
-    if cached is not None and time.monotonic() - cached[0] < _MONITOR_CACHE_TTL_SECONDS:
-        return cached[1]
+    with _monitor_cache_lock:
+        cached = _monitor_cache.get(cache_key)
+        if cached is not None and time.monotonic() - cached[0] < _MONITOR_CACHE_TTL_SECONDS:
+            return cached[1]
 
     report = usage_monitor.aggregate(root, since=since, until=until)
 
@@ -199,10 +204,11 @@ def get_monitor(
         by_model=_buckets(report.by_model),
         unpriced_models=sorted(report.unpriced_models),
     )
-    if len(_monitor_cache) >= _MONITOR_CACHE_MAX_ENTRIES:
-        oldest_key = min(_monitor_cache, key=lambda k: _monitor_cache[k][0])
-        del _monitor_cache[oldest_key]
-    _monitor_cache[cache_key] = (time.monotonic(), response)
+    with _monitor_cache_lock:
+        if cache_key not in _monitor_cache and len(_monitor_cache) >= _MONITOR_CACHE_MAX_ENTRIES:
+            oldest_key = min(_monitor_cache, key=lambda k: _monitor_cache[k][0])
+            del _monitor_cache[oldest_key]
+        _monitor_cache[cache_key] = (time.monotonic(), response)
     return response
 
 

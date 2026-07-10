@@ -136,6 +136,17 @@ async def test_monitor_caches_repeated_requests(authed_client, transcripts_root,
 
 
 @pytest.mark.anyio
+async def test_monitor_cache_survives_concurrent_requests(authed_client, transcripts_root):
+    import asyncio
+
+    responses = await asyncio.gather(
+        *(authed_client.get("/api/usage/monitor") for _ in range(20))
+    )
+    assert all(r.status_code == 200 for r in responses)
+    assert all(r.json() == responses[0].json() for r in responses)
+
+
+@pytest.mark.anyio
 async def test_monitor_cache_is_bounded(authed_client, transcripts_root):
     from web.routers import usage as usage_router
 
