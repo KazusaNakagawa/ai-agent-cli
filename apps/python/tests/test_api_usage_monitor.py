@@ -128,6 +128,21 @@ async def test_monitor_caches_repeated_requests(authed_client, transcripts_root,
     assert calls["n"] == 2
 
 
+@pytest.mark.anyio
+async def test_monitor_cache_is_bounded(authed_client, transcripts_root):
+    from web.routers import usage as usage_router
+
+    for i in range(usage_router._MONITOR_CACHE_MAX_ENTRIES + 5):
+        since = f"2026-01-{(i % 28) + 1:02d}"
+        until = f"2026-02-{(i // 28) + 1:02d}"
+        resp = await authed_client.get(
+            "/api/usage/monitor", params={"since": since, "until": until}
+        )
+        assert resp.status_code == 200
+
+    assert len(usage_router._monitor_cache) <= usage_router._MONITOR_CACHE_MAX_ENTRIES
+
+
 # --- boundary ---
 
 

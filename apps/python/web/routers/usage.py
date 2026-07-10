@@ -138,7 +138,10 @@ _ISO_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
 
 # Aggregation walks the whole transcript tree, so identical queries within
 # a short window are served from this in-process cache instead of rescanning.
+# Bounded: distinct query ranges each occupy a slot, so evict the oldest
+# entry once the cap is reached.
 _MONITOR_CACHE_TTL_SECONDS = 60.0
+_MONITOR_CACHE_MAX_ENTRIES = 32
 _monitor_cache: dict[tuple[str, str | None, str | None], tuple[float, "MonitorResponse"]] = {}
 
 
@@ -184,6 +187,9 @@ def get_monitor(
         by_model=_buckets(report.by_model),
         unpriced_models=sorted(report.unpriced_models),
     )
+    if len(_monitor_cache) >= _MONITOR_CACHE_MAX_ENTRIES:
+        oldest_key = min(_monitor_cache, key=lambda k: _monitor_cache[k][0])
+        del _monitor_cache[oldest_key]
     _monitor_cache[cache_key] = (time.monotonic(), response)
     return response
 
