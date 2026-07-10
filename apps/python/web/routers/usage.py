@@ -6,6 +6,7 @@
 """
 import json
 import re
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ValidationError
@@ -135,6 +136,11 @@ class MonitorResponse(BaseModel):
 
 _ISO_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
 
+# Aggregation walks the whole transcript tree, so identical queries within
+# a short window are served from this in-process cache instead of rescanning.
+_MONITOR_CACHE_TTL_SECONDS = 60.0
+_monitor_cache: dict[tuple[str, str | None, str | None], tuple[float, "MonitorResponse"]] = {}
+
 
 @router.get("/usage/monitor", response_model=MonitorResponse)
 def get_monitor(
@@ -147,7 +153,13 @@ def get_monitor(
     every transcript under ``~/.claude/projects/``. Costs are
     API-equivalent estimates, not actual billing.
     """
-    report = usage_monitor.aggregate(usage_monitor.DEFAULT_ROOT, since=since, until=until)
+    root = usage_monitor.DEFAULT_ROOT
+    cache_key = (str(root), since, until)
+    cached = _monitor_cache.get(cache_key)
+    if cached is not None and time.monotonic() - cached[0] < _MONITOR_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    report = usage_monitor.aggregate(root, since=since, until=until)
 
     def _buckets(m: dict[str, usage_monitor.Bucket]) -> list[MonitorBucket]:
         return [
@@ -164,7 +176,7 @@ def get_monitor(
         )
         for date, bucket in sorted(report.by_date.items())
     ]
-    return MonitorResponse(
+    response = MonitorResponse(
         total_tokens=report.total_tokens,
         total_cost_usd=report.total_cost,
         by_project=_buckets(report.by_project),
@@ -172,6 +184,8 @@ def get_monitor(
         by_model=_buckets(report.by_model),
         unpriced_models=sorted(report.unpriced_models),
     )
+    _monitor_cache[cache_key] = (time.monotonic(), response)
+    return response
 
 
 @router.get("/usage", response_model=UsageDayResponse)

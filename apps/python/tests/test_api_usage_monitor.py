@@ -104,6 +104,30 @@ async def test_monitor_requires_auth(async_client, transcripts_root):
     assert resp.status_code == 401
 
 
+@pytest.mark.anyio
+async def test_monitor_caches_repeated_requests(authed_client, transcripts_root, monkeypatch):
+    from web.routers import usage as usage_router
+
+    calls = {"n": 0}
+    real_aggregate = usage_monitor.aggregate
+
+    def counting_aggregate(*args, **kwargs):
+        calls["n"] += 1
+        return real_aggregate(*args, **kwargs)
+
+    monkeypatch.setattr(usage_router.usage_monitor, "aggregate", counting_aggregate)
+
+    first = await authed_client.get("/api/usage/monitor")
+    second = await authed_client.get("/api/usage/monitor")
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert calls["n"] == 1  # second request served from the TTL cache
+
+    # A different query is a different cache key and triggers a fresh scan.
+    await authed_client.get("/api/usage/monitor", params={"since": "2026-07-11"})
+    assert calls["n"] == 2
+
+
 # --- boundary ---
 
 
