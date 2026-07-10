@@ -21,6 +21,10 @@ from collections import defaultdict
 
 # USD per 1M tokens: (input, output, cache_write, cache_read)
 # Source: published Anthropic API pricing as of 2026-07.
+# Keyed by exact resolvedModel id; add new ids here as models are released
+# rather than relying on substring matching, which can mis-map as model
+# names evolve (e.g. a future id containing "claude-sonnet-5" as a substring
+# but priced differently).
 RATES = {
     "claude-sonnet-5": (3.00, 15.00, 3.75, 0.30),
     "claude-opus-4-8": (15.00, 75.00, 18.75, 1.50),
@@ -31,9 +35,8 @@ _unpriced_models_warned: set[str] = set()
 
 
 def rate_for(model: str) -> tuple[float, float, float, float]:
-    for key, rate in RATES.items():
-        if key in model:
-            return rate
+    if model in RATES:
+        return RATES[model]
     if model not in _unpriced_models_warned:
         _unpriced_models_warned.add(model)
         print(f"  [warn] no rate table entry for model '{model}' — cost shown as $0", file=sys.stderr)
@@ -59,13 +62,17 @@ def main(path: str) -> None:
     subagents = []  # (description, agentType, resolvedModel, totalTokens, cost, durationMs)
 
     with open(path) as f:
-        for line in f:
+        for lineno, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
             try:
                 d = json.loads(line)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                print(
+                    f"  [warn] skipping malformed JSON at {path}:{lineno}: {e}",
+                    file=sys.stderr,
+                )
                 continue
 
             msg = d.get("message")
