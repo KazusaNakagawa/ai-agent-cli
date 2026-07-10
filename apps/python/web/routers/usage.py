@@ -10,6 +10,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ValidationError
 
+from src import usage_monitor
 from src.usage_logger import USAGE_DIR, parse_usage_file_date
 from src.usage_report import build_summary
 from web.auth import require_bearer
@@ -104,6 +105,73 @@ def get_summary() -> UsageSummaryResponse:
 
     summary = sorted(per_day.values(), key=lambda s: s.date)
     return UsageSummaryResponse(summary=summary)
+
+
+class MonitorBucket(BaseModel):
+    """One aggregation bucket (project, date, or model)."""
+
+    key: str
+    tokens: int
+    cost_usd: float
+
+
+class MonitorDateEntry(BaseModel):
+    """One day's totals with per-model splits for stacked charts."""
+
+    date: str  # ISO ``YYYY-MM-DD``
+    tokens: int
+    cost_usd: float
+    models: list[MonitorBucket]
+
+
+class MonitorResponse(BaseModel):
+    total_tokens: int
+    total_cost_usd: float
+    by_project: list[MonitorBucket]
+    by_date: list[MonitorDateEntry]
+    by_model: list[MonitorBucket]
+    unpriced_models: list[str]
+
+
+_ISO_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
+
+
+@router.get("/usage/monitor", response_model=MonitorResponse)
+def get_monitor(
+    since: str | None = Query(None, pattern=_ISO_DATE_PATTERN, description="YYYY-MM-DD"),
+    until: str | None = Query(None, pattern=_ISO_DATE_PATTERN, description="YYYY-MM-DD"),
+) -> MonitorResponse:
+    """All-traffic token usage across Claude Code transcripts.
+
+    Separate data source from ``/api/usage`` (app-run costs): this scans
+    every transcript under ``~/.claude/projects/``. Costs are
+    API-equivalent estimates, not actual billing.
+    """
+    report = usage_monitor.aggregate(usage_monitor.DEFAULT_ROOT, since=since, until=until)
+
+    def _buckets(m: dict[str, usage_monitor.Bucket]) -> list[MonitorBucket]:
+        return [
+            MonitorBucket(key=k, tokens=b.tokens, cost_usd=b.cost)
+            for k, b in sorted(m.items(), key=lambda kv: -kv[1].cost)
+        ]
+
+    by_date = [
+        MonitorDateEntry(
+            date=date,
+            tokens=bucket.tokens,
+            cost_usd=bucket.cost,
+            models=_buckets(report.by_date_model.get(date, {})),
+        )
+        for date, bucket in sorted(report.by_date.items())
+    ]
+    return MonitorResponse(
+        total_tokens=report.total_tokens,
+        total_cost_usd=report.total_cost,
+        by_project=_buckets(report.by_project),
+        by_date=by_date,
+        by_model=_buckets(report.by_model),
+        unpriced_models=sorted(report.unpriced_models),
+    )
 
 
 @router.get("/usage", response_model=UsageDayResponse)
