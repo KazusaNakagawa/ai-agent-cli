@@ -20,12 +20,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from claude_rates import RATES, usage_cost
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_ROOT = Path.home() / ".claude" / "projects"
 
@@ -75,16 +78,22 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
     session resumed across process restarts (multiple JSONL files) is
     counted once. Entries without a message id are counted per line.
     """
+    logger.info("scanning transcripts under %s (since=%s, until=%s)", root, since, until)
     report = Report()
     seen_ids: set[str] = set()
+    file_count = 0
+    counted = 0
+    deduped = 0
 
     for path in sorted(root.rglob("*.jsonl")):
         project = path.relative_to(root).parts[0] if path.parent != root else path.stem
         try:
             f = open(path)
         except OSError as e:
-            print(f"  [warn] skipping unreadable file {path}: {e}", file=sys.stderr)
+            logger.warning("skipping unreadable file %s: %s", path, e)
             continue
+        file_count += 1
+        logger.debug("reading %s (project=%s)", path, project)
         with f:
             for lineno, line in enumerate(f, start=1):
                 line = line.strip()
@@ -93,10 +102,7 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
                 try:
                     d = json.loads(line)
                 except json.JSONDecodeError as e:
-                    print(
-                        f"  [warn] skipping malformed JSON at {path}:{lineno}: {e}",
-                        file=sys.stderr,
-                    )
+                    logger.warning("skipping malformed JSON at %s:%s: %s", path, lineno, e)
                     continue
 
                 msg = d.get("message")
@@ -106,6 +112,7 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
                 mid = msg.get("id")
                 if mid:
                     if mid in seen_ids:
+                        deduped += 1
                         continue
                     seen_ids.add(mid)
 
@@ -115,6 +122,7 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
                 if (since and date < since) or (until and date > until):
                     continue
 
+                counted += 1
                 usage = msg["usage"]
                 model = msg.get("model", "unknown")
                 tokens = sum(usage.get(k, 0) for k in USAGE_KEYS)
@@ -131,6 +139,15 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
                     bucket.tokens += tokens
                     bucket.cost += cost
 
+    logger.info(
+        "aggregated %d files: %d usage entries counted, %d duplicates skipped, "
+        "%d projects, total %s tokens",
+        file_count,
+        counted,
+        deduped,
+        len(report.by_project),
+        f"{report.total_tokens:,}",
+    )
     return report
 
 
@@ -155,11 +172,24 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--since", help="Start date, inclusive (YYYY-MM-DD, local time)")
     parser.add_argument("--until", help="End date, inclusive (YYYY-MM-DD, local time)")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging (per-file trace)",
+    )
     args = parser.parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        stream=sys.stderr,
+        format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     root = Path(args.root).expanduser()
     if not root.is_dir():
-        print(f"error: transcript root not found: {root}", file=sys.stderr)
+        logger.error("transcript root not found: %s", root)
         sys.exit(1)
 
     report = aggregate(root, since=args.since, until=args.until)

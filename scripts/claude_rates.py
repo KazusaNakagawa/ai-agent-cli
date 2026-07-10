@@ -6,7 +6,9 @@ rates are maintained in one place.
 
 from __future__ import annotations
 
-import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 # USD per 1M tokens: (input, output, cache_write, cache_read)
 # Source: published Anthropic API pricing as of 2026-07.
@@ -32,10 +34,7 @@ def rate_for(model: str) -> tuple[float, float, float, float]:
         return RATES[model]
     if model not in _unpriced_models_warned:
         _unpriced_models_warned.add(model)
-        print(
-            f"  [warn] no rate table entry for model '{model}' — cost shown as $0",
-            file=sys.stderr,
-        )
+        logger.warning("no rate table entry for model '%s' — cost shown as $0", model)
     return (0.0, 0.0, 0.0, 0.0)
 
 

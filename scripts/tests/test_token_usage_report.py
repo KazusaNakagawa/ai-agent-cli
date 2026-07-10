@@ -104,7 +104,7 @@ def test_date_range_filter(projects_root: Path):
 # --- failure / robustness ---
 
 
-def test_malformed_lines_and_unknown_models_are_tolerated(projects_root: Path, capsys):
+def test_malformed_lines_and_unknown_models_are_tolerated(projects_root: Path, caplog):
     _write(
         projects_root / "proj-a" / "s1.jsonl",
         [
@@ -114,28 +114,29 @@ def test_malformed_lines_and_unknown_models_are_tolerated(projects_root: Path, c
         ],
     )
 
-    report = tur.aggregate(projects_root)
+    with caplog.at_level("WARNING"):
+        report = tur.aggregate(projects_root)
 
-    err = capsys.readouterr().err
-    assert "malformed" in err
-    assert "claude-future-9" in err
+    assert "malformed" in caplog.text
+    assert "claude-future-9" in caplog.text
     assert report.total_tokens == 165
     # Unknown model is tracked as unpriced, not silently $0-costed.
     assert "claude-future-9" in report.unpriced_models
     assert report.by_model["claude-future-9"].cost == 0.0
 
 
-def test_unreadable_file_is_skipped(projects_root: Path, capsys):
+def test_unreadable_file_is_skipped(projects_root: Path, caplog):
     _write(projects_root / "proj-a" / "ok.jsonl", [_line(mid="m1", inp=100, out=10)])
     bad = projects_root / "proj-a" / "bad.jsonl"
     _write(bad, [_line(mid="m2")])
     bad.chmod(0o000)
     try:
-        report = tur.aggregate(projects_root)
+        with caplog.at_level("WARNING"):
+            report = tur.aggregate(projects_root)
     finally:
         bad.chmod(0o644)
 
-    assert "unreadable" in capsys.readouterr().err
+    assert "unreadable" in caplog.text
     assert report.total_tokens == 110
 
 
