@@ -99,6 +99,13 @@ async def test_monitor_rejects_malformed_date(authed_client, transcripts_root):
 
 
 @pytest.mark.anyio
+async def test_monitor_rejects_impossible_calendar_date(authed_client, transcripts_root):
+    # Matches the regex but is not a real date.
+    resp = await authed_client.get("/api/usage/monitor", params={"until": "2026-13-40"})
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
 async def test_monitor_requires_auth(async_client, transcripts_root):
     resp = await async_client.get("/api/usage/monitor")
     assert resp.status_code == 401

@@ -4,6 +4,7 @@
 書き込み側は ``src.usage_logger``、CLI 集計は ``src.usage_report`` と同じ
 ファイル名規約 (``YYYYMMDD-usage.jsonl``) を共有する。
 """
+import datetime
 import json
 import re
 import time
@@ -156,6 +157,17 @@ def get_monitor(
     every transcript under ``~/.claude/projects/``. Costs are
     API-equivalent estimates, not actual billing.
     """
+    # The Query pattern only checks shape; reject impossible calendar dates
+    # (e.g. 2026-13-40) before they silently filter out everything.
+    for name, value in (("since", since), ("until", until)):
+        if value is not None:
+            try:
+                datetime.date.fromisoformat(value)
+            except ValueError:
+                raise HTTPException(
+                    status_code=422, detail=f"{name} is not a valid calendar date: {value}"
+                )
+
     root = usage_monitor.DEFAULT_ROOT
     cache_key = (str(root), since, until)
     cached = _monitor_cache.get(cache_key)
