@@ -125,6 +125,20 @@ def test_malformed_lines_and_unknown_models_are_tolerated(projects_root: Path, c
     assert report.by_model["claude-future-9"].cost == 0.0
 
 
+def test_unreadable_file_is_skipped(projects_root: Path, capsys):
+    _write(projects_root / "proj-a" / "ok.jsonl", [_line(mid="m1", inp=100, out=10)])
+    bad = projects_root / "proj-a" / "bad.jsonl"
+    _write(bad, [_line(mid="m2")])
+    bad.chmod(0o000)
+    try:
+        report = tur.aggregate(projects_root)
+    finally:
+        bad.chmod(0o644)
+
+    assert "unreadable" in capsys.readouterr().err
+    assert report.total_tokens == 110
+
+
 def test_missing_root_exits_nonzero(tmp_path: Path):
     with pytest.raises(SystemExit) as exc:
         tur.main([str(tmp_path / "nope")])

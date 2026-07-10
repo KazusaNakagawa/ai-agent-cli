@@ -21,12 +21,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from claude_rates import usage_cost
+from claude_rates import RATES, usage_cost
 
 DEFAULT_ROOT = Path.home() / ".claude" / "projects"
 
@@ -76,14 +75,17 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
     session resumed across process restarts (multiple JSONL files) is
     counted once. Entries without a message id are counted per line.
     """
-    from claude_rates import RATES
-
     report = Report()
     seen_ids: set[str] = set()
 
     for path in sorted(root.rglob("*.jsonl")):
         project = path.relative_to(root).parts[0] if path.parent != root else path.stem
-        with open(path) as f:
+        try:
+            f = open(path)
+        except OSError as e:
+            print(f"  [warn] skipping unreadable file {path}: {e}", file=sys.stderr)
+            continue
+        with f:
             for lineno, line in enumerate(f, start=1):
                 line = line.strip()
                 if not line:
