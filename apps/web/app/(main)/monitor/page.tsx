@@ -13,9 +13,7 @@ export default function MonitorPage() {
           app-run costs only.
         </p>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <MonitorDashboard />
-      </div>
+      <MonitorDashboard />
     </div>
   )
 }
