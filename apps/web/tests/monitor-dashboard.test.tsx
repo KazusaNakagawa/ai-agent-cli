@@ -124,6 +124,14 @@ describe("MonitorDashboard", () => {
     )
   })
 
+  it("shows an error state on a rejected fetch (network failure)", async () => {
+    fetchMock.mockRejectedValue(new Error("network"))
+    render(<MonitorDashboard />)
+    await waitFor(() =>
+      expect(screen.getByTestId("monitor-error")).toHaveTextContent(/network/),
+    )
+  })
+
   it("shows an empty state when there is no data", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({

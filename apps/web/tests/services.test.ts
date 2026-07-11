@@ -17,6 +17,13 @@ describe("SERVICES", () => {
     const journal = SERVICES.find((s) => s.id === "journal")!
     expect(journal.items.map((i) => i.href)).toEqual(["/journal"])
   })
+
+  it("monitor owns exactly one item routed to /monitor", () => {
+    const monitor = SERVICES.find((s) => s.id === "monitor")!
+    expect(monitor.items).toEqual([
+      { href: "/monitor", label: "Monitor", icon: "📈" },
+    ])
+  })
 })
 
 describe("serviceForPath", () => {
@@ -28,6 +35,7 @@ describe("serviceForPath", () => {
     ["/chat", "briefing"],
     ["/briefing", "briefing"],
     ["/journal", "journal"],
+    ["/monitor", "monitor"],
   ])("maps %s to %s", (pathname, expected) => {
     expect(serviceForPath(pathname).id).toBe(expected)
   })
