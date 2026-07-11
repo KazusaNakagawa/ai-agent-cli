@@ -2,8 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { JournalScreen } from "@/components/screens/JournalScreen"
+import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
 import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
 import { JournalChatStateProvider } from "@/lib/journalChatStore"
+import { JournalNavProvider } from "@/lib/journalNavStore"
 
 // A stream that stays open (never closes) so the brainstorm stays in the
 // "Thinking…" state until the test aborts it.
@@ -23,7 +25,10 @@ function renderJournalScreen() {
   return render(
     <JournalChatStateProvider>
       <JournalChatJobStateProvider>
-        <JournalScreen />
+        <JournalNavProvider>
+          <JournalSidebarList />
+          <JournalScreen />
+        </JournalNavProvider>
       </JournalChatJobStateProvider>
     </JournalChatStateProvider>,
   )

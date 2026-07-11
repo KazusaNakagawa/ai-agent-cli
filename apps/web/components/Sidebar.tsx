@@ -3,6 +3,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 
+import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
 import { ResizeHandle } from "@/components/ResizeHandle"
 import { SettingsModal } from "@/components/settings/SettingsModal"
 import { useJobState } from "@/lib/jobStore"
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils"
 export function Sidebar() {
   const pathname = usePathname()
   const items = serviceForPath(pathname).items
+  const onJournal = pathname === "/journal" || pathname.startsWith("/journal/")
   const { isBackgrounded: runJobActive } = useJobState()
   // Initialize to false so SSR and the first client render agree (avoiding
   // a hydration mismatch on data-collapsed / aria-expanded / title). The
@@ -123,8 +125,8 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-      <section className="flex flex-col gap-1">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+      <section className="flex shrink-0 flex-col gap-1">
         <nav className="flex flex-col gap-1">
           {items.map((item) => {
             const active = pathname === item.href
@@ -159,9 +161,11 @@ export function Sidebar() {
         </nav>
       </section>
 
+      {onJournal && !collapsed && <JournalSidebarList />}
+
       <section
         data-sidebar-section="config"
-        className="flex flex-col gap-1"
+        className="flex shrink-0 flex-col gap-1"
       >
         <SettingsModal />
       </section>

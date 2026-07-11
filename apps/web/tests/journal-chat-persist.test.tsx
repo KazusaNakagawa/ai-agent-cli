@@ -2,9 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { JournalScreen } from "@/components/screens/JournalScreen"
+import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
 import { JournalChatBridge } from "@/components/journal/JournalChatBridge"
 import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
 import { JournalChatStateProvider } from "@/lib/journalChatStore"
+import { JournalNavProvider } from "@/lib/journalNavStore"
 
 type Handler = (init?: RequestInit) => Promise<Response> | Response
 
@@ -33,8 +35,15 @@ function Shell({ showJournal }: { showJournal: boolean }) {
   return (
     <JournalChatStateProvider>
       <JournalChatJobStateProvider>
-        <JournalChatBridge />
-        {showJournal && <JournalScreen />}
+        <JournalNavProvider>
+          <JournalChatBridge />
+          {showJournal && (
+            <>
+              <JournalSidebarList />
+              <JournalScreen />
+            </>
+          )}
+        </JournalNavProvider>
       </JournalChatJobStateProvider>
     </JournalChatStateProvider>
   )

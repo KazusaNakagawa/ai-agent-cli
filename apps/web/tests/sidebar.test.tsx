@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { Sidebar } from "@/components/Sidebar"
 import { JobStateProvider } from "@/lib/jobStore"
+import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
+import { JournalChatStateProvider } from "@/lib/journalChatStore"
+import { JournalNavProvider } from "@/lib/journalNavStore"
 import {
   SIDEBAR_COLLAPSED_ATTR as HTML_ATTR,
   SIDEBAR_COLLAPSED_KEY as COLLAPSED_KEY,
@@ -15,7 +18,13 @@ vi.mock("next/navigation", () => ({ usePathname: () => mockPathname }))
 function renderSidebar() {
   return render(
     <JobStateProvider>
-      <Sidebar />
+      <JournalChatStateProvider>
+        <JournalChatJobStateProvider>
+          <JournalNavProvider>
+            <Sidebar />
+          </JournalNavProvider>
+        </JournalChatJobStateProvider>
+      </JournalChatStateProvider>
     </JobStateProvider>,
   )
 }
