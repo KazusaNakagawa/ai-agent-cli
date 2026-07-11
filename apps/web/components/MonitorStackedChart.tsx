@@ -16,7 +16,15 @@ type Props = {
 const CHART_HEIGHT = 220
 const Y_AXIS_WIDTH = 56
 
+// Compact notation (1.5M, 20M) keeps large token counts inside the narrow
+// y-axis gutter instead of truncating to ",000,000".
 function formatTick(value: number): string {
+  if (Math.abs(value) >= 10_000) {
+    return new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(value)
+  }
   return Number(value.toFixed(4)).toLocaleString("en-US")
 }
 
@@ -65,7 +73,9 @@ export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
             <div
               key={day.date}
               data-testid="monitor-stack-bar"
-              className="flex min-w-0 flex-1 flex-col-reverse"
+              // 2px row gap separates stacked segments so adjacent hues stay
+              // distinguishable under color-vision deficiency.
+              className="flex min-w-0 flex-1 flex-col-reverse gap-y-0.5 overflow-hidden rounded-t"
               style={{ height: `${(dayTotals[i] / niceMax) * 100}%` }}
               title={`${day.date}: ${formatTick(dayTotals[i])}`}
             >

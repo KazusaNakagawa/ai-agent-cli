@@ -30,6 +30,18 @@
     --bg-soft-start: 210 40% 98%;
     --bg-soft-mid: 220 35% 92%;
     --bg-soft-end: 225 30% 88%;
+
+    /* Chart series palette (light steps). Muted categorical hues validated
+       for CVD separation and the light surface; dark steps below are the
+       same hues re-stepped for the dark surface, not a hue flip. */
+    --series-1: #2a78d6;
+    --series-2: #1baf7a;
+    --series-3: #eda100;
+    --series-4: #008300;
+    --series-5: #4a3aa7;
+    --series-6: #e34948;
+    --series-7: #e87ba4;
+    --series-8: #eb6834;
   }
 
   .dark {
@@ -56,6 +68,16 @@
     --bg-soft-start: 222.2 84% 6%;
     --bg-soft-mid: 220 50% 8%;
     --bg-soft-end: 217.2 35% 12%;
+
+    /* Chart series palette (dark steps). */
+    --series-1: #3987e5;
+    --series-2: #199e70;
+    --series-3: #c98500;
+    --series-4: #008300;
+    --series-5: #9085e9;
+    --series-6: #e66767;
+    --series-7: #d55181;
+    --series-8: #d95926;
   }
 }
 

@@ -61,18 +61,20 @@ export function monitorMetricValue(bucket: MonitorBucket, metric: MonitorMetric)
   return bucket[metric] ?? 0
 }
 
-// Distinguishable, colorblind-friendly series palette (Okabe–Ito based).
-// Assignment is by sorted model id so the same model keeps the same color
-// across every chart and across renders regardless of response order.
+// Series colors are theme-aware CSS custom properties defined in
+// globals.css (:root for light, .dark for dark) — muted hues stepped per
+// surface and validated for CVD separation. Assignment is by sorted model
+// id so the same model keeps the same color across every chart and across
+// renders regardless of response order.
 export const MODEL_COLOR_PALETTE = [
-  "#4c9be8", // blue
-  "#e69f00", // orange
-  "#009e73", // green
-  "#cc79a7", // magenta
-  "#f0e442", // yellow
-  "#56b4e9", // sky
-  "#d55e00", // vermillion
-  "#8b7ce8", // violet
+  "var(--series-1)",
+  "var(--series-2)",
+  "var(--series-3)",
+  "var(--series-4)",
+  "var(--series-5)",
+  "var(--series-6)",
+  "var(--series-7)",
+  "var(--series-8)",
 ] as const
 
 export function buildModelColorMap(models: string[]): Record<string, string> {
