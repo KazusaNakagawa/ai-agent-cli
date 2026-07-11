@@ -62,10 +62,10 @@ export function monitorMetricValue(bucket: MonitorBucket, metric: MonitorMetric)
 }
 
 // Series colors are theme-aware CSS custom properties defined in
-// globals.css (:root for light, .dark for dark) — muted hues stepped per
-// surface and validated for CVD separation. Assignment is by sorted model
-// id so the same model keeps the same color across every chart and across
-// renders regardless of response order.
+// globals.css (:root for light, .dark for dark) — a single blue-family
+// ramp stepped per surface, so series are told apart by lightness.
+// Assignment is by sorted model id so the same model keeps the same color
+// across every chart and across renders regardless of response order.
 export const MODEL_COLOR_PALETTE = [
   "var(--series-1)",
   "var(--series-2)",
@@ -73,8 +73,6 @@ export const MODEL_COLOR_PALETTE = [
   "var(--series-4)",
   "var(--series-5)",
   "var(--series-6)",
-  "var(--series-7)",
-  "var(--series-8)",
 ] as const
 
 export function buildModelColorMap(models: string[]): Record<string, string> {
