@@ -112,17 +112,21 @@ export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
           </div>
         </div>
 
-        {/* X-axis date labels, one per bar, aligned under the plot area. */}
-        <div className="flex gap-1 px-1 pt-1" aria-hidden>
+        {/* X-axis date labels, one per bar. Rotated 45° so labels don't
+            collide when many bars are packed into a narrow chart (e.g. the
+            "All time" range). Anchored top-right so the rotation reads back
+            toward its bar instead of drifting into the next one. */}
+        <div className="flex gap-1 px-1 pb-6 pt-2" aria-hidden>
           {byDate.map((day) => (
-            <span
-              key={day.date}
-              data-testid="monitor-stack-date-label"
-              className="min-w-0 flex-1 truncate text-center text-[10px] tabular-nums text-muted-foreground"
-              title={day.date}
-            >
-              {formatDateTick(day.date)}
-            </span>
+            <div key={day.date} className="min-w-0 flex-1">
+              <span
+                data-testid="monitor-stack-date-label"
+                className="block origin-top-right -rotate-45 whitespace-nowrap text-right text-[10px] tabular-nums text-muted-foreground"
+                title={day.date}
+              >
+                {formatDateTick(day.date)}
+              </span>
+            </div>
           ))}
         </div>
       </div>
