@@ -48,6 +48,10 @@ bin/chat.sh   # Launch chat session
 - CI and local `pytest` always load `apps/python/tests/config/briefing.json` — `conftest.py` sets `BRIEFING_CONFIG_PATH` before any import of `src.config`.
 - When adding or changing config schema, update both `.example` and `tests/config/briefing.json`.
 
+## UI Verification
+
+- When fixing or changing a screen in `apps/web`, verify the behavior in a real browser via Playwright (`apps/web/e2e/`, or an ad hoc script run from `apps/web` with `node script.mjs` using `@playwright/test`'s `chromium`) instead of relying on code reading alone. Reproduce the reported issue first, then confirm the fix removes it.
+
 ## Code Style
 
 - **Code comments and docstrings must be written in English** (both Python and TypeScript), unified across the codebase. User-facing chat responses stay in Japanese, but in-code documentation is English only — do not mix languages within a file.
