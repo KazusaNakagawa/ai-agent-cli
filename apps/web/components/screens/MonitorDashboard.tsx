@@ -153,6 +153,12 @@ export function MonitorDashboard() {
                         style={{ backgroundColor: colorMap[m.key] }}
                       />
                       {m.key}
+                      {m.key === "<synthetic>" && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          ※CLI internal message, not a real model call
+                        </span>
+                      )}
                     </span>
                     <span className="tabular-nums">
                       {formatValue(metric === "cost_usd" ? m.cost_usd : m.tokens)}
