@@ -4,7 +4,7 @@ import { MonitorDashboard } from "@/components/screens/MonitorDashboard"
 
 export default function MonitorPage() {
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="space-y-4">
       <header>
         <h2 className="text-xl font-semibold">Monitor</h2>
         <p className="text-sm text-muted-foreground">
