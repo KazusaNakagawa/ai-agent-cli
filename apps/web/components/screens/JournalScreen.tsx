@@ -72,7 +72,10 @@ export function JournalScreen() {
     // re-attaching an image to a retyped question is a minor inconvenience
     // compared to the state this replaces.
     setBrainstormImage(null)
-  }, [question, brainstorming, brainstormImage, job, journalChat.entryId, viewEpoch])
+    // viewEpoch is a ref (stable identity) read only for its .current value at
+    // call time, so it's intentionally omitted from the dependency array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question, brainstorming, brainstormImage, job, journalChat.entryId])
 
   // Abort the in-flight brainstorm and terminate the backend job — works
   // whether or not the backend job_id has arrived yet (journalChatJobStore

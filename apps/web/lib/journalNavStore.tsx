@@ -1,4 +1,5 @@
 "use client"
+import { usePathname } from "next/navigation"
 import {
   createContext,
   useCallback,
@@ -78,6 +79,8 @@ export function JournalNavProvider({ children }: { children: ReactNode }) {
 
   const journalChat = useJournalChatState()
   const job = useJournalChatJobState()
+  const pathname = usePathname()
+  const onJournal = pathname === "/journal" || Boolean(pathname?.startsWith("/journal/"))
 
   // Bumped on every entry switch/compose/trash toggle so a pending job
   // started under a previous view doesn't reappear if the id-matching
@@ -162,9 +165,14 @@ export function JournalNavProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Scoped to Journal routes — Provider is mounted globally in MainLayout so
+  // the journal chat providers stay available across navigation, but the
+  // network fetch itself should only fire while the user is actually on
+  // Journal (avoids an unnecessary /api/journal call on every other route).
   useEffect(() => {
+    if (!onJournal) return
     void loadDates()
-  }, [loadDates])
+  }, [loadDates, onJournal])
 
   // Auto-open the compose panel on mount if there is persisted chat state to show.
   // The stores hydrate from sessionStorage in their own effects, so this effect reads

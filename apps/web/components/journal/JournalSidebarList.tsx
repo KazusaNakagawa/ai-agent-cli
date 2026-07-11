@@ -116,9 +116,18 @@ export function JournalSidebarList() {
           {sortedEntries.map((e) => (
             <li key={e.id}>
               <div
+                tabIndex={0}
+                role="button"
+                aria-label={`Open entry ${e.item || e.id}`}
                 onClick={() => void loadEntry(e.id)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault()
+                    void loadEntry(e.id)
+                  }
+                }}
                 className={cn(
-                  "group flex cursor-pointer items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors",
+                  "group flex cursor-pointer items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                   selected === e.id
                     ? "bg-accent font-medium text-accent-foreground"
                     : "hover:bg-accent/50",
