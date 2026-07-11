@@ -182,7 +182,12 @@ export function MonitorDashboard() {
       )}
 
       {data.unpriced_models.length > 0 && (
-        <p data-testid="monitor-unpriced" className="text-xs text-amber-500">
+        <p
+          data-testid="monitor-unpriced"
+          // amber-500 fails contrast on the light surface; darken for light,
+          // keep the lighter step for dark (theme-aware, not a flat hex).
+          className="text-xs text-amber-700 dark:text-amber-400"
+        >
           Unpriced models (excluded from cost): {data.unpriced_models.join(", ")}
         </p>
       )}

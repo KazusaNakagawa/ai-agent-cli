@@ -28,8 +28,16 @@ function formatTick(value: number): string {
   return Number(value.toFixed(4)).toLocaleString("en-US")
 }
 
+// Short, locale-agnostic tick label for the x-axis (e.g. "Jul 10").
+function formatDateTick(isoDate: string): string {
+  const d = new Date(`${isoDate}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return isoDate
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+}
+
 // Dependency-free stacked bar chart: one bar per day, one colored segment per
-// model. Mirrors the axis/gridline styling of UsageBarChart.
+// model. Mirrors the axis/gridline styling of UsageBarChart, plus an x-axis
+// date row so each bar can be identified at a glance.
 export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
   if (byDate.length === 0) return null
 
@@ -56,49 +64,65 @@ export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
         ))}
       </div>
 
-      <div className="relative flex-1 border-b border-l border-border" style={{ height: CHART_HEIGHT }}>
-        {ticks.map((t) =>
-          t === 0 ? null : (
-            <div
-              key={t}
-              aria-hidden
-              className="pointer-events-none absolute inset-x-0 border-t border-muted-foreground/40"
-              style={{ bottom: `${(t / niceMax) * 100}%` }}
-            />
-          ),
-        )}
+      <div className="min-w-0 flex-1">
+        <div className="relative border-b border-l border-border" style={{ height: CHART_HEIGHT }}>
+          {ticks.map((t) =>
+            t === 0 ? null : (
+              <div
+                key={t}
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 border-t border-muted-foreground/40"
+                style={{ bottom: `${(t / niceMax) * 100}%` }}
+              />
+            ),
+          )}
 
-        <div className="absolute inset-0 flex items-end gap-1 px-1">
-          {byDate.map((day, i) => (
-            <div
+          <div className="absolute inset-0 flex items-end gap-1 px-1">
+            {byDate.map((day, i) => (
+              <div
+                key={day.date}
+                data-testid="monitor-stack-bar"
+                // 2px row gap separates stacked segments so adjacent hues stay
+                // distinguishable under color-vision deficiency.
+                className="flex min-w-0 flex-1 flex-col-reverse gap-y-0.5 overflow-hidden rounded-t"
+                style={{ height: `${(dayTotals[i] / niceMax) * 100}%` }}
+                title={`${day.date}: ${formatTick(dayTotals[i])}`}
+              >
+                {day.models.map((m) => {
+                  const value = monitorMetricValue(m, metric)
+                  const share = dayTotals[i] > 0 ? value / dayTotals[i] : 0
+                  return (
+                    <div
+                      key={m.key}
+                      data-testid="monitor-stack-segment"
+                      data-model={m.key}
+                      // Fills sit at 75% opacity so large blocks read softly on
+                      // both themes; hover restores full strength as affordance.
+                      className="opacity-75 transition-opacity hover:opacity-100"
+                      style={{
+                        height: `${share * 100}%`,
+                        backgroundColor: colorMap[m.key],
+                      }}
+                      title={`${m.key} — ${day.date}: ${formatTick(value)}`}
+                    />
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* X-axis date labels, one per bar, aligned under the plot area. */}
+        <div className="flex gap-1 px-1 pt-1" aria-hidden>
+          {byDate.map((day) => (
+            <span
               key={day.date}
-              data-testid="monitor-stack-bar"
-              // 2px row gap separates stacked segments so adjacent hues stay
-              // distinguishable under color-vision deficiency.
-              className="flex min-w-0 flex-1 flex-col-reverse gap-y-0.5 overflow-hidden rounded-t"
-              style={{ height: `${(dayTotals[i] / niceMax) * 100}%` }}
-              title={`${day.date}: ${formatTick(dayTotals[i])}`}
+              data-testid="monitor-stack-date-label"
+              className="min-w-0 flex-1 truncate text-center text-[10px] tabular-nums text-muted-foreground"
+              title={day.date}
             >
-              {day.models.map((m) => {
-                const value = monitorMetricValue(m, metric)
-                const share = dayTotals[i] > 0 ? value / dayTotals[i] : 0
-                return (
-                  <div
-                    key={m.key}
-                    data-testid="monitor-stack-segment"
-                    data-model={m.key}
-                    // Fills sit at 75% opacity so large blocks read softly on
-                    // both themes; hover restores full strength as affordance.
-                    className="opacity-75 transition-opacity hover:opacity-100"
-                    style={{
-                      height: `${share * 100}%`,
-                      backgroundColor: colorMap[m.key],
-                    }}
-                    title={`${m.key} — ${day.date}: ${formatTick(value)}`}
-                  />
-                )
-              })}
-            </div>
+              {formatDateTick(day.date)}
+            </span>
           ))}
         </div>
       </div>

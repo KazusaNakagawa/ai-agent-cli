@@ -78,6 +78,12 @@ describe("MonitorDashboard", () => {
     )
     expect(new Set(fableSegments.map((s) => s.style.backgroundColor)).size).toBe(1)
 
+    // X-axis carries a short date label per bar (not just tooltips).
+    const dateLabels = screen.getAllByTestId("monitor-stack-date-label")
+    expect(dateLabels).toHaveLength(2)
+    expect(dateLabels[0]).toHaveTextContent("Jul 10")
+    expect(dateLabels[1]).toHaveTextContent("Jul 11")
+
     // Project and model breakdowns.
     expect(screen.getByTestId("monitor-by-project")).toHaveTextContent("proj-a")
     expect(screen.getByTestId("monitor-by-model")).toHaveTextContent("claude-sonnet-5")
