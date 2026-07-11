@@ -131,7 +131,7 @@ export function MonitorDashboard() {
                   <span
                     data-testid="monitor-legend-swatch"
                     aria-hidden
-                    className="inline-block h-2.5 w-2.5 rounded-sm"
+                    className="inline-block h-2.5 w-2.5 rounded-sm opacity-75"
                     style={{ backgroundColor: colorMap[m.key] }}
                   />
                   <span>{m.key}</span>
@@ -149,7 +149,7 @@ export function MonitorDashboard() {
                     <span className="flex items-center gap-1.5 truncate">
                       <span
                         aria-hidden
-                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm opacity-75"
                         style={{ backgroundColor: colorMap[m.key] }}
                       />
                       {m.key}

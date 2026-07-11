@@ -87,6 +87,9 @@ export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
                     key={m.key}
                     data-testid="monitor-stack-segment"
                     data-model={m.key}
+                    // Fills sit at 75% opacity so large blocks read softly on
+                    // both themes; hover restores full strength as affordance.
+                    className="opacity-75 transition-opacity hover:opacity-100"
                     style={{
                       height: `${share * 100}%`,
                       backgroundColor: colorMap[m.key],
