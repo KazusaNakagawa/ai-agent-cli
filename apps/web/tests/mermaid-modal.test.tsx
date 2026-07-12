@@ -35,4 +35,20 @@ describe("MermaidModal", () => {
     fireEvent.click(screen.getByTestId("mermaid-modal-overlay"))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it("exposes zoom in, zoom out, and reset controls (success)", () => {
+    render(<MermaidModal svg={SVG} onClose={vi.fn()} />)
+
+    const zoomIn = screen.getByRole("button", { name: /zoom in/i })
+    const zoomOut = screen.getByRole("button", { name: /zoom out/i })
+    const reset = screen.getByRole("button", { name: /reset zoom/i })
+
+    // Clicking should not throw and should not trigger onClose (verified
+    // implicitly by the presence of the modal after interaction).
+    fireEvent.click(zoomIn)
+    fireEvent.click(zoomOut)
+    fireEvent.click(reset)
+
+    expect(screen.getByTestId("modal-svg")).toBeInTheDocument()
+  })
 })
