@@ -31,10 +31,24 @@ describe("ServiceTabs", () => {
       // Accessible name comes from a visually-hidden span, not aria-label/title,
       // so screen readers announce it exactly once (the icon glyph contributes
       // no name, so it's still the label alone in the accessibility tree).
-      expect(screen.getByRole("link", { name: new RegExp(service.label) })).toBe(tab)
+      // Substring match (not a regex built from the label) avoids meta-character
+      // pitfalls if a future label contains regex-special characters.
+      expect(
+        screen.getByRole("link", { name: (name) => name.includes(service.label) }),
+      ).toBe(tab)
       expect(tab).not.toHaveAttribute("aria-label")
       expect(tab).not.toHaveAttribute("title")
       expect(tab).toHaveTextContent(service.icon)
+
+      // The label must only appear inside the sr-only span, not as visible text.
+      const srOnly = tab.querySelector("span.sr-only")
+      expect(srOnly).toHaveTextContent(service.label)
+      const labelBearingElements = Array.from(tab.querySelectorAll("*")).filter((el) =>
+        el.textContent?.includes(service.label),
+      )
+      for (const el of labelBearingElements) {
+        expect(el).toHaveClass("sr-only")
+      }
     },
   )
 
