@@ -9,6 +9,7 @@ import { ChatStateProvider } from "@/lib/chatStore"
 import { JobStateProvider } from "@/lib/jobStore"
 import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
 import { JournalChatStateProvider } from "@/lib/journalChatStore"
+import { JournalNavProvider } from "@/lib/journalNavStore"
 import { WorkspaceStateProvider } from "@/lib/workspaceStore"
 
 async function isOnboarded(): Promise<boolean> {
@@ -37,16 +38,18 @@ export default async function MainLayout({
         <ChatJobStateProvider>
           <JournalChatStateProvider>
             <JournalChatJobStateProvider>
-              <WorkspaceStateProvider>
-              <JournalChatBridge />
-              <div className="flex h-dvh overflow-hidden">
-                <Sidebar />
-                <main className="flex flex-1 flex-col overflow-hidden">
-                  <ServiceTabs />
-                  <div className="flex-1 overflow-y-auto p-8">{children}</div>
-                </main>
-              </div>
-              </WorkspaceStateProvider>
+              <JournalNavProvider>
+                <WorkspaceStateProvider>
+                  <JournalChatBridge />
+                  <div className="flex h-dvh overflow-hidden">
+                    <Sidebar />
+                    <main className="flex flex-1 flex-col overflow-hidden">
+                      <ServiceTabs />
+                      <div className="flex-1 overflow-y-auto p-8">{children}</div>
+                    </main>
+                  </div>
+                </WorkspaceStateProvider>
+              </JournalNavProvider>
             </JournalChatJobStateProvider>
           </JournalChatStateProvider>
         </ChatJobStateProvider>

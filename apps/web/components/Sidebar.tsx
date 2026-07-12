@@ -3,6 +3,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 
+import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
 import { FileTree } from "@/components/workspace/FileTree"
 import { ResizeHandle } from "@/components/ResizeHandle"
 import { SettingsModal } from "@/components/settings/SettingsModal"
@@ -24,6 +25,7 @@ export function Sidebar() {
   const items = serviceForPath(pathname).items
   const onWorkspace =
     pathname === "/workspace" || pathname.startsWith("/workspace/")
+  const onJournal = pathname === "/journal" || pathname.startsWith("/journal/")
   const { isBackgrounded: runJobActive } = useJobState()
   // Initialize to false so SSR and the first client render agree (avoiding
   // a hydration mismatch on data-collapsed / aria-expanded / title). The
@@ -167,6 +169,7 @@ export function Sidebar() {
           <FileTree />
         </section>
       )}
+      {onJournal && !collapsed && <JournalSidebarList />}
 
       <section
         data-sidebar-section="config"

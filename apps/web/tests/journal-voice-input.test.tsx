@@ -2,8 +2,10 @@ import { fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { JournalScreen } from "@/components/screens/JournalScreen"
+import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
 import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
 import { JournalChatStateProvider } from "@/lib/journalChatStore"
+import { JournalNavProvider } from "@/lib/journalNavStore"
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -16,7 +18,10 @@ function renderJournalScreen() {
   return render(
     <JournalChatStateProvider>
       <JournalChatJobStateProvider>
-        <JournalScreen />
+        <JournalNavProvider>
+          <JournalSidebarList />
+          <JournalScreen />
+        </JournalNavProvider>
       </JournalChatJobStateProvider>
     </JournalChatStateProvider>,
   )
