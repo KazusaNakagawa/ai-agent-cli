@@ -16,6 +16,18 @@ type RenderState =
 // user-authored markdown.
 let mermaidInitialized = false
 
+// Cache the dynamic import's promise at module scope so mounting many
+// MermaidBlocks on one page (e.g. several diagrams in one document) triggers
+// only one import("mermaid") call instead of one per block.
+let mermaidModulePromise: Promise<typeof import("mermaid")> | undefined
+
+function loadMermaid() {
+  if (!mermaidModulePromise) {
+    mermaidModulePromise = import("mermaid")
+  }
+  return mermaidModulePromise
+}
+
 export function MermaidBlock({ code }: { code: string }) {
   const rawId = useId()
   const elementId = `mermaid-${rawId.replace(/:/g, "")}`
@@ -27,7 +39,7 @@ export function MermaidBlock({ code }: { code: string }) {
 
     async function run() {
       try {
-        const { default: mermaid } = await import("mermaid")
+        const { default: mermaid } = await loadMermaid()
         if (!mermaidInitialized) {
           mermaid.initialize({ startOnLoad: false, securityLevel: "strict" })
           mermaidInitialized = true

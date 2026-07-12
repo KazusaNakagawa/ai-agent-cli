@@ -50,7 +50,8 @@ function makeMarkdownComponents(onLinkClick?: LinkHandler) {
       </a>
     ),
     code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<"code">) => {
-      if (className === "language-mermaid") {
+      const isMermaid = className?.split(/\s+/).includes("language-mermaid")
+      if (isMermaid) {
         return (
           <MermaidBlock
             code={extractText(children as string | string[]).replace(/\n$/, "")}
