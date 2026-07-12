@@ -121,6 +121,10 @@ export function resolveWorkspaceLink(
   for (const part of pathPart.split("/")) {
     if (part === "" || part === ".") continue
     if (part === "..") {
+      // A ".." that would climb above the workspace root has no valid
+      // target inside the workspace, so reject the link entirely rather
+      // than silently producing a malformed or empty path.
+      if (segments.length === 0) return null
       segments.pop()
       continue
     }

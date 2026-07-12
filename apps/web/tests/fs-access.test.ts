@@ -63,4 +63,8 @@ describe("resolveWorkspaceLink", () => {
   it("returns null for a root-relative link instead of rooting it under the current directory (failure)", () => {
     expect(resolveWorkspaceLink("/foo/bar.md", "docs/a.md")).toBeNull()
   })
+
+  it("returns null when '..' climbs above the workspace root instead of producing a malformed path (failure)", () => {
+    expect(resolveWorkspaceLink("../../b.md", "docs/a.md")).toBeNull()
+  })
 })
