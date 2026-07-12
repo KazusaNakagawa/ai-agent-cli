@@ -5,6 +5,7 @@ export type NavItem = { href: string; label: string; icon: string }
 export type Service = {
   id: ServiceId
   label: string
+  icon: string
   defaultHref: string
   items: NavItem[]
 }
@@ -15,6 +16,7 @@ export const SERVICES: Service[] = [
   {
     id: "briefing",
     label: "Briefing",
+    icon: "📚",
     defaultHref: "/portfolio",
     items: [
       { href: "/portfolio", label: "Portfolio", icon: "📊" },
@@ -28,18 +30,21 @@ export const SERVICES: Service[] = [
   {
     id: "journal",
     label: "Journal",
+    icon: "📓",
     defaultHref: "/journal",
     items: [{ href: "/journal", label: "Journal", icon: "📓" }],
   },
   {
     id: "monitor",
     label: "Monitor",
+    icon: "📈",
     defaultHref: "/monitor",
     items: [{ href: "/monitor", label: "Monitor", icon: "📈" }],
   },
   {
     id: "workspace",
     label: "Workspace",
+    icon: "🗂️",
     defaultHref: "/workspace",
     items: [{ href: "/workspace", label: "Workspace", icon: "🗂️" }],
   },
