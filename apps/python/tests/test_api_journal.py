@@ -86,6 +86,18 @@ async def test_append_explicit_item_is_not_overridden(authed_client, journal_dir
     assert entry["item"] == "custom title"
 
 
+async def test_append_derived_title_truncated_to_20_chars(authed_client, journal_dir):
+    response = await authed_client.post(
+        "/api/journal",
+        json={"content": "This sentence is definitely longer than twenty characters"},
+    )
+    entry_id = response.json()["id"]
+    listed = await authed_client.get("/api/journal")
+    entry = next(e for e in listed.json()["entries"] if e["id"] == entry_id)
+    assert entry["item"] == "This sentence is def"
+    assert len(entry["item"]) == journal_store.MAX_ITEM_LENGTH
+
+
 async def test_append_blank_item_falls_back_to_derived_title(authed_client, journal_dir):
     """An explicit but blank item (e.g. an image-only turn) still gets a title."""
     response = await authed_client.post(
