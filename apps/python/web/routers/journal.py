@@ -130,9 +130,10 @@ def append_journal(req: AppendEntryRequest, background_tasks: BackgroundTasks) -
         entry_id = journal_store.append_entry(req.content, req.date)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if req.item:
+    item = (req.item or "").strip() or journal_store.derive_title(req.content)
+    if item:
         try:
-            journal_store.save_item(entry_id, req.item)
+            journal_store.save_item(entry_id, item)
         except Exception:
             pass  # item label is best-effort; entry is already committed
     background_tasks.add_task(_sync_new_entry_task, entry_id, req.content)
