@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react"
 
+import { CodeView } from "@/components/ui/CodeView"
 import { MarkdownView } from "@/components/ui/MarkdownView"
+import { languageForFile } from "@/lib/fileColors"
 import { readFileHandle, writeFileHandle } from "@/lib/fsAccess"
 import { useWorkspaceState } from "@/lib/workspaceStore"
 
@@ -10,6 +12,10 @@ type Mode = "edit" | "preview"
 
 function isMarkdown(path: string): boolean {
   return /\.(md|markdown)$/i.test(path)
+}
+
+function defaultModeFor(path: string): Mode {
+  return isMarkdown(path) || languageForFile(path) !== null ? "preview" : "edit"
 }
 
 export function WorkspaceScreen() {
@@ -26,7 +32,7 @@ export function WorkspaceScreen() {
     let cancelled = false
     setStatus(null)
     setLoading(true)
-    setMode(isMarkdown(selected.path) ? "preview" : "edit")
+    setMode(defaultModeFor(selected.path))
     readFileHandle(selected.handle)
       .then((text) => {
         if (!cancelled) setContent(text)
@@ -60,6 +66,7 @@ export function WorkspaceScreen() {
   }, [selected, content])
 
   const path = selected?.path ?? null
+  const language = path !== null ? languageForFile(path) : null
 
   return (
     <div className="flex h-[calc(100vh-12rem)]">
@@ -116,6 +123,8 @@ export function WorkspaceScreen() {
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : mode === "preview" && isMarkdown(path) ? (
             <MarkdownView content={content} />
+          ) : mode === "preview" && language !== null ? (
+            <CodeView content={content} language={language} />
           ) : (
             <textarea
               value={content}

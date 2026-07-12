@@ -48,3 +48,34 @@ function extensionOf(name: string): string {
 export function colorForFile(name: string): string {
   return EXTENSION_COLORS[extensionOf(name)] ?? DEFAULT_COLOR
 }
+
+// Maps extensions to a react-syntax-highlighter / Prism language id, so the
+// code preview highlights syntax the same way editors do.
+const EXTENSION_LANGUAGES: Record<string, string> = {
+  py: "python",
+  js: "javascript",
+  jsx: "jsx",
+  ts: "typescript",
+  tsx: "tsx",
+  json: "json",
+  html: "markup",
+  css: "css",
+  scss: "scss",
+  yml: "yaml",
+  yaml: "yaml",
+  toml: "toml",
+  sh: "bash",
+  bash: "bash",
+  rs: "rust",
+  go: "go",
+  java: "java",
+  rb: "ruby",
+  php: "php",
+  sql: "sql",
+}
+
+/** Returns the highlighter language id for a file, or null when unmapped
+ *  (including markdown, which renders through MarkdownView instead). */
+export function languageForFile(name: string): string | null {
+  return EXTENSION_LANGUAGES[extensionOf(name)] ?? null
+}
