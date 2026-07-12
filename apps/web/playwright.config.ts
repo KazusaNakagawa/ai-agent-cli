@@ -26,6 +26,13 @@ if (!process.env.TEST_WORKER_INDEX) {
   const token = randomBytes(32).toString("base64url")
   writeFileSync(PATHS.TMP_TOKEN_FILE, token, { mode: 0o600 })
   writeFileSync(PATHS.NEXT_TOKEN_FILE, token, { mode: 0o600 })
+  // Seed an isolated workspace root with known content for the Workspace e2e.
+  rmSync(PATHS.TMP_WORKSPACE, { recursive: true, force: true })
+  mkdirSync(PATHS.TMP_WORKSPACE, { recursive: true })
+  writeFileSync(
+    `${PATHS.TMP_WORKSPACE}/readme.md`,
+    "# Hello Workspace\n\nOriginal content.\n",
+  )
 }
 
 export default defineConfig({
@@ -64,6 +71,7 @@ export default defineConfig({
       env: {
         AI_AGENT_TOKEN_PATH: PATHS.NEXT_TOKEN_FILE,
         API_BASE: "http://127.0.0.1:8000",
+        WORKSPACE_ROOT: PATHS.TMP_WORKSPACE,
       },
     },
   ],
