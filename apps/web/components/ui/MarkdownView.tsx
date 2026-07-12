@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown"
 import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 
+import { MermaidBlock } from "@/components/ui/MermaidBlock"
 import { sanitizeSchema } from "@/lib/briefing-toc"
 
 // Shared markdown renderer. Same plugin stack (GFM + sanitize) and prose styling
@@ -18,6 +19,13 @@ const PROSE_CLASS =
 // switched to another open file) and default navigation is suppressed;
 // returning false (or omitting the prop) keeps the normal target=_blank open.
 type LinkHandler = (href: string) => boolean
+
+// react-markdown always passes fenced code block content as a single string
+// or an array of strings (one per line/text node), never other React nodes.
+function extractText(children: string | string[]): string {
+  if (typeof children === "string") return children
+  return children.map(extractText).join("")
+}
 
 function makeMarkdownComponents(onLinkClick?: LinkHandler) {
   return {
@@ -41,6 +49,21 @@ function makeMarkdownComponents(onLinkClick?: LinkHandler) {
         {children}
       </a>
     ),
+    code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<"code">) => {
+      const isMermaid = className?.split(/\s+/).includes("language-mermaid")
+      if (isMermaid) {
+        return (
+          <MermaidBlock
+            code={extractText(children as string | string[]).replace(/\n$/, "")}
+          />
+        )
+      }
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      )
+    },
   }
 }
 
