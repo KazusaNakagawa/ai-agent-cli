@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest"
 import { SERVICES, serviceForPath } from "@/lib/services"
 
 describe("SERVICES", () => {
-  it("defines briefing first (fallback), then journal and monitor", () => {
-    expect(SERVICES.map((s) => s.id)).toEqual(["briefing", "journal", "monitor"])
+  it("defines briefing first (fallback), then journal, monitor and workspace", () => {
+    expect(SERVICES.map((s) => s.id)).toEqual([
+      "briefing", "journal", "monitor", "workspace",
+    ])
     expect(SERVICES[0].defaultHref).toBe("/portfolio")
     expect(SERVICES[1].defaultHref).toBe("/journal")
     expect(SERVICES[2].defaultHref).toBe("/monitor")
+    expect(SERVICES[3].defaultHref).toBe("/workspace")
   })
 
   it("briefing owns its six items, journal owns one", () => {
@@ -36,6 +39,7 @@ describe("serviceForPath", () => {
     ["/briefing", "briefing"],
     ["/journal", "journal"],
     ["/monitor", "monitor"],
+    ["/workspace", "workspace"],
   ])("maps %s to %s", (pathname, expected) => {
     expect(serviceForPath(pathname).id).toBe(expected)
   })

@@ -1,4 +1,4 @@
-export type ServiceId = "briefing" | "journal" | "monitor"
+export type ServiceId = "briefing" | "journal" | "monitor" | "workspace"
 
 export type NavItem = { href: string; label: string; icon: string }
 
@@ -36,6 +36,12 @@ export const SERVICES: Service[] = [
     label: "Monitor",
     defaultHref: "/monitor",
     items: [{ href: "/monitor", label: "Monitor", icon: "📈" }],
+  },
+  {
+    id: "workspace",
+    label: "Workspace",
+    defaultHref: "/workspace",
+    items: [{ href: "/workspace", label: "Workspace", icon: "🗂️" }],
   },
 ]
 

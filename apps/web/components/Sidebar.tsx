@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 
 import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
+import { FileTree } from "@/components/workspace/FileTree"
 import { ResizeHandle } from "@/components/ResizeHandle"
 import { SettingsModal } from "@/components/settings/SettingsModal"
 import { useJobState } from "@/lib/jobStore"
@@ -22,6 +23,8 @@ import { cn } from "@/lib/utils"
 export function Sidebar() {
   const pathname = usePathname()
   const items = serviceForPath(pathname).items
+  const onWorkspace =
+    pathname === "/workspace" || pathname.startsWith("/workspace/")
   const onJournal = pathname === "/journal" || pathname.startsWith("/journal/")
   const { isBackgrounded: runJobActive } = useJobState()
   // Initialize to false so SSR and the first client render agree (avoiding
@@ -161,6 +164,11 @@ export function Sidebar() {
         </nav>
       </section>
 
+      {onWorkspace && !collapsed && (
+        <section className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <FileTree />
+        </section>
+      )}
       {onJournal && !collapsed && <JournalSidebarList />}
 
       <section

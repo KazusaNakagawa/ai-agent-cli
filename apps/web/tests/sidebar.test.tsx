@@ -11,6 +11,7 @@ import {
   SIDEBAR_COLLAPSED_ATTR as HTML_ATTR,
   SIDEBAR_COLLAPSED_KEY as COLLAPSED_KEY,
 } from "@/lib/sidebar"
+import { WorkspaceStateProvider } from "@/lib/workspaceStore"
 
 let mockPathname = "/portfolio"
 vi.mock("next/navigation", () => ({ usePathname: () => mockPathname }))
@@ -21,7 +22,9 @@ function renderSidebar() {
       <JournalChatStateProvider>
         <JournalChatJobStateProvider>
           <JournalNavProvider>
-            <Sidebar />
+            <WorkspaceStateProvider>
+              <Sidebar />
+            </WorkspaceStateProvider>
           </JournalNavProvider>
         </JournalChatJobStateProvider>
       </JournalChatStateProvider>
