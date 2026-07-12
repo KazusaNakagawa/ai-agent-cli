@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown"
 import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 
+import { MermaidBlock } from "@/components/ui/MermaidBlock"
 import { sanitizeSchema } from "@/lib/briefing-toc"
 
 // Shared markdown renderer. Same plugin stack (GFM + sanitize) and prose styling
@@ -18,6 +19,12 @@ const PROSE_CLASS =
 // switched to another open file) and default navigation is suppressed;
 // returning false (or omitting the prop) keeps the normal target=_blank open.
 type LinkHandler = (href: string) => boolean
+
+function extractText(children: React.ReactNode): string {
+  if (typeof children === "string") return children
+  if (Array.isArray(children)) return children.map(extractText).join("")
+  return ""
+}
 
 function makeMarkdownComponents(onLinkClick?: LinkHandler) {
   return {
@@ -41,6 +48,16 @@ function makeMarkdownComponents(onLinkClick?: LinkHandler) {
         {children}
       </a>
     ),
+    code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<"code">) => {
+      if (className === "language-mermaid") {
+        return <MermaidBlock code={extractText(children).replace(/\n$/, "")} />
+      }
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      )
+    },
   }
 }
 
