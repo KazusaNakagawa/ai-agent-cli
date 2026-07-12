@@ -22,9 +22,9 @@ export function FolderIcon({ className }: IconProps) {
   )
 }
 
-export function FileIcon({ className }: IconProps) {
+export function FileIcon({ className, color }: IconProps & { color?: string }) {
   return (
-    <svg {...base} className={className} aria-hidden>
+    <svg {...base} stroke={color ?? base.stroke} className={className} aria-hidden>
       <path d="M4 1.75h5l3 3v9.5c0 .14-.11.25-.25.25H4a.25.25 0 0 1-.25-.25V2A.25.25 0 0 1 4 1.75z" />
       <path d="M9 1.75v3h3" />
     </svg>

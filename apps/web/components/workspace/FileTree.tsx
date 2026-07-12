@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 
+import { colorForFile } from "@/lib/fileColors"
 import { listChildren, type DirChild } from "@/lib/fsAccess"
 import { useWorkspaceState } from "@/lib/workspaceStore"
 
@@ -89,7 +90,10 @@ function FileNode({
       style={{ paddingLeft: depth * 12 + 20 }}
       data-testid={`tree-file-${path}`}
     >
-      <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <FileIcon
+        className="h-4 w-4 shrink-0"
+        color={colorForFile(entry.name)}
+      />
       <span className="truncate">{entry.name}</span>
     </button>
   )
