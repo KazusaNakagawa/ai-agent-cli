@@ -22,6 +22,22 @@ describe("ServiceTabs", () => {
     expect(journal).toHaveAttribute("href", "/journal")
   })
 
+  it("renders each tab icon-only with an accessible label matching the service name", () => {
+    render(<ServiceTabs />)
+    const workspace = screen.getByTestId("service-tab-workspace")
+    expect(workspace).toHaveAttribute("aria-label", "Workspace")
+    expect(workspace).toHaveTextContent("🗂️")
+    expect(workspace).not.toHaveTextContent("Workspace")
+  })
+
+  it("does not render any visible text label in the tab bar", () => {
+    render(<ServiceTabs />)
+    expect(screen.queryByText("Briefing")).not.toBeInTheDocument()
+    expect(screen.queryByText("Journal")).not.toBeInTheDocument()
+    expect(screen.queryByText("Monitor")).not.toBeInTheDocument()
+    expect(screen.queryByText("Workspace")).not.toBeInTheDocument()
+  })
+
   it("marks the briefing tab active on a briefing route", () => {
     mockPathname = "/chat"
     render(<ServiceTabs />)

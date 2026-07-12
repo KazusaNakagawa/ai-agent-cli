@@ -27,6 +27,19 @@ describe("SERVICES", () => {
       { href: "/monitor", label: "Monitor", icon: "📈" },
     ])
   })
+
+  it("defines a service-level icon for every service", () => {
+    for (const service of SERVICES) {
+      expect(service.icon).toBeTruthy()
+    }
+  })
+
+  it("journal, monitor and workspace icons match their single item's icon", () => {
+    for (const id of ["journal", "monitor", "workspace"] as const) {
+      const service = SERVICES.find((s) => s.id === id)!
+      expect(service.icon).toBe(service.items[0].icon)
+    }
+  })
 })
 
 describe("serviceForPath", () => {
