@@ -71,7 +71,9 @@ export default defineConfig({
       env: {
         AI_AGENT_TOKEN_PATH: PATHS.NEXT_TOKEN_FILE,
         API_BASE: "http://127.0.0.1:8000",
-        WORKSPACE_ROOT: PATHS.TMP_WORKSPACE,
+        WORKSPACE_ROOTS: JSON.stringify([
+          { id: "test", label: "test", path: PATHS.TMP_WORKSPACE },
+        ]),
       },
     },
   ],

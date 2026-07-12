@@ -1,14 +1,44 @@
-import { promises as fs } from "node:fs"
+import { existsSync, promises as fs } from "node:fs"
 import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path"
 
-// Root of the browsable workspace. Overridable via WORKSPACE_ROOT; defaults to
-// the repo's `docs/` directory (real markdown content for the trial). All file
-// access is confined to this root — see `resolveWithinRoot`.
-export function workspaceRoot(): string {
-  const configured = process.env.WORKSPACE_ROOT
-  if (configured) return resolve(configured)
-  // cwd is apps/web when Next.js runs; the repo root is two levels up.
-  return resolve(process.cwd(), "..", "..", "docs")
+export type WorkspaceRoot = {
+  id: string
+  label: string
+  path: string
+}
+
+// Configured tree roots the user can switch between (VSCode multi-root style).
+// Overridable via WORKSPACE_ROOTS (JSON array of {id,label,path}); otherwise a
+// sensible default set derived from the repo. Non-existent paths are filtered
+// out so the picker never offers a broken root. All file access stays confined
+// to the selected root — see `resolveWithinRoot`.
+export function workspaceRoots(): WorkspaceRoot[] {
+  const configured = process.env.WORKSPACE_ROOTS
+  let roots: WorkspaceRoot[]
+  if (configured) {
+    const parsed = JSON.parse(configured) as WorkspaceRoot[]
+    roots = parsed.map((r) => ({ ...r, path: resolve(r.path) }))
+  } else {
+    // cwd is apps/web when Next.js runs; the repo root is two levels up.
+    const repo = resolve(process.cwd(), "..", "..")
+    roots = [
+      { id: "docs", label: "docs", path: join(repo, "docs") },
+      { id: "config", label: "config", path: join(repo, "apps", "python", "config") },
+      { id: "data", label: "data", path: join(repo, "apps", "python", "data") },
+    ]
+  }
+  return roots.filter((r) => existsSync(r.path))
+}
+
+// Resolve a root id to its on-disk path. Falls back to the first configured
+// root when the id is missing or unknown.
+export function rootPathFor(id: string | null | undefined): string {
+  const roots = workspaceRoots()
+  if (roots.length === 0) {
+    throw new Error("no workspace roots are configured")
+  }
+  const match = roots.find((r) => r.id === id)
+  return (match ?? roots[0]).path
 }
 
 export type TreeEntry = {

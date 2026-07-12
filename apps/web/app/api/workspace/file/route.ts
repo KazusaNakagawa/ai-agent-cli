@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server"
 
-import { readFile, workspaceRoot, writeFile } from "@/lib/workspace"
+import { readFile, rootPathFor, writeFile } from "@/lib/workspace"
 
-// GET /api/workspace/file?path=<relPath> — read a UTF-8 text file.
+// GET /api/workspace/file?root=<id>&path=<relPath> — read a UTF-8 text file.
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const relPath = url.searchParams.get("path")
+  const rootId = url.searchParams.get("root")
   if (!relPath) {
     return NextResponse.json({ error: "path is required" }, { status: 400 })
   }
   try {
-    const content = await readFile(workspaceRoot(), relPath)
+    const content = await readFile(rootPathFor(rootId), relPath)
     return NextResponse.json({ content }, { headers: { "Cache-Control": "no-store" } })
   } catch (err) {
     const message = err instanceof Error ? err.message : "failed to read file"
@@ -19,10 +20,11 @@ export async function GET(req: Request) {
   }
 }
 
-// PUT /api/workspace/file?path=<relPath> — write a UTF-8 text file.
+// PUT /api/workspace/file?root=<id>&path=<relPath> — write a UTF-8 text file.
 export async function PUT(req: Request) {
   const url = new URL(req.url)
   const relPath = url.searchParams.get("path")
+  const rootId = url.searchParams.get("root")
   if (!relPath) {
     return NextResponse.json({ error: "path is required" }, { status: 400 })
   }
@@ -36,7 +38,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "content must be a string" }, { status: 400 })
   }
   try {
-    await writeFile(workspaceRoot(), relPath, body.content)
+    await writeFile(rootPathFor(rootId), relPath, body.content)
     return NextResponse.json({ ok: true })
   } catch (err) {
     const message = err instanceof Error ? err.message : "failed to write file"

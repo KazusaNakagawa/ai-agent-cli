@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server"
 
-import { listDir, workspaceRoot } from "@/lib/workspace"
+import { listDir, rootPathFor } from "@/lib/workspace"
 
-// GET /api/workspace/tree?path=<relDir> — list the immediate children of a
-// directory within the workspace root. `path` defaults to the root.
+// GET /api/workspace/tree?root=<id>&path=<relDir> — list the immediate children
+// of a directory within the selected root. `path` defaults to the root itself.
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const relDir = url.searchParams.get("path") ?? ""
+  const rootId = url.searchParams.get("root")
   try {
-    const entries = await listDir(workspaceRoot(), relDir)
+    const entries = await listDir(rootPathFor(rootId), relDir)
     return NextResponse.json({ entries }, { headers: { "Cache-Control": "no-store" } })
   } catch (err) {
     const message = err instanceof Error ? err.message : "failed to list directory"

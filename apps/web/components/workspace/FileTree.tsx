@@ -10,8 +10,11 @@ export type TreeEntry = {
   type: "dir" | "file"
 }
 
-async function fetchEntries(path: string): Promise<TreeEntry[]> {
-  const res = await fetch(`/api/workspace/tree?path=${encodeURIComponent(path)}`)
+type RootOption = { id: string; label: string }
+
+async function fetchEntries(rootId: string, path: string): Promise<TreeEntry[]> {
+  const params = new URLSearchParams({ root: rootId, path })
+  const res = await fetch(`/api/workspace/tree?${params.toString()}`)
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }
     throw new Error(body.error ?? `HTTP ${res.status}`)
@@ -21,11 +24,13 @@ async function fetchEntries(path: string): Promise<TreeEntry[]> {
 }
 
 function DirNode({
+  rootId,
   entry,
   depth,
   selectedPath,
   onSelectFile,
 }: {
+  rootId: string
   entry: TreeEntry
   depth: number
   selectedPath: string | null
@@ -40,12 +45,12 @@ function DirNode({
     setOpen(next)
     if (next && children === null) {
       try {
-        setChildren(await fetchEntries(entry.path))
+        setChildren(await fetchEntries(rootId, entry.path))
       } catch (e) {
         setError(e instanceof Error ? e.message : "failed to load")
       }
     }
-  }, [open, children, entry.path])
+  }, [open, children, rootId, entry.path])
 
   return (
     <div>
@@ -68,6 +73,7 @@ function DirNode({
         ? children.map((child) => (
             <TreeRow
               key={child.path}
+              rootId={rootId}
               entry={child}
               depth={depth + 1}
               selectedPath={selectedPath}
@@ -80,11 +86,13 @@ function DirNode({
 }
 
 function TreeRow({
+  rootId,
   entry,
   depth,
   selectedPath,
   onSelectFile,
 }: {
+  rootId: string
   entry: TreeEntry
   depth: number
   selectedPath: string | null
@@ -93,6 +101,7 @@ function TreeRow({
   if (entry.type === "dir") {
     return (
       <DirNode
+        rootId={rootId}
         entry={entry}
         depth={depth}
         selectedPath={selectedPath}
@@ -117,34 +126,73 @@ function TreeRow({
 }
 
 export function FileTree() {
-  const { selectedPath, setSelectedPath } = useWorkspaceState()
-  const onSelectFile = setSelectedPath
-  const [roots, setRoots] = useState<TreeEntry[] | null>(null)
+  const { rootId, setRootId, selectedPath, setSelectedPath } = useWorkspaceState()
+  const [roots, setRoots] = useState<RootOption[] | null>(null)
+  const [entries, setEntries] = useState<TreeEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Load the configured roots once; pick the first as the default when the
+  // store has no persisted selection.
   useEffect(() => {
-    fetchEntries("")
-      .then(setRoots)
-      .catch((e) => setError(e instanceof Error ? e.message : "failed to load"))
+    fetch("/api/workspace/roots")
+      .then((res) => res.json())
+      .then((data: { roots: RootOption[] }) => {
+        setRoots(data.roots)
+        if (rootId === null && data.roots.length > 0) {
+          setRootId(data.roots[0].id)
+        }
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "failed to load roots"))
+    // Run once on mount; setRootId only fills an empty selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  if (error !== null) {
-    return <p className="p-2 text-xs text-destructive">{error}</p>
-  }
-  if (roots === null) {
-    return <p className="p-2 text-xs text-muted-foreground">Loading…</p>
-  }
+  // (Re)load the top-level entries whenever the active root changes.
+  useEffect(() => {
+    if (rootId === null) return
+    setEntries(null)
+    setError(null)
+    fetchEntries(rootId, "")
+      .then(setEntries)
+      .catch((e) => setError(e instanceof Error ? e.message : "failed to load"))
+  }, [rootId])
+
   return (
-    <div data-testid="file-tree">
-      {roots.map((entry) => (
-        <TreeRow
-          key={entry.path}
-          entry={entry}
-          depth={0}
-          selectedPath={selectedPath}
-          onSelectFile={onSelectFile}
-        />
-      ))}
+    <div className="flex min-h-0 flex-col" data-testid="file-tree">
+      {roots !== null && roots.length > 1 ? (
+        <select
+          value={rootId ?? ""}
+          onChange={(e) => setRootId(e.target.value)}
+          className="mb-2 w-full rounded border bg-background px-2 py-1 text-xs"
+          data-testid="workspace-root-select"
+          aria-label="Workspace root"
+        >
+          {roots.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      ) : null}
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {error !== null ? (
+          <p className="p-2 text-xs text-destructive">{error}</p>
+        ) : entries === null ? (
+          <p className="p-2 text-xs text-muted-foreground">Loading…</p>
+        ) : (
+          entries.map((entry) => (
+            <TreeRow
+              key={entry.path}
+              rootId={rootId as string}
+              entry={entry}
+              depth={0}
+              selectedPath={selectedPath}
+              onSelectFile={setSelectedPath}
+            />
+          ))
+        )}
+      </div>
     </div>
   )
 }

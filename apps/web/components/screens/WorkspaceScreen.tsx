@@ -12,19 +12,20 @@ function isMarkdown(path: string): boolean {
 }
 
 export function WorkspaceScreen() {
-  const { selectedPath } = useWorkspaceState()
+  const { rootId, selectedPath } = useWorkspaceState()
   const [content, setContent] = useState<string>("")
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>("edit")
 
-  const openFile = useCallback(async (path: string) => {
+  const openFile = useCallback(async (path: string, root: string | null) => {
     setStatus(null)
     setLoading(true)
     setMode(isMarkdown(path) ? "preview" : "edit")
     try {
-      const res = await fetch(`/api/workspace/file?path=${encodeURIComponent(path)}`)
+      const params = new URLSearchParams({ root: root ?? "", path })
+      const res = await fetch(`/api/workspace/file?${params.toString()}`)
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(body.error ?? `HTTP ${res.status}`)
@@ -41,15 +42,16 @@ export function WorkspaceScreen() {
 
   // Load the file whenever the sidebar tree changes the selection.
   useEffect(() => {
-    if (selectedPath !== null) openFile(selectedPath)
-  }, [selectedPath, openFile])
+    if (selectedPath !== null) openFile(selectedPath, rootId)
+  }, [selectedPath, rootId, openFile])
 
   const save = useCallback(async () => {
     if (selectedPath === null) return
     setSaving(true)
     setStatus(null)
     try {
-      const res = await fetch(`/api/workspace/file?path=${encodeURIComponent(selectedPath)}`, {
+      const params = new URLSearchParams({ root: rootId ?? "", path: selectedPath })
+      const res = await fetch(`/api/workspace/file?${params.toString()}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ content }),
@@ -64,7 +66,7 @@ export function WorkspaceScreen() {
     } finally {
       setSaving(false)
     }
-  }, [selectedPath, content])
+  }, [selectedPath, rootId, content])
 
   return (
     <div className="flex h-[calc(100vh-12rem)]">
