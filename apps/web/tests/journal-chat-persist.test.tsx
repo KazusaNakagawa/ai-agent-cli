@@ -114,7 +114,7 @@ describe("Journal chat survives navigation away and back", () => {
     fireEvent.change(textarea, { target: { value: "what should I do" } })
     fireEvent.click(screen.getByRole("button", { name: "Brainstorm" }))
 
-    await screen.findByTestId("journal-chat-thinking")
+    expect(await screen.findByTestId("journal-chat-thinking")).toHaveAccessibleName("Thinking…")
 
     // Navigate away: unmount JournalScreen but keep the providers/bridge
     // mounted, exactly like moving to another route under (main)/layout.tsx.

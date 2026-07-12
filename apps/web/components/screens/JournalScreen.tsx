@@ -226,7 +226,7 @@ export function JournalScreen() {
                         {turn.answer ? (
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
                         ) : (
-                          <LoadingDots label="考え中" data-testid="journal-chat-thinking" />
+                          <LoadingDots label="Thinking…" data-testid="journal-chat-thinking" />
                         )}
                       </div>
                     </div>
@@ -265,11 +265,7 @@ export function JournalScreen() {
                     disabled={brainstorming || question.trim() === ""}
                     className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
                   >
-                    {brainstorming ? (
-                      <LoadingDots label="考え中" className="text-primary-foreground" />
-                    ) : (
-                      "Brainstorm"
-                    )}
+                    {brainstorming ? "Thinking…" : "Brainstorm"}
                   </button>
                   {supportsMic && (
                     <button
