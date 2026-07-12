@@ -22,9 +22,7 @@ export function ServiceTabs() {
             key={service.id}
             href={service.defaultHref}
             data-testid={`service-tab-${service.id}`}
-            aria-label={service.label}
             aria-current={active ? "page" : undefined}
-            title={service.label}
             className={cn(
               "rounded-md px-3 py-1.5 text-lg transition-colors",
               active
@@ -33,6 +31,7 @@ export function ServiceTabs() {
             )}
           >
             {service.icon}
+            <span className="sr-only">{service.label}</span>
           </Link>
         )
       })}

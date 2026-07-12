@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ServiceTabs } from "@/components/ServiceTabs"
+import { SERVICES } from "@/lib/services"
 
 // Mutable pathname so each test can place itself on a different route.
 let mockPathname = "/portfolio"
@@ -22,21 +23,20 @@ describe("ServiceTabs", () => {
     expect(journal).toHaveAttribute("href", "/journal")
   })
 
-  it("renders each tab icon-only with an accessible label matching the service name", () => {
-    render(<ServiceTabs />)
-    const workspace = screen.getByTestId("service-tab-workspace")
-    expect(workspace).toHaveAttribute("aria-label", "Workspace")
-    expect(workspace).toHaveTextContent("🗂️")
-    expect(workspace).not.toHaveTextContent("Workspace")
-  })
-
-  it("does not render any visible text label in the tab bar", () => {
-    render(<ServiceTabs />)
-    expect(screen.queryByText("Briefing")).not.toBeInTheDocument()
-    expect(screen.queryByText("Journal")).not.toBeInTheDocument()
-    expect(screen.queryByText("Monitor")).not.toBeInTheDocument()
-    expect(screen.queryByText("Workspace")).not.toBeInTheDocument()
-  })
+  it.each(SERVICES)(
+    "renders the $id tab icon-only with an accessible name matching its label",
+    (service) => {
+      render(<ServiceTabs />)
+      const tab = screen.getByTestId(`service-tab-${service.id}`)
+      // Accessible name comes from a visually-hidden span, not aria-label/title,
+      // so screen readers announce it exactly once (the icon glyph contributes
+      // no name, so it's still the label alone in the accessibility tree).
+      expect(screen.getByRole("link", { name: new RegExp(service.label) })).toBe(tab)
+      expect(tab).not.toHaveAttribute("aria-label")
+      expect(tab).not.toHaveAttribute("title")
+      expect(tab).toHaveTextContent(service.icon)
+    },
+  )
 
   it("marks the briefing tab active on a briefing route", () => {
     mockPathname = "/chat"
