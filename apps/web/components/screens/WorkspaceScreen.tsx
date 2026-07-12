@@ -9,6 +9,7 @@ import { isImageFile, isLogFile, languageForFile } from "@/lib/fileColors"
 import {
   readFileHandle,
   readFileHandleAsObjectURL,
+  resolveWorkspaceLink,
   writeFileHandle,
 } from "@/lib/fsAccess"
 import { useWorkspaceState } from "@/lib/workspaceStore"
@@ -26,7 +27,7 @@ function defaultModeFor(path: string): Mode {
 }
 
 export function WorkspaceScreen() {
-  const { selected } = useWorkspaceState()
+  const { selected, fileIndex, selectFile } = useWorkspaceState()
   const [content, setContent] = useState<string>("")
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -92,6 +93,24 @@ export function WorkspaceScreen() {
   }, [selected, content])
 
   const language = path !== null ? languageForFile(path) : null
+
+  // Intercept relative markdown links (./other.md, ../dir/other.md) and switch
+  // the Workspace selection to the matching indexed file instead of letting
+  // the browser try to navigate a route that doesn't exist. Absolute URLs,
+  // other schemes, and links to files outside the indexed set fall through to
+  // MarkdownView's default target=_blank behavior.
+  const handleLinkClick = useCallback(
+    (href: string): boolean => {
+      if (path === null) return false
+      const resolved = resolveWorkspaceLink(href, path)
+      if (resolved === null) return false
+      const match = fileIndex.find((f) => f.path === resolved)
+      if (match === undefined) return false
+      selectFile({ handle: match.handle, path: match.path })
+      return true
+    },
+    [path, fileIndex, selectFile],
+  )
 
   return (
     <div className="flex h-[calc(100vh-12rem)]">
@@ -159,7 +178,7 @@ export function WorkspaceScreen() {
               />
             ) : null
           ) : mode === "preview" && isMarkdown(path) ? (
-            <MarkdownView content={content} />
+            <MarkdownView content={content} onLinkClick={handleLinkClick} />
           ) : mode === "preview" && isLogFile(path) ? (
             <LogView content={content} />
           ) : mode === "preview" && language !== null ? (

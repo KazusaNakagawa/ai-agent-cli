@@ -1,4 +1,5 @@
 import type React from "react"
+import { useMemo } from "react"
 import ReactMarkdown from "react-markdown"
 import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
@@ -12,21 +13,54 @@ const PROSE_CLASS =
   "prose prose-sm max-w-none dark:prose-invert " +
   "prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline dark:prose-a:text-blue-400"
 
-const MARKDOWN_COMPONENTS = {
-  a: ({ children, ...props }: React.ComponentPropsWithoutRef<"a">) => (
-    <a {...props} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
+// `onLinkClick` lets a caller (e.g. Workspace) intercept a link's href before
+// the browser navigates it. Returning true means the caller handled it (e.g.
+// switched to another open file) and default navigation is suppressed;
+// returning false (or omitting the prop) keeps the normal target=_blank open.
+type LinkHandler = (href: string) => boolean
+
+function makeMarkdownComponents(onLinkClick?: LinkHandler) {
+  return {
+    a: ({ children, href, ...props }: React.ComponentPropsWithoutRef<"a">) => (
+      <a
+        {...props}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => {
+          // Let modified clicks (middle-click, cmd/ctrl/shift-click) through
+          // untouched so users can still open the link in a new tab/window.
+          if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+            return
+          }
+          if (href !== undefined && (onLinkClick?.(href) ?? false)) {
+            e.preventDefault()
+          }
+        }}
+      >
+        {children}
+      </a>
+    ),
+  }
 }
 
-export function MarkdownView({ content }: { content: string }) {
+export function MarkdownView({
+  content,
+  onLinkClick,
+}: {
+  content: string
+  onLinkClick?: LinkHandler
+}) {
+  const components = useMemo(
+    () => makeMarkdownComponents(onLinkClick),
+    [onLinkClick],
+  )
   return (
     <div className={PROSE_CLASS} data-testid="markdown-view">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
-        components={MARKDOWN_COMPONENTS}
+        components={components}
       >
         {content}
       </ReactMarkdown>
