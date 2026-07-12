@@ -1,9 +1,9 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
-import { FileTree } from "@/components/workspace/FileTree"
 import { MarkdownView } from "@/components/ui/MarkdownView"
+import { useWorkspaceState } from "@/lib/workspaceStore"
 
 type Mode = "edit" | "preview"
 
@@ -12,7 +12,7 @@ function isMarkdown(path: string): boolean {
 }
 
 export function WorkspaceScreen() {
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const { selectedPath } = useWorkspaceState()
   const [content, setContent] = useState<string>("")
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -20,7 +20,6 @@ export function WorkspaceScreen() {
   const [mode, setMode] = useState<Mode>("edit")
 
   const openFile = useCallback(async (path: string) => {
-    setSelectedPath(path)
     setStatus(null)
     setLoading(true)
     setMode(isMarkdown(path) ? "preview" : "edit")
@@ -39,6 +38,11 @@ export function WorkspaceScreen() {
       setLoading(false)
     }
   }, [])
+
+  // Load the file whenever the sidebar tree changes the selection.
+  useEffect(() => {
+    if (selectedPath !== null) openFile(selectedPath)
+  }, [selectedPath, openFile])
 
   const save = useCallback(async () => {
     if (selectedPath === null) return
@@ -63,16 +67,8 @@ export function WorkspaceScreen() {
   }, [selectedPath, content])
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] gap-3">
-      {/* Left sidebar: file tree */}
-      <aside
-        className="w-64 flex-shrink-0 overflow-y-auto rounded border bg-muted/30 p-1"
-        data-testid="workspace-sidebar"
-      >
-        <FileTree selectedPath={selectedPath} onSelectFile={openFile} />
-      </aside>
-
-      {/* Editor + preview */}
+    <div className="flex h-[calc(100vh-12rem)]">
+      {/* Editor + preview. The file tree lives in the global sidebar rail. */}
       <section className="flex min-w-0 flex-1 flex-col rounded border">
         <header className="flex items-center justify-between gap-2 border-b px-3 py-1.5">
           <span className="truncate text-sm font-medium" data-testid="workspace-active-file">

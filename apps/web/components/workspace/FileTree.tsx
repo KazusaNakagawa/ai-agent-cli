@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react"
 
+import { useWorkspaceState } from "@/lib/workspaceStore"
+
 export type TreeEntry = {
   name: string
   path: string
@@ -114,13 +116,9 @@ function TreeRow({
   )
 }
 
-export function FileTree({
-  selectedPath,
-  onSelectFile,
-}: {
-  selectedPath: string | null
-  onSelectFile: (path: string) => void
-}) {
+export function FileTree() {
+  const { selectedPath, setSelectedPath } = useWorkspaceState()
+  const onSelectFile = setSelectedPath
   const [roots, setRoots] = useState<TreeEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
