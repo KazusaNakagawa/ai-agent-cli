@@ -55,6 +55,60 @@ async def test_append_twice_same_date_creates_two_entries(authed_client, journal
     assert id1 in ids and id2 in ids
 
 
+async def test_append_without_item_derives_title_from_content(authed_client, journal_dir):
+    """Issue #380: a mid-chat new entry must not fall back to an empty item."""
+    response = await authed_client.post(
+        "/api/journal",
+        json={"content": "**You:**\n\nWhat should I focus on next?\n\n**AI:**\n\nSome answer"},
+    )
+    assert response.status_code == 200
+    entry_id = response.json()["id"]
+    listed = await authed_client.get("/api/journal")
+    entry = next(e for e in listed.json()["entries"] if e["id"] == entry_id)
+    assert entry["item"] == "What should I focus"
+
+
+async def test_append_without_item_derives_from_plain_content(authed_client, journal_dir):
+    response = await authed_client.post("/api/journal", json={"content": "hello there"})
+    entry_id = response.json()["id"]
+    listed = await authed_client.get("/api/journal")
+    entry = next(e for e in listed.json()["entries"] if e["id"] == entry_id)
+    assert entry["item"] == "hello there"
+
+
+async def test_append_explicit_item_is_not_overridden(authed_client, journal_dir):
+    response = await authed_client.post(
+        "/api/journal", json={"content": "some content", "item": "custom title"}
+    )
+    entry_id = response.json()["id"]
+    listed = await authed_client.get("/api/journal")
+    entry = next(e for e in listed.json()["entries"] if e["id"] == entry_id)
+    assert entry["item"] == "custom title"
+
+
+async def test_append_derived_title_truncated_to_20_chars(authed_client, journal_dir):
+    response = await authed_client.post(
+        "/api/journal",
+        json={"content": "This sentence is definitely longer than twenty characters"},
+    )
+    entry_id = response.json()["id"]
+    listed = await authed_client.get("/api/journal")
+    entry = next(e for e in listed.json()["entries"] if e["id"] == entry_id)
+    assert entry["item"] == "This sentence is def"
+    assert len(entry["item"]) == journal_store.MAX_ITEM_LENGTH
+
+
+async def test_append_blank_item_falls_back_to_derived_title(authed_client, journal_dir):
+    """An explicit but blank item (e.g. an image-only turn) still gets a title."""
+    response = await authed_client.post(
+        "/api/journal", json={"content": "some content", "item": "   "}
+    )
+    entry_id = response.json()["id"]
+    listed = await authed_client.get("/api/journal")
+    entry = next(e for e in listed.json()["entries"] if e["id"] == entry_id)
+    assert entry["item"] == "some content"
+
+
 async def test_append_defaults_to_today(authed_client, journal_dir):
     response = await authed_client.post("/api/journal", json={"content": "no date"})
     assert response.status_code == 200

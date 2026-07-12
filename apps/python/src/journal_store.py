@@ -103,11 +103,33 @@ def _merge_sidecar(entry_id: str, updates: dict) -> None:
         path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
+MAX_ITEM_LENGTH = 20  # shared limit for sidebar titles / item labels
+
+_LEADING_MARKUP_RE = re.compile(r"^[\s#*_>-]+")
+_TRAILING_MARKUP_RE = re.compile(r"[\s#*_>:]+$")
+_LABEL_ONLY_LINES = {"you", "ai"}  # matches USER_LABEL/AI_LABEL in journalQa.ts
+
+
+def derive_title(content: str) -> str:
+    """Derive a short (<=MAX_ITEM_LENGTH char) sidebar title from an entry's raw content.
+
+    Used as a fallback when no explicit item label is supplied (or it's blank),
+    so a new entry never ends up with an empty item — the first non-empty,
+    non-label line is picked and stripped of markdown markup (headers, bold
+    labels like ``**You:**``, list bullets) before truncating.
+    """
+    for line in content.splitlines():
+        text = _TRAILING_MARKUP_RE.sub("", _LEADING_MARKUP_RE.sub("", line)).strip()
+        if text and text.lower() not in _LABEL_ONLY_LINES:
+            return text[:MAX_ITEM_LENGTH].rstrip()
+    return ""
+
+
 def save_item(entry_id: str, item: str) -> None:
-    """Persist a short item label (≤20 chars) alongside the entry markdown."""
+    """Persist a short item label (≤MAX_ITEM_LENGTH chars) alongside the entry markdown."""
     if not _ENTRY_RE.match(entry_id):
         raise ValueError(f"Invalid journal entry id: {entry_id!r}")
-    _merge_sidecar(entry_id, {"item": item[:20]})
+    _merge_sidecar(entry_id, {"item": item[:MAX_ITEM_LENGTH]})
 
 
 def get_item(entry_id: str) -> str:
