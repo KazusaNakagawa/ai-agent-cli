@@ -39,7 +39,6 @@ yarn-error.log*
 
 # Playwright E2E
 /e2e/.tmp-home
-/e2e/.tmp-workspace
 /e2e/test-results
 /playwright-report
 /test-results
