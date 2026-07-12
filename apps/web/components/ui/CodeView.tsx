@@ -2,6 +2,7 @@ import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter"
 import bash from "react-syntax-highlighter/dist/cjs/languages/prism/bash"
 import css from "react-syntax-highlighter/dist/cjs/languages/prism/css"
 import go from "react-syntax-highlighter/dist/cjs/languages/prism/go"
+import ini from "react-syntax-highlighter/dist/cjs/languages/prism/ini"
 import java from "react-syntax-highlighter/dist/cjs/languages/prism/java"
 import javascript from "react-syntax-highlighter/dist/cjs/languages/prism/javascript"
 import json from "react-syntax-highlighter/dist/cjs/languages/prism/json"
@@ -27,6 +28,7 @@ SyntaxHighlighter.registerLanguage("jsx", jsx)
 SyntaxHighlighter.registerLanguage("typescript", typescript)
 SyntaxHighlighter.registerLanguage("tsx", tsx)
 SyntaxHighlighter.registerLanguage("json", json)
+SyntaxHighlighter.registerLanguage("ini", ini)
 SyntaxHighlighter.registerLanguage("markup", markup)
 SyntaxHighlighter.registerLanguage("css", css)
 SyntaxHighlighter.registerLanguage("scss", scss)

@@ -46,6 +46,15 @@ export async function readFileHandle(
   return file.text()
 }
 
+/** Read a file as an object URL for `<img>` display. Caller must revoke it
+ *  (via `URL.revokeObjectURL`) once no longer displayed, to avoid leaking. */
+export async function readFileHandleAsObjectURL(
+  handle: FileSystemFileHandle,
+): Promise<string> {
+  const file = await handle.getFile()
+  return URL.createObjectURL(file)
+}
+
 export async function writeFileHandle(
   handle: FileSystemFileHandle,
   content: string,

@@ -31,10 +31,14 @@ const EXTENSION_COLORS: Record<string, string> = {
   jpg: "#A78BFA",
   jpeg: "#A78BFA",
   gif: "#A78BFA",
+  webp: "#A78BFA",
+  bmp: "#A78BFA",
+  ico: "#A78BFA",
   pdf: "#EC4C47",
   txt: "#9CA3AF",
   env: "#ECD53F",
   lock: "#9CA3AF",
+  log: "#8B95A5",
 }
 
 const DEFAULT_COLOR = "currentColor"
@@ -44,8 +48,26 @@ function extensionOf(name: string): string {
   return dot === -1 ? "" : name.slice(dot + 1).toLowerCase()
 }
 
+/** True for `.env`, `.env.local`, `.env.production`, etc. */
+export function isEnvFile(name: string): boolean {
+  return /^\.env(\.|$)/i.test(name)
+}
+
+/** True for `.log` files. */
+export function isLogFile(name: string): boolean {
+  return extensionOf(name) === "log"
+}
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"])
+
+/** True for raster/vector image files the browser can render directly. */
+export function isImageFile(name: string): boolean {
+  return IMAGE_EXTENSIONS.has(extensionOf(name))
+}
+
 /** Returns a CSS color for the file's extension, or `currentColor` when unmapped. */
 export function colorForFile(name: string): string {
+  if (isEnvFile(name)) return EXTENSION_COLORS.env
   return EXTENSION_COLORS[extensionOf(name)] ?? DEFAULT_COLOR
 }
 
@@ -75,7 +97,9 @@ const EXTENSION_LANGUAGES: Record<string, string> = {
 }
 
 /** Returns the highlighter language id for a file, or null when unmapped
- *  (including markdown, which renders through MarkdownView instead). */
+ *  (including markdown and .log, which render through their own views, and
+ *  .env files, which use the "ini" grammar as a close approximation). */
 export function languageForFile(name: string): string | null {
+  if (isEnvFile(name)) return "ini"
   return EXTENSION_LANGUAGES[extensionOf(name)] ?? null
 }
