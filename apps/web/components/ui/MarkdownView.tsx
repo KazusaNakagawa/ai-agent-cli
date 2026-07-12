@@ -12,21 +12,45 @@ const PROSE_CLASS =
   "prose prose-sm max-w-none dark:prose-invert " +
   "prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline dark:prose-a:text-blue-400"
 
-const MARKDOWN_COMPONENTS = {
-  a: ({ children, ...props }: React.ComponentPropsWithoutRef<"a">) => (
-    <a {...props} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
+// `onLinkClick` lets a caller (e.g. Workspace) intercept a link's href before
+// the browser navigates it. Returning true means the caller handled it (e.g.
+// switched to another open file) and default navigation is suppressed;
+// returning false (or omitting the prop) keeps the normal target=_blank open.
+type LinkHandler = (href: string) => boolean
+
+function makeMarkdownComponents(onLinkClick?: LinkHandler) {
+  return {
+    a: ({ children, href, ...props }: React.ComponentPropsWithoutRef<"a">) => (
+      <a
+        {...props}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => {
+          if (href !== undefined && (onLinkClick?.(href) ?? false)) {
+            e.preventDefault()
+          }
+        }}
+      >
+        {children}
+      </a>
+    ),
+  }
 }
 
-export function MarkdownView({ content }: { content: string }) {
+export function MarkdownView({
+  content,
+  onLinkClick,
+}: {
+  content: string
+  onLinkClick?: LinkHandler
+}) {
   return (
     <div className={PROSE_CLASS} data-testid="markdown-view">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
-        components={MARKDOWN_COMPONENTS}
+        components={makeMarkdownComponents(onLinkClick)}
       >
         {content}
       </ReactMarkdown>

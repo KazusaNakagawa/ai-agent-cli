@@ -91,6 +91,41 @@ export async function buildFileIndex(
   return out
 }
 
+/**
+ * Resolve a markdown link's href against the path of the file it appears in,
+ * for Workspace in-app navigation (see MarkdownView's `onLinkClick`). Returns
+ * null for anything that isn't a same-workspace relative file link — absolute
+ * URLs, other schemes (mailto:, etc.), and in-page-only anchors — so callers
+ * fall back to normal browser link behavior for those.
+ */
+export function resolveWorkspaceLink(
+  href: string,
+  currentPath: string,
+): string | null {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return null
+  if (href.startsWith("//")) return null
+  if (href.startsWith("#")) return null
+
+  const [pathPart] = href.split("#")
+  if (pathPart === "") return null
+
+  const currentDir = currentPath.includes("/")
+    ? currentPath.slice(0, currentPath.lastIndexOf("/"))
+    : ""
+  const segments = currentDir === "" ? [] : currentDir.split("/")
+
+  for (const part of pathPart.split("/")) {
+    if (part === "" || part === ".") continue
+    if (part === "..") {
+      segments.pop()
+      continue
+    }
+    segments.push(part)
+  }
+
+  return segments.join("/")
+}
+
 export async function readFileHandle(
   handle: FileSystemFileHandle,
 ): Promise<string> {
