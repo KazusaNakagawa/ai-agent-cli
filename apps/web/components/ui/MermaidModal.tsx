@@ -73,9 +73,12 @@ export function MermaidModal({ svg, onClose }: { svg: string; onClose: () => voi
         className="relative h-[80vh] w-[80vw] bg-gray-950"
         onClick={(e) => e.stopPropagation()}
       >
-        <TransformWrapper wheel={{ disabled: true }}>
+        <TransformWrapper wheel={{ disabled: true }} centerOnInit initialScale={1}>
           <ZoomControls />
-          <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }}>
+          <TransformComponent
+            wrapperStyle={{ width: "100%", height: "100%" }}
+            contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
             {/* biome-ignore lint/security/noDangerouslySetInnerHtml: SVG string is generated locally by mermaid.render, not from untrusted user input rendered as HTML from the network. */}
             <div dangerouslySetInnerHTML={{ __html: svg }} />
           </TransformComponent>
