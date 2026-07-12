@@ -20,10 +20,11 @@ const PROSE_CLASS =
 // returning false (or omitting the prop) keeps the normal target=_blank open.
 type LinkHandler = (href: string) => boolean
 
-function extractText(children: React.ReactNode): string {
+// react-markdown always passes fenced code block content as a single string
+// or an array of strings (one per line/text node), never other React nodes.
+function extractText(children: string | string[]): string {
   if (typeof children === "string") return children
-  if (Array.isArray(children)) return children.map(extractText).join("")
-  return ""
+  return children.map(extractText).join("")
 }
 
 function makeMarkdownComponents(onLinkClick?: LinkHandler) {
@@ -50,7 +51,11 @@ function makeMarkdownComponents(onLinkClick?: LinkHandler) {
     ),
     code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<"code">) => {
       if (className === "language-mermaid") {
-        return <MermaidBlock code={extractText(children).replace(/\n$/, "")} />
+        return (
+          <MermaidBlock
+            code={extractText(children as string | string[]).replace(/\n$/, "")}
+          />
+        )
       }
       return (
         <code className={className} {...props}>

@@ -7,6 +7,13 @@ type RenderState =
   | { status: "success"; svg: string }
   | { status: "error"; message: string }
 
+// mermaid.initialize() only needs to run once per page load, not per mount.
+// `securityLevel: "strict"` disables raw HTML/script content in diagram
+// labels so the SVG we pass to dangerouslySetInnerHTML below can't carry
+// injected markup even though the diagram source ultimately comes from
+// user-authored markdown.
+let mermaidInitialized = false
+
 export function MermaidBlock({ code }: { code: string }) {
   const rawId = useId()
   const elementId = `mermaid-${rawId.replace(/:/g, "")}`
@@ -18,7 +25,10 @@ export function MermaidBlock({ code }: { code: string }) {
     async function run() {
       try {
         const { default: mermaid } = await import("mermaid")
-        mermaid.initialize({ startOnLoad: false })
+        if (!mermaidInitialized) {
+          mermaid.initialize({ startOnLoad: false, securityLevel: "strict" })
+          mermaidInitialized = true
+        }
         const { svg } = await mermaid.render(elementId, code)
         if (!cancelled) {
           setState({ status: "success", svg })

@@ -4,10 +4,11 @@ import { describe, expect, it, vi } from "vitest"
 import { MermaidBlock } from "@/components/ui/MermaidBlock"
 
 const renderMock = vi.fn()
+const initializeMock = vi.fn()
 
 vi.mock("mermaid", () => ({
   default: {
-    initialize: vi.fn(),
+    initialize: (...args: unknown[]) => initializeMock(...args),
     render: (...args: unknown[]) => renderMock(...args),
   },
 }))
@@ -20,6 +21,23 @@ describe("MermaidBlock", () => {
     await waitFor(() => {
       expect(screen.getByTestId("mermaid-svg")).toBeInTheDocument()
     })
+    // This is the first mount in the suite, so mermaid.initialize runs here
+    // with the module's fixed config (module-level flag skips later mounts).
+    expect(initializeMock).toHaveBeenCalledWith({
+      startOnLoad: false,
+      securityLevel: "strict",
+    })
+  })
+
+  it("does not call mermaid.initialize again on a second mount (efficiency)", async () => {
+    initializeMock.mockClear()
+    renderMock.mockResolvedValueOnce({ svg: '<svg data-testid="mermaid-svg-2"></svg>' })
+    render(<MermaidBlock code="flowchart TB\n  C --> D" />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mermaid-svg-2")).toBeInTheDocument()
+    })
+    expect(initializeMock).not.toHaveBeenCalled()
   })
 
   it("shows an error message and a collapsible source block on invalid mermaid syntax (failure)", async () => {
