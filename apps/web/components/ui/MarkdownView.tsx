@@ -1,4 +1,5 @@
 import type React from "react"
+import { useMemo } from "react"
 import ReactMarkdown from "react-markdown"
 import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
@@ -27,6 +28,11 @@ function makeMarkdownComponents(onLinkClick?: LinkHandler) {
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => {
+          // Let modified clicks (middle-click, cmd/ctrl/shift-click) through
+          // untouched so users can still open the link in a new tab/window.
+          if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+            return
+          }
           if (href !== undefined && (onLinkClick?.(href) ?? false)) {
             e.preventDefault()
           }
@@ -45,12 +51,16 @@ export function MarkdownView({
   content: string
   onLinkClick?: LinkHandler
 }) {
+  const components = useMemo(
+    () => makeMarkdownComponents(onLinkClick),
+    [onLinkClick],
+  )
   return (
     <div className={PROSE_CLASS} data-testid="markdown-view">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
-        components={makeMarkdownComponents(onLinkClick)}
+        components={components}
       >
         {content}
       </ReactMarkdown>

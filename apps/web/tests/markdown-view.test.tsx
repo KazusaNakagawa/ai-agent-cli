@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
@@ -29,5 +29,15 @@ describe("MarkdownView", () => {
     render(<MarkdownView content="[ext](https://example.com)" />)
     const link = screen.getByRole("link", { name: "ext" })
     expect(link).toHaveAttribute("target", "_blank")
+  })
+
+  it("does not call onLinkClick for a cmd/ctrl-clicked link, letting the browser open a new tab (boundary)", () => {
+    const onLinkClick = vi.fn().mockReturnValue(true)
+    render(<MarkdownView content="[go](./other.md)" onLinkClick={onLinkClick} />)
+
+    const link = screen.getByRole("link", { name: "go" })
+    fireEvent.click(link, { ctrlKey: true })
+
+    expect(onLinkClick).not.toHaveBeenCalled()
   })
 })

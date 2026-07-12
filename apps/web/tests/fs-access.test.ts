@@ -59,4 +59,8 @@ describe("resolveWorkspaceLink", () => {
   it("resolves a link from a root-level file with no directory prefix (boundary)", () => {
     expect(resolveWorkspaceLink("./b.md", "a.md")).toBe("b.md")
   })
+
+  it("returns null for a root-relative link instead of rooting it under the current directory (failure)", () => {
+    expect(resolveWorkspaceLink("/foo/bar.md", "docs/a.md")).toBeNull()
+  })
 })

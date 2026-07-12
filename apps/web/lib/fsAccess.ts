@@ -105,6 +105,10 @@ export function resolveWorkspaceLink(
   if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return null
   if (href.startsWith("//")) return null
   if (href.startsWith("#")) return null
+  // A leading "/" means site-root, not workspace-relative — treat it like
+  // any other non-relative URL rather than silently rooting it under the
+  // current directory.
+  if (href.startsWith("/")) return null
 
   const [pathPart] = href.split("#")
   if (pathPart === "") return null
