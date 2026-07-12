@@ -114,7 +114,7 @@ describe("Journal chat survives navigation away and back", () => {
     fireEvent.change(textarea, { target: { value: "what should I do" } })
     fireEvent.click(screen.getByRole("button", { name: "Brainstorm" }))
 
-    await screen.findByText("Thinking…")
+    await screen.findByTestId("journal-chat-thinking")
 
     // Navigate away: unmount JournalScreen but keep the providers/bridge
     // mounted, exactly like moving to another route under (main)/layout.tsx.
@@ -145,7 +145,7 @@ describe("Journal chat survives navigation away and back", () => {
       },
       { timeout: 3000 }
     )
-    expect(screen.queryByText("Thinking…")).toBeNull()
+    expect(screen.queryByTestId("journal-chat-thinking")).toBeNull()
     // Exactly one save call, not one per remount.
     const saveCalls = fetchMock.mock.calls.filter(
       ([u, init]) => String(u) === "/api/journal" && (init as RequestInit | undefined)?.method === "POST",
