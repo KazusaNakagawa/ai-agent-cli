@@ -8,6 +8,25 @@ export type DirChild = {
   handle: FileSystemHandle
 }
 
+// Directories to skip when walking the tree for the file finder's index and
+// for "expand all" — dependency/build/VCS noise that's rarely what someone
+// is fuzzy-searching for, and that would otherwise make either operation
+// scan tens of thousands of entries.
+export const SKIP_DIR_NAMES = new Set([
+  "node_modules",
+  ".git",
+  ".next",
+  "dist",
+  "build",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".cache",
+  "coverage",
+  ".turbo",
+  ".pytest_cache",
+])
+
 export function isFileSystemAccessSupported(): boolean {
   return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function"
 }
@@ -37,6 +56,39 @@ export async function listChildren(
     out.push({ name: handle.name, kind: handle.kind, handle })
   }
   return sortChildren(out)
+}
+
+export type IndexedFile = {
+  path: string
+  handle: FileSystemFileHandle
+}
+
+/**
+ * Recursively walk a directory and return a flat list of every file, for the
+ * fuzzy file finder. Skips SKIP_DIR_NAMES and stops after `maxFiles` so a
+ * huge tree can't hang the UI.
+ */
+export async function buildFileIndex(
+  root: FileSystemDirectoryHandle,
+  maxFiles = 5000,
+): Promise<IndexedFile[]> {
+  const out: IndexedFile[] = []
+
+  async function walk(dir: FileSystemDirectoryHandle, prefix: string): Promise<void> {
+    for await (const handle of dir.values()) {
+      if (out.length >= maxFiles) return
+      const path = prefix ? `${prefix}/${handle.name}` : handle.name
+      if (handle.kind === "directory") {
+        if (SKIP_DIR_NAMES.has(handle.name)) continue
+        await walk(handle as FileSystemDirectoryHandle, path)
+      } else {
+        out.push({ path, handle: handle as FileSystemFileHandle })
+      }
+    }
+  }
+
+  await walk(root, "")
+  return out
 }
 
 export async function readFileHandle(

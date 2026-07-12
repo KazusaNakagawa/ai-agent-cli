@@ -46,3 +46,32 @@ export function ChevronIcon({
     </svg>
   )
 }
+
+// Two chevrons pointing apart (unfold), for "expand all".
+export function ExpandAllIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className} aria-hidden>
+      <path d="M4 5.5l4 3 4-3" />
+      <path d="M4 9.5l4 3 4-3" />
+    </svg>
+  )
+}
+
+// Two chevrons pointing together (fold), for "collapse all".
+export function CollapseAllIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className} aria-hidden>
+      <path d="M4 10.5l4-3 4 3" />
+      <path d="M4 6.5l4-3 4 3" />
+    </svg>
+  )
+}
+
+export function SearchIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className} aria-hidden>
+      <circle cx="6.75" cy="6.75" r="4" />
+      <path d="M9.75 9.75L13.25 13.25" />
+    </svg>
+  )
+}

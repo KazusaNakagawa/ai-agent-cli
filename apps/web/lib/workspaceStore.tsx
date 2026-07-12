@@ -3,10 +3,12 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react"
 
 import {
+  buildFileIndex,
   ensureReadWrite,
   loadRootHandle,
   pickDirectory,
   saveRootHandle,
+  type IndexedFile,
 } from "@/lib/fsAccess"
 
 // Shared state for the Workspace feature. The file tree (rooted at a
@@ -28,6 +30,9 @@ type WorkspaceState = {
   openFolder: () => Promise<void>
   selected: SelectedFile | null
   selectFile: (file: SelectedFile) => void
+  /** Flat file list for the fuzzy finder, rebuilt whenever root changes. */
+  fileIndex: IndexedFile[]
+  indexing: boolean
 }
 
 const WorkspaceContext = createContext<WorkspaceState | null>(null)
@@ -40,6 +45,8 @@ export function WorkspaceStateProvider({
   const [root, setRoot] = useState<FileSystemDirectoryHandle | null>(null)
   const [needsReopen, setNeedsReopen] = useState(false)
   const [selected, setSelected] = useState<SelectedFile | null>(null)
+  const [fileIndex, setFileIndex] = useState<IndexedFile[]>([])
+  const [indexing, setIndexing] = useState(false)
 
   // Restore the last-opened folder after a reload. queryPermission (inside
   // ensureReadWrite via the granted path) needs no gesture; if it's only
@@ -60,10 +67,35 @@ export function WorkspaceStateProvider({
     }
   }, [])
 
+  // Rebuild the fuzzy-finder index whenever the open folder changes.
+  useEffect(() => {
+    if (root === null) {
+      setFileIndex([])
+      return
+    }
+    let cancelled = false
+    setIndexing(true)
+    buildFileIndex(root)
+      .then((index) => {
+        if (!cancelled) setFileIndex(index)
+      })
+      .finally(() => {
+        if (!cancelled) setIndexing(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [root])
+
   const openFolder = async () => {
     const handle = await pickDirectory()
     if (!(await ensureReadWrite(handle))) return
-    await saveRootHandle(handle)
+    try {
+      await saveRootHandle(handle)
+    } catch {
+      // IndexedDB unavailable or the handle isn't structured-cloneable; the
+      // folder still works for this session, it just won't survive a reload.
+    }
     setRoot(handle)
     setNeedsReopen(false)
     setSelected(null)
@@ -77,8 +109,10 @@ export function WorkspaceStateProvider({
       openFolder,
       selected,
       selectFile: setSelected,
+      fileIndex,
+      indexing,
     }),
-    [root, needsReopen, selected],
+    [root, needsReopen, selected, fileIndex, indexing],
   )
   return (
     <WorkspaceContext.Provider value={value}>
