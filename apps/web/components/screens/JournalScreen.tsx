@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm"
 
 import { CloseIcon } from "@/components/briefing/icons"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
+import { LoadingDots } from "@/components/ui/loading-dots"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { insertAtCursor } from "@/lib/insertAtCursor"
 import { useJournalChatJobState } from "@/lib/journalChatJobStore"
@@ -225,7 +226,7 @@ export function JournalScreen() {
                         {turn.answer ? (
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
                         ) : (
-                          <span className="text-sm text-muted-foreground">Thinking…</span>
+                          <LoadingDots label="Thinking…" data-testid="journal-chat-thinking" />
                         )}
                       </div>
                     </div>

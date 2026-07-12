@@ -8,7 +8,7 @@ import { JournalChatStateProvider } from "@/lib/journalChatStore"
 import { JournalNavProvider } from "@/lib/journalNavStore"
 
 // A stream that stays open (never closes) so the brainstorm stays in the
-// "Thinking…" state until the test aborts it.
+// "thinking" state until the test aborts it.
 function pendingSseResponse(): Response {
   const stream = new ReadableStream<Uint8Array>({ start() {} })
   return new Response(stream, { status: 200 })
@@ -92,7 +92,7 @@ describe("JournalScreen brainstorm cancel", () => {
     })
     // Pending turn dropped, question restored, composer editable again.
     await waitFor(() => {
-      expect(screen.queryAllByText("Thinking…")).toHaveLength(0)
+      expect(screen.queryAllByTestId("journal-chat-thinking")).toHaveLength(0)
       expect((textarea as HTMLTextAreaElement).value).toBe("cancel me")
     })
     expect(screen.queryByText(/failed|error/i)).toBeNull()
