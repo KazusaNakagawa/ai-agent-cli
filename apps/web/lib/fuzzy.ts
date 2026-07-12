@@ -25,6 +25,12 @@ export function matchScore(query: string, target: string): number | null {
   return qi === q.length ? score : null
 }
 
+/** Last path segment, e.g. "src/app.py" -> "app.py". */
+export function basename(path: string): string {
+  const slash = path.lastIndexOf("/")
+  return slash === -1 ? path : path.slice(slash + 1)
+}
+
 /** Fuzzy-filter and rank `items` by `query`, highest score first. */
 export function fuzzySearch<T>(
   items: T[],

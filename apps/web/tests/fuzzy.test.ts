@@ -1,6 +1,32 @@
 import { describe, expect, it } from "vitest"
 
-import { fuzzySearch, matchScore } from "@/lib/fuzzy"
+import { basename, fuzzySearch, matchScore } from "@/lib/fuzzy"
+
+describe("basename", () => {
+  it("returns the last path segment (success)", () => {
+    expect(basename("src/components/App.tsx")).toBe("App.tsx")
+  })
+
+  it("returns the whole string when there's no slash (boundary)", () => {
+    expect(basename("readme.md")).toBe("readme.md")
+  })
+})
+
+describe("filename-only filtering (as used by the sidebar filter)", () => {
+  const files = [
+    { path: "assets/images/logo.png" },
+    { path: "assets/images/icon.png" },
+    { path: "src/app.py" },
+    { path: "docs/notes.md" },
+  ]
+
+  it('typing an extension like "png" surfaces only files with that extension', () => {
+    const results = fuzzySearch(files, "png", (f) => basename(f.path))
+    expect(results.map((f) => f.path).sort()).toEqual(
+      ["assets/images/icon.png", "assets/images/logo.png"].sort(),
+    )
+  })
+})
 
 describe("matchScore", () => {
   it("matches when query characters appear in order (success)", () => {

@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { colorForFile } from "@/lib/fileColors"
-import { listChildren, SKIP_DIR_NAMES, type DirChild } from "@/lib/fsAccess"
+import { listChildren, SKIP_DIR_NAMES, type DirChild, type IndexedFile } from "@/lib/fsAccess"
+import { basename, fuzzySearch } from "@/lib/fuzzy"
 import { useWorkspaceState } from "@/lib/workspaceStore"
 
-import { ChevronIcon, CollapseAllIcon, ExpandAllIcon, FileIcon, FolderIcon } from "./icons"
+import { ChevronIcon, CollapseAllIcon, ExpandAllIcon, FileIcon, FolderIcon, SearchIcon } from "./icons"
 
 // `expandGen`/`collapseGen` are monotonically increasing counters from the
 // toolbar buttons. Each DirNode reacts to a change (including on its own
@@ -126,6 +127,29 @@ function FileNode({
   )
 }
 
+// Flat row for filename-filtered results — no nesting, since matches can come
+// from anywhere in the tree.
+function FilteredFileRow({ file }: { file: IndexedFile }) {
+  const { selected, selectFile } = useWorkspaceState()
+  const active = selected?.path === file.path
+  return (
+    <button
+      type="button"
+      onClick={() => selectFile(file)}
+      className={`flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-sm hover:bg-accent ${
+        active ? "bg-accent font-medium" : ""
+      }`}
+      data-testid={`tree-filter-result-${file.path}`}
+    >
+      <FileIcon className="h-4 w-4 shrink-0" color={colorForFile(file.path)} />
+      <span className="truncate">{basename(file.path)}</span>
+      <span className="ml-auto shrink-0 truncate text-xs text-muted-foreground">
+        {file.path}
+      </span>
+    </button>
+  )
+}
+
 function TreeRow({
   entry,
   parentPath,
@@ -145,11 +169,17 @@ function TreeRow({
 }
 
 export function FileTree() {
-  const { root, rootName, needsReopen, openFolder } = useWorkspaceState()
+  const { root, rootName, needsReopen, openFolder, fileIndex, indexing } = useWorkspaceState()
   const [entries, setEntries] = useState<DirChild[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expandGen, setExpandGen] = useState(0)
   const [collapseGen, setCollapseGen] = useState(0)
+  const [nameFilter, setNameFilter] = useState("")
+
+  const filtering = nameFilter.trim() !== ""
+  const filteredFiles = filtering
+    ? fuzzySearch(fileIndex, nameFilter, (f) => basename(f.path), 50)
+    : []
 
   useEffect(() => {
     if (root === null) {
@@ -187,6 +217,20 @@ export function FileTree() {
       ) : null}
 
       {root !== null ? (
+        <div className="relative mb-1">
+          <SearchIcon className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={nameFilter}
+            onChange={(e) => setNameFilter(e.target.value)}
+            placeholder={indexing ? "Indexing…" : "Filter by filename…"}
+            className="w-full rounded border bg-background py-1 pl-6 pr-2 text-xs"
+            data-testid="workspace-name-filter"
+          />
+        </div>
+      ) : null}
+
+      {root !== null && !filtering ? (
         <div className="mb-1 flex items-center justify-end gap-1">
           <button
             type="button"
@@ -212,7 +256,13 @@ export function FileTree() {
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {error !== null ? (
+        {filtering ? (
+          filteredFiles.length > 0 ? (
+            filteredFiles.map((file) => <FilteredFileRow key={file.path} file={file} />)
+          ) : (
+            <p className="p-2 text-xs text-muted-foreground">No matching files</p>
+          )
+        ) : error !== null ? (
           <p className="p-2 text-xs text-destructive">{error}</p>
         ) : root === null ? null : entries === null ? (
           <p className="p-2 text-xs text-muted-foreground">Loading…</p>

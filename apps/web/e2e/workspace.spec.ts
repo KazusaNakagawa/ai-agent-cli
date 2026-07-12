@@ -5,13 +5,24 @@ import { expect, test } from "@playwright/test"
 // directory tree before each test, so the app's tree/search/edit logic runs
 // against something that behaves like a real handle (values(), getFile(),
 // createWritable(), queryPermission/requestPermission) without a real dialog.
-const FAKE_TREE = {
+type FakeTreeNode = {
+  name: string
+  files?: Record<string, string>
+  dirs?: FakeTreeNode[]
+}
+
+const FAKE_TREE: FakeTreeNode = {
   name: "demo-repo",
   files: { "readme.md": "# Demo\n\nHello.\n" },
   dirs: [
     {
       name: "src",
       files: { "app.py": "def handler():\n    return 1\n" },
+      dirs: [],
+    },
+    {
+      name: "assets",
+      files: { "logo.png": "fake-png-bytes", "icon.png": "fake-png-bytes" },
       dirs: [],
     },
   ],
@@ -132,4 +143,29 @@ test("markdown opens in preview mode with rendered content", async ({ page }) =>
   await page.getByTestId("tree-file-readme.md").click()
   await expect(page.getByTestId("workspace-active-file")).toHaveText("readme.md")
   await expect(page.getByTestId("markdown-view")).toContainText("Demo")
+})
+
+test("sidebar filename filter narrows the tree to matching files by extension", async ({
+  page,
+}) => {
+  await page.goto("/workspace")
+  await page.getByTestId("workspace-open-folder").click()
+
+  await expect(page.getByTestId("tree-dir-src")).toBeVisible()
+
+  await page.getByTestId("workspace-name-filter").fill("png")
+
+  // Both nested .png files surface without expanding "assets" manually, and
+  // the hierarchical tree/expand-collapse toolbar hide while filtering.
+  await expect(page.getByTestId("tree-filter-result-assets/logo.png")).toBeVisible()
+  await expect(page.getByTestId("tree-filter-result-assets/icon.png")).toBeVisible()
+  await expect(page.getByTestId("tree-dir-src")).toBeHidden()
+  await expect(page.getByTestId("workspace-expand-all")).toBeHidden()
+
+  await page.getByTestId("tree-filter-result-assets/logo.png").click()
+  await expect(page.getByTestId("workspace-active-file")).toHaveText("assets/logo.png")
+
+  // Clearing the filter restores the normal hierarchical tree.
+  await page.getByTestId("workspace-name-filter").fill("")
+  await expect(page.getByTestId("tree-dir-src")).toBeVisible()
 })
