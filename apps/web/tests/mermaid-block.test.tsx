@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { MermaidBlock } from "@/components/ui/MermaidBlock"
@@ -11,6 +11,16 @@ vi.mock("mermaid", () => ({
     initialize: (...args: unknown[]) => initializeMock(...args),
     render: (...args: unknown[]) => renderMock(...args),
   },
+}))
+
+vi.mock("@/components/ui/MermaidModal", () => ({
+  MermaidModal: ({ onClose }: { svg: string; onClose: () => void }) => (
+    <div data-testid="mermaid-modal">
+      <button type="button" onClick={onClose}>
+        close
+      </button>
+    </div>
+  ),
 }))
 
 describe("MermaidBlock", () => {
@@ -49,5 +59,19 @@ describe("MermaidBlock", () => {
     })
     expect(screen.getByText("Show source")).toBeInTheDocument()
     expect(screen.getByText("not a valid diagram")).toBeInTheDocument()
+  })
+
+  it("opens MermaidModal when the rendered SVG is clicked, and closes it via onClose (success)", async () => {
+    renderMock.mockResolvedValueOnce({ svg: '<svg data-testid="mermaid-svg-click"></svg>' })
+    render(<MermaidBlock code="flowchart TB\n  A --> B" />)
+
+    const svgContainer = await screen.findByTestId("mermaid-svg-click")
+    expect(screen.queryByTestId("mermaid-modal")).not.toBeInTheDocument()
+
+    fireEvent.click(svgContainer)
+    expect(screen.getByTestId("mermaid-modal")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText("close"))
+    expect(screen.queryByTestId("mermaid-modal")).not.toBeInTheDocument()
   })
 })

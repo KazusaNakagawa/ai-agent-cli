@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useState } from "react"
 
+import { MermaidModal } from "@/components/ui/MermaidModal"
+
 type RenderState =
   | { status: "loading" }
   | { status: "success"; svg: string }
@@ -18,6 +20,7 @@ export function MermaidBlock({ code }: { code: string }) {
   const rawId = useId()
   const elementId = `mermaid-${rawId.replace(/:/g, "")}`
   const [state, setState] = useState<RenderState>({ status: "loading" })
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -68,6 +71,17 @@ export function MermaidBlock({ code }: { code: string }) {
     )
   }
 
-  // biome-ignore lint/security/noDangerouslySetInnerHtml: SVG string is generated locally by mermaid.render, not from untrusted user input rendered as HTML from the network.
-  return <div className="my-2" dangerouslySetInnerHTML={{ __html: state.svg }} />
+  return (
+    <>
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: SVG string is generated locally by mermaid.render, not from untrusted user input rendered as HTML from the network. */}
+      <div
+        className="my-2 cursor-zoom-in"
+        onClick={() => setIsModalOpen(true)}
+        dangerouslySetInnerHTML={{ __html: state.svg }}
+      />
+      {isModalOpen && (
+        <MermaidModal svg={state.svg} onClose={() => setIsModalOpen(false)} />
+      )}
+    </>
+  )
 }
