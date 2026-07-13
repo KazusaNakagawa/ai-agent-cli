@@ -1,5 +1,5 @@
 "use client"
-import { useState, useRef, type KeyboardEvent } from "react"
+import { useEffect, useState, useRef, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -7,6 +7,19 @@ import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { insertAtCursor } from "@/lib/insertAtCursor"
 import type { ImageAttachment } from "@/lib/types/image"
+
+const MIN_TEXTAREA_HEIGHT_PX = 40
+const MAX_TEXTAREA_HEIGHT_PX = 200
+
+function resizeTextarea(el: HTMLTextAreaElement) {
+  el.style.height = "auto"
+  const next = Math.min(
+    Math.max(el.scrollHeight, MIN_TEXTAREA_HEIGHT_PX),
+    MAX_TEXTAREA_HEIGHT_PX,
+  )
+  el.style.height = `${next}px`
+  el.style.overflowY = el.scrollHeight > MAX_TEXTAREA_HEIGHT_PX ? "auto" : "hidden"
+}
 
 type Props = {
   input: string
@@ -36,6 +49,13 @@ export function ChatComposer({
   const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null)
   const { isDragging } = useImageDrop(textareaRef, setAttachedImage)
 
+  // Covers height updates from sources other than direct typing (history
+  // recall via Up/Down, mic dictation, drag-and-drop file insert), which set
+  // `input` without going through the textarea's own onChange.
+  useEffect(() => {
+    if (textareaRef.current) resizeTextarea(textareaRef.current)
+  }, [input])
+
   function handleSend() {
     // Guard the keyboard path: ChatForm.send no-ops on empty input, so without
     // this the Enter key would clear the attachment without ever sending it.
@@ -53,7 +73,10 @@ export function ChatComposer({
             ref={textareaRef}
             aria-label="Chat message"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              resizeTextarea(e.target)
+            }}
             onCompositionStart={() => {
               composingRef.current = true
             }}
@@ -71,7 +94,7 @@ export function ChatComposer({
             }}
             placeholder="Ask about today's briefing…"
             rows={2}
-            className={`flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm${isDragging ? " ring-2 ring-primary" : ""}`}
+            className={`flex-1 resize-none overflow-hidden rounded-md border bg-background px-3 py-2 text-sm${isDragging ? " ring-2 ring-primary" : ""}`}
             data-testid="chat-input"
           />
           {supportsMic && (
