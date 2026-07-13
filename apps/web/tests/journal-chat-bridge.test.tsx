@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { JournalChatBridge } from "@/components/journal/JournalChatBridge"
 import { JournalChatJobStateProvider, useJournalChatJobState } from "@/lib/journalChatJobStore"
 import { JournalChatStateProvider, useJournalChatState } from "@/lib/journalChatStore"
+import { JournalNavProvider, useJournalNav } from "@/lib/journalNavStore"
 
 type Handler = (init?: RequestInit) => Promise<Response> | Response
 
@@ -27,10 +28,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 let latestJob: ReturnType<typeof useJournalChatJobState>
 let latestChat: ReturnType<typeof useJournalChatState>
+let latestNav: ReturnType<typeof useJournalNav>
 
 function Probe() {
   latestJob = useJournalChatJobState()
   latestChat = useJournalChatState()
+  latestNav = useJournalNav()
   return null
 }
 
@@ -38,8 +41,10 @@ function renderTree() {
   return render(
     <JournalChatStateProvider>
       <JournalChatJobStateProvider>
-        <JournalChatBridge />
-        <Probe />
+        <JournalNavProvider>
+          <JournalChatBridge />
+          <Probe />
+        </JournalNavProvider>
       </JournalChatJobStateProvider>
     </JournalChatStateProvider>,
   )
@@ -76,6 +81,11 @@ describe("JournalChatBridge", () => {
     on("/api/journal/chat", () => jsonResponse({ job_id: "j1" }, 202))
     on("/api/chat/j1/stream", () => sseStream([{ data: "the answer" }]))
     on("/api/journal", () => jsonResponse({ id: "new-entry" }))
+    on("/api/journal", () =>
+      jsonResponse({
+        entries: [{ id: "new-entry", date: "2026-07-13", size: 10, item: "Q", notion_url: "" }],
+      }),
+    )
 
     renderTree()
     await act(async () => {
@@ -90,12 +100,20 @@ describe("JournalChatBridge", () => {
       "/api/journal",
       expect.objectContaining({ method: "POST" }),
     )
+    // The sidebar list is refreshed after a new entry is auto-saved, so it
+    // reflects the new entry without requiring a manual page reload.
+    await waitFor(() => expect(latestNav.entries).toEqual([expect.objectContaining({ id: "new-entry" })]))
   })
 
   it("PATCHes the bound entry when targetEntryId is set", async () => {
     on("/api/journal/chat", () => jsonResponse({ job_id: "j2" }, 202))
     on("/api/chat/j2/stream", () => sseStream([{ data: "more" }]))
     on("/api/journal/existing-entry", () => new Response(null, { status: 204 }))
+    on("/api/journal", () =>
+      jsonResponse({
+        entries: [{ id: "existing-entry", date: "2026-07-13", size: 10, item: "Q", notion_url: "" }],
+      }),
+    )
 
     renderTree()
     await act(async () => {
@@ -107,6 +125,9 @@ describe("JournalChatBridge", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/journal/existing-entry",
       expect.objectContaining({ method: "PATCH" }),
+    )
+    await waitFor(() =>
+      expect(latestNav.entries).toEqual([expect.objectContaining({ id: "existing-entry" })]),
     )
   })
 
@@ -144,6 +165,7 @@ describe("JournalChatBridge", () => {
     on("/api/journal/chat", () => jsonResponse({ job_id: "j4" }, 202))
     on("/api/chat/j4/stream", () => sseStream([{ data: "once" }]))
     on("/api/journal", () => jsonResponse({ id: "e1" }))
+    on("/api/journal", () => jsonResponse({ entries: [] }))
 
     const { rerender } = renderTree()
     await act(async () => {
@@ -154,14 +176,18 @@ describe("JournalChatBridge", () => {
     rerender(
       <JournalChatStateProvider>
         <JournalChatJobStateProvider>
-          <JournalChatBridge />
-          <Probe />
+          <JournalNavProvider>
+            <JournalChatBridge />
+            <Probe />
+          </JournalNavProvider>
         </JournalChatJobStateProvider>
       </JournalChatStateProvider>,
     )
 
     expect(
-      fetchMock.mock.calls.filter(([u]) => String(u) === "/api/journal").length,
+      fetchMock.mock.calls.filter(
+        ([u, init]) => String(u) === "/api/journal" && (init as RequestInit | undefined)?.method === "POST",
+      ).length,
     ).toBe(1)
   })
 })

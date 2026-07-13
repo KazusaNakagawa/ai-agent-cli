@@ -8,6 +8,8 @@ import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
 import { JournalChatStateProvider } from "@/lib/journalChatStore"
 import { JournalNavProvider } from "@/lib/journalNavStore"
 
+vi.mock("next/navigation", () => ({ usePathname: () => "/journal" }))
+
 type Handler = (init?: RequestInit) => Promise<Response> | Response
 
 function sseStream(parts: { data: string }[]): Response {
@@ -137,10 +139,12 @@ describe("Journal chat survives navigation away and back", () => {
 
     // The panel should auto-open once the stores hydrate and the effect fires.
     // The question and answer should now appear in the brainstorm section
-    // thanks to the persisted turns in sessionStorage.
+    // thanks to the persisted turns in sessionStorage. The question also
+    // shows up a second time in the sidebar list, since it was refreshed
+    // after the entry was saved.
     await waitFor(
       () => {
-        expect(screen.getByText("what should I do")).toBeInTheDocument()
+        expect(screen.getAllByText("what should I do").length).toBeGreaterThanOrEqual(1)
         expect(screen.getByText("final answer")).toBeInTheDocument()
       },
       { timeout: 3000 }

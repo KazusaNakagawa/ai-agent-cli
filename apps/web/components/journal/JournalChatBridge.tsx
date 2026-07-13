@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react"
 import { formatQaBlock } from "@/lib/journalQa"
 import { useJournalChatJobState } from "@/lib/journalChatJobStore"
 import { useJournalChatState } from "@/lib/journalChatStore"
+import { useJournalNav } from "@/lib/journalNavStore"
 
 /**
  * Always-mounted glue between the Journal brainstorm job and its committed
@@ -14,6 +15,7 @@ import { useJournalChatState } from "@/lib/journalChatStore"
 export function JournalChatBridge(): null {
   const job = useJournalChatJobState()
   const journalChat = useJournalChatState()
+  const { loadDates } = useJournalNav()
   // Guards against the completion effect re-running for the same job (e.g.
   // a StrictMode double-invoke or an unrelated re-render while the async
   // save is in flight) — without this a slow save could fire twice.
@@ -61,9 +63,23 @@ export function JournalChatBridge(): null {
       addTurn({ question, answer: assistantContent })
       setEntryId(entryId)
       reset()
+      // Refresh the sidebar list so a newly created (or updated) entry shows
+      // up without the user having to reload the page.
+      void loadDates()
       processing.current.delete(jobId)
     })()
-  }, [status, jobId, question, assistantContent, targetEntryId, setError, reset, addTurn, setEntryId])
+  }, [
+    status,
+    jobId,
+    question,
+    assistantContent,
+    targetEntryId,
+    setError,
+    reset,
+    addTurn,
+    setEntryId,
+    loadDates,
+  ])
 
   return null
 }
