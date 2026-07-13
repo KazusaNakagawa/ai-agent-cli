@@ -144,7 +144,7 @@ describe("Journal chat survives navigation away and back", () => {
     // after the entry was saved.
     await waitFor(
       () => {
-        expect(screen.getAllByText("what should I do").length).toBeGreaterThanOrEqual(1)
+        expect(screen.getAllByText("what should I do").length).toBeGreaterThanOrEqual(2)
         expect(screen.getByText("final answer")).toBeInTheDocument()
       },
       { timeout: 3000 }
