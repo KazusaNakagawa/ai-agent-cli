@@ -76,7 +76,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 
 | Script | Purpose |
 |---|---|
-| `run.sh` | Run the daily briefing (+ weekly recap on Fri); the XSS intel agent is currently disabled here |
+| `run.sh` | Run the daily briefing (+ weekly recap on Fri) — see [Architecture](#architecture) for the disabled XSS intel agent |
 | `chat.sh` | Interactive Q&A on a briefing session |
 | `serve.sh` | Launch the Web UI (uvicorn); `PORT` overridable |
 | `briefing_api.sh` | Generate a briefing via the API entry point |

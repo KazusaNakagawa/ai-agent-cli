@@ -6,8 +6,8 @@ macOS uses **launchd** instead of cron. `bin/run.sh` (root-level wrapper) source
 
 | Day | What runs |
 |---|---|
-| Mon – Sun | `src.handler` (daily market briefing) |
-| Fri | `src.handler` → `src.weekly_handler` (daily + weekly recap) |
+| Mon – Sun | `python -m src.handler` (daily market briefing) |
+| Fri | `python -m src.handler` → `python -m src.weekly_handler` (daily + weekly recap) |
 
 ## 0. Define variables
 
