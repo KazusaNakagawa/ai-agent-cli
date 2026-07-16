@@ -6,8 +6,8 @@ macOS uses **launchd** instead of cron. `bin/run.sh` (root-level wrapper) source
 
 | Day | What runs |
 |---|---|
-| Mon – Sun | `briefing.py` (daily market briefing) |
-| Fri | `briefing.py` → `weekly_summary.py` (daily + weekly recap) |
+| Mon – Sun | `python -m src.handler` (daily market briefing) |
+| Fri | `python -m src.handler` → `python -m src.weekly_handler` (daily + weekly recap) |
 
 ## 0. Define variables
 
@@ -26,7 +26,7 @@ PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 ```bash
 cd "$PROJECT"
 source .env
-apps/python/.venv/bin/python apps/python/bin/briefing.py --dry-run
+(cd apps/python && .venv/bin/python -m src.handler --dry-run)
 ```
 
 No WARNING lines → credentials are set correctly.
