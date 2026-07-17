@@ -1107,3 +1107,88 @@ class TestChatVision:
         )
         assert resp.status_code == 400
         assert "Invalid image path" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Obsidian vault RAG — always-on when configured, soft degrade on failure
+# ---------------------------------------------------------------------------
+
+
+async def test_post_chat_injects_vault_context_when_obsidian_configured(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.config import ObsidianConfig
+    from src.local_llm.retriever import RetrievedChunk
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.config.get_obsidian_config",
+        lambda: ObsidianConfig(vault_path="/tmp/vault"),
+    )
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_obsidian_context",
+        lambda cfg, question, **kw: [
+            RetrievedChunk(
+                source_path="notes/idea.md",
+                start_line=1, end_line=5,
+                text="vault text about NVDA", distance=0.1,
+            ),
+        ],
+    )
+
+    await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "NVDA?"}
+    )
+
+    cmd, _ = factory.calls[0]
+    prompt = cmd[cmd.index("--append-system-prompt") + 1]
+    assert "vault text about NVDA" in prompt
+    assert "notes/idea.md" in prompt
+    assert "obsidian_note_excerpts" in prompt
+
+
+async def test_post_chat_continues_when_vault_retrieval_fails(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.config import ObsidianConfig
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.config.get_obsidian_config",
+        lambda: ObsidianConfig(vault_path="/tmp/vault"),
+    )
+
+    def _boom(cfg, question, **kw):
+        raise RuntimeError("ollama down")
+
+    monkeypatch.setattr("web.routers.chat.retrieve_obsidian_context", _boom)
+
+    response = await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert response.status_code == 202
+    cmd, _ = factory.calls[0]
+    assert "--session-id" in cmd  # session still created normally
+
+
+async def test_post_chat_skips_vault_retrieval_when_unconfigured(
+    authed_client, briefing_setup, monkeypatch
+):
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr("web.routers.chat.config.get_obsidian_config", lambda: None)
+    called = []
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_obsidian_context",
+        lambda *a, **kw: called.append(1) or [],
+    )
+
+    response = await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert response.status_code == 202
+    assert called == []
