@@ -116,4 +116,4 @@ Caveats on the numbers above:
 
 - Existing similar implementation: `apps/python/src/usage_logger.py` (records `total_cost_usd`
   from claude CLI calls to JSONL)
-- Output format reference: `docs/cost-analysis/2026-06-17-usage-cost-analysis.md`
+- Output format reference: `docs/reports/cost-analysis/2026-06-17-usage-cost-analysis.md`

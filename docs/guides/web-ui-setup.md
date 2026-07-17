@@ -126,7 +126,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/run/<job_id>
 
 切替は `PUT /api/auth/mode` の 1 リクエストのみ。`~/.ai-agent/state.json` に永続化され、次のバッチ実行 (cron 経由) から即反映される (`bin/run.sh` が毎回新規 Python プロセスを起こすため、再起動不要)。
 
-詳細は [`apps/python/src/claude_runner.py:build_env`](../apps/python/src/claude_runner.py) を参照。
+詳細は [`apps/python/src/claude_runner.py:build_env`](../../apps/python/src/claude_runner.py) を参照。
 
 ## トラブルシューティング
 

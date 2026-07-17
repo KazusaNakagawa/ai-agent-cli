@@ -52,7 +52,7 @@ uv pip sync requirements.txt
 cp .env.example .env   # add DISCORD_TOKEN, NOTION_API_KEY, etc.
 ```
 
-See [docs/configuration.md](docs/configuration.md) for all environment variables and config schema.
+See [docs/guides/configuration.md](docs/guides/configuration.md) for all environment variables and config schema.
 
 ## Run
 
@@ -93,13 +93,16 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 
 | Topic | Link |
 |---|---|
-| Configuration (env vars, config schema, prompts) | [docs/configuration.md](docs/configuration.md) |
-| Scheduled execution (macOS launchd) | [docs/launchd-setup.md](docs/launchd-setup.md) |
-| Briefing archive (monthly zip → Google Drive via rclone) | [docs/briefing-archive.md](docs/briefing-archive.md) |
-| Briefing evaluation pipeline | [docs/evaluation.md](docs/evaluation.md) |
-| Local LLM mode (Ollama + Chroma) | [docs/local-llm.md](docs/local-llm.md) |
-| Testing & dependency management | [docs/testing.md](docs/testing.md) |
-| Web UI setup | [docs/web-ui-setup.md](docs/web-ui-setup.md) |
+| Configuration (env vars, config schema, prompts) | [docs/guides/configuration.md](docs/guides/configuration.md) |
+| Scheduled execution (macOS launchd) | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
+| Briefing archive (monthly zip → Google Drive via rclone) | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
+| Testing & dependency management | [docs/guides/testing.md](docs/guides/testing.md) |
+| Web UI setup | [docs/guides/web-ui-setup.md](docs/guides/web-ui-setup.md) |
+| Briefing evaluation pipeline | [docs/features/evaluation.md](docs/features/evaluation.md) |
+| Journal ↔ Notion sync | [docs/features/journal-notion-sync.md](docs/features/journal-notion-sync.md) |
+| Local LLM mode (Ollama + Chroma) | [docs/features/local-llm.md](docs/features/local-llm.md) |
+| XSS intel agent (idea, not yet active) | [docs/ideas/xss-vulnerability-detection-agent.md](docs/ideas/xss-vulnerability-detection-agent.md) |
+| Reports & audits | [docs/reports/](docs/reports/) |
 
 ---
 

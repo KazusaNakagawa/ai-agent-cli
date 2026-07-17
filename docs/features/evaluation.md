@@ -31,4 +31,4 @@ All under git-ignored `output/`:
 
 A theme stays `unresolved` until at least one briefing exists inside its window `(date, date + horizon_days]`; re-running `score` only re-evaluates `unresolved` entries and never overwrites finalized verdicts.
 
-Design notes: [docs/superpowers/specs/2026-06-17-briefing-eval-foundation-design.md](superpowers/specs/2026-06-17-briefing-eval-foundation-design.md).
+Design notes: [docs/superpowers/specs/2026-06-17-briefing-eval-foundation-design.md](../superpowers/specs/2026-06-17-briefing-eval-foundation-design.md).
