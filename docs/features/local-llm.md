@@ -28,9 +28,11 @@ bin/local_llm.sh --sources "認証はどう動く？"  # retrieval-only debug
 bin/local_llm.sh --index --reset               # rebuild from scratch
 bin/local_llm.sh --briefing                    # generate daily briefing locally
 bin/local_llm.sh --briefing --notion           # ...and post to Notion
+bin/local_llm.sh --index-briefings              # index output/briefing/*.md for cross-date chat RAG (#395)
+bin/local_llm.sh --index-briefings --reset      # rebuild only the briefings collection
 ```
 
-Chroma data is stored in `apps/python/.chroma_db/` (gitignored).
+Chroma data is stored in `apps/python/.chroma_db/` (gitignored). `--index-briefings` writes to a separate collection (`ai_agent_briefings`) from `--index`'s repo-code collection (`ai_agent_repo`), so they don't mix and `--reset` on one never touches the other. The daily batch (`src.handler`) runs this indexing automatically after saving each day's briefing; failures (e.g. Ollama not running) are logged and don't block briefing delivery.
 
 ## Model options
 

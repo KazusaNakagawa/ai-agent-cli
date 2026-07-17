@@ -25,6 +25,8 @@ function renderComposer() {
       onToggleMic={vi.fn()}
       onSend={vi.fn()}
       onCancel={vi.fn()}
+      searchHistory={false}
+      onToggleSearchHistory={vi.fn()}
     />,
   )
 }

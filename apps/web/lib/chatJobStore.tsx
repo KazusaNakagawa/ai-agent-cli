@@ -26,6 +26,8 @@ export type ChatJobState = {
   question: string
   /** YYYY-MM-DD briefing context (re-sent on stale_session retry). */
   date: string
+  /** Whether this turn requested cross-date RAG (re-sent on stale_session retry). */
+  searchHistory: boolean
   /** Accumulating assistant content. NOT persisted — rebuilt from the GET stream's replay. */
   assistantContent: string
   error: string | null
@@ -35,7 +37,14 @@ export type ChatJobState = {
   staleSession: boolean
 }
 
-export type ChatJobStartOpts = { question: string; date: string; image_path?: string }
+export type ChatJobStartOpts = {
+  question: string
+  date: string
+  image_path?: string
+  /** Opt-in cross-date RAG (#395): search past briefings via the local-LLM
+   * chromadb index and inject matches into the new session's context. */
+  search_history?: boolean
+}
 
 export type ChatJobStateContextValue = ChatJobState & {
   isBackgrounded: boolean
@@ -53,6 +62,7 @@ const initialState: ChatJobState = {
   status: "idle",
   question: "",
   date: "",
+  searchHistory: false,
   assistantContent: "",
   error: null,
   sessionExpired: false,
@@ -85,19 +95,25 @@ const { Provider, useStore } = createJobStoreProvider<
     staleSession: false,
   }),
 
-  start: async ({ question, date, image_path }, { setState }) => {
+  start: async ({ question, date, image_path, search_history }, { setState }) => {
     setState(() => ({
       ...initialState,
       status: "pending",
       question,
       date,
+      searchHistory: Boolean(search_history),
     }))
     try {
       const post = await fetch("/api/chat", {
         method: "POST",
         cache: "no-store",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ date, question, ...(image_path ? { image_path } : {}) }),
+        body: JSON.stringify({
+          date,
+          question,
+          ...(image_path ? { image_path } : {}),
+          ...(search_history ? { search_history: true } : {}),
+        }),
       })
       if (post.status === 401) {
         setState(() => ({ ...initialState, sessionExpired: true }))

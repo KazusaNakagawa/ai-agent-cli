@@ -57,12 +57,22 @@ def build_journal_cmd(
     ]
 
 
-def build_cmd(target_date: str, briefing_file: Path, session_file: Path) -> list[str]:
+def build_cmd(
+    target_date: str,
+    briefing_file: Path,
+    session_file: Path,
+    history_context: str | None = None,
+) -> list[str]:
     """Return claude CLI args, resuming if a saved session exists, else creating
     a new one and persisting the UUID to ``session_file``.
 
     - Resume: ``claude --resume <uuid> --name <name>``
     - New:    ``claude --session-id <uuid> --name <name> --append-system-prompt <briefing>``
+
+    ``history_context`` (#395) is retrieved cross-date excerpts from past
+    briefings, injected alongside today's briefing only when a new session is
+    created — a resumed session already has its context baked in, so it is
+    ignored on resume.
     """
     name = session_name_for(target_date)
 
@@ -82,6 +92,14 @@ def build_cmd(target_date: str, briefing_file: Path, session_file: Path) -> list
         f"{wrap_untrusted(briefing_content, label='previous_briefing')}\n"
         "=== END ==="
     )
+    if history_context:
+        context += (
+            "\n\n以下は過去ブリーフィングから検索された関連抜粋です。"
+            "質問が過去の日付に関する場合の参考にしてください。\n\n"
+            "=== 過去ブリーフィングの関連抜粋 ===\n"
+            f"{wrap_untrusted(history_context, label='historical_briefing_excerpts')}\n"
+            "=== END ==="
+        )
     return [
         "claude",
         "--session-id", session_id,

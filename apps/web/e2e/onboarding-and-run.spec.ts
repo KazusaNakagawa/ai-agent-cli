@@ -169,3 +169,46 @@ test("chat: Cancel mid-stream terminates the job and restores the question (Issu
     await context.unrouteAll({ behavior: "ignoreErrors" })
   }
 })
+
+test("chat: the cross-date history toggle sends search_history:true (#395)", async ({
+  page,
+  context,
+}) => {
+  // Mock the chat backend so this doesn't need a real Ollama/chromadb index —
+  // only the request the toggle produces is under test here.
+  let capturedBody: Record<string, unknown> | null = null
+  await context.route("**/api/chat", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback()
+    }
+    capturedBody = route.request().postDataJSON()
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ job_id: "e2e-history", status: "pending" }),
+    })
+  })
+  await context.route("**/api/chat/e2e-history/stream", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: "data: from history search\n\n",
+    })
+  })
+
+  try {
+    await page.goto("/chat")
+    await expect(page.getByTestId("search-history-toggle")).not.toBeChecked()
+
+    await page.getByTestId("search-history-toggle").check()
+    await page.getByTestId("chat-input").fill("NVDA について過去は？")
+    await page.getByTestId("send-button").click()
+
+    await expect(page.getByTestId("chat-msg-assistant")).toContainText(
+      "from history search",
+    )
+    expect(capturedBody).toMatchObject({ search_history: true })
+  } finally {
+    await context.unrouteAll({ behavior: "ignoreErrors" })
+  }
+})

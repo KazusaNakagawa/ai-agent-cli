@@ -24,6 +24,7 @@ export function ChatForm() {
     storageKey: "ai-agent:chat-draft:v1",
   })
   const [retrying, setRetrying] = useState(false)
+  const [searchHistory, setSearchHistory] = useState(false)
   const { notionReady } = useNotionCredentials()
   const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
     onTranscript: setInput,
@@ -86,8 +87,13 @@ export function ChatForm() {
     setInput("")
     setRetrying(false)
     retriedRef.current = false
-    void chatJob.startJob({ question, date: today(), ...(imagePath ? { image_path: imagePath } : {}) })
-  }, [busy, chatJob, input, setInput])
+    void chatJob.startJob({
+      question,
+      date: today(),
+      ...(imagePath ? { image_path: imagePath } : {}),
+      ...(searchHistory ? { search_history: true } : {}),
+    })
+  }, [busy, chatJob, input, searchHistory, setInput])
 
   // Cancel: terminate the backend job, commit the partial answer as a
   // cancelled turn to chat history, restore the question into the textarea
@@ -123,12 +129,18 @@ export function ChatForm() {
 
     if (chatJob.staleSession && !retriedRef.current) {
       retriedRef.current = true
-      const { question, date } = chatJob
+      const { question, date, searchHistory: retrySearchHistory } = chatJob
       setRetrying(true)
       chatJob.reset()
-      void chatJob.startJob({ question, date }).finally(() => {
-        setRetrying(false)
-      })
+      void chatJob
+        .startJob({
+          question,
+          date,
+          ...(retrySearchHistory ? { search_history: true } : {}),
+        })
+        .finally(() => {
+          setRetrying(false)
+        })
       return
     }
 
@@ -184,6 +196,8 @@ export function ChatForm() {
         onSend={send}
         onCancel={cancel}
         onHistoryKeyDown={onHistoryKeyDown}
+        searchHistory={searchHistory}
+        onToggleSearchHistory={setSearchHistory}
       />
     </div>
   )

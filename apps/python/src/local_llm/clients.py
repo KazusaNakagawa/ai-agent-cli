@@ -78,12 +78,19 @@ def make_ollama_client(cfg: LocalLLMConfig):
 _LEGACY_EMBED_MODEL = "nomic-embed-text"
 
 
-def make_chroma_collection(cfg: LocalLLMConfig):
+def make_chroma_collection(cfg: LocalLLMConfig, collection_name: str = COLLECTION_NAME):
+    """Get or create a Chroma collection at ``cfg.chroma_path``.
+
+    ``collection_name`` defaults to the repo-code collection; pass a
+    different name (e.g. the briefings collection, #395) to keep separate
+    indexes side by side in the same persistent store. The embed-model
+    mismatch check below applies per collection.
+    """
     import chromadb
     cfg.chroma_path.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(cfg.chroma_path))
     coll = client.get_or_create_collection(
-        COLLECTION_NAME,
+        collection_name,
         metadata={"embed_model": cfg.embed_model},
     )
     # Pre-#135 collections have no embed_model tag; they were built with the
@@ -98,3 +105,19 @@ def make_chroma_collection(cfg: LocalLLMConfig):
             f"  bin/local_llm.sh --index --reset"
         )
     return coll
+
+
+def delete_collection(cfg: LocalLLMConfig, collection_name: str) -> None:
+    """Delete one named collection, leaving ``cfg.chroma_path`` and any other
+    collection stored alongside it untouched. Used by ``--index-briefings
+    --reset`` (#395) — narrower than wiping the whole persistent store, which
+    would also destroy the unrelated repo-code index sharing the same path.
+    """
+    import chromadb
+    if not cfg.chroma_path.exists():
+        return
+    client = chromadb.PersistentClient(path=str(cfg.chroma_path))
+    try:
+        client.delete_collection(collection_name)
+    except chromadb.errors.NotFoundError:
+        pass
