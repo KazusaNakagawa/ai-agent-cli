@@ -166,6 +166,31 @@ def test_make_chroma_collection_custom_name_checks_embed_mismatch_independently(
         make_chroma_collection(cfg_after_switch, collection_name="ai_agent_briefings")
 
 
+def test_make_chroma_collection_mismatch_message_points_at_index_reset_for_repo(tmp_path):
+    chroma_path = tmp_path / "chroma"
+    make_chroma_collection(_make_cfg(chroma_path, "bge-m3"))
+
+    with pytest.raises(EmbedModelMismatch) as exc:
+        make_chroma_collection(_make_cfg(chroma_path, "nomic-embed-text"))
+    assert "--index --reset" in str(exc.value)
+    assert "--index-briefings" not in str(exc.value)
+
+
+def test_make_chroma_collection_mismatch_message_points_at_index_briefings_reset(tmp_path):
+    """A mismatch on the briefings collection (#395) must tell the operator
+    to run `--index-briefings --reset`, not the repo-code `--index --reset`
+    — the two collections share chroma_path but reset independently.
+    """
+    from src.local_llm.config import BRIEFING_COLLECTION_NAME
+
+    chroma_path = tmp_path / "chroma"
+    make_chroma_collection(_make_cfg(chroma_path, "bge-m3"), collection_name=BRIEFING_COLLECTION_NAME)
+
+    with pytest.raises(EmbedModelMismatch) as exc:
+        make_chroma_collection(_make_cfg(chroma_path, "nomic-embed-text"), collection_name=BRIEFING_COLLECTION_NAME)
+    assert "--index-briefings --reset" in str(exc.value)
+
+
 def test_delete_collection_removes_only_the_named_collection(tmp_path):
     chroma_path = tmp_path / "chroma"
     cfg = _make_cfg(chroma_path, "bge-m3")

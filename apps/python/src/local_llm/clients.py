@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from .config import COLLECTION_NAME, LocalLLMConfig
+from .config import BRIEFING_COLLECTION_NAME, COLLECTION_NAME, LocalLLMConfig
+
+# Maps a collection name to the CLI flag that rebuilds *just* that collection.
+# The two collections share cfg.chroma_path but reset independently (#395),
+# so the mismatch error below must not always point at `--index --reset`.
+_RESET_FLAG_BY_COLLECTION = {
+    COLLECTION_NAME: "--index --reset",
+    BRIEFING_COLLECTION_NAME: "--index-briefings --reset",
+}
 
 
 class OllamaUnavailable(RuntimeError):
@@ -98,11 +106,12 @@ def make_chroma_collection(cfg: LocalLLMConfig, collection_name: str = COLLECTIO
     # check still catches a silent dimension change.
     prev_model = (coll.metadata or {}).get("embed_model") or _LEGACY_EMBED_MODEL
     if prev_model != cfg.embed_model:
+        reset_flag = _RESET_FLAG_BY_COLLECTION.get(collection_name, "--index --reset")
         raise EmbedModelMismatch(
             f"Existing Chroma collection at {cfg.chroma_path} was built with "
             f"embed_model={prev_model!r}, but current config requests "
             f"{cfg.embed_model!r}. Embedding dimensions differ. Rebuild with:\n"
-            f"  bin/local_llm.sh --index --reset"
+            f"  bin/local_llm.sh {reset_flag}"
         )
     return coll
 
