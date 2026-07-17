@@ -23,6 +23,9 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.credentials import get_credential
+from src.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Load the repo-root .env first (two levels up from apps/python/).
 # Since credentials.get_credential() prefers values already in the keychain,
@@ -153,11 +156,16 @@ def get_obsidian_config() -> ObsidianConfig | None:
 
     Best-effort by design: a missing briefing.json, a validation error, or an
     absent ``obsidian`` section all mean "feature off" — callers (journal sync,
-    chat RAG, CLI) must not fail because of Obsidian configuration.
+    chat RAG, CLI) must not fail because of Obsidian configuration. A missing
+    file is expected (briefing.json is optional, see CLAUDE.md), so only
+    unexpected errors (e.g. a validation error in an existing file) are logged.
     """
     try:
         return load_config().obsidian
+    except FileNotFoundError:
+        return None
     except Exception:
+        logger.warning("get_obsidian_config: briefing.json could not be loaded", exc_info=True)
         return None
 
 
