@@ -14,7 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from src import config, journal_store
 from src.logger import get_logger
-from src.notifier import journal_sync
+from src.notifier import journal_sync, obsidian_sync
 from web.auth import require_bearer
 
 logger = get_logger(__name__)
@@ -123,6 +123,18 @@ def _sync_append_task(entry_id: str, content: str) -> None:
         logger.exception("Notion journal sync failed for append %s", entry_id)
 
 
+def _sync_obsidian_task(entry_id: str) -> None:
+    """Best-effort background sync of the entry's full content into the vault."""
+    try:
+        obsidian = config.get_obsidian_config()
+        if obsidian:
+            obsidian_sync.sync_entry(
+                entry_id, Path(obsidian.vault_path).expanduser(), obsidian.journal_subdir
+            )
+    except Exception:
+        logger.exception("Obsidian journal sync failed for entry %s", entry_id)
+
+
 @router.post("/journal", response_model=AppendEntryResponse)
 def append_journal(req: AppendEntryRequest, background_tasks: BackgroundTasks) -> AppendEntryResponse:
     """Create a new journal entry file and return its id."""
@@ -137,6 +149,7 @@ def append_journal(req: AppendEntryRequest, background_tasks: BackgroundTasks) -
         except Exception:
             pass  # item label is best-effort; entry is already committed
     background_tasks.add_task(_sync_new_entry_task, entry_id, req.content)
+    background_tasks.add_task(_sync_obsidian_task, entry_id)
     return AppendEntryResponse(id=entry_id, date=journal_store.date_of(entry_id))
 
 
@@ -153,6 +166,7 @@ def patch_journal(entry_id: str, req: PatchEntryRequest, background_tasks: Backg
     if not ok:
         raise HTTPException(status_code=404, detail=f"Journal not found: {entry_id}")
     background_tasks.add_task(_sync_append_task, entry_id, req.content)
+    background_tasks.add_task(_sync_obsidian_task, entry_id)
 
 
 @router.get("/journal/{entry_id}", response_model=JournalEntryResponse)
