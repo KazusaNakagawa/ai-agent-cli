@@ -82,7 +82,7 @@ Or generate it in one shot using the variables from Step 0:
 sed \
   -e "s|YOUR_USERNAME|$(whoami)|g" \
   -e "s|/path/to/ai-agent|$PROJECT|g" \
-  docs/launchd-setup.md | grep -A 40 '<?xml' | head -40 > "$PLIST"
+  docs/guides/launchd-setup.md | grep -A 40 '<?xml' | head -40 > "$PLIST"
 ```
 
 > Alternatively, copy the XML block above, replace `YOUR_USERNAME` and `/path/to/ai-agent` manually, and save to `$PLIST`.
