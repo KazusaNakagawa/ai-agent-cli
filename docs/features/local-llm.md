@@ -34,6 +34,8 @@ bin/local_llm.sh --index-briefings --reset      # rebuild only the briefings col
 
 Chroma data is stored in `apps/python/.chroma_db/` (gitignored). `--index-briefings` writes to a separate collection (`ai_agent_briefings`) from `--index`'s repo-code collection (`ai_agent_repo`), so they don't mix and `--reset` on one never touches the other. The daily batch (`src.handler`) runs this indexing automatically after saving each day's briefing; failures (e.g. Ollama not running) are logged and don't block briefing delivery.
 
+The web chat's "過去ブリーフィングを検索" toggle (`POST /api/chat` with `search_history: true`) uses this same collection for retrieval — it requires Ollama running with `LOCAL_LLM_EMBED_MODEL` pulled (`ollama pull bge-m3` by default) in whatever environment runs the FastAPI server (`bin/serve.sh`). If the server's `LOCAL_LLM_EMBED_MODEL` doesn't match the embed model the collection was built with (e.g. a stale `.env` value from before switching to a different daemon/shell), the request fails with a 503 telling you which `--reset` to run.
+
 ## Model options
 
 Swap the generation model via `LOCAL_LLM_MODEL` (env) or `--model` (CLI flag).

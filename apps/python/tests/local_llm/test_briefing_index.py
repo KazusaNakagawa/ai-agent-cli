@@ -47,12 +47,16 @@ class FakeCollection:
 
 
 class FakeOllama:
-    def __init__(self):
+    def __init__(self, pulled_models=("bge-m3",)):
         self.calls = 0
+        self._pulled_models = set(pulled_models)
 
     def embeddings(self, model, prompt):
         self.calls += 1
         return {"embedding": [float(len(prompt) % 7), float(self.calls)]}
+
+    def list(self):
+        return {"models": [{"name": m} for m in self._pulled_models]}
 
 
 @pytest.fixture
@@ -148,3 +152,34 @@ def test_retrieve_briefing_context_empty_index_returns_no_chunks(tmp_path, colle
     chunks = retrieve_briefing_context(cfg, "anything?", briefing_dir=briefing_dir)
 
     assert chunks == []
+
+
+def test_retrieve_briefing_context_raises_ollama_unavailable_when_embed_model_missing(
+    tmp_path, monkeypatch
+):
+    """A `POST /api/chat` with search_history must surface a clean,
+    actionable error (mapped to 503 by the router) instead of letting a raw
+    ollama.ResponseError ("model not found") bubble up as a 500 (regression
+    reported after #395 shipped).
+    """
+    from src.local_llm.briefing_index import retrieve_briefing_context
+    from src.local_llm.clients import OllamaUnavailable
+
+    briefing_dir = tmp_path / "output" / "briefing"
+    _write(briefing_dir / "briefing_2026-07-01.md", "# July 1\n")
+
+    made: dict[str, FakeCollection] = {}
+    olm = FakeOllama(pulled_models=())  # embed model not pulled
+
+    def _fake_make_chroma_collection(cfg, collection_name=COLLECTION_NAME):
+        return made.setdefault(collection_name, FakeCollection(collection_name))
+
+    import src.local_llm.briefing_index as briefing_index
+
+    monkeypatch.setattr(briefing_index, "make_chroma_collection", _fake_make_chroma_collection)
+    monkeypatch.setattr(briefing_index, "make_ollama_client", lambda cfg: olm)
+
+    cfg = load_config(repo_root=tmp_path)
+    with pytest.raises(OllamaUnavailable) as exc:
+        retrieve_briefing_context(cfg, "NVDA?", briefing_dir=briefing_dir)
+    assert cfg.embed_model in str(exc.value)

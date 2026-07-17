@@ -14,7 +14,7 @@ from pathlib import Path
 
 from src.constants import BRIEFING_OUTPUT_DIR
 
-from .clients import make_chroma_collection, make_ollama_client
+from .clients import ensure_models_available, make_chroma_collection, make_ollama_client
 from .config import BRIEFING_COLLECTION_NAME, LocalLLMConfig
 from .indexer import Indexer, IndexStats
 from .retriever import RetrievedChunk, Retriever
@@ -39,8 +39,15 @@ def retrieve_briefing_context(
     top_k: int | None = None,
     briefing_dir: Path | None = None,
 ) -> list[RetrievedChunk]:
-    """Top-k retrieval over indexed past briefings for ``question``."""
+    """Top-k retrieval over indexed past briefings for ``question``.
+
+    Raises ``OllamaUnavailable`` up front (via ``ensure_models_available``) if
+    ``embed_model`` isn't pulled, instead of letting a raw
+    ``ollama.ResponseError`` ("model not found") surface from the embeddings
+    call — the web router maps ``OllamaUnavailable`` to a clean 503.
+    """
     bcfg = _briefing_cfg(cfg, briefing_dir)
     olm = make_ollama_client(bcfg)
+    ensure_models_available(olm, bcfg.embed_model, embed_model=None)
     coll = make_chroma_collection(bcfg, collection_name=BRIEFING_COLLECTION_NAME)
     return Retriever(bcfg, collection=coll, ollama_client=olm).retrieve(question, top_k=top_k)
