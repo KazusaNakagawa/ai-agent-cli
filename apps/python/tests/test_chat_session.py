@@ -120,6 +120,52 @@ class TestBuildCmd:
 
         assert "--append-system-prompt" not in cmd
 
+    def test_new_session_injects_vault_context_when_given(self, tmp_path: Path):
+        """Obsidian vault excerpts are appended to the system prompt alongside
+        today's briefing, only at session-creation time."""
+        briefing = tmp_path / "briefing_2026-07-17.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-07-17"
+
+        cmd = chat_session.build_cmd(
+            "2026-07-17", briefing, session_file,
+            vault_context="[notes/idea.md:1-10]\nvault excerpt",
+        )
+
+        prompt = cmd[cmd.index("--append-system-prompt") + 1]
+        assert "本文テスト" in prompt
+        assert "vault excerpt" in prompt
+        assert "Obsidian ノートの関連抜粋" in prompt
+        assert "obsidian_note_excerpts" in prompt  # wrap_untrusted label
+
+    def test_new_session_without_vault_context_omits_that_section(self, tmp_path: Path):
+        """vault_context defaults to None: existing callers must see
+        byte-identical behavior to before the Obsidian integration."""
+        briefing = tmp_path / "briefing_2026-07-17.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-07-17"
+
+        cmd = chat_session.build_cmd("2026-07-17", briefing, session_file)
+
+        prompt = cmd[cmd.index("--append-system-prompt") + 1]
+        assert "Obsidian" not in prompt
+
+    def test_resume_session_ignores_vault_context(self, tmp_path: Path):
+        """A resumed session already has its context baked in — passing
+        vault_context on resume must not change the resulting cmd."""
+        briefing = tmp_path / "briefing_2026-07-17.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-07-17"
+        session_file.write_text("existing-uuid-abcd")
+
+        cmd = chat_session.build_cmd(
+            "2026-07-17", briefing, session_file,
+            vault_context="should be ignored",
+        )
+
+        assert "--append-system-prompt" not in cmd
+        assert "--resume" in cmd
+
     def test_build_cmd_does_not_print(self, tmp_path: Path, capsys):
         """The library function must be silent so SSE consumers don't get
         informational text bleeding into the response stream."""

@@ -62,6 +62,7 @@ def build_cmd(
     briefing_file: Path,
     session_file: Path,
     history_context: str | None = None,
+    vault_context: str | None = None,
 ) -> list[str]:
     """Return claude CLI args, resuming if a saved session exists, else creating
     a new one and persisting the UUID to ``session_file``.
@@ -73,6 +74,9 @@ def build_cmd(
     briefings, injected alongside today's briefing only when a new session is
     created — a resumed session already has its context baked in, so it is
     ignored on resume.
+
+    ``vault_context`` is retrieved excerpts from the user's Obsidian vault
+    notes, injected the same way as ``history_context`` (new sessions only).
     """
     name = session_name_for(target_date)
 
@@ -102,6 +106,16 @@ def build_cmd(
             "どの日付の情報かを読み手が追跡できるようにしてください。\n\n"
             "=== 過去ブリーフィングの関連抜粋 ===\n"
             f"{wrap_untrusted(history_context, label='historical_briefing_excerpts')}\n"
+            "=== END ==="
+        )
+    if vault_context:
+        context += (
+            "\n\n以下はユーザーの Obsidian ノートから検索された関連抜粋です。"
+            "各抜粋は冒頭に `[ファイル名:行範囲]` の形式で出典を示しています。"
+            "回答内でこれらの抜粋の内容に触れる際は、"
+            "対応するファイル名を括弧書きで明記してください。\n\n"
+            "=== Obsidian ノートの関連抜粋 ===\n"
+            f"{wrap_untrusted(vault_context, label='obsidian_note_excerpts')}\n"
             "=== END ==="
         )
     return [
