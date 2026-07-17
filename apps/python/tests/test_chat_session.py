@@ -75,6 +75,24 @@ class TestBuildCmd:
         assert "本文テスト" in prompt
         assert "NVDA surged 5%" in prompt
 
+    def test_new_session_history_context_instructs_citing_source_file(self, tmp_path: Path):
+        """The injected instruction must tell Claude to cite which excerpt
+        (by filename/date) it drew each historical fact from, so multi-day
+        answers stay traceable back to a specific briefing (user feedback
+        after #395 shipped)."""
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+
+        cmd = chat_session.build_cmd(
+            "2026-05-16", briefing, session_file,
+            history_context="[briefing_2026-05-01.md:1-10]\nNVDA surged 5%",
+        )
+
+        prompt = cmd[cmd.index("--append-system-prompt") + 1]
+        assert "ファイル名" in prompt
+        assert "出典" in prompt
+
     def test_new_session_without_history_context_omits_that_section(self, tmp_path: Path):
         """history_context defaults to None: existing callers (bin/chat.py)
         must see byte-identical behavior to before #395."""
