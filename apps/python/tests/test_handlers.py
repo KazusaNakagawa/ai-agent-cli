@@ -363,6 +363,81 @@ class TestBriefingHandler:
 
         assert captured.get("rotation_enabled") is False
 
+    def test_indexes_briefing_into_chromadb_after_successful_write(self, tmp_path):
+        """Verifies: after a successful local MD write, the handler indexes
+        it for cross-date chat RAG (#395).
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch("src.handler.index_briefings") as mock_index,
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            briefing_handler()
+
+        mock_index.assert_called_once()
+
+    @pytest.mark.usefixtures("disable_skip_guard")
+    def test_indexing_failure_does_not_block_briefing_delivery(self, tmp_path, caplog):
+        """Verifies: an Ollama/Chroma failure during indexing is logged and
+        swallowed — the daily batch's primary deliveries must not depend on
+        the experimental local-LLM stack being available (degraded mode).
+        """
+        import logging
+
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord") as mock_discord,
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch("src.handler.index_briefings", side_effect=RuntimeError("ollama down")),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            with caplog.at_level(logging.WARNING, logger="src.handler"):
+                result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        mock_discord.assert_called_once()
+        mock_notion.assert_called_once()
+        assert any("indexing" in r.message for r in caplog.records)
+
+    @pytest.mark.usefixtures("disable_skip_guard")
+    def test_indexing_skipped_when_md_write_failed(self, tmp_path):
+        """Verifies: indexing is not attempted when the local MD write itself
+        failed — there is nothing new on disk to index.
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value="ブリーフィング本文"),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.save_briefing_md", side_effect=OSError("disk full")),
+            patch("src.handler.index_briefings") as mock_index,
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            briefing_handler()
+
+        mock_index.assert_not_called()
+
     def test_preflight_warns_on_missing_discord(self, caplog):
         import logging
         with (

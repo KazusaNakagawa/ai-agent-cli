@@ -5,6 +5,8 @@ from src.config import CONFIG
 from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_MD_ROTATION_ENABLED, BRIEFING_OUTPUT_DIR, BRIEFING_SKIP_IF_EXISTS
 from src.fetcher.stocks import fetch_stock_moves
 from src.generator.briefing import generate_briefing
+from src.local_llm.briefing_index import index_briefings
+from src.local_llm.config import load_config as load_local_llm_config
 from src.metrics.briefing import extract_briefing_metrics
 from src.notifier.discord import send_to_discord
 from src.notifier.local_md import save_briefing_md
@@ -64,6 +66,17 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False, force: bo
         md_written = True
     except OSError as exc:
         logger.warning("local MD write failed: %s — continuing", exc)
+
+    # Best-effort: index today's briefing for cross-date chat RAG (#395). The
+    # experimental local-LLM stack (Ollama/Chroma) is not guaranteed to be
+    # running, so any failure here is logged and swallowed — it must never
+    # block the primary Discord/Notion/local-MD deliveries (degraded mode,
+    # same philosophy as the sector-sweep fallback).
+    if md_written:
+        try:
+            index_briefings(load_local_llm_config())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("briefing indexing into chromadb failed: %s — continuing", exc)
 
     if discord_ok:
         logger.info("sending to Discord...")

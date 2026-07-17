@@ -223,6 +223,42 @@ describe("chatJobStore", () => {
     )
   })
 
+  it("startJob includes search_history in the POST body only when true", async () => {
+    let capturedBody: string | undefined
+    on("/api/chat", (init) => {
+      capturedBody = init?.body as string
+      return jsonResponse({ job_id: "abc", status: "pending" }, 202)
+    })
+    on("/api/chat/abc/stream", () => sseStream([{ data: "hi" }]))
+
+    const { result } = renderHook(() => useChatJobState(), { wrapper })
+    await act(async () => {
+      await result.current.startJob({
+        question: "Q?",
+        date: "2026-06-06",
+        search_history: true,
+      })
+    })
+    await waitFor(() => expect(result.current.status).toBe("done"))
+    expect(JSON.parse(capturedBody!)).toMatchObject({ search_history: true })
+  })
+
+  it("startJob omits search_history from the POST body when not requested", async () => {
+    let capturedBody: string | undefined
+    on("/api/chat", (init) => {
+      capturedBody = init?.body as string
+      return jsonResponse({ job_id: "abc", status: "pending" }, 202)
+    })
+    on("/api/chat/abc/stream", () => sseStream([{ data: "hi" }]))
+
+    const { result } = renderHook(() => useChatJobState(), { wrapper })
+    await act(async () => {
+      await result.current.startJob({ question: "Q?", date: "2026-06-06" })
+    })
+    await waitFor(() => expect(result.current.status).toBe("done"))
+    expect(JSON.parse(capturedBody!)).not.toHaveProperty("search_history")
+  })
+
   it("surfaces 401 on POST as sessionExpired without persisting", async () => {
     on("/api/chat", () => new Response("", { status: 401 }))
     const { result } = renderHook(() => useChatJobState(), { wrapper })

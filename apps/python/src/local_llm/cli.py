@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import os
 import shutil
 import sys
@@ -39,11 +40,12 @@ from .portfolio import generate_portfolio_table
 from .clients import (
     EmbedModelMismatch,
     OllamaUnavailable,
+    delete_collection,
     ensure_models_available,
     make_chroma_collection,
     make_ollama_client,
 )
-from .config import load_config
+from .config import BRIEFING_COLLECTION_NAME, load_config
 from .indexer import Indexer
 from .retriever import Retriever
 from .search import BraveSearchClient
@@ -53,6 +55,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m local_llm")
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--index", action="store_true", help="リポジトリを index")
+    group.add_argument("--index-briefings", action="store_true", help="過去ブリーフィングを index（#395 横断RAG）")
     group.add_argument("--ask", metavar="QUESTION", help="質問に回答（生成あり）")
     group.add_argument("--sources", metavar="QUESTION", help="top-k のファイル位置だけ表示")
     group.add_argument("--status", action="store_true", help="現在の index 統計を表示")
@@ -80,6 +83,8 @@ def main(argv: list[str]) -> int:
         return _cmd_status(cfg)
     if args.index:
         return _cmd_index(cfg, reset=args.reset)
+    if args.index_briefings:
+        return _cmd_index_briefings(cfg, reset=args.reset)
     if args.sources is not None:
         return _cmd_sources(cfg, args.sources)
     if args.ask is not None:
@@ -122,6 +127,39 @@ def _cmd_index(cfg, *, reset: bool) -> int:
 
     t0 = time.time()
     stats = Indexer(cfg, collection=coll, ollama_client=olm).run()
+    dt = time.time() - t0
+    print(
+        f"indexed {stats.files} files, {stats.chunks} chunks "
+        f"(added {stats.added}, updated {stats.updated}, deleted {stats.deleted}) "
+        f"in {dt:.1f}s"
+    )
+    return 0
+
+
+def _cmd_index_briefings(cfg, *, reset: bool) -> int:
+    """Index `output/briefing/*.md` into the dedicated briefings collection
+    (#395), so chat can retrieve cross-date context. Kept separate from
+    `_cmd_index`'s repo-code collection: they share `cfg.chroma_path` but
+    must not mix documents or --reset each other.
+    """
+    if reset:
+        ans = input(f"Delete '{BRIEFING_COLLECTION_NAME}' collection at {cfg.chroma_path}? [y/N]: ").strip().lower()
+        if ans != "y":
+            print("aborted")
+            return 1
+        delete_collection(cfg, BRIEFING_COLLECTION_NAME)
+
+    try:
+        olm = make_ollama_client(cfg)
+        ensure_models_available(olm, cfg.model, cfg.embed_model)
+        coll = make_chroma_collection(cfg, collection_name=BRIEFING_COLLECTION_NAME)
+    except (OllamaUnavailable, EmbedModelMismatch) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    briefing_cfg = dataclasses.replace(cfg, repo_root=BRIEFING_OUTPUT_DIR)
+    t0 = time.time()
+    stats = Indexer(briefing_cfg, collection=coll, ollama_client=olm).run()
     dt = time.time() - t0
     print(
         f"indexed {stats.files} files, {stats.chunks} chunks "

@@ -35,6 +35,9 @@ DEFAULT_CHUNK_OVERLAP = 8
 DEFAULT_REPO_ROOT = Path.home() / "work" / "ai-agent"
 DEFAULT_CHROMA_REL = Path("apps/python/.chroma_db")
 COLLECTION_NAME = "ai_agent_repo"
+# Separate collection for past-briefing RAG (#395) so it doesn't mix with
+# repo-code search results in the same Chroma store.
+BRIEFING_COLLECTION_NAME = "ai_agent_briefings"
 
 EXTENSION_ALLOWLIST = {
     ".py", ".ts", ".tsx", ".js", ".md",

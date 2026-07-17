@@ -31,6 +31,8 @@ type Props = {
   onSend: (imagePath?: string) => void
   onCancel: () => void
   onHistoryKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
+  searchHistory: boolean
+  onToggleSearchHistory: (value: boolean) => void
 }
 
 export function ChatComposer({
@@ -43,6 +45,8 @@ export function ChatComposer({
   onSend,
   onCancel,
   onHistoryKeyDown,
+  searchHistory,
+  onToggleSearchHistory,
 }: Props) {
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -130,6 +134,16 @@ export function ChatComposer({
             </Button>
           )}
         </div>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={searchHistory}
+            onChange={(e) => onToggleSearchHistory(e.target.checked)}
+            disabled={busy}
+            data-testid="search-history-toggle"
+          />
+          過去ブリーフィングを検索
+        </label>
         <ImageAttachArea
           attachedImage={attachedImage}
           onAttach={setAttachedImage}

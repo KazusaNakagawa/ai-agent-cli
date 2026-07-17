@@ -400,6 +400,48 @@ describe("ChatForm", () => {
     expect(input).toHaveValue("")
   })
 
+  // ----- Cross-date history search toggle (#395) ------------------------
+
+  it("renders the search-history toggle unchecked by default", () => {
+    renderChatForm()
+    expect(screen.getByTestId("search-history-toggle")).not.toBeChecked()
+  })
+
+  it("omits search_history from the POST body when the toggle is off", async () => {
+    chatRoundtrip(() => sseResponse([{ data: "ok" }]))
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.type(screen.getByTestId("chat-input"), "q")
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent("ok")
+    })
+    const chatCall = fetchMock.mock.calls.find(([u]) => u === "/api/chat") as
+      | [string, RequestInit]
+      | undefined
+    const body = JSON.parse(chatCall![1].body as string) as Record<string, unknown>
+    expect(body.search_history).toBeUndefined()
+  })
+
+  it("includes search_history: true in the POST body when the toggle is on", async () => {
+    chatRoundtrip(() => sseResponse([{ data: "ok" }]))
+    const user = userEvent.setup()
+    renderChatForm()
+    await user.click(screen.getByTestId("search-history-toggle"))
+    await user.type(screen.getByTestId("chat-input"), "q")
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent("ok")
+    })
+    const chatCall = fetchMock.mock.calls.find(([u]) => u === "/api/chat") as
+      | [string, RequestInit]
+      | undefined
+    const body = JSON.parse(chatCall![1].body as string) as Record<string, unknown>
+    expect(body.search_history).toBe(true)
+  })
+
   it("shows the session-expired card on 401", async () => {
     on("/api/chat", () => new Response("", { status: 401 }))
     const user = userEvent.setup()

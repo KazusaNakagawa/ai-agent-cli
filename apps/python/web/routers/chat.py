@@ -68,6 +68,10 @@ from src import state as state_mod
 from src.chat_session import build_cmd, build_journal_cmd
 from src.claude_runner import build_env
 from src.claude_stream import StreamState, consume_stream_line
+from src.local_llm.briefing_index import retrieve_briefing_context
+from src.local_llm.clients import EmbedModelMismatch, OllamaUnavailable
+from src.local_llm.config import load_config as load_local_llm_config
+from src.local_llm.retriever import build_context_text
 from src.logger import get_logger
 from src.usage_logger import log_usage
 from web.auth import require_bearer
@@ -167,6 +171,11 @@ class ChatBody(BaseModel):
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     question: str = Field(min_length=1)
     image_path: str | None = None
+    # Opt-in cross-date RAG (#395): searches past briefings via the
+    # local-LLM chromadb index and injects matches into the new session's
+    # system prompt alongside today's briefing. Off by default so existing
+    # clients pay no retrieval cost and see unchanged behavior.
+    search_history: bool = False
 
 
 class ChatPostResponse(BaseModel):
@@ -341,14 +350,26 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
     if not briefing_file.exists():
         raise HTTPException(status_code=404, detail=f"no briefing for {body.date}")
 
+    history_context: str | None = None
+    if body.search_history:
+        try:
+            chunks = retrieve_briefing_context(load_local_llm_config(), body.question)
+        except (OllamaUnavailable, EmbedModelMismatch) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"cross-date briefing search unavailable: {exc}",
+            ) from exc
+        if chunks:
+            history_context = build_context_text(chunks)
+
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     img_path = _validate_image_path(body.image_path)
     image_message: str | None = None
     if img_path:
         image_message = _build_image_message(img_path, body.question)
-        cmd = [*build_cmd(body.date, briefing_file, session_file), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
+        cmd = [*build_cmd(body.date, briefing_file, session_file, history_context), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
     else:
-        cmd = [*build_cmd(body.date, briefing_file, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
+        cmd = [*build_cmd(body.date, briefing_file, session_file, history_context), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()

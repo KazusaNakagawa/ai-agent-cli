@@ -253,6 +253,101 @@ async def test_chat_resume_uses_saved_session_id(
     assert "--append-system-prompt" not in cmd
 
 
+# ---------------------------------------------------------------------------
+# search_history — cross-date RAG opt-in (#395)
+# ---------------------------------------------------------------------------
+
+
+async def test_post_chat_default_skips_history_retrieval(
+    authed_client, briefing_setup, monkeypatch
+):
+    """search_history defaults to False: existing clients see unchanged
+    behavior and pay no retrieval cost."""
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    called = []
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_briefing_context",
+        lambda *a, **kw: called.append(1) or [],
+    )
+
+    await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert called == []
+
+
+async def test_post_chat_search_history_injects_retrieved_context(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.local_llm.retriever import RetrievedChunk
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_briefing_context",
+        lambda cfg, question, **kw: [
+            RetrievedChunk(
+                source_path="briefing_2026-05-01.md",
+                start_line=1, end_line=5,
+                text="NVDA surged 5% on earnings", distance=0.1,
+            ),
+        ],
+    )
+
+    await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "NVDA?", "search_history": True},
+    )
+
+    cmd, _ = factory.calls[0]
+    prompt = cmd[cmd.index("--append-system-prompt") + 1]
+    assert "NVDA surged 5% on earnings" in prompt
+    assert "briefing_2026-05-01.md" in prompt
+
+
+async def test_post_chat_search_history_no_matches_still_creates_session(
+    authed_client, briefing_setup, monkeypatch
+):
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_briefing_context", lambda cfg, question, **kw: []
+    )
+
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?", "search_history": True},
+    )
+
+    assert response.status_code == 202
+    cmd, _ = factory.calls[0]
+    assert "--session-id" in cmd  # session still created normally
+
+
+async def test_post_chat_search_history_ollama_unavailable_returns_503(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.local_llm.clients import OllamaUnavailable
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    def _raise(cfg, question, **kw):
+        raise OllamaUnavailable("Cannot reach Ollama. Run 'ollama serve' to start it.")
+
+    monkeypatch.setattr("web.routers.chat.retrieve_briefing_context", _raise)
+
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?", "search_history": True},
+    )
+
+    assert response.status_code == 503
+    assert factory.calls == []  # no subprocess spawned — request rejected up front
+
+
 async def test_chat_subprocess_env_strips_anthropic_api_key_in_cli_mode(
     authed_client, briefing_setup, monkeypatch
 ):

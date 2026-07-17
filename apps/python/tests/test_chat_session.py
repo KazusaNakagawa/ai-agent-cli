@@ -59,6 +59,67 @@ class TestBuildCmd:
 
         assert session_file.read_text().strip() == "existing-uuid-abcd"
 
+    def test_new_session_injects_history_context_when_given(self, tmp_path: Path):
+        """Cross-date RAG excerpts (#395) are appended to the system prompt
+        alongside today's briefing, only at session-creation time."""
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+
+        cmd = chat_session.build_cmd(
+            "2026-05-16", briefing, session_file,
+            history_context="[briefing_2026-05-01.md:1-10]\nNVDA surged 5%",
+        )
+
+        prompt = cmd[cmd.index("--append-system-prompt") + 1]
+        assert "本文テスト" in prompt
+        assert "NVDA surged 5%" in prompt
+
+    def test_new_session_history_context_instructs_citing_source_file(self, tmp_path: Path):
+        """The injected instruction must tell Claude to cite which excerpt
+        (by filename/date) it drew each historical fact from, so multi-day
+        answers stay traceable back to a specific briefing (user feedback
+        after #395 shipped)."""
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+
+        cmd = chat_session.build_cmd(
+            "2026-05-16", briefing, session_file,
+            history_context="[briefing_2026-05-01.md:1-10]\nNVDA surged 5%",
+        )
+
+        prompt = cmd[cmd.index("--append-system-prompt") + 1]
+        assert "ファイル名" in prompt
+        assert "出典" in prompt
+
+    def test_new_session_without_history_context_omits_that_section(self, tmp_path: Path):
+        """history_context defaults to None: existing callers (bin/chat.py)
+        must see byte-identical behavior to before #395."""
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+
+        cmd = chat_session.build_cmd("2026-05-16", briefing, session_file)
+
+        prompt = cmd[cmd.index("--append-system-prompt") + 1]
+        assert "過去ブリーフィング" not in prompt
+
+    def test_resume_session_ignores_history_context(self, tmp_path: Path):
+        """A resumed session already has its context baked in — passing
+        history_context on resume must not change the resulting cmd."""
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        session_file.write_text("existing-uuid-abcd")
+
+        cmd = chat_session.build_cmd(
+            "2026-05-16", briefing, session_file,
+            history_context="should be ignored",
+        )
+
+        assert "--append-system-prompt" not in cmd
+
     def test_build_cmd_does_not_print(self, tmp_path: Path, capsys):
         """The library function must be silent so SSE consumers don't get
         informational text bleeding into the response stream."""
