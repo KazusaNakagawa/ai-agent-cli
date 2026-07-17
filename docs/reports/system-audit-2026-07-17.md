@@ -134,7 +134,7 @@ ngs  Status   Config   Usage   Stats
 on
 
  cost:            $3.13
-tal duration (API):  5m 11s
+Total duration (API):  5m 11s
 Total duration (wall): 7m 19s
 Total code changes:    128 lines added, 0 lines removed
 Usage by model:
