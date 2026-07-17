@@ -64,6 +64,10 @@ class LocalLLMConfig:
     chroma_path: Path
     chunk_lines: int
     chunk_overlap: int
+    # Extra directory names excluded on top of EXCLUDE_DIRS. Lets a caller
+    # (e.g. the Obsidian vault indexer) skip vault-internal folders without
+    # changing the global exclusion set. Empty = existing behavior.
+    extra_exclude_dirs: frozenset[str] = frozenset()
 
 
 def _env_str(name: str, default: str) -> str:
