@@ -265,6 +265,11 @@
       "notes": "金利低下がバリュエーション直撃。データセンターREIT（EQIX）はAI需要で別格の強さ"
     }
   ],
+  "obsidian": {
+    "vault_path": "/Users/yourname/Documents/MyVault",
+    "journal_subdir": "journal",
+    "exclude_dirs": [".obsidian", ".trash", "templates"]
+  },
   "watch_events": [
     {
       "name": "SpaceX IPO",

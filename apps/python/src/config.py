@@ -66,6 +66,18 @@ class WatchEvent(BaseModel):
     notes: str | None = None
 
 
+class ObsidianConfig(BaseModel):
+    """Optional Obsidian vault integration settings (journal sync + chat RAG)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vault_path: str
+    journal_subdir: str = "journal"
+    exclude_dirs: list[str] = Field(
+        default_factory=lambda: [".obsidian", ".trash", "templates"]
+    )
+
+
 class BriefingFileConfig(BaseModel):
     """The part expressed in ``briefing.json``. Contains no credentials.
 
@@ -82,6 +94,8 @@ class BriefingFileConfig(BaseModel):
     geopolitical: GeopoliticalConfig = Field(default_factory=GeopoliticalConfig)
     watch_sectors: list[WatchSector] = Field(min_length=1)
     watch_events: list[WatchEvent] = Field(default_factory=list)
+    # Optional Obsidian vault integration. None = feature disabled.
+    obsidian: ObsidianConfig | None = None
 
 
 class BriefingConfig(BriefingFileConfig):
@@ -132,6 +146,19 @@ def get_journal_notion_credentials() -> tuple[str, str]:
         get_credential("NOTION_API_KEY") or "",
         get_credential("NOTION_DATABASE_ID_JOURNAL") or "",
     )
+
+
+def get_obsidian_config() -> ObsidianConfig | None:
+    """Return the ``obsidian`` section of briefing.json, or None when disabled.
+
+    Best-effort by design: a missing briefing.json, a validation error, or an
+    absent ``obsidian`` section all mean "feature off" — callers (journal sync,
+    chat RAG, CLI) must not fail because of Obsidian configuration.
+    """
+    try:
+        return load_config().obsidian
+    except Exception:
+        return None
 
 
 _CONFIG_CACHE: BriefingConfig | None = None
