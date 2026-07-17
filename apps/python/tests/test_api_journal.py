@@ -404,9 +404,13 @@ class TestNotionSync:
         the unrelated /notion-import skill (which targets the Briefing DB)."""
         from src import journal_store
 
-        post = await authed_client.post(
-            "/api/journal", json={"content": "hi", "date": "2026-07-03"}
-        )
+        # Prevent the background sync task from firing a real Notion call with
+        # whatever credentials happen to be on this machine (see
+        # test_list_notion_url_empty_when_not_synced for the full explanation).
+        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")):
+            post = await authed_client.post(
+                "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+            )
         entry_id = post.json()["id"]
         journal_store.save_notion_meta(entry_id, "page-1", "https://notion.so/page-1")
 
@@ -415,9 +419,14 @@ class TestNotionSync:
         assert entry["notion_url"] == "https://notion.so/page-1"
 
     async def test_list_notion_url_empty_when_not_synced(self, authed_client, journal_dir):
-        post = await authed_client.post(
-            "/api/journal", json={"content": "hi", "date": "2026-07-03"}
-        )
+        # Must not depend on the local machine's real Notion credentials (Keychain/.env) —
+        # without this patch, the background sync task fires for real and populates
+        # notion_url, since ASGI test clients run BackgroundTasks synchronously before
+        # .post() returns (see test_no_database_id_skips_sync for the same pattern).
+        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")):
+            post = await authed_client.post(
+                "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+            )
         entry_id = post.json()["id"]
 
         response = await authed_client.get("/api/journal")
