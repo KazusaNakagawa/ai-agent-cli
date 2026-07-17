@@ -25,13 +25,8 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
 
       - name: Install dependencies
-        # `npm install` (not `npm ci`) because the lockfile is generated on
-        # macOS and omits some Linux-only optional transitive deps (e.g.
-        # @emnapi/core, @emnapi/runtime — WASM fallbacks for native swc
-        # modules). `npm ci` rejects the lockfile as out of sync; `npm
-        # install` heals it in place without modifying the committed file.
         working-directory: apps/web
-        run: npm install
+        run: npm ci
 
       - name: Lint
         working-directory: apps/web
