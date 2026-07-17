@@ -38,6 +38,9 @@ COLLECTION_NAME = "ai_agent_repo"
 # Separate collection for past-briefing RAG (#395) so it doesn't mix with
 # repo-code search results in the same Chroma store.
 BRIEFING_COLLECTION_NAME = "ai_agent_briefings"
+# Separate collection for Obsidian vault RAG so vault notes don't mix with
+# repo-code or briefing search results in the same Chroma store.
+OBSIDIAN_COLLECTION_NAME = "obsidian-notes"
 
 EXTENSION_ALLOWLIST = {
     ".py", ".ts", ".tsx", ".js", ".md",
