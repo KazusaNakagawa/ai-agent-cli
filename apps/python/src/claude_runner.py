@@ -3,17 +3,20 @@ import os
 import shutil
 import subprocess
 import time
+from datetime import datetime
 
 from src import config as config_mod
 from src import credentials as cred_mod
 from src import state as state_mod
 from src.constants import (
     DEFAULT_MODEL,
+    PARTIAL_OUTPUT_DIR,
     RETRY_BACKOFF_FACTOR,
     RETRY_BASE_DELAY,
     RETRY_MAX_ATTEMPTS,
 )
 from src.logger import get_logger
+from src.notifier.local_md import write_md_file
 from src.transient_errors import is_transient
 from src.usage_logger import log_usage_from_result
 
@@ -41,6 +44,42 @@ def _parse_and_log_usage(stdout: str, label: str) -> str:
         logger.debug("no usage in claude CLI output, skipping usage log [%s]", label)
 
     return result_text.strip() if isinstance(result_text, str) else str(result_text)
+
+
+def _extract_partial_text(raw_output: str | None) -> str | None:
+    """Best-effort salvage of usable text from a failed claude CLI call.
+
+    Handles both a JSON payload with ``is_error: true`` (the CLI still emits
+    a ``result`` field in that case) and a process killed before it could
+    print valid JSON at all (fall back to the raw output).
+    """
+    if not raw_output or not raw_output.strip():
+        return None
+    try:
+        parsed = json.loads(raw_output)
+    except (json.JSONDecodeError, TypeError):
+        return raw_output.strip()
+    result_text = parsed.get("result") if isinstance(parsed, dict) else None
+    if isinstance(result_text, str) and result_text.strip():
+        return result_text.strip()
+    return None
+
+
+def _save_partial_output(label: str, raw_output: str | None) -> None:
+    """Persist whatever partial text is salvageable so a failed run doesn't
+    silently lose work the model already produced. Best-effort: a failure to
+    save must not mask the caller's original error.
+    """
+    text = _extract_partial_text(raw_output)
+    if text is None:
+        return
+    safe_label = label.replace("/", "_").strip() or "unknown"
+    filename = f"{safe_label}_{datetime.now():%Y%m%d-%H%M%S}.md"
+    try:
+        path = write_md_file(PARTIAL_OUTPUT_DIR, filename, text)
+        logger.warning("saved partial output before failing [%s]: %s", label, path)
+    except OSError:
+        logger.warning("failed to save partial output [%s]", label, exc_info=True)
 
 
 def _config_model() -> str | None:
@@ -128,6 +167,7 @@ def run_claude(
 
     last_returncode = 0
     last_detail = ""
+    last_stdout = ""
     for attempt in range(1, max_attempts + 1):
         logger.info(
             "claude CLI call start: %s (timeout=%ds, attempt=%d/%d)",
@@ -144,6 +184,7 @@ def run_claude(
             )
         except subprocess.TimeoutExpired as exc:
             logger.error("claude CLI timeout: %s (%ds)", label, timeout)
+            _save_partial_output(label, exc.stdout)
             raise RuntimeError(f"claude CLI timed out ({label})") from exc
 
         if result.returncode == 0:
@@ -156,6 +197,7 @@ def run_claude(
         )
         last_returncode = result.returncode
         last_detail = (result.stderr or result.stdout or "").strip()
+        last_stdout = result.stdout
 
         if is_transient(result.stdout, result.stderr) and attempt < max_attempts:
             delay = _backoff_delay(attempt)
@@ -167,6 +209,7 @@ def run_claude(
             continue
         break
 
+    _save_partial_output(label, last_stdout)
     if len(last_detail) > 2000:
         last_detail = last_detail[:2000] + "…(truncated)"
     raise RuntimeError(f"claude CLI error [{label}] rc={last_returncode}: {last_detail}")
