@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from src.claude_runner import run_claude
 from src.config import BriefingConfig
-from src.constants import TIMEOUT_BRIEFING_MAIN, TIMEOUT_BRIEFING_SECTORS
+from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING, TIMEOUT_BRIEFING_MAIN, TIMEOUT_BRIEFING_SECTORS
 from src.generator.prompt import render
 from src.logger import get_logger
 from src.prompt_safety import neutralize_user_text
@@ -110,8 +110,14 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
-            executor.submit(run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN): "main",
-            executor.submit(run_claude, sectors_prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS): "sectors",
+            executor.submit(
+                run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN,
+                max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
+            ): "main",
+            executor.submit(
+                run_claude, sectors_prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS,
+                max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
+            ): "sectors",
         }
         results: dict[str, str] = {}
         errors: dict[str, str] = {}

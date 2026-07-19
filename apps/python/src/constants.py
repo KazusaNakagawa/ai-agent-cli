@@ -14,12 +14,20 @@ RETRY_MAX_ATTEMPTS = 3
 RETRY_BASE_DELAY = 5.0  # seconds; first retry waits this long
 RETRY_BACKOFF_FACTOR = 3.0  # 5s -> 15s -> 45s
 
+# Briefing calls (main analysis + sector sweep) get a tighter retry budget:
+# each attempt re-runs the full WebSearch prompt from scratch (~$0.6-$0.9 per
+# attempt observed), so the module default of 3 would triple worst-case token
+# spend on a string of transient errors.
+RETRY_MAX_ATTEMPTS_BRIEFING = 2
+
 # Log retention
 LOG_RETENTION_DAYS = 7
 
 # Output directory for MD output
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
+# Salvaged text from claude CLI calls that ultimately failed (see run_claude)
+PARTIAL_OUTPUT_DIR = OUTPUT_DIR / "partial"
 
 # Briefing local MD retention (number of newest dated files to keep)
 BRIEFING_MD_RETENTION_DAYS = 7

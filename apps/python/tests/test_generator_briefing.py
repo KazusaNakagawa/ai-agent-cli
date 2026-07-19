@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from src.config import BriefingConfig, Conflict, GeopoliticalConfig, PortfolioConfig, WatchEvent, WatchSector
+from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING
 from src.generator.briefing import (
     build_geopolitical_context,
     build_watch_events_context,
@@ -117,7 +118,7 @@ class TestBuildWatchEventsContext:
 
 class TestGenerateBriefing:
     def _mock_run(self, responses: dict):
-        def side_effect(prompt, label, timeout):
+        def side_effect(prompt, label, timeout, **kwargs):
             return responses[label]
         return side_effect
 
@@ -133,7 +134,7 @@ class TestGenerateBriefing:
     def test_main_failure_raises(self):
         config = _make_config()
 
-        def mock(prompt, label, timeout):
+        def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
                 raise RuntimeError("API error")
             return "sectors ok"
@@ -145,7 +146,7 @@ class TestGenerateBriefing:
     def test_sectors_failure_returns_degraded_output(self):
         config = _make_config()
 
-        def mock(prompt, label, timeout):
+        def mock(prompt, label, timeout, **kwargs):
             if label == "セクタースイープ":
                 raise RuntimeError("sectors error")
             return "main ok"
@@ -161,7 +162,7 @@ class TestGenerateBriefing:
         config = _make_config()
         captured = {}
 
-        def mock(prompt, label, timeout):
+        def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
                 captured["prompt"] = prompt
             return "ok"
@@ -173,6 +174,25 @@ class TestGenerateBriefing:
         # 例の先頭の特徴的な見出しがそのままプロンプトに含まれる
         assert "### 今日のサマリー（1文）" in captured["prompt"]
         assert few_shot.strip() in captured["prompt"]
+
+    def test_main_and_sectors_use_bounded_briefing_retry_budget(self):
+        """Verifies: both run_claude calls pass max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING.
+        Why: the module default (RETRY_MAX_ATTEMPTS=3) triples the per-run
+        token cost on a string of transient errors (#406); briefing calls opt
+        into a tighter, explicit budget instead of relying on the default.
+        """
+        config = _make_config()
+        captured = {}
+
+        def mock(prompt, label, timeout, **kwargs):
+            captured[label] = kwargs.get("max_attempts")
+            return "ok"
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            generate_briefing("PLTR: +2%", config)
+
+        assert captured["メイン分析"] == RETRY_MAX_ATTEMPTS_BRIEFING
+        assert captured["セクタースイープ"] == RETRY_MAX_ATTEMPTS_BRIEFING
 
 
 class TestLoadBriefingFewShot:

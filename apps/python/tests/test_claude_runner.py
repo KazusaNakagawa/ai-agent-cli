@@ -368,6 +368,90 @@ class TestRunClaudeRetry:
         assert mock_run.call_count == 1
 
 
+class TestRunClaudePartialOutput:
+    def test_saves_partial_result_when_retries_exhausted(self, monkeypatch, tmp_path):
+        """Verifies: when every attempt fails with a transient error but the
+        CLI's stdout still carries a `result` field (is_error=true), the
+        salvaged text is written under PARTIAL_OUTPUT_DIR before RuntimeError
+        raises.
+        Why: a run that burns the full retry budget and still fails currently
+        discards whatever text the model already produced (#406).
+        """
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", tmp_path)
+        payload = json.dumps({"is_error": True, "result": "partial analysis text"})
+        error_result = _make_result(returncode=1, stdout=payload, stderr="API Error: 529 Overloaded.")
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.time.sleep"):
+                with patch("src.claude_runner.subprocess.run", return_value=error_result):
+                    with pytest.raises(RuntimeError):
+                        run_claude("prompt", "test-label", max_attempts=2)
+
+        saved = list(tmp_path.glob("test-label_*.md"))
+        assert len(saved) == 1
+        assert saved[0].read_text(encoding="utf-8") == "partial analysis text"
+
+    def test_no_file_written_when_nothing_salvageable(self, monkeypatch, tmp_path):
+        """Verifies: a plain non-transient failure with no usable result text
+        (no JSON, no partial output) writes nothing to PARTIAL_OUTPUT_DIR.
+        """
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", tmp_path)
+        error_result = _make_result(returncode=1, stdout="", stderr="auth error")
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=error_result):
+                with pytest.raises(RuntimeError):
+                    run_claude("prompt", "test-label")
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_saves_partial_output_on_timeout(self, monkeypatch, tmp_path):
+        """Verifies: a TimeoutExpired carrying partially-captured stdout still
+        salvages the text instead of discarding it silently.
+        """
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", tmp_path)
+        exc = subprocess.TimeoutExpired("claude", 300, output="partial before kill")
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", side_effect=exc):
+                with pytest.raises(RuntimeError, match="timed out"):
+                    run_claude("prompt", "test-label", timeout=300)
+
+        saved = list(tmp_path.glob("test-label_*.md"))
+        assert len(saved) == 1
+        assert saved[0].read_text(encoding="utf-8") == "partial before kill"
+
+    def test_timeout_with_no_captured_output_saves_nothing(self, monkeypatch, tmp_path):
+        """Verifies: a TimeoutExpired with no captured stdout (the common case,
+        since --output-format json only prints once at completion) writes no
+        file rather than an empty one.
+        """
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", tmp_path)
+        exc = subprocess.TimeoutExpired("claude", 300)
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", side_effect=exc):
+                with pytest.raises(RuntimeError, match="timed out"):
+                    run_claude("prompt", "test-label", timeout=300)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_partial_save_failure_does_not_mask_original_error(self, monkeypatch, tmp_path):
+        """Verifies: if persisting the partial artifact itself fails (e.g. the
+        target path is unwritable), run_claude still raises the original
+        RuntimeError rather than an unrelated file-write error.
+        """
+        blocked = tmp_path / "not_a_dir"
+        blocked.write_text("x")  # a file, not a directory -> mkdir(parents=True) fails
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", blocked / "sub")
+        error_result = _make_result(returncode=1, stdout=json.dumps({"result": "text"}), stderr="auth error")
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=error_result):
+                with pytest.raises(RuntimeError, match="auth error"):
+                    run_claude("prompt", "test-label")
+
+
 class TestGetModel:
     def test_env_var_takes_precedence_over_config(self, monkeypatch):
         monkeypatch.setenv("CLAUDE_MODEL", "env-model")

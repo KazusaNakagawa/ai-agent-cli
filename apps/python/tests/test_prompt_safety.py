@@ -221,7 +221,7 @@ class TestPortfolioFieldsAreNeutralized:
 
         captured: dict[str, str] = {}
 
-        def fake_run(prompt: str, label: str, timeout: int) -> str:
+        def fake_run(prompt: str, label: str, timeout: int, **kwargs) -> str:
             captured[label] = prompt
             return f"{label} stub"
 
