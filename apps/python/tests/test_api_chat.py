@@ -1126,16 +1126,19 @@ async def test_post_chat_injects_vault_context_when_obsidian_configured(
         "web.routers.chat.config.get_obsidian_config",
         lambda: ObsidianConfig(vault_path="/tmp/vault"),
     )
-    monkeypatch.setattr(
-        "web.routers.chat.retrieve_obsidian_context",
-        lambda cfg, question, **kw: [
+    captured_kwargs = {}
+
+    def _fake_retrieve(cfg, question, **kw):
+        captured_kwargs.update(kw)
+        return [
             RetrievedChunk(
                 source_path="notes/idea.md",
                 start_line=1, end_line=5,
                 text="vault text about NVDA", distance=0.1,
             ),
-        ],
-    )
+        ]
+
+    monkeypatch.setattr("web.routers.chat.retrieve_obsidian_context", _fake_retrieve)
 
     await authed_client.post(
         "/api/chat", json={"date": "2026-05-30", "question": "NVDA?"}
@@ -1146,6 +1149,8 @@ async def test_post_chat_injects_vault_context_when_obsidian_configured(
     assert "vault text about NVDA" in prompt
     assert "notes/idea.md" in prompt
     assert "obsidian_note_excerpts" in prompt
+    assert str(captured_kwargs["vault_path"]) == "/tmp/vault"
+    assert captured_kwargs["exclude_dirs"] == ObsidianConfig(vault_path="/tmp/vault").exclude_dirs
 
 
 async def test_post_chat_continues_when_vault_retrieval_fails(
@@ -1172,6 +1177,31 @@ async def test_post_chat_continues_when_vault_retrieval_fails(
     assert response.status_code == 202
     cmd, _ = factory.calls[0]
     assert "--session-id" in cmd  # session still created normally
+
+
+async def test_post_chat_omits_vault_context_when_retrieval_returns_empty_list(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.config import ObsidianConfig
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.config.get_obsidian_config",
+        lambda: ObsidianConfig(vault_path="/tmp/vault"),
+    )
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_obsidian_context", lambda cfg, question, **kw: []
+    )
+
+    response = await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert response.status_code == 202
+    cmd, _ = factory.calls[0]
+    prompt = cmd[cmd.index("--append-system-prompt") + 1]
+    assert "obsidian_note_excerpts" not in prompt
 
 
 async def test_post_chat_skips_vault_retrieval_when_unconfigured(
