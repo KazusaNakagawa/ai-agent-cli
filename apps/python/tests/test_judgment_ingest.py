@@ -50,6 +50,8 @@ class TestRecordCommentAsJudgment:
         context = cmd[cmd.index("--context") + 1]
         assert "2026-07-14" in context
         assert "マーケットブリーフィング — 2026-07-14" in context
+        assert "--tags" in cmd
+        assert cmd[cmd.index("--tags") + 1] == "notion-comment"
 
     def test_blank_text_is_skipped_without_invoking_judge(self):
         with patch("src.judgment_ingest.subprocess.run") as mock_run:

@@ -20,6 +20,8 @@ def read_seen_ids() -> set[str]:
         raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return set()
+    if not isinstance(raw, dict):
+        return set()
     ids = raw.get("ids")
     return set(ids) if isinstance(ids, list) else set()
 

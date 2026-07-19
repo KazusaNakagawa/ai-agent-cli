@@ -13,6 +13,7 @@ to it rather than duplicating its schema/ID-numbering logic.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -20,7 +21,8 @@ from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-JUDGE_BIN = Path.home() / "work" / "dotfiles-claude" / "bin" / "judge"
+_JUDGE_BIN_ENV = os.environ.get("JUDGE_BIN")
+JUDGE_BIN = Path(_JUDGE_BIN_ENV) if _JUDGE_BIN_ENV else Path.home() / "work" / "dotfiles-claude" / "bin" / "judge"
 JUDGE_DOMAIN = "brief-gen"
 JUDGE_TIMEOUT_SEC = 10
 

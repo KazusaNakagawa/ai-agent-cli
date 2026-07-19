@@ -20,6 +20,12 @@ def test_write_and_read_roundtrip():
     assert state_mod.read_seen_ids() == {"c1", "c2"}
 
 
+def test_write_stores_ids_sorted_for_deterministic_diffs():
+    state_mod.write_seen_ids({"c2", "c1"})
+    raw = json.loads(state_mod.STATE_FILE.read_text())
+    assert raw["ids"] == ["c1", "c2"]
+
+
 def test_write_creates_parent_dir(monkeypatch, tmp_path):
     nested = tmp_path / "nested" / "ingested_notion_comments.json"
     monkeypatch.setattr(state_mod, "STATE_FILE", nested)

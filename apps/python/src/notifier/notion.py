@@ -226,6 +226,14 @@ def _get_page_tags(page: dict) -> list[str]:
     return []
 
 
+def _notion_client(api_key: str, database_id: str) -> Client | None:
+    """Validate required credentials and build a Notion client, or None if unset."""
+    if not api_key or not database_id:
+        logger.error("NOTION_API_KEY or NOTION_DATABASE_ID unset")
+        return None
+    return Client(auth=api_key)
+
+
 def _search_tagged_pages(notion: Client, database_id: str, tag: str) -> list[dict]:
     """Search all pages under `database_id` tagged `tag` (empty tag = no filter).
 
@@ -279,11 +287,9 @@ def fetch_weekly_pages(
     Returns:
         [{"title": str, "date": str, "text": str, "page_id": str}, ...] (ascending by created date)
     """
-    if not api_key or not database_id:
-        logger.error("NOTION_API_KEY or NOTION_DATABASE_ID unset")
+    notion = _notion_client(api_key, database_id)
+    if notion is None:
         return []
-
-    notion = Client(auth=api_key)
     since_dt = _utcnow() - timedelta(days=days)
     candidates = _search_tagged_pages(notion, database_id, tag)
 
@@ -326,11 +332,9 @@ def fetch_commentable_pages(
 
     Returns: [{"page_id": str, "title": str, "date": str}, ...]
     """
-    if not api_key or not database_id:
-        logger.error("NOTION_API_KEY or NOTION_DATABASE_ID unset")
+    notion = _notion_client(api_key, database_id)
+    if notion is None:
         return []
-
-    notion = Client(auth=api_key)
     since_dt = _utcnow() - timedelta(days=days)
     candidates = _search_tagged_pages(notion, database_id, tag)
 
@@ -340,9 +344,10 @@ def fetch_commentable_pages(
         if edited_dt is None:
             continue
         if edited_dt < since_dt:
-            # candidates are sorted newest-last_edited_time-first, so every
-            # remaining page is also out of the window.
-            break
+            # Skip pages edited before the cutoff; don't assume candidates
+            # are ordered by last_edited_time (avoids silently dropping
+            # in-window pages if the search API's sort ever changes).
+            continue
         out.append({
             "page_id": page["id"],
             "title": _extract_page_title(page),
