@@ -226,27 +226,26 @@ def _get_page_tags(page: dict) -> list[str]:
     return []
 
 
-def fetch_weekly_pages(
-    api_key: str, database_id: str, days: int = 7, tag: str = "agent"
-) -> list[dict]:
-    """Fetch the last N days of tagged briefing pages from Notion and convert to text.
-
-    Args:
-        tag: Tags value to filter on (default "agent"). Empty string means no tag filter.
-
-    Returns:
-        [{"title": str, "date": str, "text": str}, ...] (ascending by created date)
-    """
+def _notion_client(api_key: str, database_id: str) -> Client | None:
+    """Validate required credentials and build a Notion client, or None if unset."""
     if not api_key or not database_id:
         logger.error("NOTION_API_KEY or NOTION_DATABASE_ID unset")
-        return []
+        return None
+    return Client(auth=api_key)
 
-    notion = Client(auth=api_key)
+
+def _search_tagged_pages(notion: Client, database_id: str, tag: str) -> list[dict]:
+    """Search all pages under `database_id` tagged `tag` (empty tag = no filter).
+
+    Returns raw Notion page objects, newest ``last_edited_time`` first (the
+    order ``notion.search`` sorts by). Date-range filtering is left to the
+    caller — different callers filter on different timestamp fields
+    (``fetch_weekly_pages`` on ``created_time``, ``fetch_commentable_pages``
+    on ``last_edited_time``, #396).
+    """
     # databases.query was removed in Notion API 2025-09-03, so use search instead.
-    # parent.database_id, created_time, and tag are filtered on the Python side.
-    since_dt = _utcnow() - timedelta(days=days)
+    # parent.database_id and tag are filtered on the Python side.
     normalized_db_id = database_id.replace("-", "")
-
     try:
         all_results = _paginate(notion.search, {
             "filter": {"value": "page", "property": "object"},
@@ -262,16 +261,42 @@ def fetch_weekly_pages(
         parent = page.get("parent", {})
         if (parent.get("database_id") or "").replace("-", "") != normalized_db_id:
             continue
-        created_iso = page.get("created_time", "")
-        if created_iso.endswith("Z"):
-            created_iso = created_iso[:-1] + "+00:00"
-        try:
-            created_dt = datetime.fromisoformat(created_iso)
-        except ValueError:
-            continue
-        if created_dt < since_dt:
-            continue
         if tag and tag not in _get_page_tags(page):
+            continue
+        filtered.append(page)
+    return filtered
+
+
+def _parse_notion_ts(raw: str) -> datetime | None:
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def fetch_weekly_pages(
+    api_key: str, database_id: str, days: int = 7, tag: str = "agent"
+) -> list[dict]:
+    """Fetch the last N days of tagged briefing pages from Notion and convert to text.
+
+    Args:
+        tag: Tags value to filter on (default "agent"). Empty string means no tag filter.
+
+    Returns:
+        [{"title": str, "date": str, "text": str, "page_id": str}, ...] (ascending by created date)
+    """
+    notion = _notion_client(api_key, database_id)
+    if notion is None:
+        return []
+    since_dt = _utcnow() - timedelta(days=days)
+    candidates = _search_tagged_pages(notion, database_id, tag)
+
+    filtered = []
+    for page in candidates:
+        created_dt = _parse_notion_ts(page.get("created_time", ""))
+        if created_dt is None or created_dt < since_dt:
             continue
         filtered.append(page)
 
@@ -285,7 +310,7 @@ def fetch_weekly_pages(
         title = _extract_page_title(page)
         created = page.get("created_time", "")[:10]
         logger.debug("fetched: %s (%s)", title, created)
-        return {"title": title, "date": created, "text": text}
+        return {"title": title, "date": created, "text": text, "page_id": page_id}
 
     with ThreadPoolExecutor(max_workers=5) as pool:
         pages = list(pool.map(_fetch, filtered))
@@ -293,3 +318,85 @@ def fetch_weekly_pages(
     pages.sort(key=lambda p: p["date"])
     logger.info("weekly pages fetched: %d", len(pages))
     return pages
+
+
+def fetch_commentable_pages(
+    api_key: str, database_id: str, days: int = 7, tag: str = "agent"
+) -> list[dict]:
+    """Tagged pages *edited* (not just created) within the last `days` days (#396).
+
+    A wider net than ``fetch_weekly_pages``: a page created long ago still
+    counts if it was edited recently — e.g. someone left a Notion comment on
+    an old briefing this week. No page body is fetched; comment ingestion
+    only needs page identity.
+
+    Returns: [{"page_id": str, "title": str, "date": str}, ...]
+    ``date`` is deliberately ``created_time`` (not ``last_edited_time``): it
+    identifies which specific report a comment belongs to, matching
+    ``fetch_weekly_pages``'s contract, whereas the edit date would just be
+    "recently" for every result and add no information the filter didn't
+    already establish.
+    """
+    notion = _notion_client(api_key, database_id)
+    if notion is None:
+        return []
+    since_dt = _utcnow() - timedelta(days=days)
+    candidates = _search_tagged_pages(notion, database_id, tag)
+
+    out = []
+    for page in candidates:
+        edited_dt = _parse_notion_ts(page.get("last_edited_time", ""))
+        if edited_dt is None:
+            continue
+        if edited_dt < since_dt:
+            # Skip pages edited before the cutoff; don't assume candidates
+            # are ordered by last_edited_time (avoids silently dropping
+            # in-window pages if the search API's sort ever changes).
+            continue
+        out.append({
+            "page_id": page["id"],
+            "title": _extract_page_title(page),
+            "date": page.get("created_time", "")[:10],
+        })
+    return out
+
+
+def fetch_new_comments(
+    api_key: str, pages: list[dict], seen_ids: set[str]
+) -> list[dict]:
+    """Fetch comments on `pages` (each needs "page_id"/"title"/"date") not
+    already in `seen_ids`, skipping blank comments (#396).
+
+    A per-page comment-fetch failure is logged and skipped so one bad page
+    doesn't block comments on the others.
+
+    Returns: [{"comment_id", "page_id", "page_title", "page_date", "text",
+    "created_time"}, ...]
+    """
+    if not api_key or not pages:
+        return []
+
+    notion = Client(auth=api_key)
+    out = []
+    for page in pages:
+        try:
+            comments = _paginate(notion.comments.list, {"block_id": page["page_id"]})
+        except Exception:
+            logger.exception("failed to fetch comments (page_id=%s)", page["page_id"])
+            continue
+        for c in comments:
+            cid = c.get("id")
+            if not cid or cid in seen_ids:
+                continue
+            text = _rich_text_to_str(c.get("rich_text", []))
+            if not text.strip():
+                continue
+            out.append({
+                "comment_id": cid,
+                "page_id": page["page_id"],
+                "page_title": page["title"],
+                "page_date": page["date"],
+                "text": text,
+                "created_time": c.get("created_time", ""),
+            })
+    return out
