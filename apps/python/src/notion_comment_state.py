@@ -10,6 +10,10 @@ import os
 import tempfile
 from pathlib import Path
 
+from src.logger import get_logger
+
+logger = get_logger(__name__)
+
 STATE_FILE = Path.home() / ".ai-agent" / "ingested_notion_comments.json"
 
 
@@ -18,9 +22,11 @@ def read_seen_ids() -> set[str]:
         return set()
     try:
         raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("failed to read %s (%s) — treating all comments as unseen", STATE_FILE, exc)
         return set()
     if not isinstance(raw, dict):
+        logger.warning("unexpected shape in %s (expected dict) — treating all comments as unseen", STATE_FILE)
         return set()
     ids = raw.get("ids")
     return set(ids) if isinstance(ids, list) else set()

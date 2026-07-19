@@ -331,6 +331,11 @@ def fetch_commentable_pages(
     only needs page identity.
 
     Returns: [{"page_id": str, "title": str, "date": str}, ...]
+    ``date`` is deliberately ``created_time`` (not ``last_edited_time``): it
+    identifies which specific report a comment belongs to, matching
+    ``fetch_weekly_pages``'s contract, whereas the edit date would just be
+    "recently" for every result and add no information the filter didn't
+    already establish.
     """
     notion = _notion_client(api_key, database_id)
     if notion is None:

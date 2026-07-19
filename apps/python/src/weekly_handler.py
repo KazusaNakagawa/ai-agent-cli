@@ -3,7 +3,7 @@ from datetime import date
 
 from src import judgment_ingest, notion_comment_state
 from src.config import CONFIG
-from src.constants import BRIEFING_OUTPUT_DIR
+from src.constants import BRIEFING_OUTPUT_DIR, WEEKLY_WINDOW_DAYS
 from src.generator.weekly_summary import generate_weekly_summary, week_label
 from src.notifier.local_md import write_md_file
 from src.notifier.notion import (
@@ -30,7 +30,7 @@ def _ingest_notion_comments() -> None:
         )
         return
 
-    pages = fetch_commentable_pages(CONFIG.notion_api_key, CONFIG.notion_database_id, days=7)
+    pages = fetch_commentable_pages(CONFIG.notion_api_key, CONFIG.notion_database_id, days=WEEKLY_WINDOW_DAYS)
     if not pages:
         return
 
@@ -60,7 +60,7 @@ def weekly_handler(event=None, context=None):
     pages = fetch_weekly_pages(
         CONFIG.notion_api_key,
         CONFIG.notion_database_id,
-        days=7,
+        days=WEEKLY_WINDOW_DAYS,
     )
 
     if not pages:
