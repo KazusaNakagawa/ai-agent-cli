@@ -62,6 +62,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src import chat_job_store
+from src import config
 from src import credentials as cred_mod
 from src import journal_store
 from src import state as state_mod
@@ -71,6 +72,7 @@ from src.claude_stream import StreamState, consume_stream_line
 from src.local_llm.briefing_index import retrieve_briefing_context
 from src.local_llm.clients import EmbedModelMismatch, OllamaUnavailable
 from src.local_llm.config import load_config as load_local_llm_config
+from src.local_llm.obsidian_index import retrieve_obsidian_context
 from src.local_llm.retriever import build_context_text
 from src.logger import get_logger
 from src.usage_logger import log_usage
@@ -362,14 +364,35 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
         if chunks:
             history_context = build_context_text(chunks)
 
+    vault_context: str | None = None
+    obsidian = config.get_obsidian_config()
+    if obsidian:
+        # Soft degrade by design: vault RAG is an enhancement, so any failure
+        # (Ollama down, collection not built yet) logs and continues without
+        # vault context — unlike search_history's explicit 503 contract.
+        try:
+            vault_chunks = retrieve_obsidian_context(
+                load_local_llm_config(),
+                body.question,
+                vault_path=Path(obsidian.vault_path).expanduser(),
+                exclude_dirs=obsidian.exclude_dirs,
+            )
+            if vault_chunks:
+                vault_context = build_context_text(vault_chunks)
+        except Exception:
+            logger.warning(
+                "obsidian vault retrieval failed — continuing without vault context",
+                exc_info=True,
+            )
+
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     img_path = _validate_image_path(body.image_path)
     image_message: str | None = None
     if img_path:
         image_message = _build_image_message(img_path, body.question)
-        cmd = [*build_cmd(body.date, briefing_file, session_file, history_context), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
+        cmd = [*build_cmd(body.date, briefing_file, session_file, history_context, vault_context), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
     else:
-        cmd = [*build_cmd(body.date, briefing_file, session_file, history_context), "-p", body.question, *CHAT_STREAM_FLAGS]
+        cmd = [*build_cmd(body.date, briefing_file, session_file, history_context, vault_context), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()

@@ -319,3 +319,54 @@ def test_briefing_synthesis_model_defaults_to_main_model(monkeypatch, tmp_path):
     assert rc == 0
     assert gen_calls == ["qwen2.5:14b"] * 4
     assert ensured == ["qwen2.5:14b"]
+
+
+def test_index_obsidian_errors_when_vault_unconfigured(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("LOCAL_LLM_CHROMA_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setattr(cli, "get_obsidian_config", lambda: None)
+
+    rc = cli.main(["--index-obsidian", "--root", str(tmp_path)])
+    assert rc == 1
+    assert "obsidian" in capsys.readouterr().err.lower()
+
+
+def test_index_obsidian_errors_when_vault_dir_missing(monkeypatch, tmp_path, capsys):
+    from src.config import ObsidianConfig
+
+    monkeypatch.setenv("LOCAL_LLM_CHROMA_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setattr(
+        cli, "get_obsidian_config",
+        lambda: ObsidianConfig(vault_path=str(tmp_path / "no-such-dir")),
+    )
+
+    rc = cli.main(["--index-obsidian", "--root", str(tmp_path)])
+    assert rc == 1
+    assert "vault" in capsys.readouterr().err.lower()
+
+
+def test_index_obsidian_runs_indexer_on_vault(monkeypatch, tmp_path, capsys):
+    from src.config import ObsidianConfig
+    from src.local_llm.indexer import IndexStats
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("LOCAL_LLM_CHROMA_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setattr(
+        cli, "get_obsidian_config", lambda: ObsidianConfig(vault_path=str(vault))
+    )
+    monkeypatch.setattr(cli, "make_ollama_client", lambda cfg: object())
+    monkeypatch.setattr(cli, "ensure_models_available", lambda *a, **kw: None)
+    captured: dict = {}
+
+    def _fake_index_obsidian(cfg, *, vault_path, exclude_dirs):
+        captured["vault_path"] = vault_path
+        captured["exclude_dirs"] = exclude_dirs
+        return IndexStats(files=1, chunks=2, added=2)
+
+    monkeypatch.setattr(cli, "index_obsidian", _fake_index_obsidian)
+
+    rc = cli.main(["--index-obsidian", "--root", str(tmp_path)])
+    assert rc == 0
+    assert captured["vault_path"] == vault
+    assert captured["exclude_dirs"] == [".obsidian", ".trash", "templates"]
+    assert "indexed 1 files" in capsys.readouterr().out

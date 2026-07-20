@@ -23,6 +23,9 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.credentials import get_credential
+from src.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Load the repo-root .env first (two levels up from apps/python/).
 # Since credentials.get_credential() prefers values already in the keychain,
@@ -66,6 +69,18 @@ class WatchEvent(BaseModel):
     notes: str | None = None
 
 
+class ObsidianConfig(BaseModel):
+    """Optional Obsidian vault integration settings (journal sync + chat RAG)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vault_path: str
+    journal_subdir: str = "journal"
+    exclude_dirs: list[str] = Field(
+        default_factory=lambda: [".obsidian", ".trash", "templates"]
+    )
+
+
 class BriefingFileConfig(BaseModel):
     """The part expressed in ``briefing.json``. Contains no credentials.
 
@@ -82,6 +97,8 @@ class BriefingFileConfig(BaseModel):
     geopolitical: GeopoliticalConfig = Field(default_factory=GeopoliticalConfig)
     watch_sectors: list[WatchSector] = Field(min_length=1)
     watch_events: list[WatchEvent] = Field(default_factory=list)
+    # Optional Obsidian vault integration. None = feature disabled.
+    obsidian: ObsidianConfig | None = None
 
 
 class BriefingConfig(BriefingFileConfig):
@@ -132,6 +149,24 @@ def get_journal_notion_credentials() -> tuple[str, str]:
         get_credential("NOTION_API_KEY") or "",
         get_credential("NOTION_DATABASE_ID_JOURNAL") or "",
     )
+
+
+def get_obsidian_config() -> ObsidianConfig | None:
+    """Return the ``obsidian`` section of briefing.json, or None when disabled.
+
+    Best-effort by design: a missing briefing.json, a validation error, or an
+    absent ``obsidian`` section all mean "feature off" — callers (journal sync,
+    chat RAG, CLI) must not fail because of Obsidian configuration. A missing
+    file is expected (briefing.json is optional, see CLAUDE.md), so only
+    unexpected errors (e.g. a validation error in an existing file) are logged.
+    """
+    try:
+        return load_config().obsidian
+    except FileNotFoundError:
+        return None
+    except Exception:
+        logger.warning("get_obsidian_config: briefing.json could not be loaded", exc_info=True)
+        return None
 
 
 _CONFIG_CACHE: BriefingConfig | None = None

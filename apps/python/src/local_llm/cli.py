@@ -11,7 +11,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-from src.config import load_config as load_briefing_config
+from src.config import get_obsidian_config, load_config as load_briefing_config
 from src.constants import BRIEFING_OUTPUT_DIR
 from src.fetcher.stocks import fetch_stock_move_map
 from src.logger import get_logger
@@ -45,8 +45,9 @@ from .clients import (
     make_chroma_collection,
     make_ollama_client,
 )
-from .config import BRIEFING_COLLECTION_NAME, load_config
+from .config import BRIEFING_COLLECTION_NAME, OBSIDIAN_COLLECTION_NAME, load_config
 from .indexer import Indexer
+from .obsidian_index import index_obsidian
 from .retriever import Retriever
 from .search import BraveSearchClient
 
@@ -56,6 +57,7 @@ def _build_parser() -> argparse.ArgumentParser:
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--index", action="store_true", help="リポジトリを index")
     group.add_argument("--index-briefings", action="store_true", help="過去ブリーフィングを index（#395 横断RAG）")
+    group.add_argument("--index-obsidian", action="store_true", help="Obsidian vault を index（チャット RAG 用）")
     group.add_argument("--ask", metavar="QUESTION", help="質問に回答（生成あり）")
     group.add_argument("--sources", metavar="QUESTION", help="top-k のファイル位置だけ表示")
     group.add_argument("--status", action="store_true", help="現在の index 統計を表示")
@@ -85,6 +87,8 @@ def main(argv: list[str]) -> int:
         return _cmd_index(cfg, reset=args.reset)
     if args.index_briefings:
         return _cmd_index_briefings(cfg, reset=args.reset)
+    if args.index_obsidian:
+        return _cmd_index_obsidian(cfg, reset=args.reset)
     if args.sources is not None:
         return _cmd_sources(cfg, args.sources)
     if args.ask is not None:
@@ -160,6 +164,49 @@ def _cmd_index_briefings(cfg, *, reset: bool) -> int:
     briefing_cfg = dataclasses.replace(cfg, repo_root=BRIEFING_OUTPUT_DIR)
     t0 = time.time()
     stats = Indexer(briefing_cfg, collection=coll, ollama_client=olm).run()
+    dt = time.time() - t0
+    print(
+        f"indexed {stats.files} files, {stats.chunks} chunks "
+        f"(added {stats.added}, updated {stats.updated}, deleted {stats.deleted}) "
+        f"in {dt:.1f}s"
+    )
+    return 0
+
+
+def _cmd_index_obsidian(cfg, *, reset: bool) -> int:
+    """Index the configured Obsidian vault into its dedicated collection.
+
+    Mirrors ``_cmd_index_briefings``: shares ``cfg.chroma_path`` with the
+    other collections but must not mix documents or --reset them.
+    """
+    obsidian = get_obsidian_config()
+    if obsidian is None:
+        print(
+            "Error: obsidian.vault_path is not configured in briefing.json",
+            file=sys.stderr,
+        )
+        return 1
+    vault = Path(obsidian.vault_path).expanduser()
+    if not vault.is_dir():
+        print(f"Error: vault path does not exist: {vault}", file=sys.stderr)
+        return 1
+
+    if reset:
+        ans = input(f"Delete '{OBSIDIAN_COLLECTION_NAME}' collection at {cfg.chroma_path}? [y/N]: ").strip().lower()
+        if ans != "y":
+            print("aborted")
+            return 1
+        delete_collection(cfg, OBSIDIAN_COLLECTION_NAME)
+
+    try:
+        olm = make_ollama_client(cfg)
+        ensure_models_available(olm, cfg.model, cfg.embed_model)
+    except (OllamaUnavailable, EmbedModelMismatch) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    t0 = time.time()
+    stats = index_obsidian(cfg, vault_path=vault, exclude_dirs=obsidian.exclude_dirs)
     dt = time.time() - t0
     print(
         f"indexed {stats.files} files, {stats.chunks} chunks "

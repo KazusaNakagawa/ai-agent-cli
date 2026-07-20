@@ -432,3 +432,60 @@ class TestNotionSync:
         response = await authed_client.get("/api/journal")
         entry = next(e for e in response.json()["entries"] if e["id"] == entry_id)
         assert entry["notion_url"] == ""
+
+
+class TestObsidianSync:
+    async def test_append_syncs_to_obsidian_vault(self, authed_client, journal_dir, tmp_path, monkeypatch):
+        from src.config import ObsidianConfig
+        from web.routers import journal as journal_router
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        monkeypatch.setattr(
+            journal_router.config, "get_obsidian_config",
+            lambda: ObsidianConfig(vault_path=str(vault)),
+        )
+        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")):
+            response = await authed_client.post(
+                "/api/journal", json={"content": "obsidian sync test", "date": "2026-07-17"}
+            )
+        assert response.status_code == 200
+        entry_id = response.json()["id"]
+        dest = vault / "journal" / f"{entry_id}.md"
+        assert dest.exists()
+        assert "obsidian sync test" in dest.read_text(encoding="utf-8")
+
+    async def test_patch_resyncs_full_content_to_obsidian(self, authed_client, journal_dir, tmp_path, monkeypatch):
+        from src.config import ObsidianConfig
+        from web.routers import journal as journal_router
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        monkeypatch.setattr(
+            journal_router.config, "get_obsidian_config",
+            lambda: ObsidianConfig(vault_path=str(vault)),
+        )
+        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")):
+            created = await authed_client.post(
+                "/api/journal", json={"content": "first", "date": "2026-07-17"}
+            )
+            entry_id = created.json()["id"]
+            response = await authed_client.patch(
+                f"/api/journal/{entry_id}", json={"content": "second"}
+            )
+        assert response.status_code == 204
+        text = (vault / "journal" / f"{entry_id}.md").read_text(encoding="utf-8")
+        assert "first" in text and "second" in text
+
+    async def test_append_succeeds_when_obsidian_sync_raises(self, authed_client, journal_dir, monkeypatch):
+        from web.routers import journal as journal_router
+
+        def _boom():
+            raise RuntimeError("config exploded")
+
+        monkeypatch.setattr(journal_router.config, "get_obsidian_config", _boom)
+        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")):
+            response = await authed_client.post(
+                "/api/journal", json={"content": "still works", "date": "2026-07-17"}
+            )
+        assert response.status_code == 200
