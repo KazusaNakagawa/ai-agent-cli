@@ -218,10 +218,17 @@ class TestLooksLikeBriefing:
         text = "### 今日のサマリー"
         assert looks_like_briefing(text) is False
 
-    def test_heading_mid_text_fails(self):
-        """境界値: 冒頭以外に "### " が出現するだけでは不合格（レビュー指摘 #410）。
-        文中に別の h3 見出しを含む無関係な長文が誤って通過しないようにする。"""
-        text = "見出しではない前置きが続きます。" * 20 + "\n\n### 途中に出てくる見出し\n\n" + "本文です。" * 20
+    def test_short_preamble_before_heading_passes(self):
+        """成功系: 実運用で頻出する前置き文（本番で実際に観測、#410 での回帰）。
+        claude CLI はしばしば "情報が揃いました。ブリーフィングをまとめます。" のような
+        一文の後に本題の見出しを続けて返す。これを誤って弾いてはならない。"""
+        text = "情報が揃いました。ブリーフィングをまとめます。\n\n---\n\n### 今日のサマリー（1文）\n\n" + "本文です。" * 40
+        assert looks_like_briefing(text) is True
+
+    def test_heading_far_into_unrelated_text_fails(self):
+        """境界値: 見出しが遠く離れた位置にしか出現しない無関係な長文は不合格
+        （レビュー指摘 #410 — ただし現実の短い前置きは許容する程度の余白を残す）。"""
+        text = "見出しではない前置きが続きます。" * 100 + "\n\n### 途中に出てくる見出し\n\n" + "本文です。" * 20
         assert looks_like_briefing(text) is False
 
 

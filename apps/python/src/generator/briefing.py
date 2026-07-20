@@ -21,6 +21,15 @@ _FEW_SHOT_PATH = Path(__file__).parents[2] / "prompts" / "examples" / "briefing_
 # heading-bearing string is more likely a stray status message than real content.
 _MIN_BRIEFING_LENGTH = 200
 
+# How far into the text a "### " heading may appear and still count. The
+# claude CLI often prepends a short conversational preamble (e.g.
+# "情報が揃いました。ブリーフィングをまとめます。\n\n---\n\n", observed in
+# production, #410) before the actual heading, so an exact startswith check
+# is too strict and rejects real output. A hijacked skill report (#409) never
+# contains a "### " heading at all, so this window still rejects it while
+# tolerating a realistic preamble.
+_HEADING_SEARCH_WINDOW = 500
+
 
 @lru_cache(maxsize=1)
 def load_briefing_few_shot() -> str:
@@ -99,14 +108,12 @@ def looks_like_briefing(text: str) -> bool:
     mid-run (#409): the skill's own short completion report gets returned
     instead of the actual briefing, which would otherwise silently overwrite
     the local MD file (and Discord/Notion deliveries) with junk. A real
-    briefing always opens with a "### " heading (enforced by the few-shot
-    example) and runs well past a short status line.
-
-    Checking for the heading at the start of the whitespace-trimmed text
-    (rather than anywhere within it) avoids false positives from unrelated
-    long text that happens to contain an "### " marker further in.
+    briefing always contains a "### " heading (enforced by the few-shot
+    example) near the start — allowing for a short conversational preamble —
+    and runs well past a short status line. A hijacked skill report never
+    contains one at all.
     """
-    return len(text) >= _MIN_BRIEFING_LENGTH and text.lstrip().startswith("### ")
+    return len(text) >= _MIN_BRIEFING_LENGTH and "### " in text[:_HEADING_SEARCH_WINDOW]
 
 
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
