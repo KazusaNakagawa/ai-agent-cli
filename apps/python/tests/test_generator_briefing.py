@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.conftest import HIJACKED_SKILL_COMPLETION_REPORT
 from src.config import BriefingConfig, Conflict, GeopoliticalConfig, PortfolioConfig, WatchEvent, WatchSector
 from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING
 from src.generator.briefing import (
@@ -205,12 +206,7 @@ class TestLooksLikeBriefing:
     def test_skill_completion_report_fails(self):
         """失敗系: notion-import スキルがハイジャックして返す短い完了報告
         （#409 で実際に観測された文面）はブリーフィングとして扱わない。"""
-        text = (
-            "本日分のページを新規作成し追記しました。\n\n"
-            "- ローカル: `output/my-world-briefing_2026-07-21.md`\n"
-            "- Notion: https://www.notion.so/3a36396b8c4e8172abcce57f9b706ce4"
-        )
-        assert looks_like_briefing(text) is False
+        assert looks_like_briefing(HIJACKED_SKILL_COMPLETION_REPORT) is False
 
     def test_long_text_without_heading_fails(self):
         """境界値: 見出しが無ければ、どれだけ長くても不合格。"""

@@ -102,9 +102,9 @@ def looks_like_briefing(text: str) -> bool:
     briefing always opens with a "### " heading (enforced by the few-shot
     example) and runs well past a short status line.
 
-    Checking for the heading strictly at the start (rather than anywhere in
-    the text) avoids false positives from unrelated long text that happens
-    to contain an "### " marker further in.
+    Checking for the heading at the start of the whitespace-trimmed text
+    (rather than anywhere within it) avoids false positives from unrelated
+    long text that happens to contain an "### " marker further in.
     """
     return len(text) >= _MIN_BRIEFING_LENGTH and text.lstrip().startswith("### ")
 

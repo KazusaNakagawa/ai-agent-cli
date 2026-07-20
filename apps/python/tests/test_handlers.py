@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from tests.conftest import HIJACKED_SKILL_COMPLETION_REPORT
 from src.handler import lambda_handler as briefing_handler
 from src.xss_handler import lambda_handler as xss_handler
 
@@ -208,14 +209,9 @@ class TestBriefingHandler:
         handler raises before writing the local MD or delivering to
         Discord/Notion — it must not silently persist/deliver junk.
         """
-        hijacked_text = (
-            "本日分のページを新規作成し追記しました。\n\n"
-            "- ローカル: `output/my-world-briefing_2026-07-21.md`\n"
-            "- Notion: https://www.notion.so/3a36396b8c4e8172abcce57f9b706ce4"
-        )
         with (
             patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
-            patch("src.handler.generate_briefing", return_value=hijacked_text),
+            patch("src.handler.generate_briefing", return_value=HIJACKED_SKILL_COMPLETION_REPORT),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.save_briefing_md") as mock_save,
             patch("src.handler.send_to_discord") as mock_discord,
