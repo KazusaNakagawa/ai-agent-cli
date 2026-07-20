@@ -10,6 +10,7 @@ from src.generator.briefing import (
     build_watch_sectors_context,
     generate_briefing,
     load_briefing_few_shot,
+    looks_like_briefing,
 )
 
 
@@ -193,6 +194,33 @@ class TestGenerateBriefing:
 
         assert captured["メイン分析"] == RETRY_MAX_ATTEMPTS_BRIEFING
         assert captured["セクタースイープ"] == RETRY_MAX_ATTEMPTS_BRIEFING
+
+
+class TestLooksLikeBriefing:
+    def test_real_briefing_shape_passes(self):
+        """成功系: 見出し付きの長文はブリーフィングとして認識される。"""
+        text = "### 今日のサマリー（1文）\n\n" + "本文です。" * 40
+        assert looks_like_briefing(text) is True
+
+    def test_skill_completion_report_fails(self):
+        """失敗系: notion-import スキルがハイジャックして返す短い完了報告
+        （#409 で実際に観測された文面）はブリーフィングとして扱わない。"""
+        text = (
+            "本日分のページを新規作成し追記しました。\n\n"
+            "- ローカル: `output/my-world-briefing_2026-07-21.md`\n"
+            "- Notion: https://www.notion.so/3a36396b8c4e8172abcce57f9b706ce4"
+        )
+        assert looks_like_briefing(text) is False
+
+    def test_long_text_without_heading_fails(self):
+        """境界値: 見出しが無ければ、どれだけ長くても不合格。"""
+        text = "見出しの無い長文です。" * 40
+        assert looks_like_briefing(text) is False
+
+    def test_short_text_with_heading_fails(self):
+        """境界値: 見出しがあっても最低文字数に満たなければ不合格。"""
+        text = "### 今日のサマリー"
+        assert looks_like_briefing(text) is False
 
 
 class TestLoadBriefingFewShot:
