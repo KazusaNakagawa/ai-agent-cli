@@ -227,12 +227,17 @@ class TestBriefingHandler:
             mock_cfg.discord_channel_id = "ch"
             mock_cfg.notion_api_key = "key"
             mock_cfg.notion_database_id = "db"
-            with pytest.raises(RuntimeError, match="does not look like a real briefing"):
+            with pytest.raises(RuntimeError, match="does not look like a real briefing") as exc_info:
                 briefing_handler()
 
         mock_save.assert_not_called()
         mock_discord.assert_not_called()
         mock_notion.assert_not_called()
+        # The raw (potentially sensitive, e.g. portfolio/financial) briefing
+        # text must never land in an exception message that could be logged
+        # or sent to a monitoring service (review feedback on #410).
+        assert "notion.so" not in str(exc_info.value)
+        assert "my-world-briefing" not in str(exc_info.value)
 
     @pytest.mark.usefixtures("disable_skip_guard")
     def test_briefing_failure_propagates(self):

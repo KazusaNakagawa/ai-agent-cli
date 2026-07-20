@@ -52,9 +52,11 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False, force: bo
     logger.debug("briefing generated (length=%d)", len(briefing))
 
     if not looks_like_briefing(briefing):
+        # Do not include the raw briefing text here — it can carry
+        # user-specific financial/portfolio data and this message may end up
+        # in logs or a monitoring service (review feedback on #410).
         raise RuntimeError(
-            "generated briefing does not look like a real briefing body "
-            f"(len={len(briefing)}): {briefing[:200]!r}"
+            f"generated briefing does not look like a real briefing body (len={len(briefing)})"
         )
 
     discord_ok = _is_configured(CONFIG.discord_token, CONFIG.discord_channel_id)

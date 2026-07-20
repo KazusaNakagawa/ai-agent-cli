@@ -222,6 +222,12 @@ class TestLooksLikeBriefing:
         text = "### 今日のサマリー"
         assert looks_like_briefing(text) is False
 
+    def test_heading_mid_text_fails(self):
+        """境界値: 冒頭以外に "### " が出現するだけでは不合格（レビュー指摘 #410）。
+        文中に別の h3 見出しを含む無関係な長文が誤って通過しないようにする。"""
+        text = "見出しではない前置きが続きます。" * 20 + "\n\n### 途中に出てくる見出し\n\n" + "本文です。" * 20
+        assert looks_like_briefing(text) is False
+
 
 class TestLoadBriefingFewShot:
     def test_asset_is_non_empty_and_follows_format(self):
