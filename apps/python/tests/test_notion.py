@@ -163,6 +163,20 @@ class TestLabelColonSplit:
         texts = [rt["text"]["content"] for rt in label_block[label_block["type"]]["rich_text"]]
         assert "：" not in "".join(texts)
 
+    def test_colon_inside_link_label_not_split(self):
+        """リンクラベル内の「：」は分割対象外であること（リンクが分断されないこと）。"""
+        md = "- [ブレント原油$90突破：米イラン衝突激化（Bloomberg、7/19）](https://example.com/a)"
+        blocks = _markdown_to_blocks(md)
+        assert len(blocks) == 1
+        block = blocks[0]
+        assert block["type"] == "bulleted_list_item"
+        rich_text = block["bulleted_list_item"]["rich_text"]
+        # The whole label must stay linked to the URL, not be torn into a
+        # heading fragment ("[ブレント原油$90突破") plus a stray paragraph.
+        assert len(rich_text) == 1
+        assert rich_text[0]["text"]["link"]["url"] == "https://example.com/a"
+        assert rich_text[0]["text"]["content"] == "ブレント原油$90突破：米イラン衝突激化（Bloomberg、7/19）"
+
 
 class TestBlockToTextTableRow:
     def test_table_row_renders_pipe_format(self):

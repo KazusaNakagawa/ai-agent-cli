@@ -174,7 +174,12 @@ def _split_label_colon(line: str) -> list[str]:
     m = NOTION_LABEL_COLON_RE.match(line.rstrip())
     if not m:
         return [line]
-    label = m.group(2).strip("* ").rstrip("\uFF1A:")
+    label_part = m.group(2)
+    if label_part.count("[") != label_part.count("]"):
+        # The colon sits inside an unclosed Markdown link label
+        # (e.g. "- [heading:body](url)"); splitting here would tear the link in two.
+        return [line]
+    label = label_part.strip("* ").rstrip("\uFF1A:")
     if not label:
         return [line]
     content = re.sub(r"^\*+\s*|\s*\*+$", "", m.group(3).strip())
