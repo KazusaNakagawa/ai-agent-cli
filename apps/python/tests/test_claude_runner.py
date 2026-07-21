@@ -101,6 +101,30 @@ class TestRunClaude:
 
         assert captured["stdin"] == subprocess.DEVNULL
 
+    def test_cmd_disables_skills_and_strict_mcp(self):
+        """Verifies: the claude CLI subprocess command disables skill
+        auto-fire and any MCP server not explicitly allow-listed.
+        Why: project-level settings.local.json can pre-approve Skill(*) and
+        MCP tools, which takes effect regardless of the narrower
+        --allowedTools passed to this call. That let the notion-import skill
+        self-fire mid-batch-run and return its own short completion report
+        instead of the generated briefing, silently overwriting the local MD
+        file with junk (#409). --disable-slash-commands and
+        --strict-mcp-config close that gap independent of local settings.
+        """
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured["cmd"] = args
+            return _make_result()
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
+                run_claude("prompt", "test")
+
+        assert "--disable-slash-commands" in captured["cmd"]
+        assert "--strict-mcp-config" in captured["cmd"]
+
 
 class TestRunClaudeUsageLogging:
     def test_json_output_returns_result_text_and_logs_usage(self):

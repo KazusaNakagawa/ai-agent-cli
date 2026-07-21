@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.conftest import HIJACKED_SKILL_COMPLETION_REPORT
 from src.config import BriefingConfig, Conflict, GeopoliticalConfig, PortfolioConfig, WatchEvent, WatchSector
 from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING
 from src.generator.briefing import (
@@ -10,6 +11,7 @@ from src.generator.briefing import (
     build_watch_sectors_context,
     generate_briefing,
     load_briefing_few_shot,
+    looks_like_briefing,
 )
 
 
@@ -193,6 +195,41 @@ class TestGenerateBriefing:
 
         assert captured["メイン分析"] == RETRY_MAX_ATTEMPTS_BRIEFING
         assert captured["セクタースイープ"] == RETRY_MAX_ATTEMPTS_BRIEFING
+
+
+class TestLooksLikeBriefing:
+    def test_real_briefing_shape_passes(self):
+        """成功系: 見出し付きの長文はブリーフィングとして認識される。"""
+        text = "### 今日のサマリー（1文）\n\n" + "本文です。" * 40
+        assert looks_like_briefing(text) is True
+
+    def test_skill_completion_report_fails(self):
+        """失敗系: notion-import スキルがハイジャックして返す短い完了報告
+        （#409 で実際に観測された文面）はブリーフィングとして扱わない。"""
+        assert looks_like_briefing(HIJACKED_SKILL_COMPLETION_REPORT) is False
+
+    def test_long_text_without_heading_fails(self):
+        """境界値: 見出しが無ければ、どれだけ長くても不合格。"""
+        text = "見出しの無い長文です。" * 40
+        assert looks_like_briefing(text) is False
+
+    def test_short_text_with_heading_fails(self):
+        """境界値: 見出しがあっても最低文字数に満たなければ不合格。"""
+        text = "### 今日のサマリー"
+        assert looks_like_briefing(text) is False
+
+    def test_short_preamble_before_heading_passes(self):
+        """成功系: 実運用で頻出する前置き文（本番で実際に観測、#410 での回帰）。
+        claude CLI はしばしば "情報が揃いました。ブリーフィングをまとめます。" のような
+        一文の後に本題の見出しを続けて返す。これを誤って弾いてはならない。"""
+        text = "情報が揃いました。ブリーフィングをまとめます。\n\n---\n\n### 今日のサマリー（1文）\n\n" + "本文です。" * 40
+        assert looks_like_briefing(text) is True
+
+    def test_heading_far_into_unrelated_text_fails(self):
+        """境界値: 見出しが遠く離れた位置にしか出現しない無関係な長文は不合格
+        （レビュー指摘 #410 — ただし現実の短い前置きは許容する程度の余白を残す）。"""
+        text = "見出しではない前置きが続きます。" * 100 + "\n\n### 途中に出てくる見出し\n\n" + "本文です。" * 20
+        assert looks_like_briefing(text) is False
 
 
 class TestLoadBriefingFewShot:
