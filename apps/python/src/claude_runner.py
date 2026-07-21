@@ -163,6 +163,12 @@ def run_claude(
         "--output-format", "json",
         "--allowedTools", "WebSearch",
         "--model", model,
+        # Project-level settings.local.json can pre-approve Skill(*) and MCP
+        # tools that take effect regardless of --allowedTools above, letting
+        # an unrelated skill self-fire mid-run and hijack the returned text
+        # (#409). These two flags close that gap independent of local settings.
+        "--disable-slash-commands",
+        "--strict-mcp-config",
     ]
 
     last_returncode = 0

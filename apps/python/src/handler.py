@@ -4,7 +4,7 @@ from src.claude_runner import get_model
 from src.config import CONFIG
 from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_MD_ROTATION_ENABLED, BRIEFING_OUTPUT_DIR, BRIEFING_SKIP_IF_EXISTS
 from src.fetcher.stocks import fetch_stock_moves
-from src.generator.briefing import generate_briefing
+from src.generator.briefing import generate_briefing, looks_like_briefing
 from src.local_llm.briefing_index import index_briefings
 from src.local_llm.config import load_config as load_local_llm_config
 from src.metrics.briefing import extract_briefing_metrics
@@ -50,6 +50,14 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False, force: bo
     briefing = generate_briefing(stocks, CONFIG)
 
     logger.debug("briefing generated (length=%d)", len(briefing))
+
+    if not looks_like_briefing(briefing):
+        # Do not include the raw briefing text here — it can carry
+        # user-specific financial/portfolio data and this message may end up
+        # in logs or a monitoring service (review feedback on #410).
+        raise RuntimeError(
+            f"generated briefing does not look like a real briefing body (len={len(briefing)})"
+        )
 
     discord_ok = _is_configured(CONFIG.discord_token, CONFIG.discord_channel_id)
     notion_ok = _is_configured(CONFIG.notion_api_key, CONFIG.notion_database_id)
