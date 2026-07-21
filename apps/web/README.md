@@ -86,4 +86,4 @@ must exist before `npm run test:e2e` is run.
 
 - Phase 1 design spec: `.claude/superpowers/specs/2026-05-29-web-ui-phase1-design.md`
   (gitignored — local only)
-- Backend setup: `docs/web-ui-setup.md`
+- Backend setup: `docs/guides/web-ui-setup.md`

@@ -3,30 +3,43 @@ from functools import lru_cache
 from pathlib import Path
 from src.claude_runner import run_claude
 from src.config import BriefingConfig
-from src.constants import TIMEOUT_BRIEFING_MAIN, TIMEOUT_BRIEFING_SECTORS
+from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING, TIMEOUT_BRIEFING_MAIN, TIMEOUT_BRIEFING_SECTORS
 from src.generator.prompt import render
 from src.logger import get_logger
 from src.prompt_safety import neutralize_user_text
 
 logger = get_logger(__name__)
 
-# 並列実行のため実際の待機時間は max(MAIN, SECTORS) = 480s（合計ではない）
+# Because of parallel execution, actual wait time is max(MAIN, SECTORS) = 480s (not the sum).
 
-# 高性能モデル出力を捕捉した few-shot 例。安価なモデルでも構成を保てるよう
-# メインブリーフィングのプロンプトに注入する（#192）。再生成手順は
-# prompts/examples/README.md を参照。
+# Few-shot example captured from a high-capability model's output. Injected into
+# the main briefing prompt so cheaper models keep the structure (#192). See
+# prompts/examples/README.md for the regeneration steps.
 _FEW_SHOT_PATH = Path(__file__).parents[2] / "prompts" / "examples" / "briefing_few_shot.md"
+
+# Minimum character count for a plausible briefing body. Below this, even a
+# heading-bearing string is more likely a stray status message than real content.
+_MIN_BRIEFING_LENGTH = 200
+
+# How far into the text a "### " heading may appear and still count. The
+# claude CLI often prepends a short conversational preamble (e.g.
+# "情報が揃いました。ブリーフィングをまとめます。\n\n---\n\n", observed in
+# production, #410) before the actual heading, so an exact startswith check
+# is too strict and rejects real output. A hijacked skill report (#409) never
+# contains a "### " heading at all, so this window still rejects it while
+# tolerating a realistic preamble.
+_HEADING_SEARCH_WINDOW = 500
 
 
 @lru_cache(maxsize=1)
 def load_briefing_few_shot() -> str:
-    """メインブリーフィングの few-shot 例を読み込んで返す。
+    """Load and return the main briefing few-shot example.
 
-    few-shot は ``render()`` の **値** として渡るため、本文中の ``$`` が
-    プレースホルダとして再解釈されることはない（単一パス置換）。
+    The few-shot is passed as a **value** to ``render()``, so any ``$`` in its
+    body is never reinterpreted as a placeholder (single-pass substitution).
 
-    アセットはリポジトリ同梱で実行中に変わらないため ``lru_cache`` で
-    1 回だけ読み、``generate_briefing()`` 呼び出しごとのディスク I/O を避ける。
+    The asset ships with the repo and does not change at runtime, so ``lru_cache``
+    reads it once to avoid disk I/O on every ``generate_briefing()`` call.
     """
     return _FEW_SHOT_PATH.read_text(encoding="utf-8")
 
@@ -88,8 +101,23 @@ def build_watch_events_context(config: BriefingConfig) -> str:
     return "\n\n".join(lines)
 
 
+def looks_like_briefing(text: str) -> bool:
+    """Heuristic check that ``text`` is a real generated briefing body.
+
+    Guards against a claude CLI call being hijacked by an unrelated skill
+    mid-run (#409): the skill's own short completion report gets returned
+    instead of the actual briefing, which would otherwise silently overwrite
+    the local MD file (and Discord/Notion deliveries) with junk. A real
+    briefing always contains a "### " heading (enforced by the few-shot
+    example) near the start — allowing for a short conversational preamble —
+    and runs well past a short status line. A hijacked skill report never
+    contains one at all.
+    """
+    return len(text) >= _MIN_BRIEFING_LENGTH and "### " in text[:_HEADING_SEARCH_WINDOW]
+
+
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
-    """メイン分析とセクタースイープを並列実行してブリーフィングを生成する。"""
+    """Generate the briefing by running the main analysis and sector sweep in parallel."""
     tickers = join_safe(config.portfolio.tickers, sep=", ")
     themes = join_safe(config.portfolio.themes, sep=", ")
 
@@ -110,8 +138,14 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
-            executor.submit(run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN): "main",
-            executor.submit(run_claude, sectors_prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS): "sectors",
+            executor.submit(
+                run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN,
+                max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
+            ): "main",
+            executor.submit(
+                run_claude, sectors_prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS,
+                max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
+            ): "sectors",
         }
         results: dict[str, str] = {}
         errors: dict[str, str] = {}
@@ -120,18 +154,18 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
             try:
                 results[key] = future.result()
             except Exception as e:
-                logger.error("claude CLI 失敗 [%s]: %s", key, e)
+                logger.error("claude CLI failed [%s]: %s", key, e)
                 errors[key] = str(e)
 
     if "main" in errors:
-        raise RuntimeError(f"ブリーフィング生成に失敗しました: メイン分析\n{errors['main']}")
+        raise RuntimeError(f"briefing generation failed: main analysis\n{errors['main']}")
 
     assert "main" in results, "main result missing despite no error recorded"
 
     main_text = results["main"]
 
     if "sectors" in errors:
-        logger.warning("セクタースイープ失敗（メイン分析は成功）: %s", errors["sectors"])
+        logger.warning("sector sweep failed (main analysis succeeded): %s", errors["sectors"])
         return main_text + "\n\n---\n\n⚠️ セクター動向の取得に失敗しました。\n" + errors["sectors"]
 
     assert "sectors" in results, "sectors result missing despite no error recorded"

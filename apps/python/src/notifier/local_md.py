@@ -17,36 +17,36 @@ def save_briefing_md(
     *,
     rotation_enabled: bool = True,
 ) -> Path:
-    """ブリーフィング本文を briefing_YYYY-MM-DD.md として書き込む。
+    """Write the briefing body as briefing_YYYY-MM-DD.md.
 
-    rotation_enabled=True のとき output_dir 内の同パターンファイルを
-    新しい順に retention_days 件残して削除する。
-    rotation_enabled=False のとき削除は行わず全ファイルを無制限に保持する。
+    When rotation_enabled=True, keep the newest retention_days files matching the
+    same pattern in output_dir and delete the rest.
+    When rotation_enabled=False, delete nothing and retain all files unbounded.
     """
     if retention_days < 1:
         raise ValueError(
-            f"retention_days は 1 以上である必要があります (got {retention_days})"
+            f"retention_days must be >= 1 (got {retention_days})"
         )
 
     today = today or date.today()
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"briefing_{today.strftime('%Y-%m-%d')}.md"
     path.write_text(text, encoding="utf-8")
-    logger.info("ローカル MD 出力: %s (%d文字)", path, len(text))
+    logger.info("local MD written: %s (%d chars)", path, len(text))
 
     if rotation_enabled:
         _prune_old(output_dir, retention_days)
     else:
-        logger.debug("ローテーション無効 — 古い MD は削除しません")
+        logger.debug("rotation disabled — not deleting old MD files")
     return path
 
 
 def write_md_file(output_dir: Path, filename: str, text: str) -> Path:
-    """output_dir/filename にテキストを書き込む。ディレクトリがなければ作成する。"""
+    """Write text to output_dir/filename, creating the directory if needed."""
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / filename
     path.write_text(text, encoding="utf-8")
-    logger.info("MD 出力: %s (%d文字)", path, len(text))
+    logger.info("MD written: %s (%d chars)", path, len(text))
     return path
 
 
@@ -59,6 +59,6 @@ def _prune_old(output_dir: Path, retention_days: int) -> None:
     for stale in matched[retention_days:]:
         try:
             stale.unlink()
-            logger.info("古い MD を削除: %s", stale.name)
+            logger.info("deleted old MD: %s", stale.name)
         except FileNotFoundError:
             pass

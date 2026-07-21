@@ -13,9 +13,10 @@ from src.constants import (
 
 
 def _parse_inline(text: str) -> list[dict]:
-    """1行のインラインマークダウンを Notion rich_text オブジェクトのリストに変換。
-    対応: **bold**, [label](url), それ以外はプレーンテキスト。
-    2000文字制限を超えないようにチャンク分割も行う。
+    """Convert one line of inline markdown to a list of Notion rich_text objects.
+
+    Supports: **bold**, [label](url); everything else is plain text. Also chunks
+    the text so it never exceeds the 2000-character limit.
     """
     rich_texts: list[dict] = []
     pos = 0
@@ -38,7 +39,7 @@ def _parse_inline(text: str) -> list[dict]:
 
 
 def _plain_chunks(text: str, bold: bool = False) -> list[dict]:
-    """2000文字ごとに分割したプレーンテキスト rich_text を返す。"""
+    """Return plain-text rich_text chunked every 2000 characters."""
     result = []
     for i in range(0, max(len(text), 1), NOTION_CHAR_LIMIT):
         chunk = text[i:i + NOTION_CHAR_LIMIT]
@@ -50,7 +51,7 @@ def _plain_chunks(text: str, bold: bool = False) -> list[dict]:
 
 
 def _link_chunks(label: str, url: str) -> list[dict]:
-    """リンク付き rich_text を返す。ラベルが 2000文字を超える場合はチャンク分割する。"""
+    """Return linked rich_text, chunking when the label exceeds 2000 characters."""
     result = []
     for i in range(0, max(len(label), 1), NOTION_CHAR_LIMIT):
         chunk = label[i:i + NOTION_CHAR_LIMIT]
@@ -63,7 +64,7 @@ def _link_chunks(label: str, url: str) -> list[dict]:
 
 
 def _list_block(block_type: str, text: str) -> dict:
-    """numbered_list_item / bulleted_list_item ブロックを生成する共通ファクトリ。"""
+    """Shared factory that builds numbered_list_item / bulleted_list_item blocks."""
     return {
         "object": "block",
         "type": block_type,
@@ -72,7 +73,7 @@ def _list_block(block_type: str, text: str) -> dict:
 
 
 def _line_to_block(line: str) -> dict | None:
-    """1行を Notion ブロック辞書に変換。空行・区切り線・見出し・リスト・段落を処理する。"""
+    """Convert one line to a Notion block dict. Handles blanks, dividers, headings, lists, paragraphs."""
     stripped = line.rstrip()
 
     if not stripped:
@@ -131,7 +132,7 @@ def _is_table_separator(line: str) -> bool:
 
 
 def _table_rows_to_block(rows: list[str]) -> dict:
-    """連続する Markdown テーブル行を Notion table ブロックに変換する。"""
+    """Convert consecutive Markdown table rows into a Notion table block."""
     data_rows = [r for r in rows if not _is_table_separator(r)]
     has_header = len(rows) >= 2 and _is_table_separator(rows[1])
 
@@ -164,16 +165,21 @@ def _table_rows_to_block(rows: list[str]) -> dict:
 
 
 def _split_label_colon(line: str) -> list[str]:
-    """「ラベル：内容」形式の行を2行に分割して返す。該当しない場合はそのまま返す。
+    """Split a "label：content" line into two lines. Return unchanged if it does not match.
 
-    例: "- **AI・クラウド：**強い。..." → ["**AI・クラウド：**", "強い。..."]
-    - 箇条書きプレフィックス（- / *）は除去する
-    - 既存の ** マーカーは除去してから付け直す（二重 ** 防止）
+    Example: "- **AI・クラウド：**強い。..." → ["**AI・クラウド：**", "強い。..."]
+    - Strip the list prefix (- / *).
+    - Strip existing ** markers before re-adding them (prevents double **).
     """
     m = NOTION_LABEL_COLON_RE.match(line.rstrip())
     if not m:
         return [line]
-    label = m.group(2).strip("* ").rstrip("\uFF1A:")
+    label_part = m.group(2)
+    if label_part.count("[") != label_part.count("]"):
+        # The colon sits inside an unclosed Markdown link label
+        # (e.g. "- [heading:body](url)"); splitting here would tear the link in two.
+        return [line]
+    label = label_part.strip("* ").rstrip("\uFF1A:")
     if not label:
         return [line]
     content = re.sub(r"^\*+\s*|\s*\*+$", "", m.group(3).strip())
@@ -181,11 +187,13 @@ def _split_label_colon(line: str) -> list[str]:
 
 
 def markdown_to_notion_blocks(markdown: str) -> list[dict]:
-    """Markdown 文字列を Notion ブロック辞書のリストに変換して返す。
+    """Convert a Markdown string into a list of Notion block dicts.
 
-    - Markdown テーブルは Notion table ブロックに変換する。
-    - インデント付き箇条書き（2スペース/タブ + - や 1.）は直前のリストブロックの children に追加する。
-    - 「ラベル：内容」行はラベルと内容を別ブロックに分割する（テーブル・インデント行は除く）。
+    - Markdown tables become Notion table blocks.
+    - Indented list items (2 spaces/tab + - or 1.) are appended to the children
+      of the preceding list block.
+    - "label：content" lines are split into separate label/content blocks
+      (excluding table and indented lines).
     """
     markdown = re.sub(r"\*{4,}", "**", markdown)
     blocks: list[dict] = []

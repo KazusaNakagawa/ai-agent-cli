@@ -106,11 +106,11 @@ def _safe_search(
         else:
             kept.append(r)
     if n_index:
-        logger.info("[prefetch] %r: 索引ページ %d 件を除外", query, n_index)
+        logger.info("[prefetch] %r: excluded %d index pages", query, n_index)
     if n_malformed:
-        logger.info("[prefetch] %r: 不正URL(スペース含む) %d 件を除外", query, n_malformed)
+        logger.info("[prefetch] %r: excluded %d malformed URLs (with spaces)", query, n_malformed)
     if n_stale:
-        logger.info("[prefetch] %r: 古い記事 %d 件を除外 (>%d 日)", query, n_stale, STALE_ARTICLE_DAYS)
+        logger.info("[prefetch] %r: excluded %d stale articles (>%d days)", query, n_stale, STALE_ARTICLE_DAYS)
     return kept[:count]
 
 

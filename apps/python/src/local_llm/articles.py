@@ -142,7 +142,7 @@ def enrich_with_article_text(
         },
     )
     attempted, fetched = count_article_fetches(enriched, per_macro=per_macro, per_group=per_group)
-    logger.info("[articles] 本文取得 %d/%d 件成功", fetched, attempted)
+    logger.info("[articles] fetched bodies for %d/%d", fetched, attempted)
     return enriched
 
 

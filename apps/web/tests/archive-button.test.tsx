@@ -46,4 +46,19 @@ describe("ArchiveButton", () => {
       expect(screen.getByTestId("archive-message")).toHaveTextContent("rclone not found"),
     )
   })
+
+  it("dismisses the toast when the close button is clicked", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ exit_code: 0, stdout: "created: briefing_2026-05.zip" }))
+    render(<ArchiveButton />)
+    const user = userEvent.setup()
+
+    await user.click(screen.getByTestId("archive-button"))
+    await waitFor(() => expect(screen.getByTestId("archive-message")).toBeInTheDocument())
+
+    await user.click(screen.getByTestId("toast-close"))
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("archive-message")).not.toBeInTheDocument(),
+    )
+  })
 })

@@ -34,10 +34,11 @@ class Chunk:
 
 def iter_source_files(cfg: LocalLLMConfig) -> Iterator[Path]:
     root = cfg.repo_root
+    exclude = EXCLUDE_DIRS | cfg.extra_exclude_dirs
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in EXCLUDE_DIRS for part in path.relative_to(root).parts):
+        if any(part in exclude for part in path.relative_to(root).parts):
             continue
         if path.suffix not in EXTENSION_ALLOWLIST:
             continue

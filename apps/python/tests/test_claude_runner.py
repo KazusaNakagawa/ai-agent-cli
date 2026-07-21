@@ -27,7 +27,7 @@ def _make_result(returncode=0, stdout="output", stderr=""):
 class TestRunClaude:
     def test_cli_not_found_raises(self):
         with patch("src.claude_runner.shutil.which", return_value=None):
-            with pytest.raises(RuntimeError, match="claude CLI が見つかりません"):
+            with pytest.raises(RuntimeError, match="claude CLI not found"):
                 run_claude("prompt", "test")
 
     def test_success_returns_stripped_stdout(self):
@@ -42,7 +42,7 @@ class TestRunClaude:
                 "src.claude_runner.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("claude", 300),
             ):
-                with pytest.raises(RuntimeError, match="タイムアウト"):
+                with pytest.raises(RuntimeError, match="timed out"):
                     run_claude("prompt", "test", timeout=300)
 
     def test_nonzero_returncode_raises_with_stderr(self):
@@ -101,6 +101,30 @@ class TestRunClaude:
 
         assert captured["stdin"] == subprocess.DEVNULL
 
+    def test_cmd_disables_skills_and_strict_mcp(self):
+        """Verifies: the claude CLI subprocess command disables skill
+        auto-fire and any MCP server not explicitly allow-listed.
+        Why: project-level settings.local.json can pre-approve Skill(*) and
+        MCP tools, which takes effect regardless of the narrower
+        --allowedTools passed to this call. That let the notion-import skill
+        self-fire mid-batch-run and return its own short completion report
+        instead of the generated briefing, silently overwriting the local MD
+        file with junk (#409). --disable-slash-commands and
+        --strict-mcp-config close that gap independent of local settings.
+        """
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured["cmd"] = args
+            return _make_result()
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
+                run_claude("prompt", "test")
+
+        assert "--disable-slash-commands" in captured["cmd"]
+        assert "--strict-mcp-config" in captured["cmd"]
+
 
 class TestRunClaudeUsageLogging:
     def test_json_output_returns_result_text_and_logs_usage(self):
@@ -119,7 +143,7 @@ class TestRunClaudeUsageLogging:
         })
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "briefing")
 
         assert result == "the answer"
@@ -134,7 +158,7 @@ class TestRunClaudeUsageLogging:
         """JSON でない stdout はそのまま（strip して）返し、例外を出さず使用量も記録しない。"""
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout="  plain text  ")):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
         assert result == "plain text"
@@ -144,7 +168,7 @@ class TestRunClaudeUsageLogging:
         payload = json.dumps({"result": "ok"})
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
         assert result == "ok"
@@ -155,7 +179,7 @@ class TestRunClaudeUsageLogging:
         payload = json.dumps({"foo": 1})
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
         assert result == payload
@@ -166,7 +190,7 @@ class TestRunClaudeUsageLogging:
         payload = json.dumps({"result": ["x", "y"], "usage": {"input_tokens": 5, "output_tokens": 6}})
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
-                with patch("src.claude_runner.log_usage") as mock_log:
+                with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
         assert result == str(["x", "y"])
@@ -362,10 +386,94 @@ class TestRunClaudeRetry:
                 "src.claude_runner.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("claude", 300),
             ) as mock_run:
-                with pytest.raises(RuntimeError, match="タイムアウト"):
+                with pytest.raises(RuntimeError, match="timed out"):
                     run_claude("prompt", "test", timeout=300)
 
         assert mock_run.call_count == 1
+
+
+class TestRunClaudePartialOutput:
+    def test_saves_partial_result_when_retries_exhausted(self, monkeypatch, tmp_path):
+        """Verifies: when every attempt fails with a transient error but the
+        CLI's stdout still carries a `result` field (is_error=true), the
+        salvaged text is written under PARTIAL_OUTPUT_DIR before RuntimeError
+        raises.
+        Why: a run that burns the full retry budget and still fails currently
+        discards whatever text the model already produced (#406).
+        """
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", tmp_path)
+        payload = json.dumps({"is_error": True, "result": "partial analysis text"})
+        error_result = _make_result(returncode=1, stdout=payload, stderr="API Error: 529 Overloaded.")
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.time.sleep"):
+                with patch("src.claude_runner.subprocess.run", return_value=error_result):
+                    with pytest.raises(RuntimeError):
+                        run_claude("prompt", "test-label", max_attempts=2)
+
+        saved = list(tmp_path.glob("test-label_*.md"))
+        assert len(saved) == 1
+        assert saved[0].read_text(encoding="utf-8") == "partial analysis text"
+
+    def test_no_file_written_when_nothing_salvageable(self, monkeypatch, tmp_path):
+        """Verifies: a plain non-transient failure with no usable result text
+        (no JSON, no partial output) writes nothing to PARTIAL_OUTPUT_DIR.
+        """
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", tmp_path)
+        error_result = _make_result(returncode=1, stdout="", stderr="auth error")
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=error_result):
+                with pytest.raises(RuntimeError):
+                    run_claude("prompt", "test-label")
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_saves_partial_output_on_timeout(self, monkeypatch, tmp_path):
+        """Verifies: a TimeoutExpired carrying partially-captured stdout still
+        salvages the text instead of discarding it silently.
+        """
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", tmp_path)
+        exc = subprocess.TimeoutExpired("claude", 300, output="partial before kill")
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", side_effect=exc):
+                with pytest.raises(RuntimeError, match="timed out"):
+                    run_claude("prompt", "test-label", timeout=300)
+
+        saved = list(tmp_path.glob("test-label_*.md"))
+        assert len(saved) == 1
+        assert saved[0].read_text(encoding="utf-8") == "partial before kill"
+
+    def test_timeout_with_no_captured_output_saves_nothing(self, monkeypatch, tmp_path):
+        """Verifies: a TimeoutExpired with no captured stdout (the common case,
+        since --output-format json only prints once at completion) writes no
+        file rather than an empty one.
+        """
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", tmp_path)
+        exc = subprocess.TimeoutExpired("claude", 300)
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", side_effect=exc):
+                with pytest.raises(RuntimeError, match="timed out"):
+                    run_claude("prompt", "test-label", timeout=300)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_partial_save_failure_does_not_mask_original_error(self, monkeypatch, tmp_path):
+        """Verifies: if persisting the partial artifact itself fails (e.g. the
+        target path is unwritable), run_claude still raises the original
+        RuntimeError rather than an unrelated file-write error.
+        """
+        blocked = tmp_path / "not_a_dir"
+        blocked.write_text("x")  # a file, not a directory -> mkdir(parents=True) fails
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", blocked / "sub")
+        error_result = _make_result(returncode=1, stdout=json.dumps({"result": "text"}), stderr="auth error")
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.run", return_value=error_result):
+                with pytest.raises(RuntimeError, match="auth error"):
+                    run_claude("prompt", "test-label")
 
 
 class TestGetModel:
@@ -562,3 +670,4 @@ class TestRunClaudeAuthMode:
                 run_claude("prompt", "test")
 
         assert "ANTHROPIC_API_KEY" not in captured["env"]
+

@@ -23,29 +23,29 @@ def _write_md_fallback(text: str, filename: str) -> Path:
 def _preflight(config) -> None:
     """Log a WARNING for each missing credential before the pipeline starts."""
     if not _is_configured(config.discord_token, config.discord_channel_id):
-        logger.warning("DISCORD_TOKEN または CHANNEL_ID が未設定 — Discord 通知をスキップします")
+        logger.warning("DISCORD_TOKEN or CHANNEL_ID unset — skipping Discord notification")
     if not _is_configured(config.notion_api_key, config.notion_database_id):
-        logger.warning("NOTION_API_KEY または NOTION_DATABASE_ID が未設定 — Notion 通知をスキップします")
+        logger.warning("NOTION_API_KEY or NOTION_DATABASE_ID unset — skipping Notion notification")
 
 
 def lambda_handler(event=None, context=None, *, dry_run: bool = False):
-    """XSS インテリジェンスレポートを生成し Discord/Notion に配信する Lambda ハンドラ。"""
-    logger.info("=== XSS Intel Agent 開始 ===")
+    """Lambda handler that generates the XSS intelligence report and delivers it to Discord/Notion."""
+    logger.info("=== XSS Intel Agent start ===")
     config = get_xss_config()
     _preflight(config)
 
     if dry_run:
-        logger.info("Dry-run モード — パイプラインをスキップします")
+        logger.info("Dry-run mode — skipping the pipeline")
         return {"statusCode": 200, "body": "dry-run"}
     result: dict[str, object] = {}
 
-    logger.info("XSS 脆弱性レポート生成中 (WebSearch)...")
+    logger.info("generating XSS vulnerability report (WebSearch)...")
     try:
         report = generate_xss_report(config)
-        logger.debug("レポート生成完了 (length=%d)", len(report))
+        logger.debug("report generated (length=%d)", len(report))
         result["generation"] = "ok"
     except Exception as e:
-        logger.exception("レポート生成に失敗しました")
+        logger.exception("report generation failed")
         result["generation"] = str(e)
         return {"statusCode": 500, "body": result}
 
@@ -53,19 +53,19 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
     notion_ok = _is_configured(config.notion_api_key, config.notion_database_id)
 
     if discord_ok:
-        logger.info("Discord に送信中...")
+        logger.info("sending to Discord...")
         try:
             send_to_discord(report, config.discord_token, config.discord_channel_id)
             result["discord"] = "ok"
         except Exception as e:
-            logger.exception("Discord 送信に失敗しました")
+            logger.exception("Discord send failed")
             result["discord"] = str(e)
     else:
-        logger.warning("DISCORD_TOKEN または CHANNEL_ID が未設定 — Discord 通知をスキップします")
+        logger.warning("DISCORD_TOKEN or CHANNEL_ID unset — skipping Discord notification")
         result["discord"] = "skipped"
 
     if notion_ok:
-        logger.info("Notion にページ作成中...")
+        logger.info("creating Notion page...")
         try:
             metrics = extract_xss_metrics(report)
             page_url = send_to_notion(
@@ -77,22 +77,22 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False):
                 extra_properties=metrics,
             )
             if page_url:
-                logger.info("Notion ページ: %s", page_url)
+                logger.info("Notion page: %s", page_url)
             result["notion"] = page_url or "ok"
         except Exception as e:
-            logger.exception("Notion 送信に失敗しました")
+            logger.exception("Notion send failed")
             result["notion"] = str(e)
     else:
-        logger.warning("NOTION_API_KEY または NOTION_DATABASE_ID が未設定 — Notion 通知をスキップします")
+        logger.warning("NOTION_API_KEY or NOTION_DATABASE_ID unset — skipping Notion notification")
         result["notion"] = "skipped"
 
     if not discord_ok or not notion_ok:
         filename = f"xss_intel_{date.today().strftime('%Y-%m-%d')}.md"
         path = _write_md_fallback(report, filename)
-        logger.info("MD ファイルに出力しました: %s", path)
+        logger.info("wrote MD file: %s", path)
         result["md_fallback"] = str(path)
 
-    logger.info("=== 完了 ===")
+    logger.info("=== done ===")
 
     notifier_values = [result.get("discord", "ok"), result.get("notion", "ok")]
     all_notifiers_failed = all(v not in ("ok", "skipped") and v is not None for v in notifier_values)

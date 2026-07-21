@@ -5,7 +5,7 @@ from pathlib import Path
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
 # Claude CLI timeouts (seconds)
-TIMEOUT_BRIEFING_MAIN = 300
+TIMEOUT_BRIEFING_MAIN = 480
 TIMEOUT_BRIEFING_SECTORS = 480
 TIMEOUT_WEEKLY_SUMMARY = 300
 
@@ -14,17 +14,32 @@ RETRY_MAX_ATTEMPTS = 3
 RETRY_BASE_DELAY = 5.0  # seconds; first retry waits this long
 RETRY_BACKOFF_FACTOR = 3.0  # 5s -> 15s -> 45s
 
+# Briefing calls (main analysis + sector sweep) get a tighter retry budget:
+# each attempt re-runs the full WebSearch prompt from scratch (~$0.6-$0.9 per
+# attempt observed), so the module default of 3 would triple worst-case token
+# spend on a string of transient errors.
+RETRY_MAX_ATTEMPTS_BRIEFING = 2
+
 # Log retention
 LOG_RETENTION_DAYS = 7
+
+# Weekly recap lookback window (briefing pages + Notion comment ingestion, #396)
+WEEKLY_WINDOW_DAYS = 7
 
 # Output directory for MD output
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
+# Salvaged text from claude CLI calls that ultimately failed (see run_claude)
+PARTIAL_OUTPUT_DIR = OUTPUT_DIR / "partial"
 
 # Briefing local MD retention (number of newest dated files to keep)
 BRIEFING_MD_RETENTION_DAYS = 7
 # When False, _prune_old is skipped and all dated files are kept indefinitely
 BRIEFING_MD_ROTATION_ENABLED = False
+# When True, skip the pipeline if today's briefing MD already exists (prevents
+# duplicate runs from LaunchAgent wake-from-sleep + manual invocation overlap).
+# Set to False or pass --force on the CLI to re-run on the same day.
+BRIEFING_SKIP_IF_EXISTS: bool = True
 
 # Notion
 NOTION_CHAR_LIMIT = 2000

@@ -2,13 +2,16 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.conftest import HIJACKED_SKILL_COMPLETION_REPORT
 from src.config import BriefingConfig, Conflict, GeopoliticalConfig, PortfolioConfig, WatchEvent, WatchSector
+from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING
 from src.generator.briefing import (
     build_geopolitical_context,
     build_watch_events_context,
     build_watch_sectors_context,
     generate_briefing,
     load_briefing_few_shot,
+    looks_like_briefing,
 )
 
 
@@ -117,7 +120,7 @@ class TestBuildWatchEventsContext:
 
 class TestGenerateBriefing:
     def _mock_run(self, responses: dict):
-        def side_effect(prompt, label, timeout):
+        def side_effect(prompt, label, timeout, **kwargs):
             return responses[label]
         return side_effect
 
@@ -133,19 +136,19 @@ class TestGenerateBriefing:
     def test_main_failure_raises(self):
         config = _make_config()
 
-        def mock(prompt, label, timeout):
+        def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
                 raise RuntimeError("API error")
             return "sectors ok"
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
-            with pytest.raises(RuntimeError, match="メイン分析"):
+            with pytest.raises(RuntimeError, match="main analysis"):
                 generate_briefing("PLTR: +2%", config)
 
     def test_sectors_failure_returns_degraded_output(self):
         config = _make_config()
 
-        def mock(prompt, label, timeout):
+        def mock(prompt, label, timeout, **kwargs):
             if label == "セクタースイープ":
                 raise RuntimeError("sectors error")
             return "main ok"
@@ -161,7 +164,7 @@ class TestGenerateBriefing:
         config = _make_config()
         captured = {}
 
-        def mock(prompt, label, timeout):
+        def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
                 captured["prompt"] = prompt
             return "ok"
@@ -173,6 +176,60 @@ class TestGenerateBriefing:
         # 例の先頭の特徴的な見出しがそのままプロンプトに含まれる
         assert "### 今日のサマリー（1文）" in captured["prompt"]
         assert few_shot.strip() in captured["prompt"]
+
+    def test_main_and_sectors_use_bounded_briefing_retry_budget(self):
+        """Verifies: both run_claude calls pass max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING.
+        Why: the module default (RETRY_MAX_ATTEMPTS=3) triples the per-run
+        token cost on a string of transient errors (#406); briefing calls opt
+        into a tighter, explicit budget instead of relying on the default.
+        """
+        config = _make_config()
+        captured = {}
+
+        def mock(prompt, label, timeout, **kwargs):
+            captured[label] = kwargs.get("max_attempts")
+            return "ok"
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            generate_briefing("PLTR: +2%", config)
+
+        assert captured["メイン分析"] == RETRY_MAX_ATTEMPTS_BRIEFING
+        assert captured["セクタースイープ"] == RETRY_MAX_ATTEMPTS_BRIEFING
+
+
+class TestLooksLikeBriefing:
+    def test_real_briefing_shape_passes(self):
+        """成功系: 見出し付きの長文はブリーフィングとして認識される。"""
+        text = "### 今日のサマリー（1文）\n\n" + "本文です。" * 40
+        assert looks_like_briefing(text) is True
+
+    def test_skill_completion_report_fails(self):
+        """失敗系: notion-import スキルがハイジャックして返す短い完了報告
+        （#409 で実際に観測された文面）はブリーフィングとして扱わない。"""
+        assert looks_like_briefing(HIJACKED_SKILL_COMPLETION_REPORT) is False
+
+    def test_long_text_without_heading_fails(self):
+        """境界値: 見出しが無ければ、どれだけ長くても不合格。"""
+        text = "見出しの無い長文です。" * 40
+        assert looks_like_briefing(text) is False
+
+    def test_short_text_with_heading_fails(self):
+        """境界値: 見出しがあっても最低文字数に満たなければ不合格。"""
+        text = "### 今日のサマリー"
+        assert looks_like_briefing(text) is False
+
+    def test_short_preamble_before_heading_passes(self):
+        """成功系: 実運用で頻出する前置き文（本番で実際に観測、#410 での回帰）。
+        claude CLI はしばしば "情報が揃いました。ブリーフィングをまとめます。" のような
+        一文の後に本題の見出しを続けて返す。これを誤って弾いてはならない。"""
+        text = "情報が揃いました。ブリーフィングをまとめます。\n\n---\n\n### 今日のサマリー（1文）\n\n" + "本文です。" * 40
+        assert looks_like_briefing(text) is True
+
+    def test_heading_far_into_unrelated_text_fails(self):
+        """境界値: 見出しが遠く離れた位置にしか出現しない無関係な長文は不合格
+        （レビュー指摘 #410 — ただし現実の短い前置きは許容する程度の余白を残す）。"""
+        text = "見出しではない前置きが続きます。" * 100 + "\n\n### 途中に出てくる見出し\n\n" + "本文です。" * 20
+        assert looks_like_briefing(text) is False
 
 
 class TestLoadBriefingFewShot:

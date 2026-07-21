@@ -1,33 +1,31 @@
 "use client"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
-import { AppearancePanel } from "@/components/AppearancePanel"
-import { ConfigFilePanel } from "@/components/ConfigFilePanel"
-import { SidebarDisclosure } from "@/components/SidebarDisclosure"
+import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
+import { FileTree } from "@/components/workspace/FileTree"
+import { ResizeHandle } from "@/components/ResizeHandle"
+import { SettingsModal } from "@/components/settings/SettingsModal"
 import { useJobState } from "@/lib/jobStore"
 import {
   SIDEBAR_COLLAPSED_ATTR,
   SIDEBAR_COLLAPSED_KEY,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_WIDTH_KEY,
+  SIDEBAR_WIDTH_VAR,
 } from "@/lib/sidebar"
+import { serviceForPath } from "@/lib/services"
 import { cn } from "@/lib/utils"
-
-type Item = { href: string; label: string; icon: string }
-
-const ITEMS: Item[] = [
-  { href: "/portfolio", label: "Portfolio", icon: "📊" },
-  { href: "/watch-sectors", label: "Watch Sectors", icon: "🌐" },
-  { href: "/geopolitical", label: "Geopolitical Risks", icon: "🗺️" },
-  { href: "/credentials", label: "Credentials", icon: "📨" },
-  { href: "/auth", label: "Auth", icon: "🔑" },
-  { href: "/run", label: "Run", icon: "▶️" },
-  { href: "/chat", label: "Q&A Chat", icon: "💬" },
-  { href: "/briefing", label: "Briefing", icon: "📚" },
-]
 
 export function Sidebar() {
   const pathname = usePathname()
+  const items = serviceForPath(pathname).items
+  const onWorkspace =
+    pathname === "/workspace" || pathname.startsWith("/workspace/")
+  const onJournal = pathname === "/journal" || pathname.startsWith("/journal/")
   const { isBackgrounded: runJobActive } = useJobState()
   // Initialize to false so SSR and the first client render agree (avoiding
   // a hydration mismatch on data-collapsed / aria-expanded / title). The
@@ -62,12 +60,56 @@ export function Sidebar() {
 
   const toggle = () => setCollapsed((prev) => !prev)
 
+  // Drag the right edge to resize the rail. Width is written live to the
+  // CSS custom property on <html> (the same one the boot script restores)
+  // and persisted to localStorage on release.
+  const onResizeStart = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault()
+      const startX = e.clientX
+      const root = document.documentElement
+      const startWidth =
+        parseInt(getComputedStyle(root).getPropertyValue(SIDEBAR_WIDTH_VAR), 10) ||
+        root.querySelector<HTMLElement>("[data-sidebar-rail]")?.offsetWidth ||
+        SIDEBAR_DEFAULT_WIDTH
+      const clamp = (w: number) =>
+        Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, w))
+
+      const controller = new AbortController()
+      const { signal } = controller
+
+      const onMove = (ev: PointerEvent) => {
+        const w = clamp(startWidth + (ev.clientX - startX))
+        root.style.setProperty(SIDEBAR_WIDTH_VAR, `${w}px`)
+      }
+      // pointerup / pointercancel both end the drag so a cancelled gesture
+      // (OS gesture, context menu) doesn't leak listeners. AbortController
+      // removes every listener in one call.
+      const onEnd = () => {
+        controller.abort()
+        const w = parseInt(
+          getComputedStyle(root).getPropertyValue(SIDEBAR_WIDTH_VAR),
+          10,
+        )
+        try {
+          if (w) localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w))
+        } catch {
+          // localStorage unavailable (private mode / quota); width still applies
+        }
+      }
+      window.addEventListener("pointermove", onMove, { signal })
+      window.addEventListener("pointerup", onEnd, { signal })
+      window.addEventListener("pointercancel", onEnd, { signal })
+    },
+    [],
+  )
+
   return (
     <aside
       data-sidebar-rail
       data-testid="sidebar"
       data-collapsed={collapsed}
-      className="flex shrink-0 flex-col gap-4 overflow-hidden border-r bg-card p-4"
+      className="relative flex shrink-0 flex-col gap-4 overflow-hidden border-r bg-card p-4"
     >
       <div data-sidebar-header className="flex shrink-0 items-center justify-between">
         <span data-sidebar-brand className="px-2 text-base font-semibold">
@@ -86,10 +128,10 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-      <section className="flex flex-col gap-1">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+      <section className="flex shrink-0 flex-col gap-1">
         <nav className="flex flex-col gap-1">
-          {ITEMS.map((item) => {
+          {items.map((item) => {
             const active = pathname === item.href
             const showRunDot = item.href === "/run" && runJobActive
             return (
@@ -122,51 +164,28 @@ export function Sidebar() {
         </nav>
       </section>
 
+      {onWorkspace && !collapsed && (
+        <section className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <FileTree />
+        </section>
+      )}
+      {onJournal && !collapsed && <JournalSidebarList />}
+
       <section
         data-sidebar-section="config"
-        className="flex flex-col gap-1"
+        className="flex shrink-0 flex-col gap-1"
       >
-        <SidebarDisclosure
-          label="Config"
-          icon="⚙️"
-          testid="config-toggle"
-          variant="heading"
-        >
-          <div className="flex flex-col gap-1">
-            <Link
-              href="/config/usage"
-              title="Usage"
-              aria-label="Usage"
-              data-sidebar-row
-              data-testid="nav-config-usage"
-              className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-                pathname === "/config/usage"
-                  ? "bg-accent font-medium text-accent-foreground"
-                  : "hover:bg-accent/50",
-              )}
-            >
-              <span aria-hidden>📈</span>
-              <span data-sidebar-label>Usage</span>
-            </Link>
-            <SidebarDisclosure
-              label="Appearance"
-              icon="🎨"
-              testid="appearance-toggle"
-            >
-              <AppearancePanel />
-            </SidebarDisclosure>
-            <SidebarDisclosure
-              label="Config file"
-              icon="📁"
-              testid="config-file-toggle"
-            >
-              <ConfigFilePanel />
-            </SidebarDisclosure>
-          </div>
-        </SidebarDisclosure>
+        <SettingsModal />
       </section>
       </div>
+      {/* Right-edge drag handle to resize the rail (hidden when collapsed). */}
+      {!collapsed && (
+        <ResizeHandle
+          onPointerDown={onResizeStart}
+          ariaLabel="Resize sidebar"
+          data-testid="sidebar-resizer"
+        />
+      )}
     </aside>
   )
 }

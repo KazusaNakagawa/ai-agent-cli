@@ -8,11 +8,29 @@ os.environ.setdefault("BRIEFING_CONFIG_PATH", str(Path(__file__).parent / "confi
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src import credentials, state as state_mod
+from src import credentials, journal_store, state as state_mod
 from web import auth
 from web.app import app
 
 TEST_TOKEN = "test-token-123"
+
+# Sample notion-import skill self-fire output (#409): the short completion
+# report the skill returns instead of the real briefing when it hijacks a
+# batch run. Shared across test_generator_briefing.py and test_handlers.py so
+# both stay aligned to the same hijack scenario.
+HIJACKED_SKILL_COMPLETION_REPORT = (
+    "本日分のページを新規作成し追記しました。\n\n"
+    "- ローカル: `output/my-world-briefing_2026-07-21.md`\n"
+    "- Notion: https://www.notion.so/3a36396b8c4e8172abcce57f9b706ce4"
+)
+
+
+@pytest.fixture
+def journal_dir(tmp_path, monkeypatch):
+    """Point the journal store at a tmp dir."""
+    d = tmp_path / "journal"
+    monkeypatch.setattr(journal_store, "JOURNAL_DIR", d)
+    return d
 
 
 @pytest.fixture

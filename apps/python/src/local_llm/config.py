@@ -35,6 +35,12 @@ DEFAULT_CHUNK_OVERLAP = 8
 DEFAULT_REPO_ROOT = Path.home() / "work" / "ai-agent"
 DEFAULT_CHROMA_REL = Path("apps/python/.chroma_db")
 COLLECTION_NAME = "ai_agent_repo"
+# Separate collection for past-briefing RAG (#395) so it doesn't mix with
+# repo-code search results in the same Chroma store.
+BRIEFING_COLLECTION_NAME = "ai_agent_briefings"
+# Separate collection for Obsidian vault RAG so vault notes don't mix with
+# repo-code or briefing search results in the same Chroma store.
+OBSIDIAN_COLLECTION_NAME = "obsidian-notes"
 
 EXTENSION_ALLOWLIST = {
     ".py", ".ts", ".tsx", ".js", ".md",
@@ -61,6 +67,10 @@ class LocalLLMConfig:
     chroma_path: Path
     chunk_lines: int
     chunk_overlap: int
+    # Extra directory names excluded on top of EXCLUDE_DIRS. Lets a caller
+    # (e.g. the Obsidian vault indexer) skip vault-internal folders without
+    # changing the global exclusion set. Empty = existing behavior.
+    extra_exclude_dirs: frozenset[str] = frozenset()
 
 
 def _env_str(name: str, default: str) -> str:
@@ -89,7 +99,7 @@ def _env_number(name: str, default, cast):
         return cast(raw)
     except ValueError:
         logger.warning(
-            "env %s=%r を %s に変換できないため既定値 %r を使用",
+            "env %s=%r could not be converted to %s, using default %r",
             name,
             raw,
             cast.__name__,

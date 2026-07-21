@@ -30,6 +30,18 @@
     --bg-soft-start: 210 40% 98%;
     --bg-soft-mid: 220 35% 92%;
     --bg-soft-end: 225 30% 88%;
+
+    /* Chart series palette (light steps): a single blue-family ramp,
+       light→dark, matching the app's fintech blue tone. Series are told
+       apart by lightness, so the ramp is validated for monotone lightness,
+       visible step gaps, and surface contrast. Dark steps below are the
+       same ramp re-stepped for the dark surface, not a hue flip. */
+    --series-1: #86b6ef;
+    --series-2: #5598e7;
+    --series-3: #2f7fd9;
+    --series-4: #2264b8;
+    --series-5: #1a4b8f;
+    --series-6: #123566;
   }
 
   .dark {
@@ -56,6 +68,15 @@
     --bg-soft-start: 222.2 84% 6%;
     --bg-soft-mid: 220 50% 8%;
     --bg-soft-end: 217.2 35% 12%;
+
+    /* Chart series palette (dark steps): same blue ramp, brightened for
+       the dark surface. */
+    --series-1: #9fd4fa;
+    --series-2: #7ab8f2;
+    --series-3: #55a0ea;
+    --series-4: #3987e5;
+    --series-5: #2a6ecb;
+    --series-6: #1f52a0;
   }
 }
 
@@ -80,6 +101,15 @@
       );
   }
 
+  /* On Soft background the default light-theme border (91.4% lightness) is
+     nearly invisible against the gradient. Drop it to 78% so dividers,
+     dashed outlines, and table headers stay legible. Dark theme is unaffected
+     because .dark already sets --border to 17.5% lightness. */
+  html[data-bg="soft"]:not(.dark) {
+    --border: 214.3 31.8% 78%;
+    --input: 214.3 31.8% 78%;
+  }
+
 }
 
 /* Dark mode prose body text — override Tailwind Typography's default gray-300
@@ -93,7 +123,7 @@
    script (see app/layout.tsx / themeBootScript) so the rail starts in the
    correct geometry on the very first paint, before React hydrates. */
 [data-sidebar-rail] {
-  width: 15rem;
+  width: var(--sidebar-width, 15rem);
   overflow-x: hidden;
 }
 html[data-sidebar-collapsed="true"] [data-sidebar-rail] {
@@ -108,7 +138,6 @@ html[data-sidebar-collapsed="true"] [data-sidebar-rail] {
   white-space: nowrap;
 }
 html[data-sidebar-collapsed="true"] [data-sidebar-label],
-html[data-sidebar-collapsed="true"] [data-sidebar-section="config"],
 html[data-sidebar-collapsed="true"] [data-sidebar-brand] {
   display: none;
 }

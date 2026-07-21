@@ -41,10 +41,16 @@ bin/chat.sh   # Launch chat session
 | `apps/python/config/briefing.json` | Real batch execution config (personal data) | Ignored |
 | `apps/python/config/briefing.json.example` | Schema documentation and template | Tracked |
 | `apps/python/tests/config/briefing.json` | Fixture config for CI and local tests | Tracked |
+| `apps/python/config/self_agent_profile.md` | self-agent's persistent persona profile (personal data) | Ignored |
+| `apps/python/config/self_agent_profile.md.example` | Schema documentation and template | Tracked |
 
 - `apps/python/config/briefing.json` is **never committed**.
 - CI and local `pytest` always load `apps/python/tests/config/briefing.json` — `conftest.py` sets `BRIEFING_CONFIG_PATH` before any import of `src.config`.
 - When adding or changing config schema, update both `.example` and `tests/config/briefing.json`.
+
+## UI Verification
+
+- When fixing or changing a screen in `apps/web`, verify the behavior in a real browser via Playwright (`apps/web/e2e/`, or an ad hoc script run from `apps/web` with `node script.mjs` using `@playwright/test`'s `chromium`) instead of relying on code reading alone. Reproduce the reported issue first, then confirm the fix removes it.
 
 ## Code Style
 
@@ -52,7 +58,9 @@ bin/chat.sh   # Launch chat session
 
 ## Git Conventions
 
-Branch naming: `feat/` `fix/` `refactor/` `docs/` `chore/`
+Branch naming: `feature/` `fix/` `refactor/` `docs/` `chore/`
+
+Branch flow: `dev` is the working branch. Feature branches fork from `dev`, and PRs target `dev` as base. `main` is synced only via `dev` → `main` PRs.
 
 Commit format ([Conventional Commits](https://www.conventionalcommits.org/)):
 ```

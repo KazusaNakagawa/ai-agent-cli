@@ -17,6 +17,7 @@ export type BriefingFileResponse = {
 const KNOWN_TYPE_LABELS: Record<string, string> = {
   briefing: "Briefing",
   local: "Local",
+  "weekly-summary": "Weekly",
 }
 
 /** Map a type prefix to a display label: known → mapped, unknown → capitalized. */

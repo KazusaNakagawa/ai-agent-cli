@@ -15,13 +15,14 @@ Bloomberg and NewsPicks surface raw data. This agent ties every event to your ho
 ## Architecture
 
 ```
-bin/run.sh
-  ├── bin/briefing.py → src/handler.py
+bin/run.sh → apps/python/bin/run.sh
+  ├── python -m src.handler              # Daily market briefing
   │     ├── src/fetcher/stocks.py        # Previous-day % change via yfinance
   │     ├── src/generator/briefing.py    # Builds prompts, calls run_claude() in parallel
   │     ├── src/notifier/discord.py
   │     └── src/notifier/notion.py
-  └── bin/xss_intel.py → src/xss_handler.py
+  ├── python -m src.weekly_handler       # Fridays only: weekly recap
+  └── python -m src.xss_handler          # XSS intel agent — currently disabled in run.sh
         ├── src/generator/xss_report.py
         ├── src/notifier/discord.py
         └── src/notifier/notion.py
@@ -33,7 +34,7 @@ config/briefing.json   # Portfolio, watch sectors, geopolitical risks
 **Key design decisions**
 
 - No NewsAPI — Claude Code CLI's built-in WebSearch handles real-time search
-- No Anthropic API billing — reuses Claude Code CLI's OAuth authentication
+- No per-token Anthropic API billing — runs on the Claude Code CLI OAuth session, which requires an active paid Claude subscription (Pro/Max); the free plan cannot run this
 - Geopolitical → stock causality is baked into every daily output
 - Degraded mode — if the sector sweep fails, the main analysis is still delivered
 
@@ -51,12 +52,12 @@ uv pip sync requirements.txt
 cp .env.example .env   # add DISCORD_TOKEN, NOTION_API_KEY, etc.
 ```
 
-See [docs/configuration.md](docs/configuration.md) for all environment variables and config schema.
+See [docs/guides/configuration.md](docs/guides/configuration.md) for all environment variables and config schema.
 
 ## Run
 
 ```bash
-bin/run.sh             # both agents
+bin/run.sh             # daily briefing (+ weekly recap on Fridays)
 
 # Interactive Q&A on today's briefing
 bin/chat.sh            # new or resumed session
@@ -64,9 +65,27 @@ bin/chat.sh 2026-05-16 # specific past briefing
 bin/chat.sh --list     # list saved sessions
 
 # Dry-run (validate credentials without executing)
-.venv/bin/python bin/briefing.py --dry-run
-.venv/bin/python bin/xss_intel.py --dry-run
+cd apps/python
+.venv/bin/python -m src.handler --dry-run
+.venv/bin/python -m src.xss_handler --dry-run
 ```
+
+### Batch scripts (`bin/`)
+
+Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
+
+| Script | Purpose |
+|---|---|
+| `run.sh` | Run the daily briefing (+ weekly recap on Fri) — see [Architecture](#architecture) for the disabled XSS intel agent |
+| `chat.sh` | Interactive Q&A on a briefing session |
+| `serve.sh` | Launch the Web UI (uvicorn); `PORT` overridable |
+| `briefing_api.sh` | Generate a briefing via the API entry point |
+| `chart.sh` | Generate charts (e.g. stock price comparison) |
+| `gen_wordset.sh` | Generate word-set JSON (Stage 1) |
+| `evaluate.sh` | Run the briefing evaluation pipeline |
+| `eval_report.sh` | Extract → score → report evaluation results |
+| `local_llm.sh` | Local LLM mode (Ollama + Chroma) |
+| `archive.sh` | Archive a month's briefings to Google Drive via rclone |
 
 ---
 
@@ -74,13 +93,16 @@ bin/chat.sh --list     # list saved sessions
 
 | Topic | Link |
 |---|---|
-| Configuration (env vars, config schema, prompts) | [docs/configuration.md](docs/configuration.md) |
-| Scheduled execution (macOS launchd) | [docs/launchd-setup.md](docs/launchd-setup.md) |
-| Briefing archive (monthly zip → Google Drive via rclone) | [docs/briefing-archive.md](docs/briefing-archive.md) |
-| Briefing evaluation pipeline | [docs/evaluation.md](docs/evaluation.md) |
-| Local LLM mode (Ollama + Chroma) | [docs/local-llm.md](docs/local-llm.md) |
-| Testing & dependency management | [docs/testing.md](docs/testing.md) |
-| Web UI setup | [docs/web-ui-setup.md](docs/web-ui-setup.md) |
+| Configuration (env vars, config schema, prompts) | [docs/guides/configuration.md](docs/guides/configuration.md) |
+| Scheduled execution (macOS launchd) | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
+| Briefing archive (monthly zip → Google Drive via rclone) | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
+| Testing & dependency management | [docs/guides/testing.md](docs/guides/testing.md) |
+| Web UI setup | [docs/guides/web-ui-setup.md](docs/guides/web-ui-setup.md) |
+| Briefing evaluation pipeline | [docs/features/evaluation.md](docs/features/evaluation.md) |
+| Journal ↔ Notion sync | [docs/features/journal-notion-sync.md](docs/features/journal-notion-sync.md) |
+| Local LLM mode (Ollama + Chroma) | [docs/features/local-llm.md](docs/features/local-llm.md) |
+| XSS intel agent (idea, not yet active) | [docs/ideas/xss-vulnerability-detection-agent.md](docs/ideas/xss-vulnerability-detection-agent.md) |
+| Reports & audits | [docs/reports/](docs/reports/) |
 
 ---
 

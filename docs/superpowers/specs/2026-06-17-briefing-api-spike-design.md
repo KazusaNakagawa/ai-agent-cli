@@ -8,7 +8,7 @@ Status: Design approved, pending implementation plan
 Verify whether running the daily briefing through the **raw Anthropic Messages
 API** (Sonnet 4.6, no tools) costs materially less than the current `claude` CLI
 path. The CLI injects a large agentic system prompt + tool definitions, which the
-cost analysis (`docs/cost-analysis/2026-06-17-usage-cost-analysis.md`) identified
+cost analysis (`docs/reports/cost-analysis/2026-06-17-usage-cost-analysis.md`) identified
 as the dominant cache_creation cost. This spike runs in parallel with the
 existing CLI briefing and is compared via the shared usage log.
 

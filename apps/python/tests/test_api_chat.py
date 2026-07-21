@@ -14,6 +14,7 @@ which makes the GET-stream assertions deterministic without sleeps.
 """
 import asyncio
 import io
+import json
 import time
 from unittest.mock import MagicMock
 
@@ -22,6 +23,38 @@ import pytest
 from src import chat_job_store, credentials, state as state_mod
 
 pytestmark = pytest.mark.usefixtures("isolated_state")
+
+
+def _delta_line(text: str) -> bytes:
+    """Build one --output-format stream-json line carrying an assistant
+    ``text_delta`` (the user-facing output the SSE stream surfaces)."""
+    return (
+        json.dumps(
+            {
+                "type": "stream_event",
+                "event": {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": text},
+                },
+            }
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _result_line(
+    *, usage: dict | None = None, cost_usd: float | None = None,
+    duration_ms: int | None = None, result: str = "",
+) -> bytes:
+    """Build the terminal stream-json ``result`` record (carries usage)."""
+    rec: dict = {"type": "result", "subtype": "success", "result": result}
+    if usage is not None:
+        rec["usage"] = usage
+    if cost_usd is not None:
+        rec["total_cost_usd"] = cost_usd
+    if duration_ms is not None:
+        rec["duration_ms"] = duration_ms
+    return (json.dumps(rec) + "\n").encode("utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -220,6 +253,101 @@ async def test_chat_resume_uses_saved_session_id(
     assert "--append-system-prompt" not in cmd
 
 
+# ---------------------------------------------------------------------------
+# search_history — cross-date RAG opt-in (#395)
+# ---------------------------------------------------------------------------
+
+
+async def test_post_chat_default_skips_history_retrieval(
+    authed_client, briefing_setup, monkeypatch
+):
+    """search_history defaults to False: existing clients see unchanged
+    behavior and pay no retrieval cost."""
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    called = []
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_briefing_context",
+        lambda *a, **kw: called.append(1) or [],
+    )
+
+    await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert called == []
+
+
+async def test_post_chat_search_history_injects_retrieved_context(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.local_llm.retriever import RetrievedChunk
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_briefing_context",
+        lambda cfg, question, **kw: [
+            RetrievedChunk(
+                source_path="briefing_2026-05-01.md",
+                start_line=1, end_line=5,
+                text="NVDA surged 5% on earnings", distance=0.1,
+            ),
+        ],
+    )
+
+    await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "NVDA?", "search_history": True},
+    )
+
+    cmd, _ = factory.calls[0]
+    prompt = cmd[cmd.index("--append-system-prompt") + 1]
+    assert "NVDA surged 5% on earnings" in prompt
+    assert "briefing_2026-05-01.md" in prompt
+
+
+async def test_post_chat_search_history_no_matches_still_creates_session(
+    authed_client, briefing_setup, monkeypatch
+):
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_briefing_context", lambda cfg, question, **kw: []
+    )
+
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?", "search_history": True},
+    )
+
+    assert response.status_code == 202
+    cmd, _ = factory.calls[0]
+    assert "--session-id" in cmd  # session still created normally
+
+
+async def test_post_chat_search_history_ollama_unavailable_returns_503(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.local_llm.clients import OllamaUnavailable
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    def _raise(cfg, question, **kw):
+        raise OllamaUnavailable("Cannot reach Ollama. Run 'ollama serve' to start it.")
+
+    monkeypatch.setattr("web.routers.chat.retrieve_briefing_context", _raise)
+
+    response = await authed_client.post(
+        "/api/chat",
+        json={"date": "2026-05-30", "question": "Q?", "search_history": True},
+    )
+
+    assert response.status_code == 503
+    assert factory.calls == []  # no subprocess spawned — request rejected up front
+
+
 async def test_chat_subprocess_env_strips_anthropic_api_key_in_cli_mode(
     authed_client, briefing_setup, monkeypatch
 ):
@@ -276,7 +404,7 @@ async def test_chat_subprocess_env_includes_keychain_key_in_api_mode(
 async def test_chat_stream_returns_sse_content_type(
     authed_client, briefing_setup, monkeypatch
 ):
-    factory = _make_popen(stdout_lines=[b"hello\n"])
+    factory = _make_popen(stdout_lines=[_delta_line("hello"), _result_line()])
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     _, _ = await _post_and_drain_stream(
@@ -292,7 +420,9 @@ async def test_chat_stream_returns_sse_content_type(
 async def test_chat_stream_replays_stdout_lines_as_data_events(
     authed_client, briefing_setup, monkeypatch
 ):
-    factory = _make_popen(stdout_lines=[b"line1\n", b"line2\n", b"line3\n"])
+    factory = _make_popen(
+        stdout_lines=[_delta_line("line1\nline2\nline3"), _result_line()]
+    )
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     _, body = await _post_and_drain_stream(
@@ -304,13 +434,66 @@ async def test_chat_stream_replays_stdout_lines_as_data_events(
     assert "data: line3\n\n" in body
 
 
+async def test_chat_cmd_includes_stream_json_flags(
+    authed_client, briefing_setup, monkeypatch
+):
+    """The chat subprocess must request stream-json output so usage (token
+    counts) is captured, while keeping incremental partial-message streaming."""
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    cmd, _ = factory.calls[0]
+    assert "stream-json" in cmd
+    assert "--verbose" in cmd
+    assert "--include-partial-messages" in cmd
+
+
+async def test_chat_logs_usage_with_chat_label(
+    authed_client, briefing_setup, monkeypatch
+):
+    """A completed chat turn records a usage-log entry labeled ``chat`` with the
+    token counts / cost from the stream-json ``result`` record."""
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        "web.routers.chat.log_usage", lambda **kw: captured.append(kw)
+    )
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "cache_read_input_tokens": 5,
+        "cache_creation_input_tokens": 3,
+    }
+    factory = _make_popen(
+        stdout_lines=[
+            _delta_line("the answer"),
+            _result_line(usage=usage, cost_usd=0.012, duration_ms=1234),
+        ]
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+    _, body = await _post_and_drain_stream(
+        authed_client, {"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert "data: the answer\n\n" in body
+    assert len(captured) == 1
+    assert captured[0]["label"] == "chat"
+    assert captured[0]["usage"]["output_tokens"] == 20
+    assert captured[0]["cost_usd"] == 0.012
+    assert captured[0]["duration_ms"] == 1234
+
+
 async def test_chat_stream_supports_concurrent_attaches(
     authed_client, briefing_setup, monkeypatch
 ):
     """Two simultaneous GET streams against the same job both see the full
     transcript. Guards the snapshot path against deque-mutation races and
     confirms a second attach isn't starved by the first."""
-    factory = _make_popen(stdout_lines=[b"x\n", b"y\n"])
+    factory = _make_popen(stdout_lines=[_delta_line("x\ny"), _result_line()])
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     post = await authed_client.post(
@@ -366,7 +549,7 @@ async def test_chat_stream_can_be_reattached_to_replay_buffer(
     """Survives a client disconnect: a second GET against the same job_id
     sees every event from the start. This is the core #112 / #126 win —
     a tab switch or page reload no longer drops the in-flight answer."""
-    factory = _make_popen(stdout_lines=[b"a\n", b"b\n"])
+    factory = _make_popen(stdout_lines=[_delta_line("a\nb"), _result_line()])
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     job_id, first = await _post_and_drain_stream(
@@ -390,8 +573,14 @@ async def test_get_chat_stream_404_when_job_unknown(authed_client, briefing_setu
 async def test_chat_stream_strips_trailing_cr_from_stdout_lines(
     authed_client, briefing_setup, monkeypatch
 ):
-    """Windows-style \\r\\n line endings must not leak into the SSE event."""
-    factory = _make_popen(stdout_lines=[b"hello world\r\n", b"line2\r\n"])
+    """Windows-style \\r\\n JSON-line endings must not leak into the SSE event."""
+    # Terminate each stream-json line with \r\n to mimic a Windows pipe.
+    factory = _make_popen(
+        stdout_lines=[
+            _delta_line("hello world\nline2").rstrip(b"\n") + b"\r\n",
+            _result_line(),
+        ]
+    )
     monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
 
     _, body = await _post_and_drain_stream(
@@ -525,6 +714,16 @@ async def test_chat_job_is_gc_after_grace_period(
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def local_briefing_dir(tmp_path, monkeypatch):
+    """Point the router's BRIEFING_DIR at a tmp dir so the notion-import
+    success path doesn't append to the real apps/python/output/briefing."""
+    d = tmp_path / "output" / "briefing"
+    d.mkdir(parents=True)
+    monkeypatch.setattr("web.routers.chat.BRIEFING_DIR", d)
+    return d
+
+
 def _seed_notion_creds():
     from src import credentials as cred_mod
     cred_mod.set_credential("NOTION_API_KEY", "k-test")
@@ -588,7 +787,7 @@ async def test_chat_notion_import_400_when_api_key_missing(
 
 
 async def test_chat_notion_import_success_invokes_skill_and_extracts_url(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     page_url = "https://www.notion.so/created-page-abc123"
@@ -634,8 +833,90 @@ async def test_chat_notion_import_success_invokes_skill_and_extracts_url(
     assert env.get("NOTION_DATABASE_ID") == "db-test"
 
 
+async def test_chat_notion_import_appends_to_local_briefing(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    """On success, the Q&A is appended to briefing_<date>.md in addition to Notion."""
+    _seed_notion_creds()
+    existing = local_briefing_dir / "briefing_2026-05-30.md"
+    existing.write_text("# 既存ブリーフィング\n", encoding="utf-8")
+    factory = _fake_run_factory(
+        stdout=_stream_json_result("done https://www.notion.so/abc"),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "半導体リスクは？", "answer": "TSMC の地政学…"},
+    )
+
+    assert response.status_code == 200
+    text = existing.read_text(encoding="utf-8")
+    assert "# 既存ブリーフィング" in text  # original content preserved
+    assert "## 追記: QA チャット (2026-05-30)" in text
+    assert "半導体リスクは？" in text
+    assert "TSMC の地政学…" in text
+
+
+async def test_chat_notion_import_creates_local_briefing_when_missing(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    """When no briefing file exists for the date, it is created with the Q&A."""
+    _seed_notion_creds()
+    factory = _fake_run_factory(
+        stdout=_stream_json_result("done https://www.notion.so/abc"),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+    )
+
+    assert response.status_code == 200
+    created = local_briefing_dir / "briefing_2026-05-30.md"
+    assert created.exists()
+    assert "Q?" in created.read_text(encoding="utf-8")
+
+
+async def test_chat_notion_import_succeeds_when_local_append_fails(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir, caplog
+):
+    """Local-briefing append is best-effort: an OSError must not fail the
+    already-successful Notion save (still 200), and the failure is logged."""
+    import logging
+
+    _seed_notion_creds()
+    factory = _fake_run_factory(
+        stdout=_stream_json_result("done https://www.notion.so/abc"),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    def _boom(*_a, **_kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("web.routers.chat._append_to_local_briefing", _boom)
+
+    with caplog.at_level(logging.WARNING):
+        response = await authed_client.post(
+            "/api/chat/notion-import",
+            json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://www.notion.so/abc"
+    assert not (local_briefing_dir / "briefing_2026-05-30.md").exists()
+    assert "failed to append Q&A to local briefing" in caplog.text
+
+
 async def test_chat_notion_import_defaults_to_sonnet_model(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     factory = _fake_run_factory(
@@ -775,3 +1056,169 @@ async def test_chat_notion_import_requires_bearer(async_client):
         json={"date": "2026-05-30", "question": "Q?", "answer": "A!"},
     )
     assert response.status_code == 401
+
+
+class TestChatWithImagePath:
+    async def test_post_chat_with_image_uses_stdin_pipe(
+        self, authed_client, briefing_setup, monkeypatch, tmp_path
+    ):
+        """POST /api/chat with image_path starts subprocess with stdin=PIPE and -p -."""
+        import subprocess as sp
+
+        # Point IMAGES_ROOT at a tmp dir so the test stays hermetic — no stray
+        # file is written under the real apps/python/input/images tree.
+        images_root = tmp_path / "images"
+        date_dir = images_root / "2026-06-26"
+        date_dir.mkdir(parents=True, exist_ok=True)
+        img = date_dir / "test-vision.png"
+        img.write_bytes(b"PNG_FAKE_DATA")
+        monkeypatch.setattr("web.routers.chat.IMAGES_ROOT", images_root)
+
+        captured: dict = {}
+
+        def factory(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["stdin"] = kwargs.get("stdin")
+            return FakePopen(cmd, stdout_lines=[], **kwargs)
+
+        monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+        response = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Describe this image", "image_path": str(img)},
+        )
+
+        assert response.status_code == 202
+        assert captured["stdin"] == sp.PIPE
+        cmd = captured["cmd"]
+        # Image goes through stream-json input so the CLI parses the base64
+        # envelope from stdin instead of treating it as a text prompt.
+        assert "-p" in cmd
+        assert "--input-format" in cmd
+        assert cmd[cmd.index("--input-format") + 1] == "stream-json"
+
+
+class TestChatVision:
+    async def test_post_chat_rejects_traversal_image_path(self, authed_client, briefing_setup):
+        """image_path outside IMAGES_ROOT is rejected with 400."""
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_path": "/etc/passwd"},
+        )
+        assert resp.status_code == 400
+        assert "Invalid image path" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Obsidian vault RAG — always-on when configured, soft degrade on failure
+# ---------------------------------------------------------------------------
+
+
+async def test_post_chat_injects_vault_context_when_obsidian_configured(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.config import ObsidianConfig
+    from src.local_llm.retriever import RetrievedChunk
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.config.get_obsidian_config",
+        lambda: ObsidianConfig(vault_path="/tmp/vault"),
+    )
+    captured_kwargs = {}
+
+    def _fake_retrieve(cfg, question, **kw):
+        captured_kwargs.update(kw)
+        return [
+            RetrievedChunk(
+                source_path="notes/idea.md",
+                start_line=1, end_line=5,
+                text="vault text about NVDA", distance=0.1,
+            ),
+        ]
+
+    monkeypatch.setattr("web.routers.chat.retrieve_obsidian_context", _fake_retrieve)
+
+    await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "NVDA?"}
+    )
+
+    cmd, _ = factory.calls[0]
+    prompt = cmd[cmd.index("--append-system-prompt") + 1]
+    assert "vault text about NVDA" in prompt
+    assert "notes/idea.md" in prompt
+    assert "obsidian_note_excerpts" in prompt
+    assert str(captured_kwargs["vault_path"]) == "/tmp/vault"
+    assert captured_kwargs["exclude_dirs"] == ObsidianConfig(vault_path="/tmp/vault").exclude_dirs
+
+
+async def test_post_chat_continues_when_vault_retrieval_fails(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.config import ObsidianConfig
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.config.get_obsidian_config",
+        lambda: ObsidianConfig(vault_path="/tmp/vault"),
+    )
+
+    def _boom(cfg, question, **kw):
+        raise RuntimeError("ollama down")
+
+    monkeypatch.setattr("web.routers.chat.retrieve_obsidian_context", _boom)
+
+    response = await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert response.status_code == 202
+    cmd, _ = factory.calls[0]
+    assert "--session-id" in cmd  # session still created normally
+
+
+async def test_post_chat_omits_vault_context_when_retrieval_returns_empty_list(
+    authed_client, briefing_setup, monkeypatch
+):
+    from src.config import ObsidianConfig
+
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr(
+        "web.routers.chat.config.get_obsidian_config",
+        lambda: ObsidianConfig(vault_path="/tmp/vault"),
+    )
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_obsidian_context", lambda cfg, question, **kw: []
+    )
+
+    response = await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert response.status_code == 202
+    cmd, _ = factory.calls[0]
+    prompt = cmd[cmd.index("--append-system-prompt") + 1]
+    assert "obsidian_note_excerpts" not in prompt
+
+
+async def test_post_chat_skips_vault_retrieval_when_unconfigured(
+    authed_client, briefing_setup, monkeypatch
+):
+    factory = _make_popen()
+    monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+    monkeypatch.setattr("web.routers.chat.config.get_obsidian_config", lambda: None)
+    called = []
+    monkeypatch.setattr(
+        "web.routers.chat.retrieve_obsidian_context",
+        lambda *a, **kw: called.append(1) or [],
+    )
+
+    response = await authed_client.post(
+        "/api/chat", json={"date": "2026-05-30", "question": "Q?"}
+    )
+
+    assert response.status_code == 202
+    assert called == []

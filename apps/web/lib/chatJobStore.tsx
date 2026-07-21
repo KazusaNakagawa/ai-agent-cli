@@ -2,6 +2,7 @@
 import type { ReactNode } from "react"
 
 import { createJobStoreProvider } from "./createJobStoreProvider"
+import { parseSseChunk } from "./sse"
 
 /**
  * Chat-flavored job-backed store. Owns the *currently in-flight* chat turn
@@ -25,6 +26,8 @@ export type ChatJobState = {
   question: string
   /** YYYY-MM-DD briefing context (re-sent on stale_session retry). */
   date: string
+  /** Whether this turn requested cross-date RAG (re-sent on stale_session retry). */
+  searchHistory: boolean
   /** Accumulating assistant content. NOT persisted — rebuilt from the GET stream's replay. */
   assistantContent: string
   error: string | null
@@ -34,7 +37,14 @@ export type ChatJobState = {
   staleSession: boolean
 }
 
-export type ChatJobStartOpts = { question: string; date: string }
+export type ChatJobStartOpts = {
+  question: string
+  date: string
+  image_path?: string
+  /** Opt-in cross-date RAG (#395): search past briefings via the local-LLM
+   * chromadb index and inject matches into the new session's context. */
+  search_history?: boolean
+}
 
 export type ChatJobStateContextValue = ChatJobState & {
   isBackgrounded: boolean
@@ -52,6 +62,7 @@ const initialState: ChatJobState = {
   status: "idle",
   question: "",
   date: "",
+  searchHistory: false,
   assistantContent: "",
   error: null,
   sessionExpired: false,
@@ -60,27 +71,6 @@ const initialState: ChatJobState = {
 
 const isInFlightStatus = (s: ChatJobStatus) =>
   s === "pending" || s === "running"
-
-type SSEEvent = { type: string; data: string }
-
-// Streaming SSE parser: events end at "\n\n"; multi-line ``data:`` fields join with "\n".
-function parseSSE(buffer: string): { events: SSEEvent[]; rest: string } {
-  const events: SSEEvent[] = []
-  let rest = buffer
-  let idx
-  while ((idx = rest.indexOf("\n\n")) !== -1) {
-    const raw = rest.slice(0, idx)
-    rest = rest.slice(idx + 2)
-    let type = "message"
-    const data: string[] = []
-    for (const line of raw.split("\n")) {
-      if (line.startsWith("event: ")) type = line.slice(7)
-      else if (line.startsWith("data: ")) data.push(line.slice(6))
-    }
-    events.push({ type, data: data.join("\n") })
-  }
-  return { events, rest }
-}
 
 const { Provider, useStore } = createJobStoreProvider<
   ChatJobState,
@@ -105,19 +95,25 @@ const { Provider, useStore } = createJobStoreProvider<
     staleSession: false,
   }),
 
-  start: async ({ question, date }, { setState }) => {
+  start: async ({ question, date, image_path, search_history }, { setState }) => {
     setState(() => ({
       ...initialState,
       status: "pending",
       question,
       date,
+      searchHistory: Boolean(search_history),
     }))
     try {
       const post = await fetch("/api/chat", {
         method: "POST",
         cache: "no-store",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ date, question }),
+        body: JSON.stringify({
+          date,
+          question,
+          ...(image_path ? { image_path } : {}),
+          ...(search_history ? { search_history: true } : {}),
+        }),
       })
       if (post.status === 401) {
         setState(() => ({ ...initialState, sessionExpired: true }))
@@ -213,7 +209,7 @@ const { Provider, useStore } = createJobStoreProvider<
         if (done) break
         if (signal.aborted) return
         buffer += decoder.decode(value, { stream: true })
-        const { events, rest } = parseSSE(buffer)
+        const { events, rest } = parseSseChunk(buffer)
         buffer = rest
         for (const ev of events) {
           if (signal.aborted) return

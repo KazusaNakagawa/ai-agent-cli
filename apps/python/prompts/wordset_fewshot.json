@@ -1,0 +1,27 @@
+{
+  "words": [
+    {
+      "id": "example-id",
+      "word": "important",
+      "meaning": "重要な",
+      "phonetic": "ɪmˈpɔːr.tənt",
+      "sentences": [
+        {"id": "example-id", "english": "This is an important decision.", "japanese": "これは重要な決断だ。", "category": "一般的な使い方"},
+        {"id": "example-id", "english": "Education is important for everyone.", "japanese": "教育は誰にとっても重要だ。", "category": "教育"},
+        {"id": "example-id", "english": "It's important to be on time.", "japanese": "時間を守ることは重要だ。", "category": "日常会話"},
+        {"id": "example-id", "english": "This document contains important information.", "japanese": "この文書には重要な情報が含まれている。", "category": "ビジネス"},
+        {"id": "example-id", "english": "Staying healthy is important.", "japanese": "健康でいることは重要だ。", "category": "健康"},
+        {"id": "example-id", "english": "It is important to read the manual first.", "japanese": "まず説明書を読むことが重要だ。", "category": "テクノロジー"},
+        {"id": "example-id", "english": "Backups are important in IT operations.", "japanese": "IT運用ではバックアップが重要だ。", "category": "IT"},
+        {"id": "example-id", "english": "Patience is an important life lesson.", "japanese": "忍耐は重要な人生の教訓だ。", "category": "人生の教訓"},
+        {"id": "example-id", "english": "This meeting is important for the project.", "japanese": "この会議はプロジェクトにとって重要だ。", "category": "ビジネス"},
+        {"id": "example-id", "english": "Sleep is important for your health.", "japanese": "睡眠は健康にとって重要だ。", "category": "健康"},
+        {"id": "example-id", "english": "It is important to listen carefully.", "japanese": "注意深く聞くことが重要だ。", "category": "日常会話"},
+        {"id": "example-id", "english": "Teachers play an important role.", "japanese": "教師は重要な役割を担う。", "category": "教育"},
+        {"id": "example-id", "english": "Security updates are important.", "japanese": "セキュリティ更新は重要だ。", "category": "テクノロジー"},
+        {"id": "example-id", "english": "It is important to set clear goals.", "japanese": "明確な目標を立てることが重要だ。", "category": "ビジネス"},
+        {"id": "example-id", "english": "Honesty is important in any relationship.", "japanese": "どんな関係でも誠実さは重要だ。", "category": "人生の教訓"}
+      ]
+    }
+  ]
+}

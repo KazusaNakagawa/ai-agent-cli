@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import os
 import shutil
 import sys
@@ -10,7 +11,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-from src.config import load_config as load_briefing_config
+from src.config import get_obsidian_config, load_config as load_briefing_config
 from src.constants import BRIEFING_OUTPUT_DIR
 from src.fetcher.stocks import fetch_stock_move_map
 from src.logger import get_logger
@@ -39,12 +40,14 @@ from .portfolio import generate_portfolio_table
 from .clients import (
     EmbedModelMismatch,
     OllamaUnavailable,
+    delete_collection,
     ensure_models_available,
     make_chroma_collection,
     make_ollama_client,
 )
-from .config import load_config
+from .config import BRIEFING_COLLECTION_NAME, OBSIDIAN_COLLECTION_NAME, load_config
 from .indexer import Indexer
+from .obsidian_index import index_obsidian
 from .retriever import Retriever
 from .search import BraveSearchClient
 
@@ -53,6 +56,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m local_llm")
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--index", action="store_true", help="リポジトリを index")
+    group.add_argument("--index-briefings", action="store_true", help="過去ブリーフィングを index（#395 横断RAG）")
+    group.add_argument("--index-obsidian", action="store_true", help="Obsidian vault を index（チャット RAG 用）")
     group.add_argument("--ask", metavar="QUESTION", help="質問に回答（生成あり）")
     group.add_argument("--sources", metavar="QUESTION", help="top-k のファイル位置だけ表示")
     group.add_argument("--status", action="store_true", help="現在の index 統計を表示")
@@ -80,6 +85,10 @@ def main(argv: list[str]) -> int:
         return _cmd_status(cfg)
     if args.index:
         return _cmd_index(cfg, reset=args.reset)
+    if args.index_briefings:
+        return _cmd_index_briefings(cfg, reset=args.reset)
+    if args.index_obsidian:
+        return _cmd_index_obsidian(cfg, reset=args.reset)
     if args.sources is not None:
         return _cmd_sources(cfg, args.sources)
     if args.ask is not None:
@@ -122,6 +131,82 @@ def _cmd_index(cfg, *, reset: bool) -> int:
 
     t0 = time.time()
     stats = Indexer(cfg, collection=coll, ollama_client=olm).run()
+    dt = time.time() - t0
+    print(
+        f"indexed {stats.files} files, {stats.chunks} chunks "
+        f"(added {stats.added}, updated {stats.updated}, deleted {stats.deleted}) "
+        f"in {dt:.1f}s"
+    )
+    return 0
+
+
+def _cmd_index_briefings(cfg, *, reset: bool) -> int:
+    """Index `output/briefing/*.md` into the dedicated briefings collection
+    (#395), so chat can retrieve cross-date context. Kept separate from
+    `_cmd_index`'s repo-code collection: they share `cfg.chroma_path` but
+    must not mix documents or --reset each other.
+    """
+    if reset:
+        ans = input(f"Delete '{BRIEFING_COLLECTION_NAME}' collection at {cfg.chroma_path}? [y/N]: ").strip().lower()
+        if ans != "y":
+            print("aborted")
+            return 1
+        delete_collection(cfg, BRIEFING_COLLECTION_NAME)
+
+    try:
+        olm = make_ollama_client(cfg)
+        ensure_models_available(olm, cfg.model, cfg.embed_model)
+        coll = make_chroma_collection(cfg, collection_name=BRIEFING_COLLECTION_NAME)
+    except (OllamaUnavailable, EmbedModelMismatch) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    briefing_cfg = dataclasses.replace(cfg, repo_root=BRIEFING_OUTPUT_DIR)
+    t0 = time.time()
+    stats = Indexer(briefing_cfg, collection=coll, ollama_client=olm).run()
+    dt = time.time() - t0
+    print(
+        f"indexed {stats.files} files, {stats.chunks} chunks "
+        f"(added {stats.added}, updated {stats.updated}, deleted {stats.deleted}) "
+        f"in {dt:.1f}s"
+    )
+    return 0
+
+
+def _cmd_index_obsidian(cfg, *, reset: bool) -> int:
+    """Index the configured Obsidian vault into its dedicated collection.
+
+    Mirrors ``_cmd_index_briefings``: shares ``cfg.chroma_path`` with the
+    other collections but must not mix documents or --reset them.
+    """
+    obsidian = get_obsidian_config()
+    if obsidian is None:
+        print(
+            "Error: obsidian.vault_path is not configured in briefing.json",
+            file=sys.stderr,
+        )
+        return 1
+    vault = Path(obsidian.vault_path).expanduser()
+    if not vault.is_dir():
+        print(f"Error: vault path does not exist: {vault}", file=sys.stderr)
+        return 1
+
+    if reset:
+        ans = input(f"Delete '{OBSIDIAN_COLLECTION_NAME}' collection at {cfg.chroma_path}? [y/N]: ").strip().lower()
+        if ans != "y":
+            print("aborted")
+            return 1
+        delete_collection(cfg, OBSIDIAN_COLLECTION_NAME)
+
+    try:
+        olm = make_ollama_client(cfg)
+        ensure_models_available(olm, cfg.model, cfg.embed_model)
+    except (OllamaUnavailable, EmbedModelMismatch) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    t0 = time.time()
+    stats = index_obsidian(cfg, vault_path=vault, exclude_dirs=obsidian.exclude_dirs)
     dt = time.time() - t0
     print(
         f"indexed {stats.files} files, {stats.chunks} chunks "
@@ -179,8 +264,8 @@ def _cmd_ask(cfg, question: str) -> int:
 
 
 def _make_briefing_ollama(cfg):
-    """Ollama クライアントを生成モデル用に初期化して返す。失敗時は OllamaUnavailable を送出。"""
-    logger.info("Ollama 接続確認中...")
+    """Initialize and return the Ollama client for the generation model. Raises OllamaUnavailable on failure."""
+    logger.info("checking Ollama connection...")
     olm = make_ollama_client(cfg)
     # briefing only generates; pass None so an un-pulled embed_model does not block it.
     ensure_models_available(olm, cfg.model, embed_model=None)
@@ -191,20 +276,20 @@ def _make_briefing_ollama(cfg):
 
 
 def _prefetch_and_enrich(briefing_cfg, search_client, today: str):
-    """Brave Search pre-fetch + 記事本文取得を行い (ctx, article_summary) を返す。"""
+    """Run the Brave Search pre-fetch + article body fetch and return (ctx, article_summary)."""
     logger.info(
-        "Brave Search pre-fetch 開始 — 銘柄 %d 件 + マクロ + 地政学",
+        "Brave Search pre-fetch start — %d tickers + macro + geopolitics",
         len(briefing_cfg.portfolio.tickers),
     )
     ctx = prefetch_briefing_context(briefing_cfg, search_client=search_client, today=today)
-    logger.info("Brave Search pre-fetch 完了 — 上位ヒットの記事本文を取得")
+    logger.info("Brave Search pre-fetch done — fetching article bodies of top hits")
     # The model cannot write concrete facts from snippets alone, so extract the
     # bodies of the top hits and inject them into the prompt (#151). Failures
     # fall back to the snippet.
     ctx = enrich_with_article_text(ctx)
     attempted, fetched = count_article_fetches(ctx)
     article_summary = f"{fetched}/{attempted} 件取得 (上位ヒットのみ・失敗はスニペットで代替)"
-    logger.info("記事本文取得完了 — プロンプトに注入")
+    logger.info("article bodies fetched — injecting into the prompt")
     return ctx, article_summary
 
 
@@ -217,8 +302,8 @@ def _generate_section(
     system_prompt: str,
     gen_options: dict,
 ) -> str:
-    """1セクションを生成して返す。中国語を検出した場合は1回だけ再生成する。"""
-    logger.info("[section] %s 生成開始 (model=%s)", label, model)
+    """Generate and return one section. If Chinese is detected, regenerate once."""
+    logger.info("[section] %s generation start (model=%s)", label, model)
     out = ""
     for attempt in range(2):
         out = generate_local_briefing(
@@ -231,13 +316,13 @@ def _generate_section(
         if not has_simplified_chinese_text(out):
             break
         if attempt == 0:
-            logger.warning("[section] %s に中国語を検出 — 再生成します", label)
-    logger.info("[section] %s 生成完了 (%d 文字)", label, len(out))
+            logger.warning("[section] %s contains Chinese — regenerating", label)
+    logger.info("[section] %s generated (%d chars)", label, len(out))
     return out
 
 
 def _generate_all_sections(cfg, briefing_cfg, ctx, moves, olm, system_prompt: str, today: str) -> str:
-    """Five-stage section-split generation を実行して結合した body を返す。
+    """Run the five-stage section-split generation and return the joined body.
 
     Five-stage section-split generation (top news / sector / geopolitics /
     holdings table / insight). Writing every section in a single chat() scatters
@@ -254,21 +339,21 @@ def _generate_all_sections(cfg, briefing_cfg, ctx, moves, olm, system_prompt: st
             system_prompt=system_prompt, gen_options=gen_options,
         )
 
-    body_top = _gen("トップニュース", build_section_topnews_prompt(briefing_cfg, ctx=ctx, today=today))
+    body_top = _gen("top news", build_section_topnews_prompt(briefing_cfg, ctx=ctx, today=today))
     # The world → sector → ticker narrative's middle layer. Extract the affected
     # sectors from the top-news body and connect them to the holdings (#162).
-    body_sector = _gen("セクター影響", build_section_sector_prompt(briefing_cfg, prior_text=body_top, today=today))
+    body_sector = _gen("sector impact", build_section_sector_prompt(briefing_cfg, prior_text=body_top, today=today))
     # The holdings table uses per-ticker structured output (#152). The model only
     # writes {topic, source_index} JSON; URLs, price moves, and table assembly are
     # done on the Python side.
-    logger.info("[section] 保有銘柄テーブル 構造化生成開始")
+    logger.info("[section] holdings table structured generation start")
     body_port = generate_portfolio_table(
         briefing_cfg.portfolio.tickers,
         ctx=ctx, moves=moves, ollama_client=olm,
         model=cfg.model, options=gen_options, today=today,
     )
-    logger.info("[section] 保有銘柄テーブル 生成完了 (%d 文字)", len(body_port))
-    body_geo = _gen("地政学+イベント", build_section_geo_events_prompt(briefing_cfg, ctx=ctx, today=today))
+    logger.info("[section] holdings table generated (%d chars)", len(body_port))
+    body_geo = _gen("geopolitics+events", build_section_geo_events_prompt(briefing_cfg, ctx=ctx, today=today))
     # Safety net so that even if the model silently omits an investment-relevant
     # topic (e.g. Middle East = oil), the configured topic's heading and sources
     # are always preserved on the Python side (#175).
@@ -279,7 +364,7 @@ def _generate_all_sections(cfg, briefing_cfg, ctx, moves, olm, system_prompt: st
     # Final synthesis stage — route to the (possibly stronger) reasoning model
     # while the cheaper main model handled the extraction/summary stages (#171).
     body_insight = _gen(
-        "自分への示唆",
+        "insight",
         build_section_insight_prompt(briefing_cfg, prior_text=prior_text, today=today),
         model=cfg.synthesis_model,
     )
@@ -291,11 +376,11 @@ def _generate_all_sections(cfg, briefing_cfg, ctx, moves, olm, system_prompt: st
 
 
 def _post_briefing_to_notion(md: str, briefing_cfg, today: str) -> bool:
-    """Notion へブリーフィングを投稿する。成功時 True、失敗時 False を返す。"""
+    """Post the briefing to Notion. Return True on success, False on failure."""
     if not (briefing_cfg.notion_api_key and briefing_cfg.notion_database_id):
-        logger.error("--notion 指定だが NOTION_API_KEY / NOTION_DATABASE_ID が未設定")
+        logger.error("--notion given but NOTION_API_KEY / NOTION_DATABASE_ID unset")
         return False
-    logger.info("Notion へ投稿中...")
+    logger.info("posting to Notion...")
     url = send_to_notion(
         md,
         briefing_cfg.notion_api_key,
@@ -304,15 +389,15 @@ def _post_briefing_to_notion(md: str, briefing_cfg, today: str) -> bool:
         tags=["agent", "local"],
     )
     if url:
-        logger.info("Notion 投稿完了: %s", url)
+        logger.info("Notion post done: %s", url)
         return True
-    logger.error("Notion 投稿に失敗しました")
+    logger.error("Notion post failed")
     return False
 
 
 def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     logger.info(
-        "=== ローカル LLM ブリーフィング開始 (model=%s, synthesis_model=%s) ===",
+        "=== local LLM briefing start (model=%s, synthesis_model=%s) ===",
         cfg.model,
         cfg.synthesis_model,
     )
@@ -320,21 +405,21 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     brave_api_key = os.environ.get("BRAVE_API_KEY", "").strip()
     if not brave_api_key:
         logger.error(
-            "BRAVE_API_KEY が未設定です — `.env` に BRAVE_API_KEY=... を追加してください "
-            "(https://api-dashboard.search.brave.com/ で Free プラン取得)"
+            "BRAVE_API_KEY is unset — add BRAVE_API_KEY=... to `.env` "
+            "(get a Free plan at https://api-dashboard.search.brave.com/)"
         )
         return 1
 
     try:
         olm = _make_briefing_ollama(cfg)
     except OllamaUnavailable as e:
-        logger.error("Ollama に接続できません: %s", e)
+        logger.error("cannot connect to Ollama: %s", e)
         return 1
 
-    logger.info("briefing.json 読み込み中...")
+    logger.info("loading briefing.json...")
     briefing_cfg = load_briefing_config()
 
-    logger.info("株価取得中 (tickers=%s)...", ", ".join(briefing_cfg.portfolio.tickers))
+    logger.info("fetching stock moves (tickers=%s)...", ", ".join(briefing_cfg.portfolio.tickers))
     moves = fetch_stock_move_map(briefing_cfg.portfolio.tickers)
 
     today = date.today().isoformat()  # YYYY-MM-DD — shared by both the filename and the prompt
@@ -346,13 +431,13 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     validation = validate_urls(body, ctx)
     if validation.fabricated > 0:
         logger.warning(
-            "[briefing] URL 捏造検出: %d/%d 件を <URL未検証> に置換しました",
+            "[briefing] URL fabrication detected: replaced %d/%d with <URL unverified>",
             validation.fabricated,
             validation.total,
         )
     else:
         logger.info(
-            "[briefing] URL 検証 OK: %d/%d 件が pre-fetch 由来",
+            "[briefing] URL validation OK: %d/%d came from pre-fetch",
             validation.verified,
             validation.total,
         )
@@ -369,10 +454,10 @@ def _cmd_briefing(cfg, *, post_to_notion: bool) -> int:
     BRIEFING_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = BRIEFING_OUTPUT_DIR / f"local_{today}.md"
     out_path.write_text(md, encoding="utf-8")
-    logger.info("ブリーフィング保存完了: %s", out_path)
+    logger.info("briefing saved: %s", out_path)
 
     if post_to_notion and not _post_briefing_to_notion(md, briefing_cfg, today):
         return 1
 
-    logger.info("=== ローカル LLM ブリーフィング終了 ===")
+    logger.info("=== local LLM briefing end ===")
     return 0

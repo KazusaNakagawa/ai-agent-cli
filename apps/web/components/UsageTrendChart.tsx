@@ -1,5 +1,5 @@
 "use client"
-import { useId } from "react"
+import { useId, useState } from "react"
 
 import {
   niceScale,
@@ -21,10 +21,13 @@ function formatTick(value: number): string {
   return Number(value.toFixed(4)).toLocaleString("en-US")
 }
 
+type TooltipState = { x: number; y: number; label: string } | null
+
 // Dependency-free SVG line chart of per-day totals, styled to match
 // UsageBarChart (axis frame + nice gridlines). One point per day.
 export function UsageTrendChart({ summary, metric }: Props) {
   const gradientId = useId()
+  const [tooltip, setTooltip] = useState<TooltipState>(null)
 
   if (summary.length === 0) {
     return (
@@ -120,16 +123,36 @@ export function UsageTrendChart({ summary, metric }: Props) {
           )}
         </svg>
 
-        {/* Point markers as positioned dots, with a native tooltip per day. */}
-        {points.map((p, i) => (
-          <span
-            key={p.day}
-            data-testid={`usage-trend-point-${i}`}
-            title={`${p.day}: ${formatTick(p.v)}`}
-            className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600"
-            style={{ left: `${p.x}%`, top: `${p.y}%` }}
-          />
-        ))}
+        {/* Tooltip overlay */}
+        {tooltip && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded bg-foreground px-2 py-1 text-[11px] tabular-nums text-background shadow"
+            style={{ left: `${tooltip.x}%`, top: `${tooltip.y}%`, marginTop: "-6px" }}
+          >
+            {tooltip.label}
+          </div>
+        )}
+
+        {/* Point markers as positioned dots with custom tooltip on hover/focus. */}
+        {points.map((p, i) => {
+          const label = `${p.day}: ${formatTick(p.v)}`
+          return (
+            <span
+              key={p.day}
+              data-testid={`usage-trend-point-${i}`}
+              role="img"
+              aria-label={label}
+              tabIndex={0}
+              className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full bg-blue-600 outline-none ring-offset-0 focus-visible:ring-2 focus-visible:ring-blue-400"
+              style={{ left: `${p.x}%`, top: `${p.y}%` }}
+              onMouseEnter={() => setTooltip({ x: p.x, y: p.y, label })}
+              onMouseLeave={() => setTooltip(null)}
+              onFocus={() => setTooltip({ x: p.x, y: p.y, label })}
+              onBlur={() => setTooltip(null)}
+            />
+          )
+        })}
       </div>
     </div>
   )

@@ -12,7 +12,7 @@ EVAL_DIR = OUTPUT_DIR / "eval"
 CLAIMS_DIR = EVAL_DIR / "claims"
 SCORES_DIR = EVAL_DIR / "scores"
 REPORT_DIR = EVAL_DIR / "reports"
-REPORT_PATH = EVAL_DIR / "report.html"  # 最新レポート（常に上書き）
+REPORT_PATH = EVAL_DIR / "report.html"  # latest report (always overwritten)
 
 
 def dated_report_path(date_str: str) -> Path:
@@ -44,7 +44,7 @@ def list_briefing_dates() -> list[str]:
             continue
         d = m.group(1)
         try:
-            date.fromisoformat(d)  # 形式は合うが暦上無効な日付を除外
+            date.fromisoformat(d)  # exclude well-formed but calendar-invalid dates
         except ValueError:
             continue
         dates.append(d)

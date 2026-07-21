@@ -54,27 +54,27 @@ def generate_local_briefing(
     num_ctx = (options or {}).get("num_ctx")
     if num_ctx and est_tokens > num_ctx:
         logger.warning(
-            "[briefing] プロンプト概算 %d tokens (%d 文字) が num_ctx=%d を超過 — "
-            "末尾が切り捨てられる可能性",
+            "[briefing] prompt est. %d tokens (%d chars) exceeds num_ctx=%d — "
+            "the tail may be truncated",
             est_tokens,
             total_chars,
             num_ctx,
         )
     else:
         logger.info(
-            "[briefing] プロンプト概算 %d tokens (%d 文字) / num_ctx=%s",
+            "[briefing] prompt est. %d tokens (%d chars) / num_ctx=%s",
             est_tokens,
             total_chars,
-            num_ctx if num_ctx else "(Ollama 既定)",
+            num_ctx if num_ctx else "(Ollama default)",
         )
 
-    logger.info("[briefing] ollama.chat — 単発生成 (tools 不使用)")
+    logger.info("[briefing] ollama.chat — single-shot generation (no tools)")
     resp = ollama_client.chat(model=model, messages=messages, options=options)
     msg = _msg_field(resp, "message")
     if msg is None:
         msg = resp
     content = _msg_field(msg, "content", "") or ""
-    logger.info("[briefing] 生成完了 (%d 文字)", len(content))
+    logger.info("[briefing] generation done (%d chars)", len(content))
 
     if content:
         print(content, flush=True)

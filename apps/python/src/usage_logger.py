@@ -1,11 +1,14 @@
-"""Claude CLI 呼び出しごとのトークン使用量・コストを JSONL に追記する。
+"""Append per-Claude-CLI-call token usage and cost to a JSONL file.
 
-`src/logger.py` の「日次ファイル + 7 日リテンション」規約に倣う。
-ログ記録の失敗が元のタスクを壊してはならないため、例外は握りつぶす。
+Follows the "daily file + 7-day retention" convention from `src/logger.py`.
+Exceptions are swallowed because a logging failure must never break the
+original task.
 """
 import json
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from src.constants import LOG_RETENTION_DAYS
 from src.logger import get_logger
@@ -19,10 +22,10 @@ USAGE_FILE_GLOB = "*-usage.jsonl"
 
 
 def parse_usage_file_date(path: Path):
-    """``YYYYMMDD-usage.jsonl`` のファイル名から日付 (date) を取り出す。
+    """Extract the date from a ``YYYYMMDD-usage.jsonl`` filename.
 
-    ``usage_logger`` と ``bin/usage_report.py`` で共有し、ファイル名規約の
-    ドリフトを防ぐ。解析できなければ ``None`` を返す。
+    Shared by ``usage_logger`` and ``bin/usage_report.py`` to prevent drift in
+    the filename convention. Returns ``None`` if it cannot be parsed.
     """
     try:
         return datetime.strptime(path.stem.replace("-usage", ""), "%Y%m%d").date()
@@ -34,9 +37,9 @@ _last_purge_date = None
 
 
 def _maybe_purge(usage_dir: Path) -> None:
-    """同日内の重複 purge を避けるため、1 日 1 回だけ ``_purge_old_logs`` を呼ぶ。
+    """Call ``_purge_old_logs`` at most once per day to avoid duplicate purges.
 
-    高頻度呼び出し時にディレクトリ全 glob を毎回走らせる無駄を省く。
+    Avoids the waste of globbing the whole directory on every high-frequency call.
     """
     global _last_purge_date
     today = datetime.now().date()
@@ -60,9 +63,10 @@ def _purge_old_logs(usage_dir: Path) -> None:
 
 
 def log_usage(label: str, usage: dict, cost_usd: float | None, duration_ms: int | None) -> None:
-    """1 回の claude 呼び出しの使用量を当日ファイルに 1 行追記する。
+    """Append one line of usage for a single claude call to today's file.
 
-    例外は記録のみで握りつぶす — 使用量ログの失敗で本処理を止めない。
+    Exceptions are logged and swallowed — a usage-log failure must not stop the
+    main task.
     """
     try:
         USAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,5 +86,30 @@ def log_usage(label: str, usage: dict, cost_usd: float | None, duration_ms: int 
         log_file = USAGE_DIR / f"{datetime.now().strftime('%Y%m%d')}-usage.jsonl"
         with log_file.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
-    except Exception:  # noqa: BLE001 — 使用量ログの失敗は本処理を止めない
-        logger.warning("使用量ログの記録に失敗しました [%s]", label, exc_info=True)
+    except Exception:  # noqa: BLE001 — a usage-log failure must not stop the main task
+        logger.warning("failed to record usage log [%s]", label, exc_info=True)
+
+
+def log_usage_from_result(label: str, result_obj: Mapping[str, Any] | None) -> bool:
+    """Log usage from a claude CLI ``result`` record (token-consuming call).
+
+    ``result_obj`` is the parsed terminal object of a ``--output-format json``
+    or ``--output-format stream-json`` run — it carries ``usage`` plus
+    ``total_cost_usd`` / ``duration_ms``. This is the single entry point every
+    cost-consuming call site should funnel through so the usage-log format
+    stays uniform.
+
+    Returns ``True`` when a usage record was logged, ``False`` when the object
+    has no ``usage`` dict (a no-op the caller can branch on for debug logging).
+    """
+    usage = result_obj.get("usage") if result_obj is not None else None
+    if not isinstance(usage, dict):
+        logger.debug("no usage in result object, skipping usage log [%s]", label)
+        return False
+    log_usage(
+        label=label,
+        usage=usage,
+        cost_usd=result_obj.get("total_cost_usd"),
+        duration_ms=result_obj.get("duration_ms"),
+    )
+    return True

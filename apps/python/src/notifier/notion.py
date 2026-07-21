@@ -11,16 +11,16 @@ logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# ヘルパー
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _utcnow() -> datetime:
-    """テストでモック可能な UTC 現在時刻を返す。"""
+    """Return the current UTC time (mockable in tests)."""
     return datetime.now(timezone.utc)
 
 
 def _resolve_title_prop(notion: Client, database_id: str, sample_title: str) -> str | None:
-    """タイトルプロパティのキー名を試行して特定する。成功したキー名を返し、全て失敗した場合は None を返す。"""
+    """Identify the title property key by trial. Return the working key, or None if all fail."""
     for candidate in ("Name", "title"):
         try:
             page = notion.pages.create(
@@ -28,7 +28,7 @@ def _resolve_title_prop(notion: Client, database_id: str, sample_title: str) -> 
                 properties={candidate: {"title": [{"type": "text", "text": {"content": sample_title}}]}},
             )
             notion.pages.update(page["id"], archived=True)
-            logger.debug("タイトルプロパティキー確定: %r", candidate)
+            logger.debug("title property key determined: %r", candidate)
             return candidate
         except Exception:
             continue
@@ -36,27 +36,31 @@ def _resolve_title_prop(notion: Client, database_id: str, sample_title: str) -> 
 
 
 # ---------------------------------------------------------------------------
-# 公開 API
+# Public API
 # ---------------------------------------------------------------------------
 
-def send_to_notion(
-    text: str,
-    api_key: str,
+def _append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
+    """Append blocks to an existing page, batching at the Notion 100-block limit."""
+    for i in range(0, len(blocks), 100):
+        try:
+            notion.blocks.children.append(
+                block_id=page_id,
+                children=blocks[i:i + 100],
+            )
+        except Exception:
+            logger.exception("failed to append Notion blocks (page_id=%s, index=%d)", page_id, i)
+
+
+def _create_page(
+    notion: Client,
     database_id: str,
-    title: str | None = None,
+    title: str,
+    blocks: list[dict],
     tags: list[str] | None = None,
     extra_properties: dict | None = None,
-) -> str:
-    """Notion データベースに新規ページとしてレポートを投稿する。作成したページの URL を返す。"""
-    if not api_key or not database_id:
-        logger.error("NOTION_API_KEY または NOTION_DATABASE_ID が未設定")
-        return ""
-
-    notion = Client(auth=api_key)
-    page_title = title or f"Report — {date.today().strftime('%Y-%m-%d')}"
-    blocks = markdown_to_notion_blocks(text)
-
-    # databases.retrieve でタイトルプロパティキーを取得。失敗時は名前候補を順に試す。
+) -> dict | None:
+    """Create a page with title/blocks in a Notion database. Return the created page, or None on failure."""
+    # Get the title property key via databases.retrieve. On failure, try name candidates in order.
     title_prop_name: str | None = None
     try:
         db = notion.databases.retrieve(database_id)
@@ -66,21 +70,21 @@ def send_to_notion(
             None,
         )
     except Exception:
-        logger.exception("Notion データベーススキーマの取得に失敗しました (database_id=%s)", database_id)
+        logger.exception("failed to retrieve Notion database schema (database_id=%s)", database_id)
 
     if title_prop_name is None:
-        title_prop_name = _resolve_title_prop(notion, database_id, page_title)
+        title_prop_name = _resolve_title_prop(notion, database_id, title)
     if title_prop_name is None:
-        logger.error("Notion タイトルプロパティの特定に失敗しました (database_id=%s)", database_id)
-        return ""
+        logger.error("failed to identify the Notion title property (database_id=%s)", database_id)
+        return None
 
-    # Notion API は children を 100 ブロックずつしか受け付けない
+    # The Notion API only accepts children 100 blocks at a time.
     first_batch = blocks[:100]
     remaining = blocks[100:]
 
     properties: dict = {
         title_prop_name: {
-            "title": [{"type": "text", "text": {"content": page_title}}]
+            "title": [{"type": "text", "text": {"content": title}}]
         }
     }
     if tags:
@@ -95,27 +99,41 @@ def send_to_notion(
             children=first_batch,
         )
     except Exception:
-        logger.exception("Notion ページ作成に失敗しました (database_id=%s, title=%s)", database_id, page_title)
+        logger.exception("failed to create Notion page (database_id=%s, title=%s)", database_id, title)
+        return None
+
+    _append_blocks(notion, response["id"], remaining)
+    return response
+
+
+def send_to_notion(
+    text: str,
+    api_key: str,
+    database_id: str,
+    title: str | None = None,
+    tags: list[str] | None = None,
+    extra_properties: dict | None = None,
+) -> str:
+    """Post the report as a new page in the Notion database. Return the created page URL."""
+    if not api_key or not database_id:
+        logger.error("NOTION_API_KEY or NOTION_DATABASE_ID unset")
         return ""
 
-    page_id = response["id"]
+    notion = Client(auth=api_key)
+    page_title = title or f"Report — {date.today().strftime('%Y-%m-%d')}"
+    blocks = markdown_to_notion_blocks(text)
 
-    for i in range(0, len(remaining), 100):
-        try:
-            notion.blocks.children.append(
-                block_id=page_id,
-                children=remaining[i:i + 100],
-            )
-        except Exception:
-            logger.exception("Notion ブロック追加に失敗しました (page_id=%s, index=%d)", page_id, i)
+    response = _create_page(notion, database_id, page_title, blocks, tags, extra_properties)
+    if not response:
+        return ""
 
     page_url = response.get("url", "")
-    logger.info("Notion ページ作成完了: %s", page_url)
+    logger.info("Notion page created: %s", page_url)
     return page_url
 
 
 # ---------------------------------------------------------------------------
-# 週次サマリー用: ページ取得
+# For the weekly summary: page fetching
 # ---------------------------------------------------------------------------
 
 def _rich_text_to_str(rich_texts: list[dict]) -> str:
@@ -123,7 +141,7 @@ def _rich_text_to_str(rich_texts: list[dict]) -> str:
 
 
 def _block_to_text(block: dict) -> str:
-    """Notion ブロック辞書を Markdown 行に変換する。"""
+    """Convert a Notion block dict to a Markdown line."""
     block_type = block.get("type", "")
     content = block.get(block_type, {})
     text = _rich_text_to_str(content.get("rich_text", []))
@@ -144,10 +162,10 @@ def _block_to_text(block: dict) -> str:
 
 
 def _paginate(call, base_kwargs: dict) -> list[dict]:
-    """Notion API のカーソルページネーションを共通化する。
+    """Centralize cursor pagination for the Notion API.
 
-    ``call`` は ``start_cursor`` を含む kwargs を受け取り ``has_more`` / ``next_cursor`` /
-    ``results`` キーを持つレスポンスを返す callable。
+    ``call`` is a callable that takes kwargs including ``start_cursor`` and returns
+    a response with ``has_more`` / ``next_cursor`` / ``results`` keys.
     """
     results: list[dict] = []
     cursor: str | None = None
@@ -164,18 +182,18 @@ def _paginate(call, base_kwargs: dict) -> list[dict]:
 
 
 def _fetch_blocks(notion: Client, block_id: str) -> list[dict]:
-    """指定ブロックの全子ブロックをページネーションして返す。"""
+    """Paginate and return all child blocks of the given block."""
     return _paginate(notion.blocks.children.list, {"block_id": block_id, "page_size": 100})
 
 
 def _fetch_page_text(notion: Client, page_id: str) -> str:
-    """ページ全ブロックをテキストに変換して返す（ページネーション・ネスト対応）。"""
+    """Convert all blocks of a page to text (pagination- and nesting-aware)."""
     def _collect(block_id: str) -> list[str]:
         lines: list[str] = []
         for block in _fetch_blocks(notion, block_id):
             block_type = block.get("type", "")
             if block_type == "table":
-                # テーブル行は子ブロックとして格納されているため個別に取得する
+                # Table rows are stored as child blocks, so fetch them separately.
                 has_header = block.get("table", {}).get("has_column_header", False)
                 col_count = block.get("table", {}).get("table_width", 0)
                 for i, row in enumerate(_fetch_blocks(notion, block["id"])):
@@ -186,7 +204,7 @@ def _fetch_page_text(notion: Client, page_id: str) -> str:
                 line = _block_to_text(block)
                 if line:
                     lines.append(line)
-                # ネストした子ブロック（インデントリストなど）を再帰取得
+                # Recursively fetch nested child blocks (indented lists, etc.)
                 if block.get("has_children") and block_type not in ("table",):
                     lines.extend(_collect(block["id"]))
         return lines
@@ -208,27 +226,26 @@ def _get_page_tags(page: dict) -> list[str]:
     return []
 
 
-def fetch_weekly_pages(
-    api_key: str, database_id: str, days: int = 7, tag: str = "agent"
-) -> list[dict]:
-    """過去 N 日分の指定タグ付きブリーフィングページを Notion から取得してテキスト化する。
-
-    Args:
-        tag: 取得対象の Tags 値（デフォルト "agent"）。空文字の場合はタグ絞り込みなし。
-
-    Returns:
-        [{"title": str, "date": str, "text": str}, ...] (作成日昇順)
-    """
+def _notion_client(api_key: str, database_id: str) -> Client | None:
+    """Validate required credentials and build a Notion client, or None if unset."""
     if not api_key or not database_id:
-        logger.error("NOTION_API_KEY または NOTION_DATABASE_ID が未設定")
-        return []
+        logger.error("NOTION_API_KEY or NOTION_DATABASE_ID unset")
+        return None
+    return Client(auth=api_key)
 
-    notion = Client(auth=api_key)
-    # Notion API 2025-09-03 では databases.query が廃止されたため search を使用。
-    # parent.database_id・created_time・tag は Python 側でフィルタリングする。
-    since_dt = _utcnow() - timedelta(days=days)
+
+def _search_tagged_pages(notion: Client, database_id: str, tag: str) -> list[dict]:
+    """Search all pages under `database_id` tagged `tag` (empty tag = no filter).
+
+    Returns raw Notion page objects, newest ``last_edited_time`` first (the
+    order ``notion.search`` sorts by). Date-range filtering is left to the
+    caller — different callers filter on different timestamp fields
+    (``fetch_weekly_pages`` on ``created_time``, ``fetch_commentable_pages``
+    on ``last_edited_time``, #396).
+    """
+    # databases.query was removed in Notion API 2025-09-03, so use search instead.
+    # parent.database_id and tag are filtered on the Python side.
     normalized_db_id = database_id.replace("-", "")
-
     try:
         all_results = _paginate(notion.search, {
             "filter": {"value": "page", "property": "object"},
@@ -236,7 +253,7 @@ def fetch_weekly_pages(
             "page_size": 100,
         })
     except Exception:
-        logger.exception("Notion 検索に失敗しました (database_id=%s)", database_id)
+        logger.exception("Notion search failed (database_id=%s)", database_id)
         return []
 
     filtered = []
@@ -244,16 +261,42 @@ def fetch_weekly_pages(
         parent = page.get("parent", {})
         if (parent.get("database_id") or "").replace("-", "") != normalized_db_id:
             continue
-        created_iso = page.get("created_time", "")
-        if created_iso.endswith("Z"):
-            created_iso = created_iso[:-1] + "+00:00"
-        try:
-            created_dt = datetime.fromisoformat(created_iso)
-        except ValueError:
-            continue
-        if created_dt < since_dt:
-            continue
         if tag and tag not in _get_page_tags(page):
+            continue
+        filtered.append(page)
+    return filtered
+
+
+def _parse_notion_ts(raw: str) -> datetime | None:
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def fetch_weekly_pages(
+    api_key: str, database_id: str, days: int = 7, tag: str = "agent"
+) -> list[dict]:
+    """Fetch the last N days of tagged briefing pages from Notion and convert to text.
+
+    Args:
+        tag: Tags value to filter on (default "agent"). Empty string means no tag filter.
+
+    Returns:
+        [{"title": str, "date": str, "text": str, "page_id": str}, ...] (ascending by created date)
+    """
+    notion = _notion_client(api_key, database_id)
+    if notion is None:
+        return []
+    since_dt = _utcnow() - timedelta(days=days)
+    candidates = _search_tagged_pages(notion, database_id, tag)
+
+    filtered = []
+    for page in candidates:
+        created_dt = _parse_notion_ts(page.get("created_time", ""))
+        if created_dt is None or created_dt < since_dt:
             continue
         filtered.append(page)
 
@@ -262,16 +305,98 @@ def fetch_weekly_pages(
         try:
             text = _fetch_page_text(notion, page_id)
         except Exception:
-            logger.exception("ページ本文の取得に失敗しました (page_id=%s)", page_id)
+            logger.exception("failed to fetch page body (page_id=%s)", page_id)
             text = ""
         title = _extract_page_title(page)
         created = page.get("created_time", "")[:10]
-        logger.debug("取得済み: %s (%s)", title, created)
-        return {"title": title, "date": created, "text": text}
+        logger.debug("fetched: %s (%s)", title, created)
+        return {"title": title, "date": created, "text": text, "page_id": page_id}
 
     with ThreadPoolExecutor(max_workers=5) as pool:
         pages = list(pool.map(_fetch, filtered))
 
     pages.sort(key=lambda p: p["date"])
-    logger.info("週次ページ取得完了: %d件", len(pages))
+    logger.info("weekly pages fetched: %d", len(pages))
     return pages
+
+
+def fetch_commentable_pages(
+    api_key: str, database_id: str, days: int = 7, tag: str = "agent"
+) -> list[dict]:
+    """Tagged pages *edited* (not just created) within the last `days` days (#396).
+
+    A wider net than ``fetch_weekly_pages``: a page created long ago still
+    counts if it was edited recently — e.g. someone left a Notion comment on
+    an old briefing this week. No page body is fetched; comment ingestion
+    only needs page identity.
+
+    Returns: [{"page_id": str, "title": str, "date": str}, ...]
+    ``date`` is deliberately ``created_time`` (not ``last_edited_time``): it
+    identifies which specific report a comment belongs to, matching
+    ``fetch_weekly_pages``'s contract, whereas the edit date would just be
+    "recently" for every result and add no information the filter didn't
+    already establish.
+    """
+    notion = _notion_client(api_key, database_id)
+    if notion is None:
+        return []
+    since_dt = _utcnow() - timedelta(days=days)
+    candidates = _search_tagged_pages(notion, database_id, tag)
+
+    out = []
+    for page in candidates:
+        edited_dt = _parse_notion_ts(page.get("last_edited_time", ""))
+        if edited_dt is None:
+            continue
+        if edited_dt < since_dt:
+            # Skip pages edited before the cutoff; don't assume candidates
+            # are ordered by last_edited_time (avoids silently dropping
+            # in-window pages if the search API's sort ever changes).
+            continue
+        out.append({
+            "page_id": page["id"],
+            "title": _extract_page_title(page),
+            "date": page.get("created_time", "")[:10],
+        })
+    return out
+
+
+def fetch_new_comments(
+    api_key: str, pages: list[dict], seen_ids: set[str]
+) -> list[dict]:
+    """Fetch comments on `pages` (each needs "page_id"/"title"/"date") not
+    already in `seen_ids`, skipping blank comments (#396).
+
+    A per-page comment-fetch failure is logged and skipped so one bad page
+    doesn't block comments on the others.
+
+    Returns: [{"comment_id", "page_id", "page_title", "page_date", "text",
+    "created_time"}, ...]
+    """
+    if not api_key or not pages:
+        return []
+
+    notion = Client(auth=api_key)
+    out = []
+    for page in pages:
+        try:
+            comments = _paginate(notion.comments.list, {"block_id": page["page_id"]})
+        except Exception:
+            logger.exception("failed to fetch comments (page_id=%s)", page["page_id"])
+            continue
+        for c in comments:
+            cid = c.get("id")
+            if not cid or cid in seen_ids:
+                continue
+            text = _rich_text_to_str(c.get("rich_text", []))
+            if not text.strip():
+                continue
+            out.append({
+                "comment_id": cid,
+                "page_id": page["page_id"],
+                "page_title": page["title"],
+                "page_date": page["date"],
+                "text": text,
+                "created_time": c.get("created_time", ""),
+            })
+    return out

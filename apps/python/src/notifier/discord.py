@@ -6,7 +6,7 @@ logger = get_logger(__name__)
 
 
 def _wrap_tables_in_codeblock(text: str) -> str:
-    """Markdown テーブルブロックをコードブロックで囲み、Discord で等幅表示にする。"""
+    """Wrap Markdown table blocks in a code block so Discord renders them monospaced."""
     lines = text.splitlines(keepends=True)
     result = []
     i = 0
@@ -32,8 +32,9 @@ def _wrap_tables_in_codeblock(text: str) -> str:
 
 
 def _chunk_preserving_fences(text: str, chunk_size: int = 1900) -> list[str]:
-    """テキストを chunk_size 以内に分割する。コードフェンス（```）をまたぐ場合は
-    チャンク末尾でフェンスを閉じ、次チャンク先頭で再開することでバランスを保つ。"""
+    """Split text into chunks <= chunk_size. When a chunk would split across a code
+    fence (```), close the fence at the chunk end and reopen it at the next chunk
+    start to keep them balanced."""
     chunks: list[str] = []
     current_lines: list[str] = []
     current_len = 0
@@ -41,21 +42,21 @@ def _chunk_preserving_fences(text: str, chunk_size: int = 1900) -> list[str]:
     fence_opener = "```"
 
     for line in text.splitlines(keepends=True):
-        # フェンス状態の更新より先に overflow を判定する（閉じフェンス行自体が
-        # 境界を超えるケースで、まだ開いている状態のまま flush できるように）
+        # Check overflow before updating fence state (so that when a closing-fence
+        # line itself crosses the boundary, we can flush while still "open").
         if current_len + len(line) > chunk_size and current_lines:
             chunk = "".join(current_lines)
             if in_fence:
-                chunk += "```\n"   # 開いているフェンスを閉じる
+                chunk += "```\n"   # close the open fence
             chunks.append(chunk)
             current_lines = []
             current_len = 0
             if in_fence:
                 reopen = fence_opener + "\n"
-                current_lines = [reopen]  # 元の言語指定を保ってフェンスを再開
+                current_lines = [reopen]  # reopen the fence, preserving its language tag
                 current_len = len(reopen)
 
-        # 言語指定（```python 等）も含めてフェンス開閉を追跡する
+        # Track fence open/close including the language tag (e.g. ```python)
         stripped = line.rstrip()
         if in_fence:
             if stripped == "```":
@@ -74,9 +75,9 @@ def _chunk_preserving_fences(text: str, chunk_size: int = 1900) -> list[str]:
 
 
 def send_to_discord(text: str, token: str, channel_id: str):
-    """Discord Bot API でチャンネルにメッセージ送信（2000文字制限を考慮して分割）"""
+    """Send a message to a channel via the Discord Bot API (chunked for the 2000-char limit)."""
     if not token or not channel_id:
-        logger.error("DISCORD_TOKEN または CHANNEL_ID が未設定")
+        logger.error("DISCORD_TOKEN or CHANNEL_ID unset")
         return
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
     headers = {"Authorization": f"Bot {token}"}
@@ -85,5 +86,5 @@ def send_to_discord(text: str, token: str, channel_id: str):
     for i, chunk in enumerate(chunks, 1):
         res = requests.post(url, headers=headers, json={"content": chunk})
         res.raise_for_status()
-        logger.debug("Discord 送信完了 (chunk %d/%d)", i, len(chunks))
-    logger.info("Discord 送信完了 (合計%dチャンク)", len(chunks))
+        logger.debug("Discord send done (chunk %d/%d)", i, len(chunks))
+    logger.info("Discord send done (%d chunks total)", len(chunks))

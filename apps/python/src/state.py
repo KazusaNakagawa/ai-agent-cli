@@ -1,9 +1,9 @@
-"""``~/.ai-agent/state.json`` の読み書き。
+"""Read and write ``~/.ai-agent/state.json``.
 
-ホストごとの非機密ランタイム状態。資格情報は Keychain (``src.credentials``)、
-ユーザー設定 (portfolio 等) は ``apps/python/config/briefing.json``、
-このファイルは「オンボーディング済みか」「auth_mode は cli か api か」
-といった runtime トグル専用。
+Per-host non-sensitive runtime state. Credentials live in the Keychain
+(``src.credentials``) and user settings (portfolio, etc.) in
+``apps/python/config/briefing.json``; this file is only for runtime toggles like
+"has onboarded" and "is auth_mode cli or api".
 """
 import json
 import os

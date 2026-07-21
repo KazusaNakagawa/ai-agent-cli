@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.config import load_config
+from src.config import get_obsidian_config, load_config
 
 
 class TestLoadConfig:
@@ -105,6 +105,41 @@ class TestLoadConfig:
             config = load_config()
 
         assert config.watch_events == []
+
+    def test_obsidian_config_parsed_when_present(self, tmp_path):
+        data = {
+            "portfolio": {"tickers": ["PLTR"], "themes": ["AI"]},
+            "geopolitical": {"conflicts": []},
+            "watch_sectors": [{"sector": "Tech", "tickers": ["AAPL"]}],
+            "obsidian": {"vault_path": "/tmp/vault"},
+        }
+        config_file = tmp_path / "briefing.json"
+        config_file.write_text(json.dumps(data), encoding="utf-8")
+
+        with patch("src.config.CONFIG_PATH", config_file):
+            config = load_config()
+
+        assert config.obsidian is not None
+        assert config.obsidian.vault_path == "/tmp/vault"
+        assert config.obsidian.journal_subdir == "journal"
+        assert config.obsidian.exclude_dirs == [".obsidian", ".trash", "templates"]
+
+    def test_obsidian_config_none_when_absent(self, tmp_path):
+        data = {
+            "portfolio": {"tickers": ["PLTR"], "themes": ["AI"]},
+            "geopolitical": {"conflicts": []},
+            "watch_sectors": [{"sector": "Tech", "tickers": ["AAPL"]}],
+        }
+        config_file = tmp_path / "briefing.json"
+        config_file.write_text(json.dumps(data), encoding="utf-8")
+
+        with patch("src.config.CONFIG_PATH", config_file):
+            assert load_config().obsidian is None
+            assert get_obsidian_config() is None
+
+    def test_get_obsidian_config_returns_none_when_file_missing(self, tmp_path):
+        with patch("src.config.CONFIG_PATH", tmp_path / "missing.json"):
+            assert get_obsidian_config() is None
 
     def test_importing_src_config_does_not_eagerly_read_file(self, tmp_path):
         """Regression: importing src.config must not read briefing.json at

@@ -45,7 +45,9 @@ skill via the ``claude`` CLI (subprocess + ``--output-format stream-json``),
 so the skill definition under ``.claude/skills/notion-import/SKILL.md``
 remains the single source of truth — no duplicate Python implementation.
 """
+import base64
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -60,16 +62,26 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src import chat_job_store
+from src import config
 from src import credentials as cred_mod
+from src import journal_store
 from src import state as state_mod
-from src.chat_session import build_cmd
+from src.chat_session import build_cmd, build_journal_cmd
 from src.claude_runner import build_env
+from src.claude_stream import StreamState, consume_stream_line
+from src.local_llm.briefing_index import retrieve_briefing_context
+from src.local_llm.clients import EmbedModelMismatch, OllamaUnavailable
+from src.local_llm.config import load_config as load_local_llm_config
+from src.local_llm.obsidian_index import retrieve_obsidian_context
+from src.local_llm.retriever import build_context_text
 from src.logger import get_logger
+from src.usage_logger import log_usage
 from web.auth import require_bearer
 
 logger = get_logger(__name__)
 # apps/python/web/routers/chat.py → repo root is parents[3] (chat.py → routers → web → python → apps → repo).
 REPO_ROOT = Path(__file__).resolve().parents[4]
+IMAGES_ROOT = REPO_ROOT / "apps" / "python" / "input" / "images"
 NOTION_URL_RE = re.compile(r"https://www\.notion\.so/[A-Za-z0-9\-]+")
 NOTION_IMPORT_TIMEOUT_SEC = 120
 # Allow-list of model aliases the user can pick from the UI. Anything else
@@ -90,7 +102,69 @@ CHAT_JOB_GC_GRACE_SEC = 120.0
 # to spin a CPU per attached client.
 _TAIL_POLL_INTERVAL_SEC = 0.05
 
+# --output-format stream-json lets us capture the per-call ``usage`` record
+# (token counts + cost) that plain-text output discards, so chat/journal turns
+# can be surfaced in the usage dashboard. ``--verbose`` is required by the CLI
+# for stream-json under ``-p``; ``--include-partial-messages`` preserves the
+# incremental (line-by-line) streaming the SSE client already expects.
+CHAT_STREAM_FLAGS = [
+    "--output-format", "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+]
+
 router = APIRouter(dependencies=[Depends(require_bearer)])
+
+
+def _validate_image_path(image_path: str | None) -> Path | None:
+    """Return resolved Path if image_path is inside IMAGES_ROOT, else raise 400."""
+    if image_path is None:
+        return None
+    resolved = Path(image_path).resolve()
+    if not str(resolved).startswith(str(IMAGES_ROOT) + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid image path")
+    # is_file() (not exists()) so a directory path inside IMAGES_ROOT yields a
+    # clean 400 instead of an IsADirectoryError 500 at read_bytes() time.
+    if not resolved.is_file():
+        raise HTTPException(status_code=400, detail="Image file not found")
+    return resolved
+
+
+# Reading a base64 image requires the stream-json *input* format. The default
+# "text" input treats piped stdin as a plain prompt string, so the JSON (and
+# the image) is never parsed — claude just sees gibberish. Pairs with the
+# stream-json output already in CHAT_STREAM_FLAGS.
+IMAGE_INPUT_FLAGS = ["--input-format", "stream-json"]
+
+_IMAGE_MEDIA_TYPES = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
+
+
+def _build_image_message(img_path: Path, question: str) -> str:
+    """Build a stream-json input envelope carrying a base64 image + the question.
+
+    The claude CLI's stream-json input expects newline-delimited
+    ``{"type":"user","message":{...}}`` objects whose ``content`` uses the
+    Messages API block format. The trailing newline terminates the record.
+    """
+    b64 = base64.b64encode(img_path.read_bytes()).decode()
+    ext = img_path.suffix.lstrip(".").lower()
+    media = _IMAGE_MEDIA_TYPES.get(ext, "image/png")
+    return json.dumps({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}},
+                {"type": "text", "text": question},
+            ],
+        },
+    }) + "\n"
 
 
 class ChatBody(BaseModel):
@@ -98,6 +172,12 @@ class ChatBody(BaseModel):
     # SESSIONS_DIR (e.g. "../foo").
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     question: str = Field(min_length=1)
+    image_path: str | None = None
+    # Opt-in cross-date RAG (#395): searches past briefings via the
+    # local-LLM chromadb index and injects matches into the new session's
+    # system prompt alongside today's briefing. Off by default so existing
+    # clients pay no retrieval cost and see unchanged behavior.
+    search_history: bool = False
 
 
 class ChatPostResponse(BaseModel):
@@ -118,11 +198,14 @@ def _sse_event(content: str, event: str | None = None) -> bytes:
     return ("\n".join(out) + "\n\n").encode("utf-8")
 
 
+
 def _run_chat_job(
     job_id: str,
     cmd: list[str],
     session_file: Path,
     env: dict[str, str],
+    label: str,
+    image_message: str | None = None,
 ) -> None:
     """Background task: drive the claude subprocess to completion and
     append each stdout line into the job's replay buffer.
@@ -133,12 +216,18 @@ def _run_chat_job(
     """
     chat_job_store.mark_running(job_id)
     try:
+        stdin_mode = subprocess.PIPE if image_message else subprocess.DEVNULL
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            stdin=stdin_mode,
             env=env,
         )
+        if image_message:
+            if proc.stdin is not None:
+                proc.stdin.write(image_message.encode())
+                proc.stdin.close()
         chat_job_store.attach_process(job_id, proc)
 
         # Drain stderr concurrently — without this, a large stderr write would
@@ -153,15 +242,34 @@ def _run_chat_job(
         stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
         stderr_thread.start()
 
+        state = StreamState()
         try:
             assert proc.stdout is not None
             for line_bytes in proc.stdout:
                 line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
-                chat_job_store.append_event(job_id, _sse_event(line))
+                if not line:
+                    continue
+                for text_line in consume_stream_line(line, state):
+                    chat_job_store.append_event(job_id, _sse_event(text_line))
         finally:
             proc.wait()
             stderr_thread.join(timeout=2)
             chat_job_store.detach_process(job_id)
+
+        # Flush the final partial line (a text block with no trailing newline).
+        if state.text_buf:
+            chat_job_store.append_event(job_id, _sse_event(state.text_buf))
+        # Record token usage for this turn (best-effort; must never fail the job).
+        if state.usage is not None:
+            try:
+                log_usage(
+                    label=label,
+                    usage=state.usage,
+                    cost_usd=state.cost_usd,
+                    duration_ms=state.duration_ms,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("failed to record usage log [%s]", label, exc_info=True)
 
         if proc.returncode != 0:
             stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
@@ -244,12 +352,132 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
     if not briefing_file.exists():
         raise HTTPException(status_code=404, detail=f"no briefing for {body.date}")
 
+    history_context: str | None = None
+    if body.search_history:
+        try:
+            chunks = retrieve_briefing_context(load_local_llm_config(), body.question)
+        except (OllamaUnavailable, EmbedModelMismatch) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"cross-date briefing search unavailable: {exc}",
+            ) from exc
+        if chunks:
+            history_context = build_context_text(chunks)
+
+    vault_context: str | None = None
+    obsidian = config.get_obsidian_config()
+    if obsidian:
+        # Soft degrade by design: vault RAG is an enhancement, so any failure
+        # (Ollama down, collection not built yet) logs and continues without
+        # vault context — unlike search_history's explicit 503 contract.
+        try:
+            vault_chunks = retrieve_obsidian_context(
+                load_local_llm_config(),
+                body.question,
+                vault_path=Path(obsidian.vault_path).expanduser(),
+                exclude_dirs=obsidian.exclude_dirs,
+            )
+            if vault_chunks:
+                vault_context = build_context_text(vault_chunks)
+        except Exception:
+            logger.warning(
+                "obsidian vault retrieval failed — continuing without vault context",
+                exc_info=True,
+            )
+
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    cmd = build_cmd(body.date, briefing_file, session_file) + ["-p", body.question]
+    img_path = _validate_image_path(body.image_path)
+    image_message: str | None = None
+    if img_path:
+        image_message = _build_image_message(img_path, body.question)
+        cmd = [*build_cmd(body.date, briefing_file, session_file, history_context, vault_context), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
+    else:
+        cmd = [*build_cmd(body.date, briefing_file, session_file, history_context, vault_context), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()
-    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env)
+    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env, "chat", image_message)
+    return ChatPostResponse(job_id=job.job_id, status=job.status)
+
+
+# Upper bound on the assembled journal context. Caps the size of the
+# --append-system-prompt payload (and the token cost) for users with many or
+# very long entries. Newest entries are kept; older ones are dropped once the
+# budget is exhausted.
+JOURNAL_CONTEXT_MAX_CHARS = 40_000
+
+
+class JournalChatBody(BaseModel):
+    question: str = Field(min_length=1)
+    # How many most-recent journal days to load as brainstorm context.
+    days: int = Field(default=7, ge=1, le=31)
+    image_path: str | None = None
+
+
+def _gather_journal_context(days: int, max_chars: int | None = None) -> str:
+    """Concatenate journal entries from the newest ``days`` dates into a blob.
+
+    Selection is day-based: all entries whose date falls in the most recent
+    ``days`` distinct dates are included (a single date may hold several
+    per-entry files). Entries are appended newest-first and the blob is capped
+    at ``max_chars`` (defaults to the module-level ``JOURNAL_CONTEXT_MAX_CHARS``)
+    so a long history can't blow up the prompt; entries past the budget are
+    dropped. The whole blob is wrapped as untrusted input by ``build_journal_cmd``.
+    """
+    if max_chars is None:
+        max_chars = JOURNAL_CONTEXT_MAX_CHARS
+    # Walk entries newest-first, keeping every entry that belongs to one of the
+    # newest ``days`` distinct dates so multiple entries per day are preserved.
+    seen_dates: set[str] = set()
+    sections: list[str] = []
+    total = 0
+    for entry_id, _ in journal_store.list_files():
+        date = journal_store.date_of(entry_id)
+        if date not in seen_dates:
+            if len(seen_dates) >= days:
+                break
+            seen_dates.add(date)
+        content = journal_store.read_entry(entry_id)
+        if not content:
+            continue
+        section = content.strip()
+        # +2 accounts for the "\n\n" join separator between sections.
+        if sections and total + len(section) + 2 > max_chars:
+            break
+        sections.append(section)
+        total += len(section) + 2
+    return "\n\n".join(sections)
+
+
+@router.post("/journal/chat", status_code=202, response_model=ChatPostResponse)
+def post_journal_chat(
+    body: JournalChatBody, background_tasks: BackgroundTasks
+) -> ChatPostResponse:
+    """Start a journaling brainstorm chat seeded with recent journal entries.
+
+    Reuses the chat job/stream machinery: the returned ``job_id`` is streamed
+    via ``GET /api/chat/{job_id}/stream`` and cancelled via ``DELETE``.
+    """
+    context = _gather_journal_context(body.days)
+    if not context:
+        raise HTTPException(status_code=404, detail="no journal entries to brainstorm over")
+
+    today = journal_store.today()
+    sessions_dir = journal_store.JOURNAL_DIR / ".sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    session_file = sessions_dir / today
+
+    img_path = _validate_image_path(body.image_path)
+    image_message: str | None = None
+    if img_path:
+        image_message = _build_image_message(img_path, body.question)
+        cmd = [*build_journal_cmd(today, context, session_file), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
+    else:
+        cmd = [*build_journal_cmd(today, context, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
+    env = build_env(auth_mode=state_mod.read_state().auth_mode)
+
+    job = chat_job_store.create_job()
+    background_tasks.add_task(_run_chat_job, job.job_id, cmd, session_file, env, "journal", image_message)
     return ChatPostResponse(job_id=job.job_id, status=job.status)
 
 
@@ -343,6 +571,30 @@ def _extract_final_text(stream_json_stdout: str) -> str:
         if obj.get("type") == "result":
             final = obj.get("result", "") or ""
     return final
+
+
+def _append_to_local_briefing(date: str, question: str, answer: str) -> Path:
+    """Append the Q&A to the local daily briefing markdown file.
+
+    Mirrors the `## 追記:` block the /notion-import skill writes to the Notion
+    page, so the local `briefing_<date>.md` stays in sync with Notion. The
+    file is created (with its parent dir) if it does not exist yet, so a Q&A
+    is never silently dropped for a date with no briefing run.
+
+    ``date`` is already constrained to ``^\\d{4}-\\d{2}-\\d{2}$`` by
+    ``ChatNotionImportBody``, so it cannot path-traverse out of BRIEFING_DIR.
+    """
+    target = BRIEFING_DIR / f"briefing_{date}.md"
+    block = (
+        f"\n\n---\n\n"
+        f"## 追記: QA チャット ({date})\n\n"
+        f"**Q:** {question}\n\n"
+        f"{answer}\n"
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as fh:
+        fh.write(block)
+    return target
 
 
 @router.post("/chat/notion-import", response_model=ChatNotionImportResponse)
@@ -444,5 +696,14 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
                 f"(skill report: {report})"
             ),
         )
+
+    # Notion is the primary durable artifact; the local briefing mirror is
+    # best-effort. A filesystem hiccup here must not fail an already-successful
+    # Notion append, so we log and continue rather than raising.
+    try:
+        local_path = _append_to_local_briefing(body.date, body.question, body.answer)
+        logger.info("appended Q&A to local briefing %s", local_path)
+    except OSError as exc:
+        logger.warning("failed to append Q&A to local briefing for %s: %s", body.date, exc)
 
     return ChatNotionImportResponse(url=url_match.group(0), summary=final_text.strip()[:500])

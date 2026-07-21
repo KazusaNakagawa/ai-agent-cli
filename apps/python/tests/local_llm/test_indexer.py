@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 
 from src.local_llm.config import load_config
@@ -21,6 +22,29 @@ def test_iter_source_files_filters_excluded_and_extensions(tmp_path):
     found = sorted(p.relative_to(tmp_path).as_posix() for p in iter_source_files(cfg))
 
     assert found == ["README.md", "src/a.py"]
+
+
+def test_iter_source_files_respects_extra_exclude_dirs(tmp_path):
+    _write(tmp_path / "notes" / "keep.md", "keep\n")
+    _write(tmp_path / ".obsidian" / "app.json", "{}\n")
+    _write(tmp_path / "templates" / "daily.md", "tmpl\n")
+
+    cfg = dataclasses.replace(
+        load_config(repo_root=tmp_path),
+        extra_exclude_dirs=frozenset({".obsidian", "templates"}),
+    )
+    found = sorted(p.relative_to(tmp_path).as_posix() for p in iter_source_files(cfg))
+
+    assert found == ["notes/keep.md"]
+
+
+def test_iter_source_files_default_extra_exclude_is_empty(tmp_path):
+    _write(tmp_path / ".obsidian" / "app.json", "{}\n")
+
+    cfg = load_config(repo_root=tmp_path)  # extra_exclude_dirs defaults to empty
+    found = sorted(p.relative_to(tmp_path).as_posix() for p in iter_source_files(cfg))
+
+    assert found == [".obsidian/app.json"]
 
 
 def test_chunk_file_splits_with_overlap(tmp_path):
