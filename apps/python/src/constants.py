@@ -7,7 +7,7 @@ DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 # Claude CLI timeouts (seconds)
 TIMEOUT_BRIEFING_MAIN = 480
 TIMEOUT_BRIEFING_SECTORS = 480
-TIMEOUT_WEEKLY_SUMMARY = 300
+TIMEOUT_WEEKLY_SUMMARY = 480
 
 # Claude CLI retry policy (5xx transient errors only)
 RETRY_MAX_ATTEMPTS = 3
