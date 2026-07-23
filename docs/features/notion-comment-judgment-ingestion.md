@@ -23,3 +23,11 @@ Notion のブリーフィングページに残された人間のコメントを�
 
 - `judge` CLI が `~/work/dotfiles-claude/bin/judge` に存在すること（なければ静かにスキップ、エラーにはならない）。
 - `NOTION_API_KEY` / `NOTION_DATABASE_ID` が設定済みで、ページへの comments 読み取り権限（integration の capabilities で "Read comments" 有効化）があること。
+
+## トラブルシューティング
+
+### `notion_client.errors.APIResponseError: Insufficient permissions for this endpoint`（`comments.list` で 403）
+
+- 原因: integration の Capabilities で「コンテンツを読み取る」等は有効でも、**「コメント機能」→「コメントを読み取る」が未チェック**だと `comments.list` だけ 403 になる。ページ共有（Connections）とは別軸の設定なので見落としやすい。
+- 対処: https://www.notion.so/my-integrations → 対象の integration → 「機能」→「コメント機能」で「コメントを読み取る」にチェックを入れて保存する。コメント投稿（`judge` 側への取り込みのみで投稿は行わないため）は不要。
+- 設定変更後は再実行のみで解決し、コード修正は不要。
