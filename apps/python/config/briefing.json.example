@@ -270,6 +270,9 @@
     "journal_subdir": "journal",
     "exclude_dirs": [".obsidian", ".trash", "templates"]
   },
+  "journal_chat": {
+    "trusted_write_dirs": ["~/work/zenn-docs"]
+  },
   "watch_events": [
     {
       "name": "SpaceX IPO",

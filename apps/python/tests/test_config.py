@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.config import get_obsidian_config, load_config
+from src.config import get_journal_chat_trusted_write_dirs, get_obsidian_config, load_config
 
 
 class TestLoadConfig:
@@ -140,6 +140,53 @@ class TestLoadConfig:
     def test_get_obsidian_config_returns_none_when_file_missing(self, tmp_path):
         with patch("src.config.CONFIG_PATH", tmp_path / "missing.json"):
             assert get_obsidian_config() is None
+
+    def test_journal_chat_trusted_write_dirs_defaults_to_empty(self, tmp_path):
+        data = {
+            "portfolio": {"tickers": ["PLTR"], "themes": ["AI"]},
+            "geopolitical": {"conflicts": []},
+            "watch_sectors": [{"sector": "Tech", "tickers": ["AAPL"]}],
+        }
+        config_file = tmp_path / "briefing.json"
+        config_file.write_text(json.dumps(data), encoding="utf-8")
+
+        with patch("src.config.CONFIG_PATH", config_file):
+            assert load_config().journal_chat.trusted_write_dirs == []
+            assert get_journal_chat_trusted_write_dirs() == []
+
+    def test_journal_chat_trusted_write_dirs_parsed_when_present(self, tmp_path):
+        data = {
+            "portfolio": {"tickers": ["PLTR"], "themes": ["AI"]},
+            "geopolitical": {"conflicts": []},
+            "watch_sectors": [{"sector": "Tech", "tickers": ["AAPL"]}],
+            "journal_chat": {"trusted_write_dirs": ["/tmp/zenn-docs"]},
+        }
+        config_file = tmp_path / "briefing.json"
+        config_file.write_text(json.dumps(data), encoding="utf-8")
+
+        with patch("src.config.CONFIG_PATH", config_file):
+            assert load_config().journal_chat.trusted_write_dirs == ["/tmp/zenn-docs"]
+            assert get_journal_chat_trusted_write_dirs() == ["/tmp/zenn-docs"]
+
+    def test_get_journal_chat_trusted_write_dirs_expands_home(self, tmp_path):
+        data = {
+            "portfolio": {"tickers": ["PLTR"], "themes": ["AI"]},
+            "geopolitical": {"conflicts": []},
+            "watch_sectors": [{"sector": "Tech", "tickers": ["AAPL"]}],
+            "journal_chat": {"trusted_write_dirs": ["~/work/zenn-docs"]},
+        }
+        config_file = tmp_path / "briefing.json"
+        config_file.write_text(json.dumps(data), encoding="utf-8")
+
+        with patch("src.config.CONFIG_PATH", config_file):
+            dirs = get_journal_chat_trusted_write_dirs()
+
+        assert dirs == [str(Path("~/work/zenn-docs").expanduser())]
+        assert "~" not in dirs[0]
+
+    def test_get_journal_chat_trusted_write_dirs_returns_empty_when_file_missing(self, tmp_path):
+        with patch("src.config.CONFIG_PATH", tmp_path / "missing.json"):
+            assert get_journal_chat_trusted_write_dirs() == []
 
     def test_importing_src_config_does_not_eagerly_read_file(self, tmp_path):
         """Regression: importing src.config must not read briefing.json at

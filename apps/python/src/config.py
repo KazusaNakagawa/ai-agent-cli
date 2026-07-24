@@ -81,6 +81,21 @@ class ObsidianConfig(BaseModel):
     )
 
 
+class JournalChatConfig(BaseModel):
+    """Journal chat settings (#414).
+
+    ``trusted_write_dirs`` lists directories the Journal brainstorm chat is
+    allowed to write to without an interactive permission prompt (the ``claude``
+    CLI denies writes outside its default scope outright in headless ``-p``
+    mode — there is no prompt to approve later). Empty by default so existing
+    installs see unchanged (no elevated write access) behavior.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    trusted_write_dirs: list[str] = Field(default_factory=list)
+
+
 class BriefingFileConfig(BaseModel):
     """The part expressed in ``briefing.json``. Contains no credentials.
 
@@ -99,6 +114,7 @@ class BriefingFileConfig(BaseModel):
     watch_events: list[WatchEvent] = Field(default_factory=list)
     # Optional Obsidian vault integration. None = feature disabled.
     obsidian: ObsidianConfig | None = None
+    journal_chat: JournalChatConfig = Field(default_factory=JournalChatConfig)
 
 
 class BriefingConfig(BriefingFileConfig):
@@ -167,6 +183,27 @@ def get_obsidian_config() -> ObsidianConfig | None:
     except Exception:
         logger.warning("get_obsidian_config: briefing.json could not be loaded", exc_info=True)
         return None
+
+
+def get_journal_chat_trusted_write_dirs() -> list[str]:
+    """Return Journal chat's trusted write directories, ``~`` expanded.
+
+    Best-effort like ``get_obsidian_config()``: a missing briefing.json or a
+    validation error both mean "nothing trusted yet" (empty list), which
+    matches the claude CLI's existing default-deny behavior for writes
+    outside its scope — callers must not fail because of this optional config.
+    """
+    try:
+        dirs = load_config().journal_chat.trusted_write_dirs
+    except FileNotFoundError:
+        return []
+    except Exception:
+        logger.warning(
+            "get_journal_chat_trusted_write_dirs: briefing.json could not be loaded",
+            exc_info=True,
+        )
+        return []
+    return [str(Path(d).expanduser()) for d in dirs]
 
 
 _CONFIG_CACHE: BriefingConfig | None = None
