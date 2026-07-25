@@ -11,8 +11,18 @@ usage. ``consume_stream_line`` feeds it one JSON line at a time.
 """
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+# Upstream API failures reach us as tool results inside a *successful* run: the
+# WebSearch server tool answers with "API Error: 529 Overloaded." and the model
+# simply retries the query. The process still exits 0, so these are invisible
+# to any caller that only inspects the terminal result (#421).
+_API_ERROR_RE = re.compile(r"API Error:\s*\d{3}")
+
+# Cap on a collected error message; the full tool result can be arbitrarily long.
+_API_ERROR_MAX_LENGTH = 200
 
 
 class StreamState:
@@ -29,6 +39,36 @@ class StreamState:
         self.usage: dict | None = None
         self.cost_usd: float | None = None
         self.duration_ms: int | None = None
+        # Verbatim terminal ``result`` line, so a caller can hand it to the
+        # existing ``--output-format json`` parsing path unchanged.
+        self.result_raw: str | None = None
+        # "API Error: NNN" messages seen in tool results during the run.
+        self.api_errors: list[str] = []
+
+
+def _find_api_errors(obj: dict) -> list[str]:
+    """Return "API Error: NNN" messages carried by this record's tool results.
+
+    ``tool_result`` content is either a bare string or a list of content blocks
+    depending on the tool, so both shapes are flattened before matching.
+    """
+    content = (obj.get("message") or {}).get("content")
+    if not isinstance(content, list):
+        return []
+    found = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_result":
+            continue
+        inner = block.get("content")
+        if isinstance(inner, list):
+            text = " ".join(
+                b.get("text", "") for b in inner if isinstance(b, dict)
+            )
+        else:
+            text = inner if isinstance(inner, str) else ""
+        if _API_ERROR_RE.search(text):
+            found.append(text[:_API_ERROR_MAX_LENGTH])
+    return found
 
 
 def consume_stream_line(line: str, state: StreamState) -> list[str]:
@@ -58,7 +98,10 @@ def consume_stream_line(line: str, state: StreamState) -> list[str]:
                 parts = state.text_buf.split("\n")
                 state.text_buf = parts.pop()
                 return parts
+    elif obj_type == "user":
+        state.api_errors.extend(_find_api_errors(obj))
     elif obj_type == "result":
+        state.result_raw = line
         usage = obj.get("usage")
         if isinstance(usage, dict):
             state.usage = usage
