@@ -18,7 +18,7 @@ function today(): string {
 }
 
 export function ChatForm() {
-  const { messages: committedMessages, setMessages } = useChatState()
+  const { messages: committedMessages, setMessages, hydrated } = useChatState()
   const chatJob = useChatJobState()
   const { draft: input, setDraft: setInput } = useDraftPersistence({
     storageKey: "ai-agent:chat-draft:v1",
@@ -29,9 +29,13 @@ export function ChatForm() {
   const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
     onTranscript: setInput,
   })
-  // Notion save targets committed turns only — never the in-flight one.
+  // Notion save targets committed turns only — never the in-flight one. It
+  // fires automatically per completed answer when Notion is configured; the
+  // button stays as the manual retry path after a failure.
   const { notionState, saveToNotion } = useNotionSave({
     messages: committedMessages,
+    autoSave: notionReady,
+    hydrated,
   })
 
   // Latch to enforce "retry at most once per user send" across status flips.

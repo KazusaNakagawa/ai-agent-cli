@@ -145,6 +145,8 @@ function NotionSaveRow({
           ? "追記中…"
           : status === "saved"
           ? "✓ Notion に追記済"
+          : status === "error"
+          ? "追記を再試行"
           : "Notion ブリーフィングに追記"}
       </Button>
       {status === "saved" && state?.url && (
@@ -157,6 +159,16 @@ function NotionSaveRow({
         >
           ページを開く
         </a>
+      )}
+      {status === "saved" && state?.localSaved && (
+        <span className="text-muted-foreground" data-testid="local-save-note">
+          ローカル md にも追記済
+        </span>
+      )}
+      {status === "saved" && state?.localSaved === false && (
+        <span className="text-destructive" data-testid="local-save-error">
+          ローカル md への追記に失敗: {state.localError ?? "unknown error"}
+        </span>
       )}
       {status === "error" && state?.error && (
         <span className="text-destructive" data-testid="notion-save-error">

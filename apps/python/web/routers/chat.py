@@ -531,6 +531,12 @@ class ChatNotionImportBody(BaseModel):
 class ChatNotionImportResponse(BaseModel):
     url: str
     summary: str = ""
+    # Per-target outcome for the local markdown mirror. The Notion outcome is
+    # carried by the HTTP status, so these three fields let the UI report both
+    # destinations from a single response. `local_path` is repo-relative.
+    local_path: str | None = None
+    local_saved: bool = False
+    local_error: str | None = None
 
 
 def _build_skill_prompt(body: ChatNotionImportBody) -> str:
@@ -598,19 +604,71 @@ def _append_to_local_briefing(date: str, question: str, answer: str) -> Path:
     return target
 
 
+def _save_local_briefing(body: ChatNotionImportBody) -> tuple[Path | None, str | None]:
+    """Run the local markdown append, returning ``(path, error_message)``.
+
+    The local mirror is the operator-owned artifact and must not depend on the
+    Notion round trip, so a filesystem failure is captured and reported rather
+    than raised — the caller still gets to attempt (or report) the Notion save.
+    """
+    try:
+        path = _append_to_local_briefing(body.date, body.question, body.answer)
+    except OSError as exc:
+        logger.warning("failed to append Q&A to local briefing for %s: %s", body.date, exc)
+        return None, str(exc)
+    logger.info("appended Q&A to local briefing %s", path)
+    return path, None
+
+
+def _display_path(path: Path) -> str:
+    """Render a local artifact path for the client without leaking server layout.
+
+    Paths inside the repo become repo-relative; anything else degrades to the
+    bare filename. Either form is enough for the operator to find the file,
+    while keeping the absolute filesystem layout out of API payloads — the same
+    reason ``/briefing/files`` identifies its artifacts by name only.
+    """
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return path.name
+
+
+def _with_local_note(detail: str, local_path: Path | None, local_error: str | None) -> str:
+    """Append the local-mirror outcome to a Notion-failure ``detail`` string.
+
+    Notion failures are surfaced as HTTP errors, whose only payload is
+    ``detail``. Folding the local outcome in keeps the operator from assuming
+    the Q&A was lost when it is in fact already on disk.
+    """
+    if local_path is not None:
+        return f"{detail} The Q&A was still saved locally to {_display_path(local_path)}."
+    # `_save_local_briefing` always pairs a missing path with a reason, but an
+    # OSError can stringify to "", so never render a bare/empty tail.
+    return f"{detail} The local briefing save also failed: {local_error or 'unknown error'}."
+
+
 @router.post("/chat/notion-import", response_model=ChatNotionImportResponse)
 def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportResponse:
     """Delegate the save to the local `/notion-import` skill via the CLI.
 
-    Status map:
+    Status map (the status reflects the *Notion* outcome only):
       400 — NOTION_API_KEY / NOTION_DATABASE_ID not configured
       404 — skill ran but reported no briefing page for the date
       502 — claude CLI failed (non-zero exit, missing binary, timeout, or no URL surfaced)
 
-    The skill itself owns the Notion page lookup + append logic. This
-    endpoint only orchestrates the subprocess and surfaces whatever the
+    The local markdown append runs first and unconditionally, so every save
+    lands in ``briefing_<date>.md`` even when Notion is unreachable or not
+    configured. The skill itself owns the Notion page lookup + append logic;
+    this endpoint only orchestrates the subprocess and surfaces whatever the
     skill reports back.
     """
+    # The local mirror is written before anything can raise. `briefing_<date>.md`
+    # is the single canonical local target: the skill also drops a per-topic
+    # `output/<slug>_<date>.md`, but that file is only produced when the skill
+    # run succeeds, which is exactly the case this endpoint cannot rely on.
+    local_path, local_error = _save_local_briefing(body)
+
     # AC: short-circuit with a descriptive message so the UI can tell the
     # operator exactly which credential to set, rather than letting the
     # subprocess fail opaquely deep inside the MCP call.
@@ -627,14 +685,22 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
     if missing:
         raise HTTPException(
             status_code=400,
-            detail=f"Notion credentials not configured: {', '.join(missing)}",
+            detail=_with_local_note(
+                f"Notion credentials not configured: {', '.join(missing)}.",
+                local_path,
+                local_error,
+            ),
         )
 
     claude_path = shutil.which("claude")
     if claude_path is None:
         raise HTTPException(
             status_code=502,
-            detail="claude CLI not found on PATH — install Claude Code to enable Notion save.",
+            detail=_with_local_note(
+                "claude CLI not found on PATH — install Claude Code to enable Notion save.",
+                local_path,
+                local_error,
+            ),
         )
 
     cmd = [
@@ -670,7 +736,11 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
         logger.error("notion-import skill timed out after %ds", NOTION_IMPORT_TIMEOUT_SEC)
         raise HTTPException(
             status_code=502,
-            detail=f"The /notion-import skill did not finish within {NOTION_IMPORT_TIMEOUT_SEC}s.",
+            detail=_with_local_note(
+                f"The /notion-import skill did not finish within {NOTION_IMPORT_TIMEOUT_SEC}s.",
+                local_path,
+                local_error,
+            ),
         ) from None
 
     if result.returncode != 0:
@@ -678,7 +748,11 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
         logger.error("claude CLI exited rc=%d during notion-import: %s", result.returncode, stderr)
         raise HTTPException(
             status_code=502,
-            detail=f"claude CLI failed (rc={result.returncode}). Check the server logs.",
+            detail=_with_local_note(
+                f"claude CLI failed (rc={result.returncode}). Check the server logs.",
+                local_path,
+                local_error,
+            ),
         )
 
     final_text = _extract_final_text(result.stdout)
@@ -692,19 +766,18 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
         report = " ".join(snippet)[:300] if snippet else "(no output)"
         raise HTTPException(
             status_code=404,
-            detail=(
+            detail=_with_local_note(
                 f"No Notion briefing page found for {body.date} "
-                f"(skill report: {report})"
+                f"(skill report: {report}).",
+                local_path,
+                local_error,
             ),
         )
 
-    # Notion is the primary durable artifact; the local briefing mirror is
-    # best-effort. A filesystem hiccup here must not fail an already-successful
-    # Notion append, so we log and continue rather than raising.
-    try:
-        local_path = _append_to_local_briefing(body.date, body.question, body.answer)
-        logger.info("appended Q&A to local briefing %s", local_path)
-    except OSError as exc:
-        logger.warning("failed to append Q&A to local briefing for %s: %s", body.date, exc)
-
-    return ChatNotionImportResponse(url=url_match.group(0), summary=final_text.strip()[:500])
+    return ChatNotionImportResponse(
+        url=url_match.group(0),
+        summary=final_text.strip()[:500],
+        local_path=_display_path(local_path) if local_path is not None else None,
+        local_saved=local_path is not None,
+        local_error=local_error,
+    )
