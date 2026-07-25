@@ -533,7 +533,7 @@ class ChatNotionImportResponse(BaseModel):
     summary: str = ""
     # Per-target outcome for the local markdown mirror. The Notion outcome is
     # carried by the HTTP status, so these three fields let the UI report both
-    # destinations from a single response.
+    # destinations from a single response. `local_path` is repo-relative.
     local_path: str | None = None
     local_saved: bool = False
     local_error: str | None = None
@@ -620,6 +620,20 @@ def _save_local_briefing(body: ChatNotionImportBody) -> tuple[Path | None, str |
     return path, None
 
 
+def _display_path(path: Path) -> str:
+    """Render a local artifact path for the client without leaking server layout.
+
+    Paths inside the repo become repo-relative; anything else degrades to the
+    bare filename. Either form is enough for the operator to find the file,
+    while keeping the absolute filesystem layout out of API payloads — the same
+    reason ``/briefing/files`` identifies its artifacts by name only.
+    """
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return path.name
+
+
 def _with_local_note(detail: str, local_path: Path | None, local_error: str | None) -> str:
     """Append the local-mirror outcome to a Notion-failure ``detail`` string.
 
@@ -628,8 +642,10 @@ def _with_local_note(detail: str, local_path: Path | None, local_error: str | No
     the Q&A was lost when it is in fact already on disk.
     """
     if local_path is not None:
-        return f"{detail} The Q&A was still saved locally to {local_path}."
-    return f"{detail} The local briefing save also failed: {local_error}."
+        return f"{detail} The Q&A was still saved locally to {_display_path(local_path)}."
+    # `_save_local_briefing` always pairs a missing path with a reason, but an
+    # OSError can stringify to "", so never render a bare/empty tail.
+    return f"{detail} The local briefing save also failed: {local_error or 'unknown error'}."
 
 
 @router.post("/chat/notion-import", response_model=ChatNotionImportResponse)
@@ -761,7 +777,7 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
     return ChatNotionImportResponse(
         url=url_match.group(0),
         summary=final_text.strip()[:500],
-        local_path=str(local_path) if local_path is not None else None,
+        local_path=_display_path(local_path) if local_path is not None else None,
         local_saved=local_path is not None,
         local_error=local_error,
     )

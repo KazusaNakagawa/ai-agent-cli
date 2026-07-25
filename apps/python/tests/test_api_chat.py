@@ -971,6 +971,68 @@ async def test_chat_notion_import_appends_locally_when_cli_exits_nonzero(
     assert "briefing_2026-05-30.md" in response.json()["detail"]
 
 
+async def test_chat_notion_import_reports_local_failure_in_error_detail(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    """When both destinations fail, the HTTP detail must say the local mirror
+    failed too — the operator would otherwise assume the Q&A is safe on disk."""
+    _seed_notion_creds()
+    factory = _fake_run_factory(stdout="", stderr="boom", returncode=1)
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    def _boom(*_a, **_kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("web.routers.chat._append_to_local_briefing", _boom)
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "両方失敗の質問", "answer": "両方失敗の回答"},
+    )
+
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert "The local briefing save also failed: disk full" in detail
+    assert "saved locally" not in detail
+    assert not (local_briefing_dir / "briefing_2026-05-30.md").exists()
+
+
+async def test_chat_notion_import_error_detail_falls_back_when_oserror_has_no_message(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    """An OSError that stringifies to "" must not leave a bare "failed: ." tail."""
+    _seed_notion_creds()
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: None)
+
+    def _boom(*_a, **_kw):
+        raise OSError()
+
+    monkeypatch.setattr("web.routers.chat._append_to_local_briefing", _boom)
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "無言エラー質問", "answer": "無言エラー回答"},
+    )
+
+    assert response.status_code == 502
+    assert "The local briefing save also failed: unknown error" in response.json()["detail"]
+
+
+def test_display_path_is_repo_relative_and_never_absolute(tmp_path):
+    """Reported paths must not expose the absolute server filesystem layout."""
+    from web.routers.chat import BRIEFING_DIR, REPO_ROOT, _display_path
+
+    inside = BRIEFING_DIR / "briefing_2026-05-30.md"
+    assert _display_path(inside) == "apps/python/output/briefing/briefing_2026-05-30.md"
+    assert str(REPO_ROOT) not in _display_path(inside)
+
+    # A dir outside the repo (as in these tests' tmp fixture) degrades to the
+    # bare filename rather than falling back to the absolute path.
+    outside = tmp_path / "output" / "briefing" / "briefing_2026-05-30.md"
+    assert _display_path(outside) == "briefing_2026-05-30.md"
+
+
 async def test_chat_notion_import_appends_locally_when_no_notion_page(
     authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
