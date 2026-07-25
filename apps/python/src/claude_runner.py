@@ -14,6 +14,7 @@ from src.constants import (
     RETRY_BACKOFF_FACTOR,
     RETRY_BASE_DELAY,
     RETRY_MAX_ATTEMPTS,
+    TIMEOUT_CLAUDE_DEFAULT,
 )
 from src.logger import get_logger
 from src.notifier.local_md import write_md_file
@@ -138,7 +139,7 @@ def build_env(auth_mode: str) -> dict[str, str]:
 def run_claude(
     prompt: str,
     label: str,
-    timeout: int = 300,
+    timeout: int = TIMEOUT_CLAUDE_DEFAULT,
     max_attempts: int = RETRY_MAX_ATTEMPTS,
 ) -> str:
     """Invoke the claude CLI as a subprocess and return the result.
