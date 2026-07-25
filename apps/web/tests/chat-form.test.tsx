@@ -550,6 +550,75 @@ describe("ChatForm", () => {
     expect(sent.model).toBeUndefined()
   })
 
+  it("reports the local markdown mirror alongside the Notion URL", async () => {
+    on("/api/credentials", () =>
+      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
+    )
+    on("/api/chat/notion-import", () =>
+      new Response(
+        JSON.stringify({
+          url: "https://www.notion.so/abc",
+          summary: "ok",
+          local_path: "/repo/apps/python/output/briefing/briefing_2026-05-30.md",
+          local_saved: true,
+          local_error: null,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    )
+    const user = userEvent.setup()
+    renderChatForm()
+    await sendOneTurn(user)
+    await waitFor(() => {
+      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
+    })
+    await user.click(screen.getByTestId("notion-save-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("local-save-note")).toHaveTextContent(
+        "ローカル md にも追記済",
+      )
+    })
+    expect(screen.queryByTestId("local-save-error")).toBeNull()
+  })
+
+  it("warns when Notion succeeded but the local markdown append failed", async () => {
+    on("/api/credentials", () =>
+      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
+    )
+    on("/api/chat/notion-import", () =>
+      new Response(
+        JSON.stringify({
+          url: "https://www.notion.so/abc",
+          summary: "ok",
+          local_path: null,
+          local_saved: false,
+          local_error: "disk full",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    )
+    const user = userEvent.setup()
+    renderChatForm()
+    await sendOneTurn(user)
+    await waitFor(() => {
+      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
+    })
+    await user.click(screen.getByTestId("notion-save-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("local-save-error")).toHaveTextContent(
+        "disk full",
+      )
+    })
+    // Notion itself succeeded, so the link is still offered.
+    expect(screen.getByTestId("notion-save-link")).toHaveAttribute(
+      "href",
+      "https://www.notion.so/abc",
+    )
+    expect(screen.queryByTestId("local-save-note")).toBeNull()
+  })
+
   it("keeps Notion save disabled while the assistant message is still streaming", async () => {
     on("/api/credentials", () =>
       mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),

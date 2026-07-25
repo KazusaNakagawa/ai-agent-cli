@@ -758,7 +758,7 @@ def _fake_run_factory(stdout: str = "", stderr: str = "", returncode: int = 0):
 
 
 async def test_chat_notion_import_400_when_both_credentials_missing(
-    authed_client, isolated_keyring, clear_credential_env
+    authed_client, isolated_keyring, clear_credential_env, local_briefing_dir
 ):
     response = await authed_client.post(
         "/api/chat/notion-import",
@@ -771,7 +771,7 @@ async def test_chat_notion_import_400_when_both_credentials_missing(
 
 
 async def test_chat_notion_import_400_when_api_key_missing(
-    authed_client, isolated_keyring, clear_credential_env
+    authed_client, isolated_keyring, clear_credential_env, local_briefing_dir
 ):
     from src import credentials as cred_mod
     cred_mod.set_credential("NOTION_DATABASE_ID", "db-test")
@@ -814,6 +814,11 @@ async def test_chat_notion_import_success_invokes_skill_and_extracts_url(
     payload = response.json()
     assert payload["url"] == page_url
     assert "追記しました" in payload["summary"]
+    # The local mirror is reported per-target so the operator can see both
+    # destinations from a single response.
+    assert payload["local_saved"] is True
+    assert payload["local_path"].endswith("briefing_2026-05-30.md")
+    assert payload["local_error"] is None
 
     # The CLI invocation must carry the slash command, the model selection,
     # bypass perms, stream-json output, and an --add-dir for skill discovery.
@@ -883,11 +888,36 @@ async def test_chat_notion_import_creates_local_briefing_when_missing(
     assert "Q?" in created.read_text(encoding="utf-8")
 
 
-async def test_chat_notion_import_succeeds_when_local_append_fails(
+async def test_chat_notion_import_appends_locally_twice_for_two_saves(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    """Two saves for the same date append two blocks in call order rather than
+    overwriting each other."""
+    _seed_notion_creds()
+    factory = _fake_run_factory(
+        stdout=_stream_json_result("done https://www.notion.so/abc"),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    for q, a in (("最初の質問", "最初の回答"), ("次の質問", "次の回答")):
+        response = await authed_client.post(
+            "/api/chat/notion-import",
+            json={"date": "2026-05-30", "question": q, "answer": a},
+        )
+        assert response.status_code == 200
+
+    text = (local_briefing_dir / "briefing_2026-05-30.md").read_text(encoding="utf-8")
+    assert text.count("## 追記: QA チャット (2026-05-30)") == 2
+    assert text.index("最初の質問") < text.index("次の質問")
+
+
+async def test_chat_notion_import_reports_local_failure_in_response(
     authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir, caplog
 ):
-    """Local-briefing append is best-effort: an OSError must not fail the
-    already-successful Notion save (still 200), and the failure is logged."""
+    """A local-write OSError must not fail the successful Notion save, but it
+    must be surfaced to the client instead of only being logged."""
     import logging
 
     _seed_notion_creds()
@@ -910,9 +940,113 @@ async def test_chat_notion_import_succeeds_when_local_append_fails(
         )
 
     assert response.status_code == 200
-    assert response.json()["url"] == "https://www.notion.so/abc"
+    payload = response.json()
+    assert payload["url"] == "https://www.notion.so/abc"
+    assert payload["local_saved"] is False
+    assert "disk full" in payload["local_error"]
     assert not (local_briefing_dir / "briefing_2026-05-30.md").exists()
     assert "failed to append Q&A to local briefing" in caplog.text
+
+
+async def test_chat_notion_import_appends_locally_when_cli_exits_nonzero(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    """The local mirror is written even when the Notion skill run fails, so a
+    Q&A is never lost just because the CLI blew up."""
+    _seed_notion_creds()
+    factory = _fake_run_factory(stdout="", stderr="boom", returncode=1)
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "落ちたときの質問", "answer": "落ちたときの回答"},
+    )
+
+    assert response.status_code == 502
+    text = (local_briefing_dir / "briefing_2026-05-30.md").read_text(encoding="utf-8")
+    assert "落ちたときの質問" in text
+    assert "落ちたときの回答" in text
+    # The error detail tells the operator the answer survived locally.
+    assert "briefing_2026-05-30.md" in response.json()["detail"]
+
+
+async def test_chat_notion_import_appends_locally_when_no_notion_page(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    """404 (no briefing page in Notion) still leaves the Q&A on disk."""
+    _seed_notion_creds()
+    factory = _fake_run_factory(
+        stdout=_stream_json_result("対象ページが見つかりませんでした"),
+        returncode=0,
+    )
+    monkeypatch.setattr("web.routers.chat.subprocess.run", factory)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "ページ無し質問", "answer": "ページ無し回答"},
+    )
+
+    assert response.status_code == 404
+    text = (local_briefing_dir / "briefing_2026-05-30.md").read_text(encoding="utf-8")
+    assert "ページ無し質問" in text
+    assert "briefing_2026-05-30.md" in response.json()["detail"]
+
+
+async def test_chat_notion_import_appends_locally_on_subprocess_timeout(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    import subprocess as sp
+
+    _seed_notion_creds()
+
+    def raise_timeout(*a, **kw):
+        raise sp.TimeoutExpired(cmd=a[0] if a else [], timeout=120)
+
+    monkeypatch.setattr("web.routers.chat.subprocess.run", raise_timeout)
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "タイムアウト質問", "answer": "タイムアウト回答"},
+    )
+
+    assert response.status_code == 502
+    text = (local_briefing_dir / "briefing_2026-05-30.md").read_text(encoding="utf-8")
+    assert "タイムアウト質問" in text
+
+
+async def test_chat_notion_import_appends_locally_when_credentials_missing(
+    authed_client, isolated_keyring, clear_credential_env, local_briefing_dir
+):
+    """Local markdown is the operator-owned artifact: it is written even when
+    Notion is not configured at all."""
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "未設定質問", "answer": "未設定回答"},
+    )
+
+    assert response.status_code == 400
+    text = (local_briefing_dir / "briefing_2026-05-30.md").read_text(encoding="utf-8")
+    assert "未設定質問" in text
+    assert "未設定回答" in text
+
+
+async def test_chat_notion_import_appends_locally_when_claude_binary_missing(
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
+):
+    _seed_notion_creds()
+    monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: None)
+
+    response = await authed_client.post(
+        "/api/chat/notion-import",
+        json={"date": "2026-05-30", "question": "CLI 無し質問", "answer": "CLI 無し回答"},
+    )
+
+    assert response.status_code == 502
+    text = (local_briefing_dir / "briefing_2026-05-30.md").read_text(encoding="utf-8")
+    assert "CLI 無し質問" in text
 
 
 async def test_chat_notion_import_defaults_to_sonnet_model(
@@ -936,7 +1070,7 @@ async def test_chat_notion_import_defaults_to_sonnet_model(
 
 
 async def test_chat_notion_import_rejects_unknown_model(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
@@ -948,7 +1082,7 @@ async def test_chat_notion_import_rejects_unknown_model(
 
 
 async def test_chat_notion_import_404_when_skill_reports_no_briefing_page(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     # Skill ran cleanly (rc=0) but the result text contains no Notion URL —
@@ -973,7 +1107,7 @@ async def test_chat_notion_import_404_when_skill_reports_no_briefing_page(
 
 
 async def test_chat_notion_import_502_when_cli_exits_nonzero(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     factory = _fake_run_factory(
@@ -993,7 +1127,7 @@ async def test_chat_notion_import_502_when_cli_exits_nonzero(
 
 
 async def test_chat_notion_import_502_when_claude_binary_missing(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: None)
@@ -1007,7 +1141,7 @@ async def test_chat_notion_import_502_when_claude_binary_missing(
 
 
 async def test_chat_notion_import_502_on_subprocess_timeout(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     import subprocess as sp
     _seed_notion_creds()
@@ -1027,7 +1161,7 @@ async def test_chat_notion_import_502_on_subprocess_timeout(
 
 
 async def test_chat_notion_import_rejects_invalid_date(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")
@@ -1039,7 +1173,7 @@ async def test_chat_notion_import_rejects_invalid_date(
 
 
 async def test_chat_notion_import_rejects_empty_answer(
-    authed_client, isolated_keyring, clear_credential_env, monkeypatch
+    authed_client, isolated_keyring, clear_credential_env, monkeypatch, local_briefing_dir
 ):
     _seed_notion_creds()
     monkeypatch.setattr("web.routers.chat.shutil.which", lambda _: "/fake/bin/claude")

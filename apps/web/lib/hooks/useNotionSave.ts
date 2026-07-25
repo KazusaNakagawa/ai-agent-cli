@@ -10,6 +10,12 @@ export type NotionSaveState = {
   status: NotionSaveStatus
   url?: string
   error?: string
+  // Outcome of the local briefing markdown mirror, which the backend writes
+  // independently of the Notion save. `localSaved === false` on an otherwise
+  // successful save means Notion has the Q&A but the local file does not.
+  localPath?: string
+  localSaved?: boolean
+  localError?: string
 }
 
 type Options = {
@@ -79,11 +85,22 @@ export function useNotionSave({ messages }: Options): UseNotionSave {
           }))
           return
         }
-        const body = (await res.json()) as { url: string }
+        const body = (await res.json()) as {
+          url: string
+          local_path?: string | null
+          local_saved?: boolean
+          local_error?: string | null
+        }
         if (!mountedRef.current) return
         setNotionState((prev) => ({
           ...prev,
-          [idx]: { status: "saved", url: body.url },
+          [idx]: {
+            status: "saved",
+            url: body.url,
+            localPath: body.local_path ?? undefined,
+            localSaved: body.local_saved ?? false,
+            localError: body.local_error ?? undefined,
+          },
         }))
       } catch (e) {
         if (!mountedRef.current) return
