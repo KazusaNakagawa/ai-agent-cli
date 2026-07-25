@@ -10,7 +10,7 @@ from src.prompt_safety import neutralize_user_text
 
 logger = get_logger(__name__)
 
-# Because of parallel execution, actual wait time is max(MAIN, SECTORS) = 480s (not the sum).
+# Because of parallel execution, worst-case wait is max(MAIN, SECTORS), not the sum.
 
 # Few-shot example captured from a high-capability model's output. Injected into
 # the main briefing prompt so cheaper models keep the structure (#192). See
@@ -29,6 +29,10 @@ _MIN_BRIEFING_LENGTH = 200
 # contains a "### " heading at all, so this window still rejects it while
 # tolerating a realistic preamble.
 _HEADING_SEARCH_WINDOW = 500
+
+# Cap for the error detail quoted at the top of a degraded (sectors-only) body,
+# kept well inside _HEADING_SEARCH_WINDOW. See _truncate_error.
+_ERROR_NOTE_MAX_LENGTH = 200
 
 
 @lru_cache(maxsize=1)
@@ -116,6 +120,18 @@ def looks_like_briefing(text: str) -> bool:
     return len(text) >= _MIN_BRIEFING_LENGTH and "### " in text[:_HEADING_SEARCH_WINDOW]
 
 
+def _truncate_error(detail: str) -> str:
+    """Shorten an error detail so it can head a degraded briefing body.
+
+    run_claude truncates its CLI error detail at 2000 chars, which would push
+    the sector sweep's first "### " heading past _HEADING_SEARCH_WINDOW and make
+    looks_like_briefing reject the very body this fallback exists to save.
+    """
+    if len(detail) <= _ERROR_NOTE_MAX_LENGTH:
+        return detail
+    return detail[:_ERROR_NOTE_MAX_LENGTH] + "…(truncated)"
+
+
 def generate_briefing(stocks: str, config: BriefingConfig) -> str:
     """Generate the briefing by running the main analysis and sector sweep in parallel."""
     tickers = join_safe(config.portfolio.tickers, sep=", ")
@@ -158,7 +174,18 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
                 errors[key] = str(e)
 
     if "main" in errors:
-        raise RuntimeError(f"briefing generation failed: main analysis\n{errors['main']}")
+        if "sectors" not in results:
+            raise RuntimeError(f"briefing generation failed: main analysis\n{errors['main']}")
+        logger.warning(
+            "main analysis failed (sector sweep succeeded) — delivering a "
+            "sectors-only briefing: %s",
+            errors["main"],
+        )
+        return (
+            f"⚠️ メイン分析の取得に失敗しました。セクター動向のみお届けします。\n"
+            f"{_truncate_error(errors['main'])}\n\n---\n\n"
+            "## セクター動向\n\n" + results["sectors"]
+        )
 
     assert "main" in results, "main result missing despite no error recorded"
 
