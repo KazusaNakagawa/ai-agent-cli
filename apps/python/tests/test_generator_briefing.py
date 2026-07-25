@@ -10,6 +10,7 @@ from src.generator.briefing import (
     build_watch_events_context,
     build_watch_sectors_context,
     generate_briefing,
+    is_degraded_briefing,
     load_briefing_few_shot,
     looks_like_briefing,
 )
@@ -171,6 +172,31 @@ class TestGenerateBriefing:
             result = generate_briefing("PLTR: +2%", config)
 
         assert looks_like_briefing(result) is True
+
+    def test_degraded_bodies_are_detectable(self):
+        """Both half-failed shapes must be recognizable as degraded, so the
+        handler's skip guard can let a retry through (see test_handlers)."""
+        config = _make_config()
+        long_body = "### 今日の見出し\n\n" + "本文。" * 40
+
+        def main_fails(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                raise RuntimeError("boom")
+            return long_body
+
+        def sectors_fail(prompt, label, timeout, **kwargs):
+            if label == "セクタースイープ":
+                raise RuntimeError("boom")
+            return long_body
+
+        for mock in (main_fails, sectors_fail):
+            with patch("src.generator.briefing.run_claude", side_effect=mock):
+                assert is_degraded_briefing(generate_briefing("PLTR: +2%", config)) is True
+
+        with patch("src.generator.briefing.run_claude", side_effect=self._mock_run(
+            {"メイン分析": long_body, "セクタースイープ": long_body}
+        )):
+            assert is_degraded_briefing(generate_briefing("PLTR: +2%", config)) is False
 
     def test_both_failures_raise(self):
         """Nothing was produced, so there is no briefing to deliver."""

@@ -34,6 +34,12 @@ _HEADING_SEARCH_WINDOW = 500
 # kept well inside _HEADING_SEARCH_WINDOW. See _truncate_error.
 _ERROR_NOTE_MAX_LENGTH = 200
 
+# Notices marking a body where one half of the pipeline failed. They are the
+# on-disk signal that today's briefing is incomplete, so handler.py can let a
+# retry through instead of reporting "already generated today".
+MAIN_FAILED_NOTICE = "⚠️ メイン分析の取得に失敗しました。セクター動向のみお届けします。"
+SECTORS_FAILED_NOTICE = "⚠️ セクター動向の取得に失敗しました。"
+
 
 @lru_cache(maxsize=1)
 def load_briefing_few_shot() -> str:
@@ -120,6 +126,16 @@ def looks_like_briefing(text: str) -> bool:
     return len(text) >= _MIN_BRIEFING_LENGTH and "### " in text[:_HEADING_SEARCH_WINDOW]
 
 
+def is_degraded_briefing(text: str) -> bool:
+    """True when ``text`` is a briefing whose main analysis or sector sweep failed.
+
+    Used by the idempotency guard in handler.py: the guard exists to stop a
+    duplicate *successful* run, so a half-failed body must not count as "today's
+    briefing" and lock out the retry that would produce the full one.
+    """
+    return MAIN_FAILED_NOTICE in text or SECTORS_FAILED_NOTICE in text
+
+
 def _truncate_error(detail: str) -> str:
     """Shorten an error detail so it can head a degraded briefing body.
 
@@ -182,7 +198,7 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
             errors["main"],
         )
         return (
-            f"⚠️ メイン分析の取得に失敗しました。セクター動向のみお届けします。\n"
+            f"{MAIN_FAILED_NOTICE}\n"
             f"{_truncate_error(errors['main'])}\n\n---\n\n"
             "## セクター動向\n\n" + results["sectors"]
         )
@@ -193,7 +209,7 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
 
     if "sectors" in errors:
         logger.warning("sector sweep failed (main analysis succeeded): %s", errors["sectors"])
-        return main_text + "\n\n---\n\n⚠️ セクター動向の取得に失敗しました。\n" + errors["sectors"]
+        return main_text + f"\n\n---\n\n{SECTORS_FAILED_NOTICE}\n" + errors["sectors"]
 
     assert "sectors" in results, "sectors result missing despite no error recorded"
 
