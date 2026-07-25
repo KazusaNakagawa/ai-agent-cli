@@ -771,6 +771,36 @@ class TestStreamClaude:
         assert "メイン分析" in caplog.text
         assert "529" in caplog.text
 
+    def test_api_error_log_line_is_capped(self, caplog):
+        """Boundary: a storm of identical 529s must not produce a multi-kilobyte
+        log line — the full count is kept, the quoted messages are capped."""
+        proc = _FakeProc(
+            [_tool_error_line(f"API Error: 529 Overloaded #{i}") for i in range(20)]
+            + [_result_line()]
+        )
+        with caplog.at_level("WARNING"):
+            with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+                claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert "20 in-session API error(s)" in caplog.text
+        assert "#19" not in caplog.text
+
+    def test_pipes_are_closed(self):
+        """Descriptors must not be left to garbage collection: the web process
+        is long-lived and calls this on every run."""
+        proc = _FakeProc([_result_line()])
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert proc.stdout.closed is True
+        assert proc.stderr.closed is True
+
+    def test_pipes_are_closed_on_timeout(self):
+        proc = _FakeProc([_delta_line("partial")], hangs=True)
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            with pytest.raises(subprocess.TimeoutExpired):
+                claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert proc.stdout.closed is True
+        assert proc.stderr.closed is True
+
     def test_no_api_errors_logs_nothing(self):
         proc = _FakeProc([_result_line()])
         with patch("src.claude_runner.subprocess.Popen", return_value=proc):

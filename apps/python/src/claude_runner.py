@@ -10,6 +10,7 @@ from datetime import datetime
 from src import config as config_mod
 from src import credentials as cred_mod
 from src import state as state_mod
+from src.claude_stream import StreamState, consume_stream_line
 from src.constants import (
     DEFAULT_MODEL,
     PARTIAL_OUTPUT_DIR,
@@ -18,7 +19,6 @@ from src.constants import (
     RETRY_MAX_ATTEMPTS,
     TIMEOUT_CLAUDE_DEFAULT,
 )
-from src.claude_stream import StreamState, consume_stream_line
 from src.logger import get_logger
 from src.notifier.local_md import write_md_file
 from src.transient_errors import is_transient
@@ -31,6 +31,10 @@ logger = get_logger(__name__)
 # killed. They are draining closed pipes at that point, so this only bounds a
 # pathological case rather than a normal wait.
 _READER_JOIN_TIMEOUT_SEC = 5
+
+# The count is always logged in full; only the quoted messages are capped, so a
+# storm of identical 529s can't produce a multi-kilobyte log line.
+_API_ERRORS_LOGGED_MAX = 5
 
 
 @dataclass
@@ -73,17 +77,27 @@ def _stream_claude(cmd: list[str], env: dict[str, str], timeout: int, label: str
     text_lines: list[str] = []
     stderr_chunks: list[bytes] = []
 
+    # Each reader closes the pipe it owns. Closing from the main thread instead
+    # could pull the file object out from under a blocked read; leaving them to
+    # garbage collection leaks descriptors in the long-lived web process, which
+    # calls this on every briefing/chat run.
     def _read_stdout() -> None:
-        for raw in proc.stdout:
-            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-            if line:
-                text_lines.extend(consume_stream_line(line, state))
+        try:
+            for raw in proc.stdout:
+                line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                if line:
+                    text_lines.extend(consume_stream_line(line, state))
+        finally:
+            proc.stdout.close()
 
     def _read_stderr() -> None:
         # Drained concurrently: a large stderr write would otherwise fill the
         # OS pipe buffer and block the child mid-run.
-        for chunk in iter(lambda: proc.stderr.read(4096), b""):
-            stderr_chunks.append(chunk)
+        try:
+            for chunk in iter(lambda: proc.stderr.read(4096), b""):
+                stderr_chunks.append(chunk)
+        finally:
+            proc.stderr.close()
 
     readers = [
         threading.Thread(target=_read_stdout, daemon=True),
@@ -134,10 +148,12 @@ def _log_api_errors(state: StreamState, label: str) -> None:
     """
     if not state.api_errors:
         return
+    shown = state.api_errors[:_API_ERRORS_LOGGED_MAX]
+    suffix = "" if len(state.api_errors) <= _API_ERRORS_LOGGED_MAX else " …"
     logger.warning(
         "%d in-session API error(s) during [%s] — the model retried these, "
-        "which inflates wall-clock time: %s",
-        len(state.api_errors), label, "; ".join(state.api_errors),
+        "which inflates wall-clock time: %s%s",
+        len(state.api_errors), label, "; ".join(shown), suffix,
     )
 
 
