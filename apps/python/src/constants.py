@@ -5,9 +5,15 @@ from pathlib import Path
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
 # Claude CLI timeouts (seconds)
-TIMEOUT_BRIEFING_MAIN = 480
-TIMEOUT_BRIEFING_SECTORS = 480
-TIMEOUT_WEEKLY_SUMMARY = 480
+# One uniform budget for every run_claude() call. WebSearch-heavy prompts have a
+# long tail: observed durations range 110-422s, and the previous 480s budget left
+# only ~1.15x headroom over the worst case, so an outlier run discarded several
+# minutes of billed work (2026-07-26 briefing). 900s covers the tail without
+# adding retries, which would re-run the whole prompt from scratch.
+TIMEOUT_CLAUDE_DEFAULT = 900
+TIMEOUT_BRIEFING_MAIN = TIMEOUT_CLAUDE_DEFAULT
+TIMEOUT_BRIEFING_SECTORS = TIMEOUT_CLAUDE_DEFAULT
+TIMEOUT_WEEKLY_SUMMARY = TIMEOUT_CLAUDE_DEFAULT
 
 # Claude CLI retry policy (5xx transient errors only)
 RETRY_MAX_ATTEMPTS = 3

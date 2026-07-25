@@ -5,10 +5,11 @@ import json
 import logging
 
 from src.claude_runner import run_claude
+from src.constants import TIMEOUT_CLAUDE_DEFAULT
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = 300
+TIMEOUT = TIMEOUT_CLAUDE_DEFAULT
 REPORT_MARKER = "## WEEKLY_REPORT"
 DIFF_MARKER = "## PROFILE_DIFF"
 
