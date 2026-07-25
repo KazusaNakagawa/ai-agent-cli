@@ -467,13 +467,14 @@ def post_journal_chat(
     sessions_dir.mkdir(parents=True, exist_ok=True)
     session_file = sessions_dir / today
 
+    trusted_write_dirs = config.get_journal_chat_trusted_write_dirs()
     img_path = _validate_image_path(body.image_path)
     image_message: str | None = None
     if img_path:
         image_message = _build_image_message(img_path, body.question)
-        cmd = [*build_journal_cmd(today, context, session_file), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
+        cmd = [*build_journal_cmd(today, context, session_file, trusted_write_dirs), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
     else:
-        cmd = [*build_journal_cmd(today, context, session_file), "-p", body.question, *CHAT_STREAM_FLAGS]
+        cmd = [*build_journal_cmd(today, context, session_file, trusted_write_dirs), "-p", body.question, *CHAT_STREAM_FLAGS]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
 
     job = chat_job_store.create_job()

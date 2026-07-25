@@ -183,3 +183,70 @@ class TestBuildCmd:
 class TestSessionNameFor:
     def test_session_name_format(self):
         assert chat_session.session_name_for("2026-05-16") == "briefing-chat-2026-05-16"
+
+
+class TestBuildJournalCmd:
+    """#414: pre-trusted write dirs let Journal chat actually save files
+    instead of being silently denied by the claude CLI's headless -p mode."""
+
+    def test_new_session_without_trusted_dirs_omits_permission_flags(self, tmp_path: Path):
+        session_file = tmp_path / "2026-07-25"
+
+        cmd = chat_session.build_journal_cmd("2026-07-25", "journal context", session_file)
+
+        assert "--add-dir" not in cmd
+        assert "--permission-mode" not in cmd
+
+    def test_new_session_with_trusted_dirs_adds_add_dir_and_permission_mode(self, tmp_path: Path):
+        session_file = tmp_path / "2026-07-25"
+        trusted_dir = str(tmp_path / "zenn-docs")
+
+        cmd = chat_session.build_journal_cmd(
+            "2026-07-25", "journal context", session_file,
+            trusted_write_dirs=[trusted_dir],
+        )
+
+        assert "--permission-mode" in cmd
+        assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
+        assert "--add-dir" in cmd
+        assert cmd[cmd.index("--add-dir") + 1] == trusted_dir
+
+    def test_new_session_with_multiple_trusted_dirs_adds_one_add_dir_each(self, tmp_path: Path):
+        session_file = tmp_path / "2026-07-25"
+        dir_a = str(tmp_path / "a")
+        dir_b = str(tmp_path / "b")
+
+        cmd = chat_session.build_journal_cmd(
+            "2026-07-25", "journal context", session_file,
+            trusted_write_dirs=[dir_a, dir_b],
+        )
+
+        assert cmd.count("--add-dir") == 2
+        assert dir_a in cmd
+        assert dir_b in cmd
+
+    def test_resume_session_without_trusted_dirs_omits_permission_flags(self, tmp_path: Path):
+        session_file = tmp_path / "2026-07-25"
+        session_file.write_text("existing-uuid-abcd")
+
+        cmd = chat_session.build_journal_cmd("2026-07-25", "journal context", session_file)
+
+        assert "--add-dir" not in cmd
+        assert "--permission-mode" not in cmd
+
+    def test_resume_session_with_trusted_dirs_also_adds_permission_flags(self, tmp_path: Path):
+        """The permission grant is a per-process CLI flag, not part of the
+        persisted session, so it must be re-applied on every resume too."""
+        session_file = tmp_path / "2026-07-25"
+        session_file.write_text("existing-uuid-abcd")
+        trusted_dir = str(tmp_path / "zenn-docs")
+
+        cmd = chat_session.build_journal_cmd(
+            "2026-07-25", "journal context", session_file,
+            trusted_write_dirs=[trusted_dir],
+        )
+
+        assert "--resume" in cmd
+        assert "--permission-mode" in cmd
+        assert "--add-dir" in cmd
+        assert cmd[cmd.index("--add-dir") + 1] == trusted_dir
