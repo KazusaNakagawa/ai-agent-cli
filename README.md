@@ -14,6 +14,10 @@ Bloomberg and NewsPicks surface raw data. This agent ties every event to your ho
 
 ## Architecture
 
+![Data flow](docs/architecture.png)
+
+<sub>Source: [docs/architecture.drawio](docs/architecture.drawio) — sequence-level detail in [docs/sequence-diagrams.md](docs/sequence-diagrams.md)</sub>
+
 ```
 bin/run.sh → apps/python/bin/run.sh
   ├── python -m src.handler              # Daily market briefing
