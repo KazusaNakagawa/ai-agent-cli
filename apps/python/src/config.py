@@ -197,7 +197,9 @@ def get_journal_chat_trusted_write_dirs() -> list[str]:
         dirs = load_config().journal_chat.trusted_write_dirs
     except FileNotFoundError:
         return []
-    except Exception:
+    except (ValueError, json.JSONDecodeError):
+        # ValueError covers load_config()'s wrapped ValidationError;
+        # JSONDecodeError (a ValueError subclass) covers malformed JSON.
         logger.warning(
             "get_journal_chat_trusted_write_dirs: briefing.json could not be loaded",
             exc_info=True,

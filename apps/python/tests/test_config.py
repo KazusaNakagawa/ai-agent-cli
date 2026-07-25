@@ -155,18 +155,19 @@ class TestLoadConfig:
             assert get_journal_chat_trusted_write_dirs() == []
 
     def test_journal_chat_trusted_write_dirs_parsed_when_present(self, tmp_path):
+        trusted_dir = str(tmp_path / "zenn-docs")
         data = {
             "portfolio": {"tickers": ["PLTR"], "themes": ["AI"]},
             "geopolitical": {"conflicts": []},
             "watch_sectors": [{"sector": "Tech", "tickers": ["AAPL"]}],
-            "journal_chat": {"trusted_write_dirs": ["/tmp/zenn-docs"]},
+            "journal_chat": {"trusted_write_dirs": [trusted_dir]},
         }
         config_file = tmp_path / "briefing.json"
         config_file.write_text(json.dumps(data), encoding="utf-8")
 
         with patch("src.config.CONFIG_PATH", config_file):
-            assert load_config().journal_chat.trusted_write_dirs == ["/tmp/zenn-docs"]
-            assert get_journal_chat_trusted_write_dirs() == ["/tmp/zenn-docs"]
+            assert load_config().journal_chat.trusted_write_dirs == [trusted_dir]
+            assert get_journal_chat_trusted_write_dirs() == [trusted_dir]
 
     def test_get_journal_chat_trusted_write_dirs_expands_home(self, tmp_path):
         data = {

@@ -239,11 +239,12 @@ class TestJournalChatTrustedWriteDirs:
     silently denied."""
 
     async def test_configured_dirs_add_permission_flags(
-        self, authed_client, journal_dir, monkeypatch
+        self, authed_client, journal_dir, monkeypatch, tmp_path
     ):
+        trusted_dir = str(tmp_path / "zenn-docs")
         monkeypatch.setattr(
             "web.routers.chat.config.get_journal_chat_trusted_write_dirs",
-            lambda: ["/tmp/zenn-docs"],
+            lambda: [trusted_dir],
         )
         factory = _make_popen()
         monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
@@ -255,7 +256,7 @@ class TestJournalChatTrustedWriteDirs:
         assert "--permission-mode" in cmd
         assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
         assert "--add-dir" in cmd
-        assert cmd[cmd.index("--add-dir") + 1] == "/tmp/zenn-docs"
+        assert cmd[cmd.index("--add-dir") + 1] == trusted_dir
 
     async def test_no_configured_dirs_omits_permission_flags(
         self, authed_client, journal_dir, monkeypatch
