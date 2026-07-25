@@ -149,6 +149,15 @@ def run_claude(
 
     Anthropic API 5xx errors (e.g. 529 Overloaded) are retried with exponential
     backoff up to ``max_attempts`` times.
+
+    ``timeout`` defaults to ``TIMEOUT_CLAUDE_DEFAULT`` (900s), sized for the long
+    tail of WebSearch-heavy prompts rather than for interactive latency: a
+    timeout kills the subprocess and throws away everything it has produced, and
+    ``--output-format json`` emits nothing until the very end, so a budget set
+    too tight discards minutes of billed work. Callers on a synchronous or
+    user-facing path should pass a shorter explicit ``timeout`` — every current
+    consumer is an offline batch job (briefing, weekly recap, evaluator, wordset,
+    self-agent profile, XSS intel).
     """
     if max_attempts < 1:
         raise ValueError(f"max_attempts must be >= 1 (got {max_attempts})")
