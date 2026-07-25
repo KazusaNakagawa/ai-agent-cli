@@ -4,7 +4,7 @@ from src.claude_runner import get_model
 from src.config import CONFIG
 from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_MD_ROTATION_ENABLED, BRIEFING_OUTPUT_DIR, BRIEFING_SKIP_IF_EXISTS
 from src.fetcher.stocks import fetch_stock_moves
-from src.generator.briefing import generate_briefing, looks_like_briefing
+from src.generator.briefing import generate_briefing, is_degraded_briefing, looks_like_briefing
 from src.local_llm.briefing_index import index_briefings
 from src.local_llm.config import load_config as load_local_llm_config
 from src.metrics.briefing import extract_briefing_metrics
@@ -25,6 +25,19 @@ def _preflight() -> None:
         logger.warning("NOTION_API_KEY or NOTION_DATABASE_ID unset — skipping Notion notification")
 
 
+def _is_degraded_md(path) -> bool:
+    """True when today's saved briefing is a half-failed body worth re-running.
+
+    Unreadable files are treated as *not* degraded so an I/O problem keeps the
+    idempotency guard intact rather than opening the door to duplicate paid runs.
+    """
+    try:
+        return is_degraded_briefing(path.read_text(encoding="utf-8"))
+    except OSError:
+        logger.warning("could not read today's briefing MD (%s) — keeping the skip guard", path)
+        return False
+
+
 def lambda_handler(event=None, context=None, *, dry_run: bool = False, force: bool = False):
     """Lambda handler that generates the stock briefing and delivers it to Discord/Notion/local MD."""
     logger.info("=== My World Briefing start ===")
@@ -36,7 +49,7 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False, force: bo
 
     if BRIEFING_SKIP_IF_EXISTS and not force:
         today_md = BRIEFING_OUTPUT_DIR / f"briefing_{date.today().strftime('%Y-%m-%d')}.md"
-        if today_md.exists():
+        if today_md.exists() and not _is_degraded_md(today_md):
             logger.info(
                 "Briefing already generated today (%s) — skipping. Pass --force to override.",
                 today_md,

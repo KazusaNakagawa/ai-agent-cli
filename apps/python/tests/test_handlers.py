@@ -326,6 +326,42 @@ class TestBriefingHandler:
         mock_stocks.assert_not_called()
         mock_gen.assert_not_called()
 
+    def test_does_not_skip_when_todays_md_is_degraded(self, tmp_path):
+        """A degraded briefing must not block a retry for the rest of the day.
+
+        The skip guard exists to stop duplicate *successful* runs. Once a
+        half-failed body counts as "today's briefing", the normal recovery path
+        (press Run again — the web route never passes force) would answer
+        "skipped" and the full briefing becomes unobtainable until tomorrow.
+        """
+        from datetime import date
+        today_md = tmp_path / f"briefing_{date.today().strftime('%Y-%m-%d')}.md"
+        today_md.write_text(
+            "⚠️ メイン分析の取得に失敗しました。セクター動向のみお届けします。\n"
+            "claude CLI timed out (メイン分析)\n\n---\n\n## セクター動向\n\n### 今日のセクター動向\n"
+            + "セクター本文。" * 40
+        )
+
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING) as mock_gen,
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", True),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        assert "skipped" not in result["body"]
+        mock_gen.assert_called_once()
+
     def test_force_flag_runs_despite_existing_md(self, tmp_path):
         """--force bypasses the idempotency guard even when today's MD exists."""
         from datetime import date

@@ -10,6 +10,7 @@ from src.generator.briefing import (
     build_watch_events_context,
     build_watch_sectors_context,
     generate_briefing,
+    is_degraded_briefing,
     load_briefing_few_shot,
     looks_like_briefing,
 )
@@ -133,13 +134,76 @@ class TestGenerateBriefing:
         assert "セクター動向" in result
         assert "セクター結果" in result
 
-    def test_main_failure_raises(self):
+    def test_main_failure_keeps_successful_sector_sweep(self):
+        """Verifies: a main-analysis failure degrades to a sectors-only briefing.
+        Why: main and sectors run independently, and a WebSearch 529 storm can
+        blow the main analysis' wall clock while the sector sweep finishes fine
+        (observed 2026-07-26: a 10,721-char sweep was discarded). Raising here
+        threw away work that was already paid for.
+        """
         config = _make_config()
 
         def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
-                raise RuntimeError("API error")
-            return "sectors ok"
+                raise RuntimeError("claude CLI timed out (メイン分析)")
+            return "### 今日のセクター動向\n\n" + "セクター本文。" * 40
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            result = generate_briefing("PLTR: +2%", config)
+
+        assert "セクター本文。" in result
+        assert "メイン分析の取得に失敗しました" in result
+        assert "claude CLI timed out" in result
+
+    def test_main_failure_output_still_looks_like_a_briefing(self):
+        """Regression guard: the degraded body must clear looks_like_briefing().
+        A long claude CLI error detail (run_claude truncates at 2000 chars) must
+        not push the first "### " heading past _HEADING_SEARCH_WINDOW, or
+        handler.py would reject the body and discard the sweep anyway.
+        """
+        config = _make_config()
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                raise RuntimeError("x" * 2000)
+            return "### 今日のセクター動向\n\n" + "セクター本文。" * 40
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            result = generate_briefing("PLTR: +2%", config)
+
+        assert looks_like_briefing(result) is True
+
+    def test_degraded_bodies_are_detectable(self):
+        """Both half-failed shapes must be recognizable as degraded, so the
+        handler's skip guard can let a retry through (see test_handlers)."""
+        config = _make_config()
+        long_body = "### 今日の見出し\n\n" + "本文。" * 40
+
+        def main_fails(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                raise RuntimeError("boom")
+            return long_body
+
+        def sectors_fail(prompt, label, timeout, **kwargs):
+            if label == "セクタースイープ":
+                raise RuntimeError("boom")
+            return long_body
+
+        for mock in (main_fails, sectors_fail):
+            with patch("src.generator.briefing.run_claude", side_effect=mock):
+                assert is_degraded_briefing(generate_briefing("PLTR: +2%", config)) is True
+
+        with patch("src.generator.briefing.run_claude", side_effect=self._mock_run(
+            {"メイン分析": long_body, "セクタースイープ": long_body}
+        )):
+            assert is_degraded_briefing(generate_briefing("PLTR: +2%", config)) is False
+
+    def test_both_failures_raise(self):
+        """Nothing was produced, so there is no briefing to deliver."""
+        config = _make_config()
+
+        def mock(prompt, label, timeout, **kwargs):
+            raise RuntimeError("API error")
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
             with pytest.raises(RuntimeError, match="main analysis"):
