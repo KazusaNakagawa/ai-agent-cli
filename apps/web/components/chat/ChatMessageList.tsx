@@ -145,6 +145,8 @@ function NotionSaveRow({
           ? "追記中…"
           : status === "saved"
           ? "✓ Notion に追記済"
+          : status === "error"
+          ? "追記を再試行"
           : "Notion ブリーフィングに追記"}
       </Button>
       {status === "saved" && state?.url && (

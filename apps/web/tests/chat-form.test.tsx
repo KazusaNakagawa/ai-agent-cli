@@ -491,19 +491,7 @@ describe("ChatForm", () => {
     expect(button).toBeDisabled()
   })
 
-  it("enables the Notion button when both NOTION_* keys are set", async () => {
-    on("/api/credentials", () =>
-      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
-    )
-    const user = userEvent.setup()
-    renderChatForm()
-    await sendOneTurn(user)
-    await waitFor(() => {
-      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
-    })
-  })
-
-  it("POSTs the Q&A on click and surfaces the returned URL", async () => {
+  it("auto-POSTs the Q&A once the answer completes and surfaces the URL", async () => {
     on("/api/credentials", () =>
       mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
     )
@@ -518,16 +506,8 @@ describe("ChatForm", () => {
     const user = userEvent.setup()
     renderChatForm()
     await sendOneTurn(user)
-    await waitFor(() => {
-      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
-    })
-    // The model selector was removed (PR #110 review feedback): saving the
-    // already-streamed answer doesn't benefit from a fresh model choice —
-    // the only work left is a Notion API append, for which the backend
-    // default (sonnet) is sufficient. So no UI control to assert here.
-    expect(screen.queryByTestId("notion-model-select")).toBeNull()
-    await user.click(screen.getByTestId("notion-save-button"))
 
+    // No click: the save fires on its own once the turn is committed.
     await waitFor(() => {
       expect(screen.getByTestId("notion-save-link")).toHaveAttribute(
         "href",
@@ -535,6 +515,11 @@ describe("ChatForm", () => {
       )
     })
     expect(screen.getByTestId("notion-save-button")).toBeDisabled()
+    // The model selector was removed (PR #110 review feedback): saving the
+    // already-streamed answer doesn't benefit from a fresh model choice —
+    // the only work left is a Notion API append, for which the backend
+    // default (sonnet) is sufficient. So no UI control to assert here.
+    expect(screen.queryByTestId("notion-model-select")).toBeNull()
     expect(importBody).not.toBeNull()
     const sent = JSON.parse(importBody!) as {
       date: string
@@ -548,6 +533,80 @@ describe("ChatForm", () => {
     // model is omitted from the request body now that the UI no longer
     // surfaces a picker; the backend's Pydantic default (sonnet) kicks in.
     expect(sent.model).toBeUndefined()
+  })
+
+  it("auto-saves each answer exactly once", async () => {
+    on("/api/credentials", () =>
+      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
+    )
+    for (let i = 0; i < 4; i++) {
+      on("/api/chat/notion-import", () =>
+        new Response(
+          JSON.stringify({ url: "https://www.notion.so/abc", summary: "ok" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+    }
+    const user = userEvent.setup()
+    renderChatForm()
+    await sendOneTurn(user)
+    await waitFor(() => {
+      expect(screen.getByTestId("notion-save-link")).toBeInTheDocument()
+    })
+
+    const importCalls = () =>
+      fetchMock.mock.calls.filter(([u]) => u === "/api/chat/notion-import").length
+    expect(importCalls()).toBe(1)
+    // A second turn saves once more — one call per answer, never a re-save
+    // of an answer already handled.
+    chatRoundtrip(() => sseResponse([{ data: "second answer" }]))
+    await user.type(screen.getByTestId("chat-input"), "second question")
+    await user.click(screen.getByTestId("send-button"))
+    await waitFor(() => {
+      expect(screen.getAllByTestId("notion-save-link")).toHaveLength(2)
+    })
+    expect(importCalls()).toBe(2)
+  })
+
+  it("does not auto-save a history restored from sessionStorage", async () => {
+    window.sessionStorage.setItem(
+      "ai-agent:chat-history:v1",
+      JSON.stringify([
+        { role: "user", content: "old question" },
+        { role: "assistant", content: "old answer" },
+      ]),
+    )
+    on("/api/credentials", () =>
+      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
+    )
+    renderChatForm()
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent(
+        "old answer",
+      )
+    })
+    // Credentials have loaded and the button is live, but the restored turn
+    // was already saved in its own session — re-appending it on every reload
+    // would duplicate the Notion block and the local markdown block.
+    await waitFor(() => {
+      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
+    })
+    expect(
+      fetchMock.mock.calls.filter(([u]) => u === "/api/chat/notion-import"),
+    ).toHaveLength(0)
+  })
+
+  it("does not auto-save when Notion credentials are absent", async () => {
+    const user = userEvent.setup()
+    renderChatForm()
+    await sendOneTurn(user)
+    await waitFor(() => {
+      expect(screen.getByTestId("notion-save-button")).toBeDisabled()
+    })
+    expect(
+      fetchMock.mock.calls.filter(([u]) => u === "/api/chat/notion-import"),
+    ).toHaveLength(0)
   })
 
   it("reports the local markdown mirror alongside the Notion URL", async () => {
@@ -569,10 +628,6 @@ describe("ChatForm", () => {
     const user = userEvent.setup()
     renderChatForm()
     await sendOneTurn(user)
-    await waitFor(() => {
-      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
-    })
-    await user.click(screen.getByTestId("notion-save-button"))
 
     await waitFor(() => {
       expect(screen.getByTestId("local-save-note")).toHaveTextContent(
@@ -601,10 +656,6 @@ describe("ChatForm", () => {
     const user = userEvent.setup()
     renderChatForm()
     await sendOneTurn(user)
-    await waitFor(() => {
-      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
-    })
-    await user.click(screen.getByTestId("notion-save-button"))
 
     await waitFor(() => {
       expect(screen.getByTestId("local-save-error")).toHaveTextContent(
@@ -670,21 +721,35 @@ describe("ChatForm", () => {
         { status: 404, headers: { "content-type": "application/json" } },
       ),
     )
+    // A second handler for the manual retry below.
+    on("/api/chat/notion-import", () =>
+      new Response(
+        JSON.stringify({
+          url: "https://www.notion.so/abc",
+          summary: "ok",
+          local_path: "/repo/briefing_2026-05-30.md",
+          local_saved: true,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    )
     const user = userEvent.setup()
     renderChatForm()
     await sendOneTurn(user)
-    await waitFor(() => {
-      expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
-    })
-    await user.click(screen.getByTestId("notion-save-button"))
 
     await waitFor(() => {
       expect(screen.getByTestId("notion-save-error")).toHaveTextContent(
         "No Notion briefing page found for 2026-05-30",
       )
     })
-    // After an error the button re-enables so the user can retry.
-    expect(screen.getByTestId("notion-save-button")).not.toBeDisabled()
+    // After an auto-save failure the button becomes the manual retry path.
+    const retry = screen.getByTestId("notion-save-button")
+    expect(retry).not.toBeDisabled()
+    expect(retry).toHaveTextContent("追記を再試行")
+    await user.click(retry)
+    await waitFor(() => {
+      expect(screen.getByTestId("notion-save-link")).toBeInTheDocument()
+    })
   })
 
   // ----- Cancel in-flight streaming (Issue #98) ------------------------
