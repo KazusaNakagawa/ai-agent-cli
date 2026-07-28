@@ -47,11 +47,12 @@ class TestExistingTemplates:
             geopolitical="GEO",
             watch_events="EVT",
             stocks="STK",
+            fx="FX",
             few_shot="FEWSHOT",
         )
-        for marker in ("THM", "TKR", "GEO", "EVT", "STK", "FEWSHOT"):
+        for marker in ("THM", "TKR", "GEO", "EVT", "STK", "FX", "FEWSHOT"):
             assert marker in out
-        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$few_shot"):
+        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$fx", "$few_shot"):
             assert placeholder not in out
 
     def test_briefing_few_shot_value_dollar_is_not_reinterpreted(self):
@@ -67,6 +68,7 @@ class TestExistingTemplates:
             geopolitical="GEO",
             watch_events="EVT",
             stocks="STK",
+            fx="FX",
             few_shot="INSIDE $themes NOT REPLACED",
         )
         assert "INSIDE $themes NOT REPLACED" in out

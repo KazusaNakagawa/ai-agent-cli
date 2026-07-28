@@ -4,6 +4,13 @@
     "tickers": ["TICKER1", "TICKER2"],
     "themes": ["theme1", "theme2", "theme3"]
   },
+  "fx": {
+    "pairs": [
+      {"symbol": "JPY=X", "label": "USD/JPY", "band_low": 150, "band_high": 165}
+    ],
+    "usd_asset_share": 0.85,
+    "scenario_rates": [150, 140, 130]
+  },
   "watch_sectors": [
     {
       "sector": "セクター名",

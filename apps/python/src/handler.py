@@ -3,6 +3,7 @@ from datetime import date
 from src.claude_runner import get_model
 from src.config import CONFIG
 from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_MD_ROTATION_ENABLED, BRIEFING_OUTPUT_DIR, BRIEFING_SKIP_IF_EXISTS
+from src.fetcher.fx import fetch_fx_context
 from src.fetcher.stocks import fetch_stock_moves
 from src.generator.briefing import generate_briefing, is_degraded_briefing, looks_like_briefing
 from src.local_llm.briefing_index import index_briefings
@@ -56,11 +57,16 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False, force: bo
             )
             return {"statusCode": 200, "body": "skipped (already generated today)"}
 
+    # FX first: its day-over-day move is what converts each USD-quoted holding
+    # into the JPY move the holder actually experiences.
+    logger.info("fetching FX rates...")
+    fx, fx_change_pct = fetch_fx_context(CONFIG)
+
     logger.info("fetching stock moves...")
-    stocks = fetch_stock_moves(CONFIG.portfolio.tickers)
+    stocks = fetch_stock_moves(CONFIG.portfolio.tickers, fx_change_pct)
 
     logger.info("generating briefing (WebSearch)...")
-    briefing = generate_briefing(stocks, CONFIG)
+    briefing = generate_briefing(stocks, CONFIG, fx)
 
     logger.debug("briefing generated (length=%d)", len(briefing))
 
