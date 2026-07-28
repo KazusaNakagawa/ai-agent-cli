@@ -100,7 +100,26 @@ def fetch_fx_quote(symbol: str, label: str, band_low: float | None = None,
 
 
 def _signed(pct: float) -> str:
+    # Normalize negative zero: float arithmetic yields -0.0 for a 0% share, and
+    # "-0.00%" reads as a loss that did not happen.
+    if pct == 0:
+        pct = 0.0
     return f"{pct:+.2f}%"
+
+
+def find_usd_jpy(quotes: list[FxQuote]) -> FxQuote | None:
+    """Return the USD/JPY quote, or None when it is not among ``quotes``.
+
+    Both the JPY conversion and the what-if table are defined against USD/JPY
+    specifically, so matching on "USD" alone would let a second dollar pair
+    (EUR/USD, say) drive them and produce wildly wrong numbers. Shared by both
+    call sites so the two selections cannot drift apart.
+    """
+    for quote in quotes:
+        label = quote.label.upper()
+        if "USD" in label and "JPY" in label:
+            return quote
+    return None
 
 
 def format_fx_quote(quote: FxQuote) -> str:
@@ -128,14 +147,18 @@ def format_fx_context(
     supplied for a USD/JPY quote, a what-if table is appended showing the
     portfolio-level impact of each rate, holding stock prices constant. Without
     them the block is just the rate lines.
+
+    A configured share of ``0.0`` is honoured rather than treated as "unset" —
+    stating that no assets are USD-denominated is a real answer, and silently
+    dropping the table would contradict this docstring.
     """
     if not quotes:
         return "(取得なし)"
 
     lines = [f"- {format_fx_quote(q)}" for q in quotes]
 
-    if usd_asset_share and scenario_rates:
-        usd_jpy = next((q for q in quotes if "USD" in q.label.upper()), None)
+    if usd_asset_share is not None and scenario_rates:
+        usd_jpy = find_usd_jpy(quotes)
         if usd_jpy and usd_jpy.rate:
             lines.append("")
             lines.append(f"- ドル建て資産の比率: {usd_asset_share * 100:.0f}%")
@@ -168,6 +191,6 @@ def fetch_fx_context(config) -> tuple[str, float | None]:
     if not quotes:
         return "", None
 
-    usd_jpy = next((q for q in quotes if "USD" in q.label.upper() and "JPY" in q.label.upper()), None)
+    usd_jpy = find_usd_jpy(quotes)
     block = format_fx_context(quotes, fx_config.usd_asset_share, fx_config.scenario_rates)
     return block, (usd_jpy.change_pct if usd_jpy else None)

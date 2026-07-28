@@ -156,6 +156,26 @@ class TestFetchStockMovesWithFx:
         assert "円建て" not in result
         assert "↑10.0%" in result
 
+    def test_jpy_price_is_not_labelled_with_a_dollar_sign(self):
+        """Regression guard: a JPY listing used to render as ``$4206.00``."""
+        with patch("src.fetcher.stocks.yf.Ticker") as MockTicker:
+            MockTicker.return_value.fast_info = self._fast_info(4206, 4156, currency="JPY")
+            result = fetch_stock_moves(["4676.T"], fx_change_pct=0.8)
+        assert "¥4206.00" in result
+        assert "$" not in result
+
+    def test_usd_price_keeps_the_dollar_sign(self):
+        with patch("src.fetcher.stocks.yf.Ticker") as MockTicker:
+            MockTicker.return_value.fast_info = self._fast_info(110, 100)
+            result = fetch_stock_moves(["PLTR"], fx_change_pct=0.8)
+        assert "$110.00" in result
+
+    def test_unknown_currency_falls_back_to_its_iso_code(self):
+        with patch("src.fetcher.stocks.yf.Ticker") as MockTicker:
+            MockTicker.return_value.fast_info = self._fast_info(110, 100, currency="CHF")
+            result = fetch_stock_moves(["NESN.SW"])
+        assert "CHF 110.00" in result
+
     def test_omitting_fx_keeps_the_previous_output(self):
         with patch("src.fetcher.stocks.yf.Ticker") as MockTicker:
             MockTicker.return_value.fast_info = self._fast_info(110, 100)

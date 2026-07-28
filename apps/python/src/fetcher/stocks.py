@@ -9,6 +9,10 @@ logger = get_logger(__name__)
 # report a usable currency string (e.g. a mocked or partial fast_info).
 _JPY_SUFFIXES = (".T", ".JP")
 
+# Display symbols for the currencies actually held. Anything else falls back to
+# its ISO code so an unexpected listing is labelled honestly rather than as USD.
+_CURRENCY_SYMBOLS = {"USD": "$", "JPY": "¥", "EUR": "€", "GBP": "£"}
+
 
 @dataclass(frozen=True)
 class StockQuote:
@@ -61,12 +65,22 @@ def fetch_stock_quotes(tickers: list[str]) -> dict[str, StockQuote]:
     return quotes
 
 
+def _currency_symbol(currency: str) -> str:
+    """Return the display symbol for a currency, falling back to its ISO code.
+
+    Prices were previously always prefixed with ``$``, which mislabels a
+    JPY-quoted listing (``4676.T``) as dollars.
+    """
+    return _CURRENCY_SYMBOLS.get(currency.upper(), f"{currency.upper()} ")
+
+
 def _format_move(quote: StockQuote) -> str:
     """Render a quote the way the holdings table has always shown it."""
     if quote.error:
         return quote.error
     arrow = "↑" if quote.change_pct > 0 else "↓"
-    return f"{arrow}{abs(quote.change_pct):.1f}%  (${quote.last_price:.2f})"
+    symbol = _currency_symbol(quote.currency)
+    return f"{arrow}{abs(quote.change_pct):.1f}%  ({symbol}{quote.last_price:.2f})"
 
 
 def fetch_stock_move_map(tickers: list[str]) -> dict[str, str]:
@@ -103,9 +117,10 @@ def _format_move_with_jpy(quote: StockQuote, fx_change_pct: float) -> str:
     jpy_pct = to_jpy_change_pct(quote.change_pct, fx_change_pct)
     usd_arrow = "↑" if quote.change_pct > 0 else "↓"
     jpy_arrow = "↑" if jpy_pct > 0 else "↓"
+    symbol = _currency_symbol(quote.currency)
     return (
         f"ドル建て {usd_arrow}{abs(quote.change_pct):.1f}% / "
-        f"円建て {jpy_arrow}{abs(jpy_pct):.1f}%  (${quote.last_price:.2f})"
+        f"円建て {jpy_arrow}{abs(jpy_pct):.1f}%  ({symbol}{quote.last_price:.2f})"
     )
 
 

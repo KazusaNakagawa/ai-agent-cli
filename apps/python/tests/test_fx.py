@@ -130,6 +130,34 @@ class TestFormatting:
         block = format_fx_context([self._quote()], scenario_rates=[150.0])
         assert "シナリオ" not in block
 
+    def test_zero_usd_share_is_honoured_not_treated_as_unset(self):
+        """0.0 is a real answer ("no USD exposure"), not a missing value."""
+        block = format_fx_context(
+            [self._quote()], usd_asset_share=0.0, scenario_rates=[150.0]
+        )
+        assert "ドル建て資産の比率: 0%" in block
+        assert "150円: +0.00%" in block
+
+    def test_scenarios_use_usd_jpy_not_the_first_dollar_pair(self):
+        """A second USD pair must not drive the scenario table.
+
+        Regression guard: matching on "USD" alone picked EUR/USD when it was
+        listed first, computing impact against ~1.08 instead of ~163.85 and
+        reporting +11720% where -7.19% was correct.
+        """
+        eur_usd = self._quote(label="EUR/USD", rate=1.08)
+        block = format_fx_context(
+            [eur_usd, self._quote()], usd_asset_share=0.85, scenario_rates=[150.0]
+        )
+        assert "150円: -7.18%" in block
+
+    def test_no_scenario_table_when_usd_jpy_is_absent(self):
+        eur_usd = self._quote(label="EUR/USD", rate=1.08)
+        block = format_fx_context(
+            [eur_usd], usd_asset_share=0.85, scenario_rates=[150.0]
+        )
+        assert "シナリオ" not in block
+
     def test_empty_quotes_reports_no_data(self):
         assert format_fx_context([]) == "(取得なし)"
 
