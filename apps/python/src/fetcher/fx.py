@@ -99,10 +99,16 @@ def fetch_fx_quote(symbol: str, label: str, band_low: float | None = None,
     )
 
 
+# Anything below this rounds to 0.00 at the displayed precision, so its sign is
+# not backed by a visible digit.
+_DISPLAY_EPSILON = 0.005
+
+
 def _signed(pct: float) -> str:
-    # Normalize negative zero: float arithmetic yields -0.0 for a 0% share, and
-    # "-0.00%" reads as a loss that did not happen.
-    if pct == 0:
+    # Normalize both negative zero (float arithmetic yields -0.0 for a 0% share)
+    # and magnitudes too small to survive rounding: "-0.00%" reads as a loss that
+    # did not happen. A quiet FX session produces exactly such a value.
+    if abs(pct) < _DISPLAY_EPSILON:
         pct = 0.0
     return f"{pct:+.2f}%"
 

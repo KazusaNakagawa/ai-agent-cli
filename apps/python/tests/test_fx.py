@@ -6,11 +6,31 @@ import pytest
 from src.config import FxConfig, FxPair
 from src.fetcher.fx import (
     FxQuote,
+    _signed,
     fetch_fx_context,
     fetch_fx_quote,
     format_fx_context,
     format_fx_quote,
 )
+
+
+class TestSignedFormatting:
+    """A displayed sign must be backed by a visible digit."""
+
+    def test_negative_zero_is_not_shown_as_a_loss(self):
+        assert _signed(-0.0) == "+0.00%"
+
+    def test_magnitude_below_display_precision_is_flattened(self):
+        # A quiet FX session yields such a value; "-0.00%" reads as a loss.
+        assert _signed(-0.004) == "+0.00%"
+        assert _signed(-0.00001) == "+0.00%"
+
+    def test_smallest_visible_magnitude_keeps_its_sign(self):
+        assert _signed(-0.005) == "-0.01%"
+
+    def test_ordinary_values_are_unaffected(self):
+        assert _signed(-7.184) == "-7.18%"
+        assert _signed(0.8) == "+0.80%"
 
 
 def _history(closes):
