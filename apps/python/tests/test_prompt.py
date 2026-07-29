@@ -47,12 +47,33 @@ class TestExistingTemplates:
             geopolitical="GEO",
             watch_events="EVT",
             stocks="STK",
+            fx="FX",
             few_shot="FEWSHOT",
         )
-        for marker in ("THM", "TKR", "GEO", "EVT", "STK", "FEWSHOT"):
+        for marker in ("THM", "TKR", "GEO", "EVT", "STK", "FX", "FEWSHOT"):
             assert marker in out
-        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$few_shot"):
+        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$fx", "$few_shot"):
             assert placeholder not in out
+
+    def test_briefing_literal_dollar_amount_survives_rendering(self):
+        """`$$123.53` in the template must render as a single-dollar `$123.53`.
+
+        string.Template treats a lone `$1` as a placeholder and raises
+        ValueError, so the escape is required — not a typo. Guards against it
+        being "corrected" to a single `$`, which breaks every briefing run.
+        """
+        out = render(
+            "briefing",
+            themes="THM",
+            tickers="TKR",
+            geopolitical="GEO",
+            watch_events="EVT",
+            stocks="STK",
+            fx="FX",
+            few_shot="FEWSHOT",
+        )
+        assert "$123.53" in out
+        assert "$$123.53" not in out
 
     def test_briefing_few_shot_value_dollar_is_not_reinterpreted(self):
         """few_shot 値内の $name は再置換されない（単一パス置換の回帰ガード）。
@@ -67,6 +88,7 @@ class TestExistingTemplates:
             geopolitical="GEO",
             watch_events="EVT",
             stocks="STK",
+            fx="FX",
             few_shot="INSIDE $themes NOT REPLACED",
         )
         assert "INSIDE $themes NOT REPLACED" in out
