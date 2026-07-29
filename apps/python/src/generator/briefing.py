@@ -148,8 +148,13 @@ def _truncate_error(detail: str) -> str:
     return detail[:_ERROR_NOTE_MAX_LENGTH] + "…(truncated)"
 
 
-def generate_briefing(stocks: str, config: BriefingConfig) -> str:
-    """Generate the briefing by running the main analysis and sector sweep in parallel."""
+def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
+    """Generate the briefing by running the main analysis and sector sweep in parallel.
+
+    ``fx`` is the pre-rendered exchange-rate block. It defaults to empty so a
+    failed FX fetch (or no configured pair) degrades to the previous USD-only
+    briefing rather than blocking the run.
+    """
     tickers = join_safe(config.portfolio.tickers, sep=", ")
     themes = join_safe(config.portfolio.themes, sep=", ")
 
@@ -160,6 +165,7 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
         geopolitical=build_geopolitical_context(config),
         watch_events=build_watch_events_context(config),
         stocks=stocks,
+        fx=fx or "(為替の取得なし。為替セクションは省略してよい)",
         few_shot=load_briefing_few_shot(),
     )
     sectors_prompt = render(
