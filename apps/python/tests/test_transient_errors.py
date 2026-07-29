@@ -34,6 +34,13 @@ class TestIsTransient:
         )
         assert is_transient(msg, "") is True
 
+    def test_connection_closed_mid_response_is_transient(self):
+        """Regression: briefing sector sweep 2026-06-26 and 2026-07-30 raised
+        this and was not retried because no pattern matched it, so the run
+        gave up after attempt 1/2."""
+        msg = "API Error: Connection closed mid-response. The response above may be incomplete."
+        assert is_transient(msg, "") is True
+
     @pytest.mark.parametrize(
         "haystack",
         [
