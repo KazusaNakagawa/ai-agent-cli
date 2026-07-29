@@ -41,6 +41,12 @@ class TestIsTransient:
         msg = "API Error: Connection closed mid-response. The response above may be incomplete."
         assert is_transient(msg, "") is True
 
+    def test_connection_closed_mid_response_without_hyphen_is_transient(self):
+        """The upstream wording isn't guaranteed stable; tolerate a space
+        instead of a hyphen (per Sourcery review on #427)."""
+        msg = "API Error: Connection closed mid response."
+        assert is_transient(msg, "") is True
+
     @pytest.mark.parametrize(
         "haystack",
         [
