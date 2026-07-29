@@ -20,6 +20,11 @@ _TRANSIENT_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"API Error:\s*5\d\d"),
     # node-fetch socket-close (observed 2026-06-05 on briefing + weekly jobs)
     re.compile(r"socket connection was closed unexpectedly", re.IGNORECASE),
+    # upstream connection drop mid-stream (observed 2026-06-26 and 2026-07-30
+    # on the briefing sector sweep; previously unmatched, so the run gave up
+    # after attempt 1 instead of retrying). Optional hyphen tolerates minor
+    # upstream wording variations like "mid response".
+    re.compile(r"Connection closed mid[- ]?response", re.IGNORECASE),
     # node-fetch generic network failure
     re.compile(r"\bfetch failed\b", re.IGNORECASE),
     # libc/Node networking errno strings bubbled up from the underlying fetch
