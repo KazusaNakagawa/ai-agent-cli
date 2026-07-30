@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest"
 import {
   axisLabelIndices,
   filterSummaryByRange,
+  formatCount,
   formatMetricValue,
   formatShortDate,
+  formatShortTime,
   niceScale,
   summarizeRange,
   UsageDailySummary,
@@ -177,6 +179,40 @@ describe("axisLabelIndices", () => {
   it("handles a single point and an empty series", () => {
     expect(axisLabelIndices(1, 8)).toEqual([0])
     expect(axisLabelIndices(0, 8)).toEqual([])
+  })
+
+  it("degrades safely for a max below two", () => {
+    // max === 1 cannot hold both ends, and max <= 0 asks for no labels at all.
+    // Both would otherwise hit a divide-by-zero / negative stride and never
+    // terminate the picking loop.
+    expect(axisLabelIndices(30, 1)).toEqual([0])
+    expect(axisLabelIndices(30, 0)).toEqual([])
+    expect(axisLabelIndices(30, -5)).toEqual([])
+  })
+})
+
+describe("formatCount", () => {
+  it("groups a large count", () => {
+    expect(formatCount(4732400)).toBe("4,732,400")
+  })
+
+  it("renders zero as-is", () => {
+    expect(formatCount(0)).toBe("0")
+  })
+})
+
+describe("formatShortTime", () => {
+  it("shortens an ISO timestamp to HH:MM", () => {
+    expect(formatShortTime("2026-06-20T05:06:30")).toBe("05:06")
+  })
+
+  it("keeps the timestamp's own minute rather than a fixed offset", () => {
+    expect(formatShortTime("2026-06-20T12:34:56")).toBe("12:34")
+  })
+
+  it("passes through anything that is not an ISO timestamp", () => {
+    expect(formatShortTime("20260620")).toBe("20260620")
+    expect(formatShortTime("not-a-time")).toBe("not-a-time")
   })
 })
 

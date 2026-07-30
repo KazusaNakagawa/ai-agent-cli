@@ -235,6 +235,13 @@ const _smallCurrencyFmt = new Intl.NumberFormat("en-US", {
 const _SMALL_COST_THRESHOLD = 0.1
 const _numberFmt = new Intl.NumberFormat("en-US")
 
+// Plain grouped integer for quantities that aren't a chartable metric (call
+// counts, day counts, summed tokens). Kept separate from formatMetricValue so
+// counts don't have to borrow a token metric to get formatted.
+export function formatCount(value: number): string {
+  return _numberFmt.format(value)
+}
+
 // Render a chart value in the unit its metric implies: cost carries a "$",
 // duration reads in seconds, token counts are plain grouped integers. Used by
 // both charts' axis ticks and the range totals so units never disagree.
@@ -252,8 +259,11 @@ export function formatMetricValue(metric: UsageChartMetric, value: number): stri
 // "All time" points) would otherwise overlap into mush, so thin them to at most
 // `max` labels at an even stride, always keeping the first and last.
 export function axisLabelIndices(count: number, max: number): number[] {
-  if (count <= 0) return []
+  if (count <= 0 || max <= 0) return []
   if (count <= max) return Array.from({ length: count }, (_, i) => i)
+  // max === 1 can't hold both ends, and the stride below would divide by zero
+  // (max === 1) or go negative (max <= 0) and never terminate.
+  if (max === 1) return [0]
   const stride = Math.ceil((count - 1) / (max - 1))
   const picked: number[] = []
   for (let i = 0; i < count - 1; i += stride) picked.push(i)

@@ -6,6 +6,7 @@ import { UsageTrendChart } from "@/components/UsageTrendChart"
 import { formatLocalDate } from "@/lib/utils"
 import {
   filterSummaryByRange,
+  formatCount,
   formatMetricValue,
   formatUsageField,
   summarizeRange,
@@ -217,9 +218,9 @@ export function UsageDashboard() {
         >
           {[
             ["Total cost", formatMetricValue("cost_usd", totals.cost_usd)],
-            ["Total tokens", formatMetricValue("input_tokens", totals.tokens)],
-            ["Calls", formatMetricValue("input_tokens", totals.calls)],
-            ["Days logged", formatMetricValue("input_tokens", totals.days)],
+            ["Total tokens", formatCount(totals.tokens)],
+            ["Calls", formatCount(totals.calls)],
+            ["Days logged", formatCount(totals.days)],
           ].map(([label, value]) => (
             <div key={label} className="flex justify-between gap-2">
               <dt className="text-muted-foreground">{label}</dt>
