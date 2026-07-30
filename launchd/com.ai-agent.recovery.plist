@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sector-sweep recovery job.
+
+  The 05:00 briefing normally fires during a DarkWake, which lasts ~45 seconds
+  before macOS sleeps again and severs the claude CLI's connection. The sector
+  sweep is the long half of the pipeline, so it is the one that dies. This job
+  re-runs just that half once the Mac is genuinely awake.
+
+  It is a no-op unless today's briefing MD carries the sector-failure notice,
+  and it refuses to spend anything while the system is in DarkWake, so the
+  three daily slots below cost nothing on a normal day. launchd also runs a
+  missed slot as soon as the Mac wakes — which is exactly when it should run.
+
+  Manual install (edit the absolute paths below to match your checkout):
+    cp launchd/com.ai-agent.recovery.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ai-agent.recovery.plist
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.ai-agent.recovery.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-agent.recovery</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/nakagawakazusa/work/ai-agent/bin/recover.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/nakagawakazusa</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key><integer>8</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key><integer>12</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key><integer>19</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/nakagawakazusa/work/ai-agent/log/launchd-recovery.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/nakagawakazusa/work/ai-agent/log/launchd-recovery.stderr.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

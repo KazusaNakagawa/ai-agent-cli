@@ -148,6 +148,38 @@ def _truncate_error(detail: str) -> str:
     return detail[:_ERROR_NOTE_MAX_LENGTH] + "…(truncated)"
 
 
+def generate_sectors(stocks: str, config: BriefingConfig) -> str:
+    """Run the sector sweep on its own and return its body.
+
+    Split out of generate_briefing so the wake-up recovery job (#432) can redo
+    just this half after a sleep-severed run, without paying for a second main
+    analysis.
+    """
+    prompt = render(
+        "briefing_sectors",
+        watch_sectors=build_watch_sectors_context(config),
+        stocks=stocks,
+    )
+    return run_claude(
+        prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS,
+        max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
+    )
+
+
+def merge_recovered_sectors(body: str, sectors: str) -> str:
+    """Splice a recovered sector sweep into a briefing body that failed to get one.
+
+    Everything from SECTORS_FAILED_NOTICE onward is the failure notice plus the
+    quoted CLI error, so the whole tail is replaced by the real section. A body
+    without the notice is returned untouched, which keeps the recovery run
+    idempotent.
+    """
+    marker = body.find(SECTORS_FAILED_NOTICE)
+    if marker == -1:
+        return body
+    return body[:marker] + "## セクター動向\n\n" + sectors
+
+
 def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
     """Generate the briefing by running the main analysis and sector sweep in parallel.
 
@@ -168,22 +200,13 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
         fx=fx or "(為替の取得なし。為替セクションは省略してよい)",
         few_shot=load_briefing_few_shot(),
     )
-    sectors_prompt = render(
-        "briefing_sectors",
-        watch_sectors=build_watch_sectors_context(config),
-        stocks=stocks,
-    )
-
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
             executor.submit(
                 run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN,
                 max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
             ): "main",
-            executor.submit(
-                run_claude, sectors_prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS,
-                max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
-            ): "sectors",
+            executor.submit(generate_sectors, stocks, config): "sectors",
         }
         results: dict[str, str] = {}
         errors: dict[str, str] = {}
