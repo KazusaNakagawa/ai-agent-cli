@@ -283,6 +283,93 @@ describe("UsageDashboard", () => {
     }
   })
 
+  it("shows range totals matching the visible trend points", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(2026, 5, 25)) // 2026-06-25 local — both SUMMARY days in the 7d window
+    try {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
+        if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+        return Promise.resolve(jsonResponse(DAY_20620))
+      })
+
+      render(<UsageDashboard />)
+
+      const totals = await screen.findByTestId("usage-range-totals")
+      // 0.5 + 1.3 = the sum of the two visible trend points.
+      expect(totals).toHaveTextContent("$1.80")
+      expect(totals).toHaveTextContent("5") // 3 + 2 calls
+      expect(totals).toHaveTextContent("29,907") // all four token fields, both days
+      expect(totals).toHaveTextContent("2") // day count
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("keeps range totals visible when the trend chart is hidden", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(2026, 5, 25))
+    try {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
+        if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+        return Promise.resolve(jsonResponse(DAY_20620))
+      })
+      render(<UsageDashboard />)
+      await waitFor(() => expect(screen.getByTestId("usage-trend-chart")).toBeInTheDocument())
+
+      await userEvent.selectOptions(screen.getByTestId("usage-metric-select"), "all")
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("usage-trend-chart")).not.toBeInTheDocument()
+      })
+      expect(screen.getByTestId("usage-range-totals")).toHaveTextContent("$1.80")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("labels both chart x-axes so points are readable without hovering", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(2026, 5, 25))
+    try {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
+        if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+        return Promise.resolve(jsonResponse(DAY_20620))
+      })
+      render(<UsageDashboard />)
+
+      // Trend chart: one date label per day.
+      expect(await screen.findByTestId("usage-trend-x-label-0")).toHaveTextContent("06/23")
+      expect(screen.getByTestId("usage-trend-x-label-1")).toHaveTextContent("06/24")
+      // Bar chart: run start time under each bar.
+      expect(screen.getByTestId("usage-bar-x-label-0")).toHaveTextContent("05:06")
+      expect(screen.getByTestId("usage-bar-x-label-1")).toHaveTextContent("05:05")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("renders cost axis ticks as currency and token ticks without a unit", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/api/usage/dates")) return Promise.resolve(jsonResponse(DATES))
+      if (url.includes("/api/usage/summary")) return Promise.resolve(jsonResponse(SUMMARY))
+      return Promise.resolve(jsonResponse(DAY_20620))
+    })
+    render(<UsageDashboard />)
+
+    // Default metric is Cost (USD): niceScale(0.827) -> ticks every 0.2.
+    expect(await screen.findByTestId("usage-y-tick-0.2")).toHaveTextContent("$0.20")
+
+    await userEvent.selectOptions(screen.getByTestId("usage-metric-select"), "input_tokens")
+    await waitFor(() => {
+      const tick = screen.getByTestId("usage-y-tick-1000")
+      expect(tick).toHaveTextContent("1,000")
+      expect(tick.textContent).not.toContain("$")
+    })
+  })
+
   it("ignores a stale slow response when the date changed", async () => {
     const resolvers: Record<string, (r: Response) => void> = {}
     fetchMock.mockImplementation((url: string) => {

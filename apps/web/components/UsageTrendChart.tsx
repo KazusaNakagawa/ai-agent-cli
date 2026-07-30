@@ -2,6 +2,9 @@
 import { useId, useState } from "react"
 
 import {
+  axisLabelIndices,
+  formatMetricValue,
+  formatShortDate,
   niceScale,
   summaryMetricValue,
   UsageDailySummary,
@@ -16,10 +19,8 @@ type Props = {
 const CHART_HEIGHT = 200
 const Y_AXIS_WIDTH = 48
 const PLOT_PADDING = 8
-
-function formatTick(value: number): string {
-  return Number(value.toFixed(4)).toLocaleString("en-US")
-}
+// Above this many points the date labels would overlap, so they get thinned.
+const MAX_X_LABELS = 8
 
 type TooltipState = { x: number; y: number; label: string } | null
 
@@ -50,6 +51,8 @@ export function UsageTrendChart({ summary, metric }: Props) {
   const points = values.map((v, i) => ({ x: xFor(i), y: yFor(v), v, day: summary[i].date }))
   const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
 
+  const labelled = new Set(axisLabelIndices(n, MAX_X_LABELS))
+
   return (
     <div
       data-testid="usage-trend-chart"
@@ -57,8 +60,9 @@ export function UsageTrendChart({ summary, metric }: Props) {
       aria-label="Usage daily trend chart"
       // pt-6 keeps the top y-tick label (translated up 50%) from colliding with
       // the section heading above; matches UsageBarChart.
-      className="flex pt-6"
+      className="pt-6"
     >
+    <div className="flex">
       {/* Y-axis tick labels (visual only; values are in the title tooltips). */}
       <div
         aria-hidden
@@ -71,7 +75,7 @@ export function UsageTrendChart({ summary, metric }: Props) {
             className="absolute right-2 -translate-y-1/2 text-[11px] tabular-nums text-muted-foreground"
             style={{ bottom: `${(t / niceMax) * 100}%` }}
           >
-            {formatTick(t)}
+            {formatMetricValue(metric, t)}
           </span>
         ))}
       </div>
@@ -136,7 +140,7 @@ export function UsageTrendChart({ summary, metric }: Props) {
 
         {/* Point markers as positioned dots with custom tooltip on hover/focus. */}
         {points.map((p, i) => {
-          const label = `${p.day}: ${formatTick(p.v)}`
+          const label = `${p.day}: ${formatMetricValue(metric, p.v)}`
           return (
             <span
               key={p.day}
@@ -153,6 +157,27 @@ export function UsageTrendChart({ summary, metric }: Props) {
             />
           )
         })}
+      </div>
+    </div>
+
+      {/* X-axis: date under each point, thinned when the series is dense. Each
+          label is positioned at its point's x% so it stays aligned with the dot. */}
+      <div className="flex" aria-hidden>
+        <div className="shrink-0" style={{ width: Y_AXIS_WIDTH }} />
+        <div className="relative h-5 flex-1">
+          {points.map((p, i) =>
+            labelled.has(i) ? (
+              <span
+                key={p.day}
+                data-testid={`usage-trend-x-label-${i}`}
+                className="absolute top-1 -translate-x-1/2 whitespace-nowrap text-[11px] tabular-nums text-muted-foreground"
+                style={{ left: `${p.x}%` }}
+              >
+                {formatShortDate(p.day)}
+              </span>
+            ) : null,
+          )}
+        </div>
       </div>
     </div>
   )

@@ -36,11 +36,37 @@ def test_log_usage_appends_one_jsonl_line(monkeypatch, tmp_path):
     assert "timestamp" in rec
 
 
-def test_log_usage_purges_files_older_than_retention(monkeypatch, tmp_path):
-    """LOG_RETENTION_DAYS より古い *-usage.jsonl は log_usage 呼び出し時に削除される。"""
+def test_log_usage_keeps_old_files_by_default(monkeypatch, tmp_path):
+    """Verifies: with rotation disabled (the shipped default), a usage file older
+    than LOG_RETENTION_DAYS survives a log_usage() call.
+    Why: the dashboard's "All time" range is only meaningful with full history —
+    purging silently capped it at ~8 days (#428).
+    """
     usage_dir = tmp_path / "usage"
     usage_dir.mkdir()
     monkeypatch.setattr(usage_logger, "USAGE_DIR", usage_dir)
+    monkeypatch.setattr(usage_logger, "_last_purge_date", None)
+
+    assert usage_logger.USAGE_LOG_ROTATION_ENABLED is False
+
+    ancient_day = (datetime.now() - timedelta(days=400)).strftime("%Y%m%d")
+    ancient_file = usage_dir / f"{ancient_day}-usage.jsonl"
+    ancient_file.write_text("{}\n", encoding="utf-8")
+
+    usage_logger.log_usage(label="x", usage={}, cost_usd=None, duration_ms=None)
+
+    assert ancient_file.exists()
+
+
+def test_log_usage_purges_files_older_than_retention(monkeypatch, tmp_path):
+    """Verifies: with rotation explicitly enabled, files older than
+    LOG_RETENTION_DAYS are still deleted on log_usage().
+    Why: retention must stay switchable, not be removed outright.
+    """
+    usage_dir = tmp_path / "usage"
+    usage_dir.mkdir()
+    monkeypatch.setattr(usage_logger, "USAGE_DIR", usage_dir)
+    monkeypatch.setattr(usage_logger, "USAGE_LOG_ROTATION_ENABLED", True)
     monkeypatch.setattr(usage_logger, "_last_purge_date", None)  # 同日 memo をリセット
 
     retention = usage_logger.LOG_RETENTION_DAYS
@@ -58,10 +84,36 @@ def test_log_usage_purges_files_older_than_retention(monkeypatch, tmp_path):
     assert recent_file.name in remaining
 
 
+def test_purge_keeps_the_boundary_day(monkeypatch, tmp_path):
+    """Verifies: the file dated exactly at the cutoff (today - LOG_RETENTION_DAYS)
+    is kept, only strictly older ones are deleted.
+    Why: pins the off-by-one so re-enabling rotation can't silently eat one extra day.
+    """
+    usage_dir = tmp_path / "usage"
+    usage_dir.mkdir()
+    monkeypatch.setattr(usage_logger, "USAGE_DIR", usage_dir)
+    monkeypatch.setattr(usage_logger, "USAGE_LOG_ROTATION_ENABLED", True)
+    monkeypatch.setattr(usage_logger, "_last_purge_date", None)
+
+    retention = usage_logger.LOG_RETENTION_DAYS
+    boundary_day = (datetime.now() - timedelta(days=retention)).strftime("%Y%m%d")
+    just_older_day = (datetime.now() - timedelta(days=retention + 1)).strftime("%Y%m%d")
+    boundary_file = usage_dir / f"{boundary_day}-usage.jsonl"
+    just_older_file = usage_dir / f"{just_older_day}-usage.jsonl"
+    boundary_file.write_text("{}\n", encoding="utf-8")
+    just_older_file.write_text("{}\n", encoding="utf-8")
+
+    usage_logger.log_usage(label="x", usage={}, cost_usd=None, duration_ms=None)
+
+    assert boundary_file.exists()
+    assert not just_older_file.exists()
+
+
 def test_purge_runs_at_most_once_per_day(monkeypatch, tmp_path):
     """同日内の 2 回目以降の log_usage では _purge_old_logs を再実行しない。"""
     usage_dir = tmp_path / "usage"
     monkeypatch.setattr(usage_logger, "USAGE_DIR", usage_dir)
+    monkeypatch.setattr(usage_logger, "USAGE_LOG_ROTATION_ENABLED", True)
     monkeypatch.setattr(usage_logger, "_last_purge_date", None)
 
     calls = {"n": 0}

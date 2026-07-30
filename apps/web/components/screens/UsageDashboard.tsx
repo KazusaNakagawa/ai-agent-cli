@@ -6,7 +6,9 @@ import { UsageTrendChart } from "@/components/UsageTrendChart"
 import { formatLocalDate } from "@/lib/utils"
 import {
   filterSummaryByRange,
+  formatMetricValue,
   formatUsageField,
+  summarizeRange,
   UsageChartMetric,
   UsageDailySummary,
   UsageDatesResponse,
@@ -128,6 +130,7 @@ export function UsageDashboard() {
   }
 
   const visibleSummary = filterSummaryByRange(summary, range, formatLocalDate())
+  const totals = summarizeRange(visibleSummary)
   const activeRecord = activeIndex !== null ? records[activeIndex] : null
 
   return (
@@ -163,26 +166,11 @@ export function UsageDashboard() {
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          Range
-          <select
-            data-testid="usage-range-select"
-            value={range}
-            onChange={(e) => setRange(e.target.value as UsageRange)}
-            className="rounded-md border bg-background px-2 py-1 text-sm"
-          >
-            {(Object.keys(USAGE_RANGE_LABELS) as UsageRange[]).map((r) => (
-              <option key={r} value={r}>
-                {USAGE_RANGE_LABELS[r]}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
 
       <section className="space-y-1">
         <h3 className="text-sm font-medium text-muted-foreground">
-          Per run — {USAGE_CHART_METRIC_LABELS[metric]}
+          Per run ({selectedDate}) — {USAGE_CHART_METRIC_LABELS[metric]}
         </h3>
         {loading ? (
           <p data-testid="usage-loading" className="text-sm text-muted-foreground">
@@ -198,14 +186,61 @@ export function UsageDashboard() {
         )}
       </section>
 
-      {visibleSummary.length > 0 && metric !== "all" && (
-        <section className="space-y-1">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Daily trend ({USAGE_RANGE_LABELS[range]}) — {USAGE_CHART_METRIC_LABELS[metric]}
-          </h3>
-          <UsageTrendChart summary={visibleSummary} metric={metric} />
-        </section>
-      )}
+      {/* Everything below is range-scoped. Keeping the Range select inside this
+          block (rather than beside Date/Metric) makes it obvious that it drives
+          the totals and the trend, while the per-run chart above follows Date. */}
+      <section className="space-y-3 rounded-md border p-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <label className="flex items-center gap-2 text-sm">
+            Range
+            <select
+              data-testid="usage-range-select"
+              value={range}
+              onChange={(e) => setRange(e.target.value as UsageRange)}
+              className="rounded-md border bg-background px-2 py-1 text-sm"
+            >
+              {(Object.keys(USAGE_RANGE_LABELS) as UsageRange[]).map((r) => (
+                <option key={r} value={r}>
+                  {USAGE_RANGE_LABELS[r]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Applies to the totals and trend below — the per-run chart above follows Date.
+          </p>
+        </div>
+
+        <dl
+          data-testid="usage-range-totals"
+          className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4"
+        >
+          {[
+            ["Total cost", formatMetricValue("cost_usd", totals.cost_usd)],
+            ["Total tokens", formatMetricValue("input_tokens", totals.tokens)],
+            ["Calls", formatMetricValue("input_tokens", totals.calls)],
+            ["Days logged", formatMetricValue("input_tokens", totals.days)],
+          ].map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="font-medium tabular-nums">{value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        {visibleSummary.length === 0 ? (
+          <p data-testid="usage-range-empty" className="text-sm text-muted-foreground">
+            No days in this range.
+          </p>
+        ) : metric !== "all" ? (
+          <div className="space-y-1">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Daily trend ({USAGE_RANGE_LABELS[range]}) — {USAGE_CHART_METRIC_LABELS[metric]}
+            </h3>
+            <UsageTrendChart summary={visibleSummary} metric={metric} />
+          </div>
+        ) : null}
+      </section>
 
       <div className="min-h-[7rem]" aria-live="polite" role="status">
         {activeRecord ? (

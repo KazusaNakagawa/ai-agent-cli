@@ -29,6 +29,14 @@ RETRY_MAX_ATTEMPTS_BRIEFING = 2
 # Log retention
 LOG_RETENTION_DAYS = 7
 
+# Usage log (log/usage/*.jsonl) retention. When False, _purge_old_logs is skipped
+# and every daily file is kept indefinitely — the Usage dashboard's "All time"
+# range is only meaningful with the full history, and rotating on
+# LOG_RETENTION_DAYS silently capped it at ~8 days (#428). Volume is ~0.5-3.5 KB
+# per day, i.e. under 1 MB/year, so unbounded retention is cheap. Deliberately
+# separate from LOG_RETENTION_DAYS so app-log rotation can change on its own.
+USAGE_LOG_ROTATION_ENABLED = False
+
 # Weekly recap lookback window (briefing pages + Notion comment ingestion, #396)
 WEEKLY_WINDOW_DAYS = 7
 
