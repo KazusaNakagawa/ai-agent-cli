@@ -1,6 +1,8 @@
 """Append per-Claude-CLI-call token usage and cost to a JSONL file.
 
-Follows the "daily file + 7-day retention" convention from `src/logger.py`.
+Follows the "one file per day" convention from `src/logger.py`, but retention is
+opt-in: `USAGE_LOG_ROTATION_ENABLED` is False by default so the whole cost
+history stays available to the Usage dashboard (#428).
 Exceptions are swallowed because a logging failure must never break the
 original task.
 """
@@ -10,7 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from src.constants import LOG_RETENTION_DAYS
+from src.constants import LOG_RETENTION_DAYS, USAGE_LOG_ROTATION_ENABLED
 from src.logger import get_logger
 
 logger = get_logger(__name__)
@@ -40,13 +42,18 @@ def _maybe_purge(usage_dir: Path) -> None:
     """Call ``_purge_old_logs`` at most once per day to avoid duplicate purges.
 
     Avoids the waste of globbing the whole directory on every high-frequency call.
+    Skipped entirely when ``USAGE_LOG_ROTATION_ENABLED`` is False (the default) —
+    the once-per-day memo is still stamped so the debug line stays quiet.
     """
     global _last_purge_date
     today = datetime.now().date()
     if _last_purge_date == today:
         return
-    _purge_old_logs(usage_dir)
     _last_purge_date = today
+    if not USAGE_LOG_ROTATION_ENABLED:
+        logger.debug("usage log rotation disabled — keeping all daily usage files")
+        return
+    _purge_old_logs(usage_dir)
 
 
 def _purge_old_logs(usage_dir: Path) -> None:
