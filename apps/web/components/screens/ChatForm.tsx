@@ -17,7 +17,16 @@ function today(): string {
   return formatLocalDate()
 }
 
-export function ChatForm() {
+interface ChatFormProps {
+  /**
+   * Fill the host's height (scrolling log + composer pinned to the bottom)
+   * instead of stacking at natural height. The host must give this component a
+   * definite height for it to have any effect.
+   */
+  fill?: boolean
+}
+
+export function ChatForm({ fill = false }: ChatFormProps = {}) {
   const { messages: committedMessages, setMessages, hydrated } = useChatState()
   const chatJob = useChatJobState()
   const { draft: input, setDraft: setInput } = useDraftPersistence({
@@ -181,7 +190,7 @@ export function ChatForm() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className={fill ? "flex h-full min-h-0 flex-col gap-4" : "space-y-4"}>
       <ChatMessageList
         messages={displayMessages}
         busy={busy}
@@ -189,6 +198,7 @@ export function ChatForm() {
         notionReady={notionReady}
         notionState={notionState}
         onNotionSave={(idx) => void saveToNotion(idx)}
+        fill={fill}
       />
       <ChatComposer
         input={input}
