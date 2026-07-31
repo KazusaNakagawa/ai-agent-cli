@@ -24,9 +24,22 @@ const MAX_WIDTH = 880
  * must give this component a definite height. Below `lg` the panes collapse to
  * a single column and the header toggle picks which one is on screen.
  */
+/** Last path segment of a POSIX path — the briefing list is keyed by filename. */
+function basename(path: string): string {
+  return path.split("/").pop() ?? path
+}
+
 export function ChatSplitView() {
-  const { files, selected, content, loadingContent, listError, contentError, fetchContent } =
-    useBriefingData()
+  const {
+    files,
+    selected,
+    content,
+    loadingContent,
+    listError,
+    contentError,
+    fetchContent,
+    refreshContent,
+  } = useBriefingData()
   const { width, startResize } = useResizable({
     storageKey: WIDTH_STORAGE_KEY,
     defaultWidth: DEFAULT_WIDTH,
@@ -71,7 +84,9 @@ export function ChatSplitView() {
             docOnTop && "hidden lg:flex",
           )}
         >
-          <ChatForm fill />
+          {/* An answer appended to the open document refreshes it in place;
+              refreshContent ignores any other file. */}
+          <ChatForm fill onLocalSave={(path) => refreshContent(basename(path))} />
         </div>
 
         {/* Document pane — fixed (resizable) width from `lg` up, full width below */}

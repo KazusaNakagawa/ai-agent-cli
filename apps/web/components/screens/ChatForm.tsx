@@ -24,9 +24,14 @@ interface ChatFormProps {
    * definite height for it to have any effect.
    */
   fill?: boolean
+  /**
+   * Called with the appended markdown path each time an answer lands in the
+   * local briefing mirror, so a host rendering that file can refresh it.
+   */
+  onLocalSave?: (path: string) => void
 }
 
-export function ChatForm({ fill = false }: ChatFormProps = {}) {
+export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
   const { messages: committedMessages, setMessages, hydrated } = useChatState()
   const chatJob = useChatJobState()
   const { draft: input, setDraft: setInput } = useDraftPersistence({
@@ -45,6 +50,7 @@ export function ChatForm({ fill = false }: ChatFormProps = {}) {
     messages: committedMessages,
     autoSave: notionReady,
     hydrated,
+    onLocalSave,
   })
 
   // Latch to enforce "retry at most once per user send" across status flips.

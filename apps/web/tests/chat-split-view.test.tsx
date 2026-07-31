@@ -7,8 +7,21 @@ import { ChatSplitView } from "@/components/screens/ChatSplitView"
 // The Q&A pane is exercised by tests/chat-form.test.tsx. Stubbing it here keeps
 // this suite about the split layout and avoids pulling the chat providers,
 // SSE plumbing, and the mount-time /api/credentials fetch into every case.
+// The stub exposes buttons that fire `onLocalSave` so the document-refresh
+// wiring can be driven without a real save round trip.
 vi.mock("@/components/screens/ChatForm", () => ({
-  ChatForm: () => <div data-testid="chat-form-stub" />,
+  ChatForm: ({ onLocalSave }: { onLocalSave?: (path: string) => void }) => (
+    <div data-testid="chat-form-stub">
+      <button
+        data-testid="stub-save-open-doc"
+        onClick={() => onLocalSave?.("/repo/output/briefing/briefing_2026-08-01.md")}
+      />
+      <button
+        data-testid="stub-save-other-doc"
+        onClick={() => onLocalSave?.("/repo/output/briefing/local_2026-07-30.md")}
+      />
+    </div>
+  ),
 }))
 
 const FILES_RESPONSE = {
@@ -142,6 +155,78 @@ describe("ChatSplitView", () => {
     routeFetch({ "briefing_2026-08-01.md": "# Aug 1" })
     render(<ChatSplitView />)
     expect(await screen.findByTestId("chat-split-resizer")).toBeInTheDocument()
+  })
+
+  // --- Issue #436: refresh the open document after a local append ---------
+
+  function contentFetchCount(name: string): number {
+    return fetchMock.mock.calls.filter(
+      ([u]) => u === `/api/briefing/${name}`,
+    ).length
+  }
+
+  it("refetches the open document once after it is appended to", async () => {
+    const contents: Record<string, string> = {
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+    }
+    routeFetch(contents)
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+    expect(contentFetchCount("briefing_2026-08-01.md")).toBe(1)
+
+    contents["briefing_2026-08-01.md"] = "# Aug 1\n\nOriginal body.\n\nAppended turn."
+    await userEvent.click(screen.getByTestId("stub-save-open-doc"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
+    // Exactly one extra GET — no repeating timer behind it.
+    expect(contentFetchCount("briefing_2026-08-01.md")).toBe(2)
+    await new Promise((r) => setTimeout(r, 60))
+    expect(contentFetchCount("briefing_2026-08-01.md")).toBe(2)
+  })
+
+  it("does not refetch when the appended file is not the open one", async () => {
+    routeFetch({
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+      "local_2026-07-30.md": "# Jul 30\n\nLocal notes.",
+    })
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+    const before = fetchMock.mock.calls.length
+
+    await userEvent.click(screen.getByTestId("stub-save-other-doc"))
+
+    await new Promise((r) => setTimeout(r, 60))
+    expect(fetchMock.mock.calls.length).toBe(before)
+    expect(screen.getByTestId("briefing-content")).toHaveTextContent("Original body.")
+  })
+
+  it("replaces the cached body so reopening the file shows the appended text", async () => {
+    const contents: Record<string, string> = {
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+      "local_2026-07-30.md": "# Jul 30\n\nLocal notes.",
+    }
+    routeFetch(contents)
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+
+    contents["briefing_2026-08-01.md"] = "# Aug 1\n\nOriginal body.\n\nAppended turn."
+    await userEvent.click(screen.getByTestId("stub-save-open-doc"))
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
+
+    const picker = screen.getByTestId("chat-doc-picker")
+    await userEvent.selectOptions(picker, "local_2026-07-30.md")
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Local notes.")
+    })
+    await userEvent.selectOptions(picker, "briefing_2026-08-01.md")
+
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
   })
 
   it("toggles which pane is visible on narrow viewports", async () => {

@@ -25,6 +25,12 @@ export interface BriefingData {
   contentError: string | null
   fetchContent: (file: BriefingFile) => void
   prefetch: (file: BriefingFile) => void
+  /**
+   * Re-read `name` from disk if it is the file currently on screen, dropping
+   * its cache entry first. No-op for any other file. Used after something
+   * appends to the open document (Issue #436).
+   */
+  refreshContent: (name: string) => void
   close: () => void
 }
 
@@ -79,6 +85,29 @@ export function useBriefingData(): BriefingData {
       .catch(() => {})
   }, [])
 
+  const refreshContent = useCallback((name: string) => {
+    // Only the file on screen is worth re-reading; an append to anything else
+    // is picked up the next time that file is opened.
+    if (latestFile.current !== name) return
+    contentCache.current.delete(name)
+    // Deliberately no `setLoadingContent(true)`: that swaps the rendered body
+    // for the loading placeholder, which unmounts the scroll container and
+    // throws the reader back to the top. The stale text stays visible for the
+    // one round trip instead.
+    fetchJson<BriefingFileResponse>(contentUrl(name))
+      .then((data) => {
+        contentCache.current.set(name, data.content)
+        if (latestFile.current !== name) return
+        setContent(data.content)
+        setContentError(null)
+      })
+      .catch(() => {
+        // Best-effort, like prefetch: a failed background refresh must not
+        // replace what the user is reading with an error. The cache entry is
+        // already gone, so the next open re-reads from disk.
+      })
+  }, [])
+
   const close = useCallback(() => {
     latestFile.current = null
     setSelected(null)
@@ -109,6 +138,7 @@ export function useBriefingData(): BriefingData {
     contentError,
     fetchContent,
     prefetch,
+    refreshContent,
     close,
   }
 }
