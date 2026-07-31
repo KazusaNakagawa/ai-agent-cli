@@ -9,8 +9,9 @@
 
   It is a no-op unless today's briefing MD carries the sector-failure notice,
   and it refuses to spend anything while the system is in DarkWake, so the
-  three daily slots below cost nothing on a normal day. launchd also runs a
-  missed slot as soon as the Mac wakes — which is exactly when it should run.
+  daily slot below costs nothing on a normal day (measured: 1.2 s, no claude
+  call). One slot is enough because launchd runs a missed slot as soon as the
+  Mac wakes — which is exactly when the recovery should run.
 
   Manual install (edit the absolute paths below to match your checkout):
     cp launchd/com.ai-agent.recovery.plist ~/Library/LaunchAgents/
@@ -39,21 +40,12 @@
         <string>/Users/nakagawakazusa</string>
     </dict>
 
+    <!-- Every day 08:00 -->
     <key>StartCalendarInterval</key>
-    <array>
-        <dict>
-            <key>Hour</key><integer>8</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key><integer>12</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key><integer>19</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
-    </array>
+    <dict>
+        <key>Hour</key><integer>8</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
 
     <key>StandardOutPath</key>
     <string>/Users/nakagawakazusa/work/ai-agent/log/launchd-recovery.stdout.log</string>

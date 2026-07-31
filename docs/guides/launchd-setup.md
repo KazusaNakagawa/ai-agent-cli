@@ -36,7 +36,7 @@ plutil -lint ~/Library/LaunchAgents/com.ai-agent.recovery.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-agent.recovery.plist
 ```
 
-It is scheduled at 08:00 / 12:00 / 19:00 and is a no-op unless today's `briefing_YYYY-MM-DD.md` carries the sector-failure notice. Before spending anything it calls `src.power.is_system_awake()`, which reads the last `Sleep` / `Wake` / `DarkWake` event from `pmset -g log` and defers when the machine is not fully awake. Since launchd also runs a missed slot as soon as the Mac wakes, in practice it fires right when the lid opens. On success it splices the sweep into today's MD and appends it to the same Notion page — the main analysis is never re-run, so a recovery costs roughly half a full re-briefing.
+It is scheduled once a day at 08:00 and is a no-op unless today's `briefing_YYYY-MM-DD.md` carries the sector-failure notice — measured at 1.2 s with no claude call on a day the briefing succeeded. A single slot suffices because launchd runs a missed one at the next wake. Before spending anything it calls `src.power.is_system_awake()`, which reads the last `Sleep` / `Wake` / `DarkWake` event from `pmset -g log` and defers when the machine is not fully awake. Since launchd also runs a missed slot as soon as the Mac wakes, in practice it fires right when the lid opens. On success it splices the sweep into today's MD and appends it to the same Notion page — the main analysis is never re-run, so a recovery costs roughly half a full re-briefing.
 
 Run it by hand any time with `bin/recover.sh`.
 
