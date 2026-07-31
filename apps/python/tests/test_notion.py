@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.notifier.notion import send_to_notion, _block_to_text
+from src.notifier.notion import append_to_page_by_title, send_to_notion, _block_to_text
 from src.notifier.markdown import markdown_to_notion_blocks as _markdown_to_blocks
 
 
@@ -188,3 +188,48 @@ class TestBlockToTextTableRow:
             ]},
         }
         assert _block_to_text(block) == "| 週初 | 週末 |"
+
+
+def _page(page_id: str, title: str, url: str = "https://notion.so/p"):
+    return {
+        "id": page_id,
+        "url": url,
+        "parent": {"database_id": "db-id"},
+        "properties": {"Name": {"type": "title", "title": [
+            {"text": {"content": title}}
+        ]}},
+    }
+
+
+class TestAppendToPageByTitle:
+    def test_appends_blocks_to_the_matching_page(self, mock_notion):
+        with patch(
+            "src.notifier.notion._search_tagged_pages",
+            return_value=[_page("p-2", "別のページ"), _page("p-1", "マーケットブリーフィング — 2026-07-31")],
+        ):
+            url = append_to_page_by_title(
+                "## セクター動向\n\n本文",
+                api_key="k",
+                database_id="db-id",
+                title="マーケットブリーフィング — 2026-07-31",
+            )
+
+        assert url == "https://notion.so/p"
+        args, kwargs = mock_notion.blocks.children.append.call_args
+        assert kwargs["block_id"] == "p-1"
+        assert kwargs["children"] == _markdown_to_blocks("## セクター動向\n\n本文")
+
+    def test_no_matching_page_appends_nothing_and_returns_empty(self):
+        with patch("src.notifier.notion.Client") as MockClient:
+            notion = _make_notion_mock()
+            MockClient.return_value = notion
+            with patch("src.notifier.notion._search_tagged_pages", return_value=[_page("p-2", "別")]):
+                url = append_to_page_by_title(
+                    "本文", api_key="k", database_id="db-id", title="無い題名",
+                )
+
+        assert url == ""
+        notion.blocks.children.append.assert_not_called()
+
+    def test_missing_credentials_returns_empty(self):
+        assert append_to_page_by_title("本文", api_key="", database_id="db", title="t") == ""

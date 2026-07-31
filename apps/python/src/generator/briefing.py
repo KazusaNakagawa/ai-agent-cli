@@ -40,6 +40,11 @@ _ERROR_NOTE_MAX_LENGTH = 200
 MAIN_FAILED_NOTICE = "⚠️ メイン分析の取得に失敗しました。セクター動向のみお届けします。"
 SECTORS_FAILED_NOTICE = "⚠️ セクター動向の取得に失敗しました。"
 
+# Heading that opens the sector sweep section. Shared so a recovery run splices
+# in the same heading the main pipeline writes, and recovery_handler can mark
+# its Notion append as a recovery without diverging from this wording.
+SECTORS_HEADING = "## セクター動向"
+
 
 @lru_cache(maxsize=1)
 def load_briefing_few_shot() -> str:
@@ -148,6 +153,38 @@ def _truncate_error(detail: str) -> str:
     return detail[:_ERROR_NOTE_MAX_LENGTH] + "…(truncated)"
 
 
+def generate_sectors(stocks: str, config: BriefingConfig) -> str:
+    """Run the sector sweep on its own and return its body.
+
+    Split out of generate_briefing so the wake-up recovery job (#432) can redo
+    just this half after a sleep-severed run, without paying for a second main
+    analysis.
+    """
+    prompt = render(
+        "briefing_sectors",
+        watch_sectors=build_watch_sectors_context(config),
+        stocks=stocks,
+    )
+    return run_claude(
+        prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS,
+        max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
+    )
+
+
+def merge_recovered_sectors(body: str, sectors: str) -> str:
+    """Splice a recovered sector sweep into a briefing body that failed to get one.
+
+    Everything from SECTORS_FAILED_NOTICE onward is the failure notice plus the
+    quoted CLI error, so the whole tail is replaced by the real section. A body
+    without the notice is returned untouched, which keeps the recovery run
+    idempotent.
+    """
+    marker = body.find(SECTORS_FAILED_NOTICE)
+    if marker == -1:
+        return body
+    return body[:marker] + f"{SECTORS_HEADING}\n\n" + sectors
+
+
 def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
     """Generate the briefing by running the main analysis and sector sweep in parallel.
 
@@ -168,22 +205,13 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
         fx=fx or "(為替の取得なし。為替セクションは省略してよい)",
         few_shot=load_briefing_few_shot(),
     )
-    sectors_prompt = render(
-        "briefing_sectors",
-        watch_sectors=build_watch_sectors_context(config),
-        stocks=stocks,
-    )
-
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
             executor.submit(
                 run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN,
                 max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
             ): "main",
-            executor.submit(
-                run_claude, sectors_prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS,
-                max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
-            ): "sectors",
+            executor.submit(generate_sectors, stocks, config): "sectors",
         }
         results: dict[str, str] = {}
         errors: dict[str, str] = {}
@@ -206,7 +234,7 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
         return (
             f"{MAIN_FAILED_NOTICE}\n"
             f"{_truncate_error(errors['main'])}\n\n---\n\n"
-            "## セクター動向\n\n" + results["sectors"]
+            f"{SECTORS_HEADING}\n\n" + results["sectors"]
         )
 
     assert "main" in results, "main result missing despite no error recorded"
@@ -219,4 +247,4 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
 
     assert "sectors" in results, "sectors result missing despite no error recorded"
 
-    return main_text + "\n\n---\n\n## セクター動向\n\n" + results["sectors"]
+    return main_text + f"\n\n---\n\n{SECTORS_HEADING}\n\n" + results["sectors"]
