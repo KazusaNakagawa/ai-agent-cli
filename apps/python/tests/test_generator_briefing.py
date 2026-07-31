@@ -4,15 +4,18 @@ import pytest
 
 from tests.conftest import HIJACKED_SKILL_COMPLETION_REPORT
 from src.config import BriefingConfig, Conflict, GeopoliticalConfig, PortfolioConfig, WatchEvent, WatchSector
-from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING
+from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING, TIMEOUT_BRIEFING_SECTORS
 from src.generator.briefing import (
+    SECTORS_FAILED_NOTICE,
     build_geopolitical_context,
     build_watch_events_context,
     build_watch_sectors_context,
     generate_briefing,
+    generate_sectors,
     is_degraded_briefing,
     load_briefing_few_shot,
     looks_like_briefing,
+    merge_recovered_sectors,
 )
 
 
@@ -303,3 +306,55 @@ class TestLoadBriefingFewShot:
         # 出力フォーマットの主要セクションを型として含む
         for heading in ("### 今日のサマリー", "### なぜ動いたか", "### 自分への示唆", "### 参考記事"):
             assert heading in text
+
+
+class TestMergeRecoveredSectors:
+    def test_replaces_failure_notice_with_recovered_sectors(self):
+        degraded = (
+            "### 本日の相場\n本文\n\n---\n\n"
+            f"{SECTORS_FAILED_NOTICE}\n"
+            "claude CLI error [セクタースイープ] rc=1: {...}"
+        )
+
+        merged = merge_recovered_sectors(degraded, "### 半導体\n強い")
+
+        assert SECTORS_FAILED_NOTICE not in merged
+        assert merged.startswith("### 本日の相場\n本文")
+        assert merged.endswith("## セクター動向\n\n### 半導体\n強い")
+
+    def test_body_without_failure_notice_is_unchanged(self):
+        body = "### 本日の相場\n本文\n\n---\n\n## セクター動向\n\n### 半導体\n強い"
+
+        assert merge_recovered_sectors(body, "新しいセクター") == body
+
+
+class TestGenerateSectors:
+    def test_runs_only_the_sector_sweep_and_returns_its_text(self):
+        config = _make_config()
+        calls = []
+
+        def mock(prompt, label, timeout, **kwargs):
+            calls.append((label, timeout, kwargs.get("max_attempts")))
+            return "### 半導体\n強い"
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            result = generate_sectors("PLTR: +2%", config)
+
+        assert result == "### 半導体\n強い"
+        assert calls == [
+            ("セクタースイープ", TIMEOUT_BRIEFING_SECTORS, RETRY_MAX_ATTEMPTS_BRIEFING)
+        ]
+
+    def test_prompt_carries_the_configured_watch_sectors(self):
+        config = _make_config(watch_sectors=[WatchSector(sector="防衛", tickers=["RTX"])])
+        prompts = []
+
+        def mock(prompt, label, timeout, **kwargs):
+            prompts.append(prompt)
+            return "ok"
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            generate_sectors("PLTR: +2%", config)
+
+        assert "防衛" in prompts[0]
+        assert "RTX" in prompts[0]

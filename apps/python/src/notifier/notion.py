@@ -400,3 +400,36 @@ def fetch_new_comments(
                 "created_time": c.get("created_time", ""),
             })
     return out
+
+
+# ---------------------------------------------------------------------------
+# For the sector-sweep recovery job: appending to an existing page
+# ---------------------------------------------------------------------------
+
+def append_to_page_by_title(
+    text: str,
+    api_key: str,
+    database_id: str,
+    title: str,
+    tag: str = "agent",
+) -> str:
+    """Append Markdown to the existing page whose title equals ``title``.
+
+    Used by the recovery job (#432) to complete a briefing page whose sector
+    sweep was severed by a DarkWake sleep, instead of publishing a second page
+    for the same day. Returns the page URL, or "" when no page matches.
+    """
+    notion = _notion_client(api_key, database_id)
+    if notion is None:
+        return ""
+
+    for page in _search_tagged_pages(notion, database_id, tag):
+        if _extract_page_title(page) != title:
+            continue
+        _append_blocks(notion, page["id"], markdown_to_notion_blocks(text))
+        page_url = page.get("url", "")
+        logger.info("appended to Notion page: %s", page_url)
+        return page_url
+
+    logger.warning("no Notion page titled %r found — nothing appended", title)
+    return ""
