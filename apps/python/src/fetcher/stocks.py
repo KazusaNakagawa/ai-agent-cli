@@ -13,6 +13,24 @@ _JPY_SUFFIXES = (".T", ".JP")
 # its ISO code so an unexpected listing is labelled honestly rather than as USD.
 _CURRENCY_SYMBOLS = {"USD": "$", "JPY": "¥", "EUR": "€", "GBP": "£"}
 
+# Exchange suffix Yahoo Finance requires for Tokyo listings.
+_TOKYO_SUFFIX = ".T"
+
+
+def to_yahoo_symbol(ticker: str) -> str:
+    """Return the symbol Yahoo Finance expects for ``ticker``.
+
+    A TSE code is all digits, and Yahoo only resolves it with an exchange
+    suffix: "4676" answers ``Quote not found for symbol: 4676`` while "4676.T"
+    returns the quote. Configs are written in the bare form people read in the
+    news, so normalize here rather than expecting every config to carry the
+    suffix. US tickers are never all digits, so they pass through untouched.
+    """
+    stripped = ticker.strip()
+    if stripped.isdigit():
+        return stripped + _TOKYO_SUFFIX
+    return stripped
+
 
 @dataclass(frozen=True)
 class StockQuote:
@@ -50,7 +68,9 @@ def fetch_stock_quotes(tickers: list[str]) -> dict[str, StockQuote]:
     quotes: dict[str, StockQuote] = {}
     for t in tickers:
         try:
-            info = yf.Ticker(t).fast_info
+            # Keyed by the configured form, queried by the Yahoo form, so the
+            # holdings table keeps the label the config (and the prompt) uses.
+            info = yf.Ticker(to_yahoo_symbol(t)).fast_info
             pct = (info.last_price / info.previous_close - 1) * 100
             quotes[t] = StockQuote(
                 ticker=t,
