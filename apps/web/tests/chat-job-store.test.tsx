@@ -88,6 +88,31 @@ describe("chatJobStore", () => {
     expect(result.current.error).toBeNull()
   })
 
+  // The backend emits one event per source line, blank lines included. Losing
+  // those collapses markdown paragraph breaks, so the answer renders as a
+  // single run-on paragraph in the chat log and in the appended briefing md.
+  it("preserves blank lines so markdown paragraph breaks survive", async () => {
+    on("/api/chat", () => jsonResponse({ job_id: "para", status: "pending" }, 202))
+    on("/api/chat/para/stream", () =>
+      sseStream([
+        { data: "First paragraph." },
+        { data: "" },
+        { data: "- bullet" },
+        { data: "" },
+        { data: "Last paragraph." },
+      ]),
+    )
+
+    const { result } = renderHook(() => useChatJobState(), { wrapper })
+    await act(async () => {
+      await result.current.startJob({ question: "Q?", date: "2026-06-06" })
+    })
+    await waitFor(() => expect(result.current.status).toBe("done"))
+    expect(result.current.assistantContent).toBe(
+      "First paragraph.\n\n- bullet\n\nLast paragraph.",
+    )
+  })
+
   it("persists only while in-flight; clears on terminal", async () => {
     let release: (() => void) | null = null
     const gate = new Promise<void>((resolve) => {
