@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { BriefingFile } from "@/lib/briefing-types"
 import { useBriefingData } from "@/lib/hooks/useBriefingData"
 import { useResizable } from "@/lib/hooks/useResizable"
-import { cn } from "@/lib/utils"
+import { basename, cn } from "@/lib/utils"
 
 const WIDTH_STORAGE_KEY = "ai-agent:chat-split-width:v1"
 const DEFAULT_WIDTH = 480
@@ -24,15 +24,6 @@ const MAX_WIDTH = 880
  * must give this component a definite height. Below `lg` the panes collapse to
  * a single column and the header toggle picks which one is on screen.
  */
-/**
- * Last path segment — the briefing list is keyed by filename, while the
- * backend reports the append target as a full path. Both separators are
- * accepted so a Windows-style path from `Path` serialization still matches.
- */
-function basename(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path
-}
-
 export function ChatSplitView() {
   const {
     files,

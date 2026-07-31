@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react"
 
 import { colorForFile } from "@/lib/fileColors"
 import { listChildren, SKIP_DIR_NAMES, type DirChild, type IndexedFile } from "@/lib/fsAccess"
-import { basename, fuzzySearch } from "@/lib/fuzzy"
+import { fuzzySearch } from "@/lib/fuzzy"
+import { basename } from "@/lib/utils"
 import { useWorkspaceState } from "@/lib/workspaceStore"
 
 import { ChevronIcon, CollapseAllIcon, ExpandAllIcon, FileIcon, FolderIcon, SearchIcon } from "./icons"

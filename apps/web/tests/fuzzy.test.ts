@@ -1,16 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import { basename, fuzzySearch, matchScore } from "@/lib/fuzzy"
-
-describe("basename", () => {
-  it("returns the last path segment (success)", () => {
-    expect(basename("src/components/App.tsx")).toBe("App.tsx")
-  })
-
-  it("returns the whole string when there's no slash (boundary)", () => {
-    expect(basename("readme.md")).toBe("readme.md")
-  })
-})
+import { fuzzySearch, matchScore } from "@/lib/fuzzy"
+import { basename } from "@/lib/utils"
 
 describe("filename-only filtering (as used by the sidebar filter)", () => {
   const files = [

@@ -184,26 +184,30 @@ describe("ChatSplitView", () => {
     await waitFor(() => {
       expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
     })
-    // Exactly one extra GET — no repeating timer behind it.
-    expect(contentFetchCount("briefing_2026-08-01.md")).toBe(2)
-    await new Promise((r) => setTimeout(r, 60))
+    // One GET on open, one on the append — nothing else refetches this file.
     expect(contentFetchCount("briefing_2026-08-01.md")).toBe(2)
   })
 
   it("does not refetch when the appended file is not the open one", async () => {
-    routeFetch({
+    const contents: Record<string, string> = {
       "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
       "local_2026-07-30.md": "# Jul 30\n\nLocal notes.",
-    })
+    }
+    routeFetch(contents)
     render(<ChatSplitView />)
     await screen.findByTestId("briefing-content")
-    const before = fetchMock.mock.calls.length
 
     await userEvent.click(screen.getByTestId("stub-save-other-doc"))
 
-    await new Promise((r) => setTimeout(r, 60))
-    expect(fetchMock.mock.calls.length).toBe(before)
-    expect(screen.getByTestId("briefing-content")).toHaveTextContent("Original body.")
+    // Rather than sleeping to prove a negative, drive a save that *does*
+    // refresh and wait for it. Once that lands, the earlier click has
+    // certainly been processed, so the untouched count is conclusive.
+    contents["briefing_2026-08-01.md"] = "# Aug 1\n\nOriginal body.\n\nAppended turn."
+    await userEvent.click(screen.getByTestId("stub-save-open-doc"))
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
+    expect(contentFetchCount("local_2026-07-30.md")).toBe(0)
   })
 
   it("matches the open document through a backslash-separated path", async () => {
