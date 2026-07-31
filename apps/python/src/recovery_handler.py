@@ -17,7 +17,12 @@ from src.config import CONFIG
 from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_MD_ROTATION_ENABLED, BRIEFING_OUTPUT_DIR
 from src.fetcher.fx import fetch_fx_context
 from src.fetcher.stocks import fetch_stock_moves
-from src.generator.briefing import SECTORS_FAILED_NOTICE, generate_sectors, merge_recovered_sectors
+from src.generator.briefing import (
+    SECTORS_FAILED_NOTICE,
+    SECTORS_HEADING,
+    generate_sectors,
+    merge_recovered_sectors,
+)
 from src.logger import get_logger
 from src.notifier.local_md import save_briefing_md
 from src.notifier.notion import append_to_page_by_title
@@ -80,7 +85,7 @@ def recover_sectors(event=None, context=None) -> dict:
 
     if _is_configured(CONFIG.notion_api_key, CONFIG.notion_database_id):
         page_url = append_to_page_by_title(
-            "## セクター動向（リカバリ実行）\n\n" + sectors,
+            f"{SECTORS_HEADING}（リカバリ実行）\n\n" + sectors,
             CONFIG.notion_api_key,
             CONFIG.notion_database_id,
             title=f"マーケットブリーフィング — {today}",

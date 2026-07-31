@@ -40,6 +40,11 @@ _ERROR_NOTE_MAX_LENGTH = 200
 MAIN_FAILED_NOTICE = "⚠️ メイン分析の取得に失敗しました。セクター動向のみお届けします。"
 SECTORS_FAILED_NOTICE = "⚠️ セクター動向の取得に失敗しました。"
 
+# Heading that opens the sector sweep section. Shared so a recovery run splices
+# in the same heading the main pipeline writes, and recovery_handler can mark
+# its Notion append as a recovery without diverging from this wording.
+SECTORS_HEADING = "## セクター動向"
+
 
 @lru_cache(maxsize=1)
 def load_briefing_few_shot() -> str:
@@ -177,7 +182,7 @@ def merge_recovered_sectors(body: str, sectors: str) -> str:
     marker = body.find(SECTORS_FAILED_NOTICE)
     if marker == -1:
         return body
-    return body[:marker] + "## セクター動向\n\n" + sectors
+    return body[:marker] + f"{SECTORS_HEADING}\n\n" + sectors
 
 
 def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
@@ -229,7 +234,7 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
         return (
             f"{MAIN_FAILED_NOTICE}\n"
             f"{_truncate_error(errors['main'])}\n\n---\n\n"
-            "## セクター動向\n\n" + results["sectors"]
+            f"{SECTORS_HEADING}\n\n" + results["sectors"]
         )
 
     assert "main" in results, "main result missing despite no error recorded"
@@ -242,4 +247,4 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
 
     assert "sectors" in results, "sectors result missing despite no error recorded"
 
-    return main_text + "\n\n---\n\n## セクター動向\n\n" + results["sectors"]
+    return main_text + f"\n\n---\n\n{SECTORS_HEADING}\n\n" + results["sectors"]

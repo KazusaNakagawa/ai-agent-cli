@@ -16,6 +16,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # .env is sourced by the repo-root wrapper (../../bin/recover.sh) before exec.
-source "$PROJECT_ROOT/.venv/bin/activate"
+# launchd reports only a non-zero exit status, so say why the run died instead
+# of letting `source` fail with a bare "No such file or directory".
+VENV_ACTIVATE="${VENV_ACTIVATE:-$PROJECT_ROOT/.venv/bin/activate}"
+if [ ! -f "$VENV_ACTIVATE" ]; then
+    echo "recover.sh: virtualenv not found at $VENV_ACTIVATE" >&2
+    echo "  create it with: cd $PROJECT_ROOT && uv venv .venv && uv pip sync requirements.txt" >&2
+    echo "  or point VENV_ACTIVATE at an existing activate script" >&2
+    exit 1
+fi
+source "$VENV_ACTIVATE"
 
 PYTHONPATH="$PROJECT_ROOT" python -m src.recovery_handler

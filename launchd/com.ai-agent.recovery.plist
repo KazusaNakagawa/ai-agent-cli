@@ -14,9 +14,10 @@
 
   Manual install (edit the absolute paths below to match your checkout):
     cp launchd/com.ai-agent.recovery.plist ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.ai-agent.recovery.plist
+    plutil -lint ~/Library/LaunchAgents/com.ai-agent.recovery.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-agent.recovery.plist
   Uninstall:
-    launchctl unload ~/Library/LaunchAgents/com.ai-agent.recovery.plist
+    launchctl bootout gui/$(id -u)/com.ai-agent.recovery
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
