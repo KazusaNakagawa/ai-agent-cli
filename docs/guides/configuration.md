@@ -122,3 +122,16 @@ Steps to investigate `API token is invalid`:
 
    If the token is correct but 401 persists, the integration may not have access to the target database.
    Open the database in Notion → `…` → **Add connections** → select your integration.
+
+## Tunable Constants (`src/constants.py`)
+
+Not everything configurable is an environment variable. Retention and lookback
+knobs are plain module constants in
+[`apps/python/src/constants.py`](../../apps/python/src/constants.py) — change
+them in code, not in `.env`.
+
+| Constant | Default | Purpose |
+|---|---|---|
+| `LOG_RETENTION_DAYS` | `7` | App-log rotation window |
+| `USAGE_LOG_ROTATION_ENABLED` | `False` | When `False`, `apps/python/log/usage/*.jsonl` is never purged, so the Usage dashboard keeps the full cost history (~1 MB/year). See [usage-monitoring.md](usage-monitoring.md) |
+| `WEEKLY_WINDOW_DAYS` | `7` | Weekly recap / Notion comment ingestion lookback |

@@ -90,7 +90,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 - The **Range** select (`Last 7 days` / `Last 30 days` / `All time`) is turned
   into a `since` query param by `sinceForRange()` in `lib/monitor-types.ts`;
   changing it re-fetches. The **Metric** select (`Cost (USD)` / `Tokens`) only
-  reswitches the already-fetched numbers, no re-fetch.
+  switches between the already-fetched numbers; it does not re-fetch.
 - The response is held in React `useState` for the life of the page. There is
   **no `localStorage`, no IndexedDB, and no client-side cache** — a reload
   re-fetches.
@@ -113,9 +113,11 @@ python3 scripts/token_usage_report.py /path/to/other/projects  # alternate trans
 - Every `claude` CLI call made by this app appends one JSONL record (timestamp,
   label, token counts, cost, duration) to
   `apps/python/log/usage/YYYYMMDD-usage.jsonl`.
-- Rotation is **opt-in**: `USAGE_LOG_ROTATION_ENABLED` is `False` by default so
-  the full cost history stays available to the dashboard. Logging failures are
-  swallowed — a logging error must never break the run that produced it.
+- Rotation is **opt-in**: `USAGE_LOG_ROTATION_ENABLED` in
+  [`src/constants.py`](../../apps/python/src/constants.py) is `False` by default
+  (a code constant, not an env var) so the full cost history stays available to
+  the dashboard. Logging failures are swallowed — a logging error must never
+  break the run that produced it.
 - Endpoints: `GET /api/usage/dates` (available days, newest first),
   `GET /api/usage/summary` (per-day totals, oldest first, for the line chart),
   `GET /api/usage?date=YYYYMMDD` (raw records for one day).

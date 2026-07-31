@@ -95,7 +95,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/config
 | `GET /api/usage?date=YYYYMMDD` | 指定日の生 usage レコード (Settings > Usage) |
 | `GET /api/usage/dates` | usage ログのある日付一覧 (新しい順) |
 | `GET /api/usage/summary` | 日別合算サマリ (時系列) |
-| `GET /api/usage/monitor?since=&until=` | 全 Claude Code トランスクリプトの集計 (Monitor タブ) |
+| `GET /api/usage/monitor?since=&until=` | 全 Claude Code トランスクリプトの集計 (Monitor タブ)。`since`/`until` は任意・inclusive、形式は `YYYY-MM-DD` (実在しない日付は 422) |
 | `POST /api/archive` | 先月分ブリーフィングを zip して Google Drive へ |
 | `GET /api/export` | `output/` と `input/` を zip でダウンロード |
 
