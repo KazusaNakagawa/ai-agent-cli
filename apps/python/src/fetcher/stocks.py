@@ -17,6 +17,16 @@ _CURRENCY_SYMBOLS = {"USD": "$", "JPY": "¥", "EUR": "€", "GBP": "£"}
 _TOKYO_SUFFIX = ".T"
 
 
+def _is_tse_code(ticker: str) -> bool:
+    """True when ``ticker`` is a bare Tokyo Stock Exchange code.
+
+    TSE codes are all digits and US tickers never are, so the shape alone is a
+    reliable classifier. Single source for both the JPY currency fallback and
+    the Yahoo suffix, which have to agree on what counts as a TSE listing.
+    """
+    return ticker.isdigit()
+
+
 def to_yahoo_symbol(ticker: str) -> str:
     """Return the symbol Yahoo Finance expects for ``ticker``.
 
@@ -27,7 +37,7 @@ def to_yahoo_symbol(ticker: str) -> str:
     suffix. US tickers are never all digits, so they pass through untouched.
     """
     stripped = ticker.strip()
-    if stripped.isdigit():
+    if _is_tse_code(stripped):
         return stripped + _TOKYO_SUFFIX
     return stripped
 
@@ -54,7 +64,7 @@ def _currency_of(ticker: str, info) -> str:
     currency = getattr(info, "currency", None)
     if isinstance(currency, str) and currency:
         return currency.upper()
-    if ticker.upper().endswith(_JPY_SUFFIXES) or ticker.isdigit():
+    if ticker.upper().endswith(_JPY_SUFFIXES) or _is_tse_code(ticker):
         return "JPY"
     return "USD"
 
@@ -66,7 +76,14 @@ def fetch_stock_quotes(tickers: list[str]) -> dict[str, StockQuote]:
     currency, not a pre-rendered string); the display helpers below build on it.
     """
     quotes: dict[str, StockQuote] = {}
-    for t in tickers:
+    for raw in tickers:
+        # Trim once, up front: the key, the currency fallback and the Yahoo
+        # symbol all have to agree, or " 4676 " is queried as 4676.T yet keyed
+        # and classified as a non-TSE ticker.
+        t = raw.strip()
+        if not t:
+            logger.warning("skipping a blank ticker entry (%r) in the configured list", raw)
+            continue
         try:
             # Keyed by the configured form, queried by the Yahoo form, so the
             # holdings table keeps the label the config (and the prompt) uses.
