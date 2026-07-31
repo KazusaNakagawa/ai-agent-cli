@@ -111,6 +111,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 |---|---|
 | Configuration (env vars, config schema, prompts) | [docs/guides/configuration.md](docs/guides/configuration.md) |
 | Scheduled execution (macOS launchd) | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
+| Scheduled execution (cron + pmset, alternative) | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |
 | Briefing archive (monthly zip → Google Drive via rclone) | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | Testing & dependency management | [docs/guides/testing.md](docs/guides/testing.md) |
 | Web UI setup | [docs/guides/web-ui-setup.md](docs/guides/web-ui-setup.md) |
