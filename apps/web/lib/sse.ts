@@ -42,6 +42,18 @@ function parseSseEventBlock(raw: string): SseEvent | null {
 }
 
 /**
+ * Append one `message` event's data to the text accumulated so far.
+ *
+ * The backend encodes the answer one source line per event, so the newline
+ * between them only exists implicitly — this restores it. Shared by both chat
+ * stores so the joining rule (and the blank-line handling that depends on it)
+ * can't drift apart.
+ */
+export function appendSseMessageToAnswer(answer: string, data: string): string {
+  return answer ? `${answer}\n${data}` : data
+}
+
+/**
  * Read an SSE body as an async generator of events.
  *
  * When `signal` aborts, the reader is cancelled so the pending read resolves

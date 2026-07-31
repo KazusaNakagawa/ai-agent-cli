@@ -10,14 +10,19 @@ import {
 
 type Handler = (init?: RequestInit) => Promise<Response> | Response
 
-function sseStream(parts: { event?: string; data: string }[]): Response {
+// `data` omitted emits an event block with no `data:` field at all — the shape
+// a bare control event takes on the wire, distinct from a present-but-empty
+// `data:` (a blank source line).
+function sseStream(parts: { event?: string; data?: string }[]): Response {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       for (const p of parts) {
         let chunk = ""
         if (p.event) chunk += `event: ${p.event}\n`
-        for (const line of p.data.split("\n")) chunk += `data: ${line}\n`
+        if (p.data !== undefined) {
+          for (const line of p.data.split("\n")) chunk += `data: ${line}\n`
+        }
         chunk += "\n"
         controller.enqueue(encoder.encode(chunk))
       }
@@ -96,6 +101,36 @@ describe("journalChatJobStore", () => {
     })
     await waitFor(() => expect(result.current.status).toBe("done"))
     expect(result.current.assistantContent).toBe("First.\n\nSecond.")
+  })
+
+  // Typed control events carry no `data:` field at all, so they survive the
+  // parser's empty-block filter for a different reason than blank lines do.
+  // Interleaving both checks that the `ev.type !== "message"` guard still
+  // keeps them out of the answer while paragraph breaks are preserved.
+  it("ignores typed control events while preserving blank lines around them", async () => {
+    on("/api/journal/chat", () => jsonResponse({ job_id: "j-mixed" }, 202))
+    on("/api/chat/j-mixed/stream", () =>
+      sseStream([
+        { data: "First." },
+        { data: "" },
+        // Bare control event: no `data:` field at all.
+        { event: "stale_session" },
+        { data: "Second." },
+        // Control event carrying data, which is what the backend actually
+        // sends — its payload must not leak into the answer either.
+        { event: "error", data: "upstream blew up" },
+        { data: "" },
+        { data: "Third." },
+      ]),
+    )
+
+    const { result } = renderHook(() => useJournalChatJobState(), { wrapper })
+    await act(async () => {
+      await result.current.startJob({ question: "Q?", targetEntryId: null })
+    })
+    await waitFor(() => expect(result.current.status).toBe("done"))
+    expect(result.current.assistantContent).toBe("First.\n\nSecond.\n\nThird.")
+    expect(result.current.error).toBeNull()
   })
 
   it("persists only while in-flight, clears on done", async () => {

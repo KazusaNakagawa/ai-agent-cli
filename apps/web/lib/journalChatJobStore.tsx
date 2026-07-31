@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react"
 
-import { readSseEvents } from "./sse"
+import { appendSseMessageToAnswer, readSseEvents } from "./sse"
 
 /**
  * In-flight Journal brainstorm job. Mirrors chatJobStore's shape/lifecycle
@@ -175,12 +175,13 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
           // Blank-line events (`data:` present but empty) must pass through —
           // dropping them collapses markdown paragraph breaks.
           if (ev.type !== "message") continue
-          answer = answer ? `${answer}\n${ev.data}` : ev.data
+          answer = appendSseMessageToAnswer(answer, ev.data)
           boundSetState((prev) => ({
             ...prev,
-            assistantContent: prev.assistantContent
-              ? `${prev.assistantContent}\n${ev.data}`
-              : ev.data,
+            assistantContent: appendSseMessageToAnswer(
+              prev.assistantContent,
+              ev.data,
+            ),
           }))
         }
       } catch (e) {

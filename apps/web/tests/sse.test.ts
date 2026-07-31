@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { parseSseChunk, readSseEvents, type SseEvent } from "@/lib/sse"
+import {
+  appendSseMessageToAnswer,
+  parseSseChunk,
+  readSseEvents,
+  type SseEvent,
+} from "@/lib/sse"
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
@@ -50,6 +55,24 @@ describe("parseSseChunk", () => {
   it("keeps an empty data field written without the trailing space", () => {
     const { events } = parseSseChunk("data:\n\n")
     expect(events).toEqual([{ type: "message", data: "" }])
+  })
+})
+
+describe("appendSseMessageToAnswer", () => {
+  it("restores the newline between events but adds none before the first", () => {
+    let answer = appendSseMessageToAnswer("", "a")
+    expect(answer).toBe("a")
+    answer = appendSseMessageToAnswer(answer, "b")
+    expect(answer).toBe("a\nb")
+  })
+
+  it("turns a blank-line event into a paragraph break", () => {
+    const answer = appendSseMessageToAnswer(appendSseMessageToAnswer("a", ""), "b")
+    expect(answer).toBe("a\n\nb")
+  })
+
+  it("drops a leading blank line instead of starting the answer with a newline", () => {
+    expect(appendSseMessageToAnswer("", "")).toBe("")
   })
 })
 
