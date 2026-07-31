@@ -102,6 +102,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 | `eval_report.sh` | Extract → score → report evaluation results |
 | `local_llm.sh` | Local LLM mode (Ollama + Chroma) |
 | `archive.sh` | Archive a month's briefings to Google Drive via rclone |
+| `recover.sh` | Re-run today's sector sweep if the 05:00 briefing lost it to a DarkWake sleep — no-op when today's briefing is already complete |
 
 ---
 
@@ -115,6 +116,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 | Briefing archive (monthly zip → Google Drive via rclone) | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | Testing & dependency management | [docs/guides/testing.md](docs/guides/testing.md) |
 | Web UI setup | [docs/guides/web-ui-setup.md](docs/guides/web-ui-setup.md) |
+| Usage monitoring (Monitor tab, Settings > Usage, cost estimates) | [docs/guides/usage-monitoring.md](docs/guides/usage-monitoring.md) |
 | Briefing evaluation pipeline | [docs/features/evaluation.md](docs/features/evaluation.md) |
 | Journal ↔ Notion sync | [docs/features/journal-notion-sync.md](docs/features/journal-notion-sync.md) |
 | Notion comment → judgment-log ingestion | [docs/features/notion-comment-judgment-ingestion.md](docs/features/notion-comment-judgment-ingestion.md) |

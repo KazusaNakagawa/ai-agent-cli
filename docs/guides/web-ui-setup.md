@@ -75,11 +75,32 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/config
 | `DELETE /api/credentials/{name}` | Keychain から削除 |
 | `GET /api/auth/mode` | 現在のモード (`cli` または `api`) |
 | `PUT /api/auth/mode` | モード切替。`{"auth_mode":"api"}` |
+| `GET /api/state` | `~/.ai-agent/state.json` の現在値 |
+| `PUT /api/state` | state の部分更新 (patch) |
 | `POST /api/run?dry_run=<bool>` | ブリーフィング非同期実行。202 + `{job_id, status}` |
 | `GET /api/run/{job_id}` | ジョブ進行状況 (`pending`/`running`/`done`/`failed`) |
-| `POST /api/chat` | SSE ストリーミング Q&A。`{date, question}` |
+| `POST /api/chat` | チャットジョブ作成。202 + `{job_id}` (本体は下の stream で受信) |
+| `POST /api/journal/chat` | 直近ジャーナルを与えたブレストチャットを開始。202 + `{job_id}` |
+| `GET /api/chat/{job_id}/stream` | SSE ストリーム。既存バッファを replay してから追従 |
+| `DELETE /api/chat/{job_id}` | 実行中チャットのキャンセル (サブプロセス終了)。204 |
+| `POST /api/chat/notion-import` | 回答を `/notion-import` スキル経由で Notion に追記 |
+| `GET /api/briefing` | ブリーフィングファイル一覧 (新しい順) |
+| `GET /api/briefing/search?q=` | ファイル名・本文の部分一致検索 |
+| `GET /api/briefing/{name}` | 指定ファイルの Markdown 本文 |
+| `GET /api/journal` / `GET /api/journal/{id}` | ジャーナル一覧 / 本文 |
+| `POST /api/journal` / `PATCH /api/journal/{id}` | 新規作成 / 既存エントリへの追記 |
+| `DELETE /api/journal/{id}?purge=` | ゴミ箱へ移動 (既定) または完全削除。204 |
+| `GET /api/journal/trash` / `GET /api/journal/trash/{id}` | ゴミ箱一覧 / 復元前プレビュー |
+| `POST /api/journal/{id}/restore` | ゴミ箱から復元。204 |
+| `GET /api/usage?date=YYYYMMDD` | 指定日の生 usage レコード (Settings > Usage) |
+| `GET /api/usage/dates` | usage ログのある日付一覧 (新しい順) |
+| `GET /api/usage/summary` | 日別合算サマリ (時系列) |
+| `GET /api/usage/monitor?since=&until=` | 全 Claude Code トランスクリプトの集計 (Monitor タブ)。`since`/`until` は任意・inclusive、形式は `YYYY-MM-DD` (実在しない日付は 422) |
+| `POST /api/archive` | 先月分ブリーフィングを zip して Google Drive へ |
+| `GET /api/export` | `output/` と `input/` を zip でダウンロード |
 
 詳細スキーマは Swagger UI (`/docs`) または OpenAPI JSON (`/openapi.json`) を参照。
+Monitor / Usage の 2 系統の違いとデータ源は [`usage-monitoring.md`](./usage-monitoring.md) を参照。
 
 ## 初回セットアップ手順
 
@@ -137,7 +158,8 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/run/<job_id>
 | `GET /api/config` が 404 | `apps/python/config/briefing.json` が無い。`PUT /api/config` で作成 |
 | `GET /api/config` が 500 (corrupt JSON) | `briefing.json` が壊れている。`apps/python/config/briefing.json.example` を参考に手で直すか `PUT` で再作成 |
 | `POST /api/run` の job が `failed` | `GET /api/run/{job_id}` の `error` フィールドを参照。多くは `briefing.json` 不整合 or クレデンシャル不足 |
-| `POST /api/chat` から `event: stale_session` が返る | 保存セッション ID が無効。同じリクエストを再送 (バックエンドが古いセッションファイルを削除済みなので新規セッションで実行される) |
+| `GET /api/chat/{job_id}/stream` に `event: stale_session` が流れる | 保存セッション ID が無効。バックエンドが古いセッションファイルを削除済みなので、同じ payload を再送すれば新規セッションで実行される (Web UI は 1 回だけ自動リトライする) |
+| Monitor タブの数値が Settings > Usage と合わない | 仕様。データ源が別 (全 Claude Code トラフィック vs 本アプリの実行分)。[`usage-monitoring.md`](./usage-monitoring.md) 参照 |
 
 ## バッチ実行 (cron) との関係
 
