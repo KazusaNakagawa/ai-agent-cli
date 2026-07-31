@@ -5,6 +5,7 @@ import { BriefingPanel } from "@/components/briefing/BriefingPanel"
 import { ChatForm } from "@/components/screens/ChatForm"
 import { ResizeHandle } from "@/components/ResizeHandle"
 import { Button } from "@/components/ui/button"
+import { BriefingFile } from "@/lib/briefing-types"
 import { useBriefingData } from "@/lib/hooks/useBriefingData"
 import { useResizable } from "@/lib/hooks/useResizable"
 import { cn } from "@/lib/utils"
@@ -135,7 +136,7 @@ export function ChatSplitView() {
 type DocumentBodyProps = {
   listError: string | null
   loadingList: boolean
-  selected: ReturnType<typeof useBriefingData>["selected"]
+  selected: BriefingFile | null
   content: string | null
   loadingContent: boolean
   contentError: string | null
