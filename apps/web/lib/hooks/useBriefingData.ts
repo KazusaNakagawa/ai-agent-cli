@@ -101,10 +101,13 @@ export function useBriefingData(): BriefingData {
         setContent(data.content)
         setContentError(null)
       })
-      .catch(() => {
-        // Best-effort, like prefetch: a failed background refresh must not
-        // replace what the user is reading with an error. The cache entry is
-        // already gone, so the next open re-reads from disk.
+      .catch((e) => {
+        // Best-effort: a failed background refresh must not replace what the
+        // user is reading with an error. The cache entry is already gone, so
+        // the next open re-reads from disk. Unlike `prefetch` (whose failure
+        // is corrected by the real fetch that follows) this one leaves stale
+        // text on screen with no other signal, so it is worth logging.
+        console.warn("Failed to refresh briefing content:", name, e)
       })
   }, [])
 

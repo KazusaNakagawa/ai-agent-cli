@@ -24,9 +24,13 @@ const MAX_WIDTH = 880
  * must give this component a definite height. Below `lg` the panes collapse to
  * a single column and the header toggle picks which one is on screen.
  */
-/** Last path segment of a POSIX path — the briefing list is keyed by filename. */
+/**
+ * Last path segment — the briefing list is keyed by filename, while the
+ * backend reports the append target as a full path. Both separators are
+ * accepted so a Windows-style path from `Path` serialization still matches.
+ */
 function basename(path: string): string {
-  return path.split("/").pop() ?? path
+  return path.split(/[\\/]/).pop() ?? path
 }
 
 export function ChatSplitView() {

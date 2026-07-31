@@ -20,6 +20,10 @@ vi.mock("@/components/screens/ChatForm", () => ({
         data-testid="stub-save-other-doc"
         onClick={() => onLocalSave?.("/repo/output/briefing/local_2026-07-30.md")}
       />
+      <button
+        data-testid="stub-save-windows-path"
+        onClick={() => onLocalSave?.("C:\\repo\\output\\briefing\\briefing_2026-08-01.md")}
+      />
     </div>
   ),
 }))
@@ -200,6 +204,42 @@ describe("ChatSplitView", () => {
     await new Promise((r) => setTimeout(r, 60))
     expect(fetchMock.mock.calls.length).toBe(before)
     expect(screen.getByTestId("briefing-content")).toHaveTextContent("Original body.")
+  })
+
+  it("matches the open document through a backslash-separated path", async () => {
+    const contents: Record<string, string> = {
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+    }
+    routeFetch(contents)
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+
+    contents["briefing_2026-08-01.md"] = "# Aug 1\n\nOriginal body.\n\nAppended turn."
+    await userEvent.click(screen.getByTestId("stub-save-windows-path"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
+  })
+
+  it("keeps the current body visible when the refresh fetch fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const contents: Record<string, string> = {
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+    }
+    routeFetch(contents)
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+
+    // Make the refetch 404 (routeFetch answers 404 for unknown names).
+    delete contents["briefing_2026-08-01.md"]
+    await userEvent.click(screen.getByTestId("stub-save-open-doc"))
+
+    await waitFor(() => expect(warn).toHaveBeenCalled())
+    // Stale text stays on screen rather than being replaced by an error.
+    expect(screen.getByTestId("briefing-content")).toHaveTextContent("Original body.")
+    expect(screen.queryByTestId("briefing-content-error")).not.toBeInTheDocument()
+    warn.mockRestore()
   })
 
   it("replaces the cached body so reopening the file shows the appended text", async () => {
