@@ -61,9 +61,11 @@ interface BriefingPanelProps {
   content: string | null
   loading: boolean
   error: string | null
-  fullSize: boolean
-  onToggleFullSize: () => void
-  onClose: () => void
+  /** Omit `onToggleFullSize` / `onClose` to hide the matching header button —
+   *  hosts that own the panel's size (e.g. the chat split view) don't need them. */
+  fullSize?: boolean
+  onToggleFullSize?: () => void
+  onClose?: () => void
 }
 
 export function BriefingPanel({
@@ -71,7 +73,7 @@ export function BriefingPanel({
   content,
   loading,
   error,
-  fullSize,
+  fullSize = false,
   onToggleFullSize,
   onClose,
 }: BriefingPanelProps) {
@@ -110,22 +112,26 @@ export function BriefingPanel({
               目次
             </button>
           )}
-          <button
-            data-testid="panel-fullsize-btn"
-            onClick={onToggleFullSize}
-            aria-label={fullSize ? "Collapse" : "Full size"}
-            className={HEADER_BTN}
-          >
-            {fullSize ? <CompressIcon /> : <ExpandIcon />}
-          </button>
-          <button
-            data-testid="panel-close-btn"
-            onClick={onClose}
-            aria-label="Close panel"
-            className={HEADER_BTN}
-          >
-            <CloseIcon />
-          </button>
+          {onToggleFullSize && (
+            <button
+              data-testid="panel-fullsize-btn"
+              onClick={onToggleFullSize}
+              aria-label={fullSize ? "Collapse" : "Full size"}
+              className={HEADER_BTN}
+            >
+              {fullSize ? <CompressIcon /> : <ExpandIcon />}
+            </button>
+          )}
+          {onClose && (
+            <button
+              data-testid="panel-close-btn"
+              onClick={onClose}
+              aria-label="Close panel"
+              className={HEADER_BTN}
+            >
+              <CloseIcon />
+            </button>
+          )}
         </div>
       </div>
 
