@@ -172,7 +172,9 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
       let answer = ""
       try {
         for await (const ev of readSseEvents(res.body, controller.signal)) {
-          if (ev.type !== "message" || !ev.data) continue
+          // Blank-line events (`data:` present but empty) must pass through —
+          // dropping them collapses markdown paragraph breaks.
+          if (ev.type !== "message") continue
           answer = answer ? `${answer}\n${ev.data}` : ev.data
           boundSetState((prev) => ({
             ...prev,

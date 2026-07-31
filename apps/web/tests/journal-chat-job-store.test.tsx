@@ -82,6 +82,22 @@ describe("journalChatJobStore", () => {
     expect(result.current.assistantContent).toBe("hello\nworld")
   })
 
+  // Same defect as the Q&A chat store: dropping blank-line events collapses
+  // markdown paragraph breaks into a single run-on paragraph.
+  it("preserves blank lines so markdown paragraph breaks survive", async () => {
+    on("/api/journal/chat", () => jsonResponse({ job_id: "j-para" }, 202))
+    on("/api/chat/j-para/stream", () =>
+      sseStream([{ data: "First." }, { data: "" }, { data: "Second." }]),
+    )
+
+    const { result } = renderHook(() => useJournalChatJobState(), { wrapper })
+    await act(async () => {
+      await result.current.startJob({ question: "Q?", targetEntryId: null })
+    })
+    await waitFor(() => expect(result.current.status).toBe("done"))
+    expect(result.current.assistantContent).toBe("First.\n\nSecond.")
+  })
+
   it("persists only while in-flight, clears on done", async () => {
     let release: (() => void) | null = null
     const gate = new Promise<void>((resolve) => { release = resolve })

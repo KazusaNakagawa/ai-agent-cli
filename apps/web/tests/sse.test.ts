@@ -34,6 +34,23 @@ describe("parseSseChunk", () => {
     const { events } = parseSseChunk("data:line1\ndata: line2\n\n")
     expect(events).toEqual([{ type: "message", data: "line1\nline2" }])
   })
+
+  // A blank source line is sent as a present-but-empty `data:` field. Dropping
+  // it collapses markdown paragraph breaks ("\n\n" -> "\n"), so the consumer
+  // must still see it — unlike a block with no `data:` field at all.
+  it("keeps an empty data field so blank source lines survive", () => {
+    const { events } = parseSseChunk("data: a\n\ndata: \n\ndata: b\n\n")
+    expect(events).toEqual([
+      { type: "message", data: "a" },
+      { type: "message", data: "" },
+      { type: "message", data: "b" },
+    ])
+  })
+
+  it("keeps an empty data field written without the trailing space", () => {
+    const { events } = parseSseChunk("data:\n\n")
+    expect(events).toEqual([{ type: "message", data: "" }])
+  })
 })
 
 describe("readSseEvents", () => {
