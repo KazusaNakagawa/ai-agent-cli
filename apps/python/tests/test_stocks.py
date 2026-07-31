@@ -7,7 +7,55 @@ from src.fetcher.stocks import (
     fetch_stock_moves,
     fetch_stock_quotes,
     to_jpy_change_pct,
+    to_yahoo_symbol,
 )
+
+
+class TestToYahooSymbol:
+    """A bare TSE code has to reach Yahoo as ``NNNN.T``.
+
+    Observed 2026-07-31: a portfolio entry of "4676" made yfinance answer
+    ``Quote not found for symbol: 4676`` and the holdings table carried a fetch
+    error for that line, silently, every day.
+    """
+
+    def test_all_digit_code_gains_the_tokyo_suffix(self):
+        assert to_yahoo_symbol("4676") == "4676.T"
+
+    def test_already_suffixed_code_is_untouched(self):
+        assert to_yahoo_symbol("4676.T") == "4676.T"
+
+    def test_us_ticker_is_untouched(self):
+        assert to_yahoo_symbol("PLTR") == "PLTR"
+
+    def test_surrounding_whitespace_is_trimmed(self):
+        assert to_yahoo_symbol(" 4676 ") == "4676.T"
+
+
+class TestTickerNormalization:
+    def _fast_info(self):
+        info = MagicMock()
+        info.last_price = 110
+        info.previous_close = 100
+        # No `currency`, so _currency_of falls back to the ticker's own shape.
+        del info.currency
+        return info
+
+    def test_padded_code_is_keyed_and_classified_by_its_trimmed_form(self):
+        with patch("src.fetcher.stocks.yf.Ticker") as MockTicker:
+            MockTicker.return_value.fast_info = self._fast_info()
+            quotes = fetch_stock_quotes([" 4676 "])
+        MockTicker.assert_called_once_with("4676.T")
+        assert list(quotes) == ["4676"]
+        # Untrimmed, " 4676 ".isdigit() is False and this would be USD.
+        assert quotes["4676"].currency == "JPY"
+
+    def test_blank_entries_are_skipped_rather_than_queried(self):
+        with patch("src.fetcher.stocks.yf.Ticker") as MockTicker:
+            MockTicker.return_value.fast_info = self._fast_info()
+            quotes = fetch_stock_quotes(["", "   ", "PLTR"])
+        MockTicker.assert_called_once_with("PLTR")
+        assert list(quotes) == ["PLTR"]
 
 
 class TestFetchStockMoves:
@@ -115,6 +163,15 @@ class TestCurrencyDetection:
             MockTicker.return_value.fast_info = self._fast_info()
             quotes = fetch_stock_quotes(["4676"])
         assert quotes["4676"].currency == "JPY"
+
+    def test_bare_tse_code_is_requested_with_the_suffix(self):
+        with patch("src.fetcher.stocks.yf.Ticker") as MockTicker:
+            MockTicker.return_value.fast_info = self._fast_info()
+            quotes = fetch_stock_quotes(["4676"])
+        MockTicker.assert_called_once_with("4676.T")
+        # Keyed by the configured form so the holdings table keeps its label.
+        assert "4676" in quotes
+        assert quotes["4676"].ticker == "4676"
 
     def test_plain_ticker_falls_back_to_usd(self):
         with patch("src.fetcher.stocks.yf.Ticker") as MockTicker:
