@@ -49,10 +49,20 @@ cp .env.example .env
 | `NOTION_DATABASE_ID` | Database URL | Target database |
 | `NOTION_DATABASE_ID_JOURNAL` | Database URL | Target database for Journal ↔ Notion sync (separate from `NOTION_DATABASE_ID`) |
 | `BRAVE_API_KEY` | [api-dashboard.search.brave.com](https://api-dashboard.search.brave.com/) | Local LLM briefing web search |
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/) | Only used in `api` auth mode; injected into the `claude` subprocess. In `cli` mode it is stripped so the CLI's OAuth session is used |
+| `CLAUDE_MODEL` | — | Override the model passed to the `claude` CLI. Empty = CLI default |
+| `RCLONE_REMOTE` | `rclone config` remote name | Upload target for the briefing archive (default `repo-briefing`) |
 
 ### Credential Management
 
 Lookup priority: **OS Keychain → `.env` (fallback)**
+
+Keychain-backed keys are limited to the allow-list in
+[`src/credentials.py`](../../apps/python/src/credentials.py) — `DISCORD_TOKEN`,
+`CHANNEL_ID`, `NOTION_API_KEY`, `NOTION_DATABASE_ID`,
+`NOTION_DATABASE_ID_JOURNAL`, `ANTHROPIC_API_KEY`. Anything else raises
+`ValueError` (400 through `PUT /api/credentials/{name}`). Non-secret settings
+such as `BRAVE_API_KEY`, `CLAUDE_MODEL`, and `RCLONE_REMOTE` live in `.env` only.
 
 #### A. Register via Keychain (recommended)
 
