@@ -7,8 +7,25 @@ import { ChatSplitView } from "@/components/screens/ChatSplitView"
 // The Q&A pane is exercised by tests/chat-form.test.tsx. Stubbing it here keeps
 // this suite about the split layout and avoids pulling the chat providers,
 // SSE plumbing, and the mount-time /api/credentials fetch into every case.
+// The stub exposes buttons that fire `onLocalSave` so the document-refresh
+// wiring can be driven without a real save round trip.
 vi.mock("@/components/screens/ChatForm", () => ({
-  ChatForm: () => <div data-testid="chat-form-stub" />,
+  ChatForm: ({ onLocalSave }: { onLocalSave?: (path: string) => void }) => (
+    <div data-testid="chat-form-stub">
+      <button
+        data-testid="stub-save-open-doc"
+        onClick={() => onLocalSave?.("/repo/output/briefing/briefing_2026-08-01.md")}
+      />
+      <button
+        data-testid="stub-save-other-doc"
+        onClick={() => onLocalSave?.("/repo/output/briefing/local_2026-07-30.md")}
+      />
+      <button
+        data-testid="stub-save-windows-path"
+        onClick={() => onLocalSave?.("C:\\repo\\output\\briefing\\briefing_2026-08-01.md")}
+      />
+    </div>
+  ),
 }))
 
 const FILES_RESPONSE = {
@@ -142,6 +159,118 @@ describe("ChatSplitView", () => {
     routeFetch({ "briefing_2026-08-01.md": "# Aug 1" })
     render(<ChatSplitView />)
     expect(await screen.findByTestId("chat-split-resizer")).toBeInTheDocument()
+  })
+
+  // --- Issue #436: refresh the open document after a local append ---------
+
+  function contentFetchCount(name: string): number {
+    return fetchMock.mock.calls.filter(
+      ([u]) => u === `/api/briefing/${name}`,
+    ).length
+  }
+
+  it("refetches the open document once after it is appended to", async () => {
+    const contents: Record<string, string> = {
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+    }
+    routeFetch(contents)
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+    expect(contentFetchCount("briefing_2026-08-01.md")).toBe(1)
+
+    contents["briefing_2026-08-01.md"] = "# Aug 1\n\nOriginal body.\n\nAppended turn."
+    await userEvent.click(screen.getByTestId("stub-save-open-doc"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
+    // One GET on open, one on the append — nothing else refetches this file.
+    expect(contentFetchCount("briefing_2026-08-01.md")).toBe(2)
+  })
+
+  it("does not refetch when the appended file is not the open one", async () => {
+    const contents: Record<string, string> = {
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+      "local_2026-07-30.md": "# Jul 30\n\nLocal notes.",
+    }
+    routeFetch(contents)
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+
+    await userEvent.click(screen.getByTestId("stub-save-other-doc"))
+
+    // Rather than sleeping to prove a negative, drive a save that *does*
+    // refresh and wait for it. Once that lands, the earlier click has
+    // certainly been processed, so the untouched count is conclusive.
+    contents["briefing_2026-08-01.md"] = "# Aug 1\n\nOriginal body.\n\nAppended turn."
+    await userEvent.click(screen.getByTestId("stub-save-open-doc"))
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
+    expect(contentFetchCount("local_2026-07-30.md")).toBe(0)
+  })
+
+  it("matches the open document through a backslash-separated path", async () => {
+    const contents: Record<string, string> = {
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+    }
+    routeFetch(contents)
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+
+    contents["briefing_2026-08-01.md"] = "# Aug 1\n\nOriginal body.\n\nAppended turn."
+    await userEvent.click(screen.getByTestId("stub-save-windows-path"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
+  })
+
+  it("keeps the current body visible when the refresh fetch fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const contents: Record<string, string> = {
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+    }
+    routeFetch(contents)
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+
+    // Make the refetch 404 (routeFetch answers 404 for unknown names).
+    delete contents["briefing_2026-08-01.md"]
+    await userEvent.click(screen.getByTestId("stub-save-open-doc"))
+
+    await waitFor(() => expect(warn).toHaveBeenCalled())
+    // Stale text stays on screen rather than being replaced by an error.
+    expect(screen.getByTestId("briefing-content")).toHaveTextContent("Original body.")
+    expect(screen.queryByTestId("briefing-content-error")).not.toBeInTheDocument()
+    warn.mockRestore()
+  })
+
+  it("replaces the cached body so reopening the file shows the appended text", async () => {
+    const contents: Record<string, string> = {
+      "briefing_2026-08-01.md": "# Aug 1\n\nOriginal body.",
+      "local_2026-07-30.md": "# Jul 30\n\nLocal notes.",
+    }
+    routeFetch(contents)
+    render(<ChatSplitView />)
+    await screen.findByTestId("briefing-content")
+
+    contents["briefing_2026-08-01.md"] = "# Aug 1\n\nOriginal body.\n\nAppended turn."
+    await userEvent.click(screen.getByTestId("stub-save-open-doc"))
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
+
+    const picker = screen.getByTestId("chat-doc-picker")
+    await userEvent.selectOptions(picker, "local_2026-07-30.md")
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Local notes.")
+    })
+    await userEvent.selectOptions(picker, "briefing_2026-08-01.md")
+
+    await waitFor(() => {
+      expect(screen.getByTestId("briefing-content")).toHaveTextContent("Appended turn.")
+    })
   })
 
   it("toggles which pane is visible on narrow viewports", async () => {

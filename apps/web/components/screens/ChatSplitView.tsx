@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { BriefingFile } from "@/lib/briefing-types"
 import { useBriefingData } from "@/lib/hooks/useBriefingData"
 import { useResizable } from "@/lib/hooks/useResizable"
-import { cn } from "@/lib/utils"
+import { basename, cn } from "@/lib/utils"
 
 const WIDTH_STORAGE_KEY = "ai-agent:chat-split-width:v1"
 const DEFAULT_WIDTH = 480
@@ -25,8 +25,16 @@ const MAX_WIDTH = 880
  * a single column and the header toggle picks which one is on screen.
  */
 export function ChatSplitView() {
-  const { files, selected, content, loadingContent, listError, contentError, fetchContent } =
-    useBriefingData()
+  const {
+    files,
+    selected,
+    content,
+    loadingContent,
+    listError,
+    contentError,
+    fetchContent,
+    refreshContent,
+  } = useBriefingData()
   const { width, startResize } = useResizable({
     storageKey: WIDTH_STORAGE_KEY,
     defaultWidth: DEFAULT_WIDTH,
@@ -71,7 +79,9 @@ export function ChatSplitView() {
             docOnTop && "hidden lg:flex",
           )}
         >
-          <ChatForm fill />
+          {/* An answer appended to the open document refreshes it in place;
+              refreshContent ignores any other file. */}
+          <ChatForm fill onLocalSave={(path) => refreshContent(basename(path))} />
         </div>
 
         {/* Document pane — fixed (resizable) width from `lg` up, full width below */}

@@ -83,7 +83,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/config
 | `POST /api/journal/chat` | 直近ジャーナルを与えたブレストチャットを開始。202 + `{job_id}` |
 | `GET /api/chat/{job_id}/stream` | SSE ストリーム。既存バッファを replay してから追従 |
 | `DELETE /api/chat/{job_id}` | 実行中チャットのキャンセル (サブプロセス終了)。204 |
-| `POST /api/chat/notion-import` | 回答を `/notion-import` スキル経由で Notion に追記 |
+| `POST /api/chat/notion-import` | 回答をローカル `briefing_<date>.md` と Notion (`/notion-import` スキル経由) の両方に追記。`local_path` / `local_saved` / `local_error` を併せて返す |
 | `GET /api/briefing` | ブリーフィングファイル一覧 (新しい順) |
 | `GET /api/briefing/search?q=` | ファイル名・本文の部分一致検索 |
 | `GET /api/briefing/{name}` | 指定ファイルの Markdown 本文 |

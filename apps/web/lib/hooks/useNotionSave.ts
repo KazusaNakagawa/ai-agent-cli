@@ -28,6 +28,10 @@ type Options = {
   // must not fire for a restored history, so it only considers messages that
   // appear *after* the first hydrated render.
   hydrated?: boolean
+  // Called with the appended markdown path once a save has actually landed in
+  // the local mirror (`local_saved === true`). Lets a host refresh whatever it
+  // is rendering from that file.
+  onLocalSave?: (path: string) => void
 }
 
 export type UseNotionSave = {
@@ -42,11 +46,16 @@ export function useNotionSave({
   messages,
   autoSave = false,
   hydrated = false,
+  onLocalSave,
 }: Options): UseNotionSave {
   const [notionState, setNotionState] = useState<
     Record<number, NotionSaveState>
   >({})
   const mountedRef = useRef(true)
+  // Held in a ref so an inline callback from the caller doesn't rebuild
+  // `saveToNotion` on every render (and re-arm the auto-save effect with it).
+  const onLocalSaveRef = useRef(onLocalSave)
+  onLocalSaveRef.current = onLocalSave
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -114,6 +123,9 @@ export function useNotionSave({
             localError: body.local_error ?? undefined,
           },
         }))
+        if (body.local_saved && body.local_path) {
+          onLocalSaveRef.current?.(body.local_path)
+        }
       } catch (e) {
         if (!mountedRef.current) return
         setNotionState((prev) => ({

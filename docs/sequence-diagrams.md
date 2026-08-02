@@ -291,9 +291,17 @@ sequenceDiagram
 ## 6. チャット回答の Notion 追記
 
 Notion への追記ロジックは API 側ではなくローカルの `/notion-import` スキルが持つ。
-エンドポイントは claude CLI サブプロセスの起動とステータス変換だけを担当する。
+エンドポイントは **ローカル md への追記**・claude CLI サブプロセスの起動・ステータス変換を担当する。
 
-エントリポイント: `apps/python/web/routers/chat.py:601`
+ローカル md（`output/briefing/briefing_<date>.md`）への追記は Notion 認証チェックより**先**に実行される。
+Notion 側が落ちても Q&A がローカルに残るようにするためで、結果は `local_path` / `local_saved` /
+`local_error` としてレスポンスに載る。チャット画面は保存を明示クリックではなく、
+Notion 認証情報が揃っていれば回答確定ごとに**自動発火**する。
+
+`local_saved: true` が返ると、Q&A 画面（分割ビュー）は開いている md だけを 1 回だけ再取得して
+右ペインを更新する（ポーリングではなくイベント駆動 / Issue #436）。
+
+エントリポイント: `apps/python/web/routers/chat.py:651`（POST）/ `:607`（ローカル md 追記）
 
 ```mermaid
 sequenceDiagram
@@ -301,20 +309,24 @@ sequenceDiagram
     actor U as User
     participant W as チャット画面
     participant API as FastAPI chat
+    participant MD as output/briefing/*.md
     participant KC as credentials
     participant CLI as claude CLI
     participant MCP as Notion MCP
     participant N as Notion
 
-    U->>W: Notion に保存
+    Note over W: 回答確定時に自動発火（Notion 認証が揃っている場合）
     W->>API: POST /api/chat/notion-import
+    API->>MD: 当日 briefing md に `## 追記:` を追記
+    Note over API: 認証チェックより先。Notion が落ちても<br/>ローカルには残す
+    MD-->>API: local_path / local_error
     API->>KC: NOTION_API_KEY / DATABASE_ID
     KC-->>API: 値または未設定
 
     alt 未設定
-        API-->>W: 400（不足キー名を明示）
+        API-->>W: 400（不足キー名 + ローカル保存の結果を併記）
     else claude CLI が無い
-        API-->>W: 502 claude CLI not found
+        API-->>W: 502 claude CLI not found（同上）
     else 実行
         API->>CLI: subprocess.run（notion-import スキル）
         CLI->>MCP: 当日ブリーフィングページを検索
@@ -329,10 +341,16 @@ sequenceDiagram
             API-->>W: 502
         else 成功
             CLI-->>API: page URL
-            API-->>W: 200 url
+            API-->>W: 200 url + local_path / local_saved / local_error
         end
     end
     W-->>U: 保存結果を表示
+
+    opt local_saved かつ 開いている md と一致
+        W->>API: GET /api/briefing/{name}（1 回だけ）
+        API-->>W: 追記後の本文
+        Note over W: 右ペインをその場で差し替え<br/>スクロール位置は維持
+    end
 ```
 
 ---

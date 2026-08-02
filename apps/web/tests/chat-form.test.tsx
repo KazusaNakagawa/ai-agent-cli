@@ -10,11 +10,11 @@ import {
 } from "@/lib/chatJobStore"
 import { ChatStateProvider } from "@/lib/chatStore"
 
-function renderChatForm() {
+function renderChatForm(props: React.ComponentProps<typeof ChatForm> = {}) {
   return render(
     <ChatStateProvider>
       <ChatJobStateProvider>
-        <ChatForm />
+        <ChatForm {...props} />
       </ChatJobStateProvider>
     </ChatStateProvider>,
   )
@@ -635,6 +635,60 @@ describe("ChatForm", () => {
       )
     })
     expect(screen.queryByTestId("local-save-error")).toBeNull()
+  })
+
+  // The split view uses this to refresh the document pane in place after the
+  // answer lands in the local briefing markdown (Issue #436).
+  it("reports the appended local path to onLocalSave", async () => {
+    on("/api/credentials", () =>
+      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
+    )
+    on("/api/chat/notion-import", () =>
+      new Response(
+        JSON.stringify({
+          url: "https://www.notion.so/abc",
+          local_path: "/repo/apps/python/output/briefing/briefing_2026-05-30.md",
+          local_saved: true,
+          local_error: null,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    )
+    const onLocalSave = vi.fn()
+    const user = userEvent.setup()
+    renderChatForm({ onLocalSave })
+    await sendOneTurn(user)
+
+    await waitFor(() => expect(onLocalSave).toHaveBeenCalledTimes(1))
+    expect(onLocalSave).toHaveBeenCalledWith(
+      "/repo/apps/python/output/briefing/briefing_2026-05-30.md",
+    )
+  })
+
+  it("does not call onLocalSave when the local append failed", async () => {
+    on("/api/credentials", () =>
+      mockCreds({ NOTION_API_KEY: true, NOTION_DATABASE_ID: true }),
+    )
+    on("/api/chat/notion-import", () =>
+      new Response(
+        JSON.stringify({
+          url: "https://www.notion.so/abc",
+          local_path: null,
+          local_saved: false,
+          local_error: "disk full",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    )
+    const onLocalSave = vi.fn()
+    const user = userEvent.setup()
+    renderChatForm({ onLocalSave })
+    await sendOneTurn(user)
+
+    await waitFor(() =>
+      expect(screen.getByTestId("local-save-error")).toBeInTheDocument(),
+    )
+    expect(onLocalSave).not.toHaveBeenCalled()
   })
 
   it("warns when Notion succeeded but the local markdown append failed", async () => {
