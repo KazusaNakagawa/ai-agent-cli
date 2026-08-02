@@ -18,6 +18,22 @@
       "バイオ・ゲノム編集"
     ]
   },
+  "fx": {
+    "pairs": [
+      {
+        "symbol": "JPY=X",
+        "label": "USD/JPY",
+        "band_low": 150,
+        "band_high": 165
+      }
+    ],
+    "usd_asset_share": 0.85,
+    "scenario_rates": [
+      150,
+      140,
+      130
+    ]
+  },
   "watch_sectors": [
     {
       "sector": "AI・クラウド",
@@ -269,6 +285,9 @@
     "vault_path": "/Users/yourname/Documents/MyVault",
     "journal_subdir": "journal",
     "exclude_dirs": [".obsidian", ".trash", "templates"]
+  },
+  "journal_chat": {
+    "trusted_write_dirs": ["~/work/zenn-docs"]
   },
   "watch_events": [
     {

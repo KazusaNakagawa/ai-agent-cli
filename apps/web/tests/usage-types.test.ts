@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  axisLabelIndices,
   filterSummaryByRange,
+  formatCount,
+  formatMetricValue,
+  formatShortDate,
+  formatShortTime,
   niceScale,
+  summarizeRange,
   UsageDailySummary,
 } from "@/lib/usage-types"
 
@@ -84,5 +90,138 @@ describe("filterSummaryByRange", () => {
 
   it("handles an empty summary", () => {
     expect(filterSummaryByRange([], "7d", "2026-06-29")).toEqual([])
+  })
+})
+
+describe("summarizeRange", () => {
+  function full(date: string, cost: number, tokens: number, calls = 1): UsageDailySummary {
+    return {
+      date,
+      calls,
+      input_tokens: tokens,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_creation_tokens: 0,
+      cost_usd: cost,
+    }
+  }
+
+  it("totals cost, tokens, calls and day count", () => {
+    const totals = summarizeRange([full("2026-06-23", 0.5, 100, 3), full("2026-06-24", 1.3, 200, 2)])
+    expect(totals.days).toBe(2)
+    expect(totals.calls).toBe(5)
+    expect(totals.cost_usd).toBeCloseTo(1.8, 10)
+    expect(totals.tokens).toBe(300)
+  })
+
+  it("sums all four token fields, not just input", () => {
+    const totals = summarizeRange([
+      {
+        date: "2026-06-23",
+        calls: 1,
+        input_tokens: 1,
+        output_tokens: 2,
+        cache_read_tokens: 4,
+        cache_creation_tokens: 8,
+        cost_usd: 0,
+      },
+    ])
+    expect(totals.tokens).toBe(15)
+  })
+
+  it("returns zeros for an empty range", () => {
+    expect(summarizeRange([])).toEqual({ days: 0, calls: 0, cost_usd: 0, tokens: 0 })
+  })
+})
+
+describe("formatMetricValue", () => {
+  it("renders cost as currency with at least two decimals", () => {
+    expect(formatMetricValue("cost_usd", 0.4)).toBe("$0.40")
+    expect(formatMetricValue("cost_usd", 1.3)).toBe("$1.30")
+  })
+
+  it("keeps sub-cent precision for small costs", () => {
+    expect(formatMetricValue("cost_usd", 0.0123)).toBe("$0.0123")
+    expect(formatMetricValue("cost_usd", 0.05)).toBe("$0.05")
+  })
+
+  it("rounds a large total to cents instead of four decimals", () => {
+    expect(formatMetricValue("cost_usd", 23.9454)).toBe("$23.95")
+  })
+
+  it("groups token counts and drops the currency sign", () => {
+    expect(formatMetricValue("input_tokens", 165437)).toBe("165,437")
+    expect(formatMetricValue("all", 165437)).toBe("165,437")
+  })
+
+  it("renders duration in seconds", () => {
+    expect(formatMetricValue("duration_ms", 1500)).toBe("1.5s")
+  })
+
+  it("renders zero without special-casing", () => {
+    expect(formatMetricValue("cost_usd", 0)).toBe("$0.00")
+    expect(formatMetricValue("input_tokens", 0)).toBe("0")
+  })
+})
+
+describe("axisLabelIndices", () => {
+  it("labels every point when they fit", () => {
+    expect(axisLabelIndices(5, 8)).toEqual([0, 1, 2, 3, 4])
+  })
+
+  it("thins dense series down to at most max labels, keeping first and last", () => {
+    const picked = axisLabelIndices(30, 8)
+    expect(picked.length).toBeLessThanOrEqual(8)
+    expect(picked[0]).toBe(0)
+    expect(picked[picked.length - 1]).toBe(29)
+  })
+
+  it("handles a single point and an empty series", () => {
+    expect(axisLabelIndices(1, 8)).toEqual([0])
+    expect(axisLabelIndices(0, 8)).toEqual([])
+  })
+
+  it("degrades safely for a max below two", () => {
+    // max === 1 cannot hold both ends, and max <= 0 asks for no labels at all.
+    // Both would otherwise hit a divide-by-zero / negative stride and never
+    // terminate the picking loop.
+    expect(axisLabelIndices(30, 1)).toEqual([0])
+    expect(axisLabelIndices(30, 0)).toEqual([])
+    expect(axisLabelIndices(30, -5)).toEqual([])
+  })
+})
+
+describe("formatCount", () => {
+  it("groups a large count", () => {
+    expect(formatCount(4732400)).toBe("4,732,400")
+  })
+
+  it("renders zero as-is", () => {
+    expect(formatCount(0)).toBe("0")
+  })
+})
+
+describe("formatShortTime", () => {
+  it("shortens an ISO timestamp to HH:MM", () => {
+    expect(formatShortTime("2026-06-20T05:06:30")).toBe("05:06")
+  })
+
+  it("keeps the timestamp's own minute rather than a fixed offset", () => {
+    expect(formatShortTime("2026-06-20T12:34:56")).toBe("12:34")
+  })
+
+  it("passes through anything that is not an ISO timestamp", () => {
+    expect(formatShortTime("20260620")).toBe("20260620")
+    expect(formatShortTime("not-a-time")).toBe("not-a-time")
+  })
+})
+
+describe("formatShortDate", () => {
+  it("shortens an ISO date to MM/DD", () => {
+    expect(formatShortDate("2026-06-24")).toBe("06/24")
+  })
+
+  it("passes through anything that is not an ISO date", () => {
+    expect(formatShortDate("20260624")).toBe("20260624")
   })
 })

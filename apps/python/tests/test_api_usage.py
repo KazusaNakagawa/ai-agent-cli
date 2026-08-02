@@ -95,6 +95,25 @@ async def test_summary_aggregates_per_day_oldest_first(authed_client, usage_dir)
     assert day["cost_usd"] == 0.827
 
 
+async def test_dates_and_summary_have_no_age_bound(authed_client, usage_dir):
+    """Verifies: a usage file far outside LOG_RETENTION_DAYS is still listed and
+    aggregated, so the dashboard's "All time" range really means all time (#428).
+    """
+    ancient = usage_dir / "20240101-usage.jsonl"
+    ancient.write_text(
+        json.dumps({"timestamp": "2024-01-01T05:00:00", "label": "old", "cost_usd": 0.25})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    dates = (await authed_client.get("/api/usage/dates")).json()["dates"]
+    assert dates == ["20260620", "20260619", "20240101"]
+
+    summary = (await authed_client.get("/api/usage/summary")).json()["summary"]
+    assert summary[0]["date"] == "2024-01-01"
+    assert summary[0]["cost_usd"] == 0.25
+
+
 async def test_unknown_date_returns_404(authed_client, usage_dir):
     response = await authed_client.get("/api/usage?date=20990101")
     assert response.status_code == 404

@@ -55,6 +55,39 @@ class PortfolioConfig(BaseModel):
     themes: list[str]
 
 
+class FxPair(BaseModel):
+    """One currency pair tracked alongside the holdings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # yfinance symbol for the pair, e.g. "JPY=X" (USD/JPY) or "EURJPY=X".
+    symbol: str
+    # Display label used in the prompt, e.g. "USD/JPY". The USD/JPY pair is
+    # identified by this label carrying both "USD" and "JPY".
+    label: str
+    # Optional reference band the owner judges the rate against.
+    band_low: float | None = None
+    band_high: float | None = None
+
+
+class FxConfig(BaseModel):
+    """FX tracking settings. Absent/empty ``pairs`` disables the feature.
+
+    A portfolio held mostly in one foreign currency experiences a different
+    return than the one its holdings quote, so the briefing needs the rate both
+    to frame standing risk and to convert each move.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    pairs: list[FxPair] = Field(default_factory=list)
+    # Share of the portfolio denominated in USD (0-1). Only used to render the
+    # what-if table; omit to leave the portfolio's size out of the prompt.
+    usd_asset_share: float | None = Field(default=None, ge=0, le=1)
+    # USD/JPY levels to show portfolio-level impact for, e.g. [150, 140, 130].
+    scenario_rates: list[float] = Field(default_factory=list)
+
+
 class WatchSector(BaseModel):
     sector: str
     tickers: list[str] = Field(min_length=1)
@@ -81,6 +114,21 @@ class ObsidianConfig(BaseModel):
     )
 
 
+class JournalChatConfig(BaseModel):
+    """Journal chat settings (#414).
+
+    ``trusted_write_dirs`` lists directories the Journal brainstorm chat is
+    allowed to write to without an interactive permission prompt (the ``claude``
+    CLI denies writes outside its default scope outright in headless ``-p``
+    mode — there is no prompt to approve later). Empty by default so existing
+    installs see unchanged (no elevated write access) behavior.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    trusted_write_dirs: list[str] = Field(default_factory=list)
+
+
 class BriefingFileConfig(BaseModel):
     """The part expressed in ``briefing.json``. Contains no credentials.
 
@@ -94,11 +142,14 @@ class BriefingFileConfig(BaseModel):
     # Precedence: CLAUDE_MODEL env > this config value > DEFAULT_MODEL (see claude_runner.get_model).
     model: str | None = None
     portfolio: PortfolioConfig
+    # Optional FX tracking. Default (no pairs) leaves the briefing USD-only.
+    fx: FxConfig = Field(default_factory=FxConfig)
     geopolitical: GeopoliticalConfig = Field(default_factory=GeopoliticalConfig)
     watch_sectors: list[WatchSector] = Field(min_length=1)
     watch_events: list[WatchEvent] = Field(default_factory=list)
     # Optional Obsidian vault integration. None = feature disabled.
     obsidian: ObsidianConfig | None = None
+    journal_chat: JournalChatConfig = Field(default_factory=JournalChatConfig)
 
 
 class BriefingConfig(BriefingFileConfig):
@@ -167,6 +218,29 @@ def get_obsidian_config() -> ObsidianConfig | None:
     except Exception:
         logger.warning("get_obsidian_config: briefing.json could not be loaded", exc_info=True)
         return None
+
+
+def get_journal_chat_trusted_write_dirs() -> list[str]:
+    """Return Journal chat's trusted write directories, ``~`` expanded.
+
+    Best-effort like ``get_obsidian_config()``: a missing briefing.json or a
+    validation error both mean "nothing trusted yet" (empty list), which
+    matches the claude CLI's existing default-deny behavior for writes
+    outside its scope — callers must not fail because of this optional config.
+    """
+    try:
+        dirs = load_config().journal_chat.trusted_write_dirs
+    except FileNotFoundError:
+        return []
+    except (ValueError, json.JSONDecodeError):
+        # ValueError covers load_config()'s wrapped ValidationError;
+        # JSONDecodeError (a ValueError subclass) covers malformed JSON.
+        logger.warning(
+            "get_journal_chat_trusted_write_dirs: briefing.json could not be loaded",
+            exc_info=True,
+        )
+        return []
+    return [str(Path(d).expanduser()) for d in dirs]
 
 
 _CONFIG_CACHE: BriefingConfig | None = None

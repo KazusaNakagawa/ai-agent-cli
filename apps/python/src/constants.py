@@ -5,9 +5,15 @@ from pathlib import Path
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
 # Claude CLI timeouts (seconds)
-TIMEOUT_BRIEFING_MAIN = 480
-TIMEOUT_BRIEFING_SECTORS = 480
-TIMEOUT_WEEKLY_SUMMARY = 300
+# One uniform budget for every run_claude() call. WebSearch-heavy prompts have a
+# long tail: observed durations range 110-422s, and the previous 480s budget left
+# only ~1.15x headroom over the worst case, so an outlier run discarded several
+# minutes of billed work (2026-07-26 briefing). 900s covers the tail without
+# adding retries, which would re-run the whole prompt from scratch.
+TIMEOUT_CLAUDE_DEFAULT = 900
+TIMEOUT_BRIEFING_MAIN = TIMEOUT_CLAUDE_DEFAULT
+TIMEOUT_BRIEFING_SECTORS = TIMEOUT_CLAUDE_DEFAULT
+TIMEOUT_WEEKLY_SUMMARY = TIMEOUT_CLAUDE_DEFAULT
 
 # Claude CLI retry policy (5xx transient errors only)
 RETRY_MAX_ATTEMPTS = 3
@@ -22,6 +28,14 @@ RETRY_MAX_ATTEMPTS_BRIEFING = 2
 
 # Log retention
 LOG_RETENTION_DAYS = 7
+
+# Usage log (log/usage/*.jsonl) retention. When False, _purge_old_logs is skipped
+# and every daily file is kept indefinitely — the Usage dashboard's "All time"
+# range is only meaningful with the full history, and rotating on
+# LOG_RETENTION_DAYS silently capped it at ~8 days (#428). Volume is ~0.5-3.5 KB
+# per day, i.e. under 1 MB/year, so unbounded retention is cheap. Deliberately
+# separate from LOG_RETENTION_DAYS so app-log rotation can change on its own.
+USAGE_LOG_ROTATION_ENABLED = False
 
 # Weekly recap lookback window (briefing pages + Notion comment ingestion, #396)
 WEEKLY_WINDOW_DAYS = 7

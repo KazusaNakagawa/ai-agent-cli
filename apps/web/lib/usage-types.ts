@@ -68,6 +68,34 @@ export function filterSummaryByRange(
   return summary.filter((d) => d.date >= cutoff && d.date <= today)
 }
 
+export type UsageRangeTotals = {
+  /** Number of days with at least one recorded call. */
+  days: number
+  calls: number
+  cost_usd: number
+  /** Input + output + cache read + cache creation, summed across the range. */
+  tokens: number
+}
+
+// Totals for the visible range, shown above the charts so the screen answers
+// "how much did this period cost", not only "what did each run cost" (#428).
+export function summarizeRange(summary: UsageDailySummary[]): UsageRangeTotals {
+  return summary.reduce<UsageRangeTotals>(
+    (acc, day) => ({
+      days: acc.days + 1,
+      calls: acc.calls + day.calls,
+      cost_usd: acc.cost_usd + day.cost_usd,
+      tokens:
+        acc.tokens +
+        day.input_tokens +
+        day.output_tokens +
+        day.cache_read_tokens +
+        day.cache_creation_tokens,
+    }),
+    { days: 0, calls: 0, cost_usd: 0, tokens: 0 },
+  )
+}
+
 // Numeric fields a user can chart on the y-axis.
 export type UsageMetric =
   | "cost_usd"
@@ -189,7 +217,77 @@ const _currencyFmt = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 4,
   maximumFractionDigits: 4,
 })
+// Axis ticks and range totals read as plain money ("$1.30", "$23.95")...
+const _axisCurrencyFmt = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+// ...except below a dime, where two decimals would flatten a cheap run to
+// "$0.01" or "$0.00" — there we keep up to four.
+const _smallCurrencyFmt = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+})
+const _SMALL_COST_THRESHOLD = 0.1
 const _numberFmt = new Intl.NumberFormat("en-US")
+
+// Plain grouped integer for quantities that aren't a chartable metric (call
+// counts, day counts, summed tokens). Kept separate from formatMetricValue so
+// counts don't have to borrow a token metric to get formatted.
+export function formatCount(value: number): string {
+  return _numberFmt.format(value)
+}
+
+// Render a chart value in the unit its metric implies: cost carries a "$",
+// duration reads in seconds, token counts are plain grouped integers. Used by
+// both charts' axis ticks and the range totals so units never disagree.
+export function formatMetricValue(metric: UsageChartMetric, value: number): string {
+  if (metric === "cost_usd") {
+    const fmt =
+      Math.abs(value) < _SMALL_COST_THRESHOLD ? _smallCurrencyFmt : _axisCurrencyFmt
+    return fmt.format(value)
+  }
+  if (metric === "duration_ms") return `${(value / 1000).toFixed(1)}s`
+  return _numberFmt.format(Number(value.toFixed(4)))
+}
+
+// Pick which x-axis positions get a visible label. Dense series (a year of
+// "All time" points) would otherwise overlap into mush, so thin them to at most
+// `max` labels at an even stride, always keeping the first and last.
+export function axisLabelIndices(count: number, max: number): number[] {
+  if (count <= 0 || max <= 0) return []
+  if (count <= max) return Array.from({ length: count }, (_, i) => i)
+  // max === 1 can't hold both ends, and the stride below would divide by zero
+  // (max === 1) or go negative (max <= 0) and never terminate.
+  if (max === 1) return [0]
+  const stride = Math.ceil((count - 1) / (max - 1))
+  const picked: number[] = []
+  for (let i = 0; i < count - 1; i += stride) picked.push(i)
+  picked.push(count - 1)
+  return picked
+}
+
+const _ISO_TIME_RE = /T(\d{2}):(\d{2})/
+
+// "2026-06-20T05:06:30" -> "05:06". The date is already fixed by the Date select,
+// so the bar-chart x-axis only needs the time of day.
+export function formatShortTime(timestamp: string): string {
+  const m = _ISO_TIME_RE.exec(timestamp)
+  return m ? `${m[1]}:${m[2]}` : timestamp
+}
+
+const _ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+// "2026-06-24" -> "06/24". Year is dropped because the axis is always within one
+// range; non-ISO input is returned untouched rather than mangled.
+export function formatShortDate(iso: string): string {
+  const m = _ISO_DATE_RE.exec(iso)
+  return m ? `${m[2]}/${m[3]}` : iso
+}
 
 // Human-readable rendering of a record field for the detail tooltip:
 // cost as currency, duration in seconds, token counts grouped with commas.

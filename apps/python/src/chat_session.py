@@ -19,8 +19,28 @@ def journal_session_name_for(target_date: str) -> str:
     return f"journal-chat-{target_date}"
 
 
+def _trusted_write_flags(trusted_write_dirs: list[str] | None) -> list[str]:
+    """Return ``--add-dir``/``--permission-mode`` flags for pre-trusted dirs.
+
+    The claude CLI denies writes outside its default scope outright in
+    headless ``-p`` mode (no prompt to approve later — see #414), so the only
+    way to let Journal chat write to a known directory (e.g. a personal notes
+    repo) is to grant it up front. Omitted entirely when no dirs are
+    configured, so existing behavior (default-deny) is unchanged.
+    """
+    if not trusted_write_dirs:
+        return []
+    flags = ["--permission-mode", "acceptEdits"]
+    for d in trusted_write_dirs:
+        flags += ["--add-dir", d]
+    return flags
+
+
 def build_journal_cmd(
-    target_date: str, journal_context: str, session_file: Path
+    target_date: str,
+    journal_context: str,
+    session_file: Path,
+    trusted_write_dirs: list[str] | None = None,
 ) -> list[str]:
     """Return claude CLI args for a journaling brainstorm session.
 
@@ -30,12 +50,19 @@ def build_journal_cmd(
 
     - Resume: ``claude --resume <uuid> --name <name>``
     - New:    ``claude --session-id <uuid> --name <name> --append-system-prompt <context>``
+
+    ``trusted_write_dirs`` (#414) pre-approves directories for writes via
+    ``--add-dir`` + ``--permission-mode acceptEdits`` so Journal chat can
+    actually save output there instead of being silently denied. Applied on
+    both resume and new sessions since the permission grant is a per-process
+    CLI flag, not part of the persisted session.
     """
     name = journal_session_name_for(target_date)
+    trust_flags = _trusted_write_flags(trusted_write_dirs)
 
     if session_file.exists():
         session_id = session_file.read_text().strip()
-        return ["claude", "--resume", session_id, "--name", name]
+        return ["claude", "--resume", session_id, "--name", name, *trust_flags]
 
     session_id = str(uuid.uuid4())
     session_file.parent.mkdir(parents=True, exist_ok=True)
@@ -54,6 +81,7 @@ def build_journal_cmd(
         "--session-id", session_id,
         "--name", name,
         "--append-system-prompt", context,
+        *trust_flags,
     ]
 
 

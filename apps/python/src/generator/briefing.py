@@ -10,7 +10,7 @@ from src.prompt_safety import neutralize_user_text
 
 logger = get_logger(__name__)
 
-# Because of parallel execution, actual wait time is max(MAIN, SECTORS) = 480s (not the sum).
+# Because of parallel execution, worst-case wait is max(MAIN, SECTORS), not the sum.
 
 # Few-shot example captured from a high-capability model's output. Injected into
 # the main briefing prompt so cheaper models keep the structure (#192). See
@@ -29,6 +29,21 @@ _MIN_BRIEFING_LENGTH = 200
 # contains a "### " heading at all, so this window still rejects it while
 # tolerating a realistic preamble.
 _HEADING_SEARCH_WINDOW = 500
+
+# Cap for the error detail quoted at the top of a degraded (sectors-only) body,
+# kept well inside _HEADING_SEARCH_WINDOW. See _truncate_error.
+_ERROR_NOTE_MAX_LENGTH = 200
+
+# Notices marking a body where one half of the pipeline failed. They are the
+# on-disk signal that today's briefing is incomplete, so handler.py can let a
+# retry through instead of reporting "already generated today".
+MAIN_FAILED_NOTICE = "⚠️ メイン分析の取得に失敗しました。セクター動向のみお届けします。"
+SECTORS_FAILED_NOTICE = "⚠️ セクター動向の取得に失敗しました。"
+
+# Heading that opens the sector sweep section. Shared so a recovery run splices
+# in the same heading the main pipeline writes, and recovery_handler can mark
+# its Notion append as a recovery without diverging from this wording.
+SECTORS_HEADING = "## セクター動向"
 
 
 @lru_cache(maxsize=1)
@@ -116,8 +131,67 @@ def looks_like_briefing(text: str) -> bool:
     return len(text) >= _MIN_BRIEFING_LENGTH and "### " in text[:_HEADING_SEARCH_WINDOW]
 
 
-def generate_briefing(stocks: str, config: BriefingConfig) -> str:
-    """Generate the briefing by running the main analysis and sector sweep in parallel."""
+def is_degraded_briefing(text: str) -> bool:
+    """True when ``text`` is a briefing whose main analysis or sector sweep failed.
+
+    Used by the idempotency guard in handler.py: the guard exists to stop a
+    duplicate *successful* run, so a half-failed body must not count as "today's
+    briefing" and lock out the retry that would produce the full one.
+    """
+    return MAIN_FAILED_NOTICE in text or SECTORS_FAILED_NOTICE in text
+
+
+def _truncate_error(detail: str) -> str:
+    """Shorten an error detail so it can head a degraded briefing body.
+
+    run_claude truncates its CLI error detail at 2000 chars, which would push
+    the sector sweep's first "### " heading past _HEADING_SEARCH_WINDOW and make
+    looks_like_briefing reject the very body this fallback exists to save.
+    """
+    if len(detail) <= _ERROR_NOTE_MAX_LENGTH:
+        return detail
+    return detail[:_ERROR_NOTE_MAX_LENGTH] + "…(truncated)"
+
+
+def generate_sectors(stocks: str, config: BriefingConfig) -> str:
+    """Run the sector sweep on its own and return its body.
+
+    Split out of generate_briefing so the wake-up recovery job (#432) can redo
+    just this half after a sleep-severed run, without paying for a second main
+    analysis.
+    """
+    prompt = render(
+        "briefing_sectors",
+        watch_sectors=build_watch_sectors_context(config),
+        stocks=stocks,
+    )
+    return run_claude(
+        prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS,
+        max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
+    )
+
+
+def merge_recovered_sectors(body: str, sectors: str) -> str:
+    """Splice a recovered sector sweep into a briefing body that failed to get one.
+
+    Everything from SECTORS_FAILED_NOTICE onward is the failure notice plus the
+    quoted CLI error, so the whole tail is replaced by the real section. A body
+    without the notice is returned untouched, which keeps the recovery run
+    idempotent.
+    """
+    marker = body.find(SECTORS_FAILED_NOTICE)
+    if marker == -1:
+        return body
+    return body[:marker] + f"{SECTORS_HEADING}\n\n" + sectors
+
+
+def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
+    """Generate the briefing by running the main analysis and sector sweep in parallel.
+
+    ``fx`` is the pre-rendered exchange-rate block. It defaults to empty so a
+    failed FX fetch (or no configured pair) degrades to the previous USD-only
+    briefing rather than blocking the run.
+    """
     tickers = join_safe(config.portfolio.tickers, sep=", ")
     themes = join_safe(config.portfolio.themes, sep=", ")
 
@@ -128,24 +202,16 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
         geopolitical=build_geopolitical_context(config),
         watch_events=build_watch_events_context(config),
         stocks=stocks,
+        fx=fx or "(為替の取得なし。為替セクションは省略してよい)",
         few_shot=load_briefing_few_shot(),
     )
-    sectors_prompt = render(
-        "briefing_sectors",
-        watch_sectors=build_watch_sectors_context(config),
-        stocks=stocks,
-    )
-
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
             executor.submit(
                 run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN,
                 max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
             ): "main",
-            executor.submit(
-                run_claude, sectors_prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS,
-                max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
-            ): "sectors",
+            executor.submit(generate_sectors, stocks, config): "sectors",
         }
         results: dict[str, str] = {}
         errors: dict[str, str] = {}
@@ -158,7 +224,18 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
                 errors[key] = str(e)
 
     if "main" in errors:
-        raise RuntimeError(f"briefing generation failed: main analysis\n{errors['main']}")
+        if "sectors" not in results:
+            raise RuntimeError(f"briefing generation failed: main analysis\n{errors['main']}")
+        logger.warning(
+            "main analysis failed (sector sweep succeeded) — delivering a "
+            "sectors-only briefing: %s",
+            errors["main"],
+        )
+        return (
+            f"{MAIN_FAILED_NOTICE}\n"
+            f"{_truncate_error(errors['main'])}\n\n---\n\n"
+            f"{SECTORS_HEADING}\n\n" + results["sectors"]
+        )
 
     assert "main" in results, "main result missing despite no error recorded"
 
@@ -166,8 +243,8 @@ def generate_briefing(stocks: str, config: BriefingConfig) -> str:
 
     if "sectors" in errors:
         logger.warning("sector sweep failed (main analysis succeeded): %s", errors["sectors"])
-        return main_text + "\n\n---\n\n⚠️ セクター動向の取得に失敗しました。\n" + errors["sectors"]
+        return main_text + f"\n\n---\n\n{SECTORS_FAILED_NOTICE}\n" + errors["sectors"]
 
     assert "sectors" in results, "sectors result missing despite no error recorded"
 
-    return main_text + "\n\n---\n\n## セクター動向\n\n" + results["sectors"]
+    return main_text + f"\n\n---\n\n{SECTORS_HEADING}\n\n" + results["sectors"]

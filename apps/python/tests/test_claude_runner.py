@@ -32,14 +32,14 @@ class TestRunClaude:
 
     def test_success_returns_stripped_stdout(self):
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout="  hello  \n")):
+            with patch("src.claude_runner._stream_claude", return_value=_make_result(stdout="  hello  \n")):
                 result = run_claude("prompt", "test")
         assert result == "hello"
 
     def test_timeout_raises_runtime_error(self):
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch(
-                "src.claude_runner.subprocess.run",
+                "src.claude_runner._stream_claude",
                 side_effect=subprocess.TimeoutExpired("claude", 300),
             ):
                 with pytest.raises(RuntimeError, match="timed out"):
@@ -48,7 +48,7 @@ class TestRunClaude:
     def test_nonzero_returncode_raises_with_stderr(self):
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch(
-                "src.claude_runner.subprocess.run",
+                "src.claude_runner._stream_claude",
                 return_value=_make_result(returncode=1, stdout="", stderr="auth error"),
             ):
                 with pytest.raises(RuntimeError, match="auth error"):
@@ -57,7 +57,7 @@ class TestRunClaude:
     def test_nonzero_returncode_falls_back_to_stdout(self):
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch(
-                "src.claude_runner.subprocess.run",
+                "src.claude_runner._stream_claude",
                 return_value=_make_result(returncode=1, stdout="stdout error", stderr=""),
             ):
                 with pytest.raises(RuntimeError, match="stdout error"):
@@ -67,7 +67,7 @@ class TestRunClaude:
         long_stderr = "x" * 3000
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch(
-                "src.claude_runner.subprocess.run",
+                "src.claude_runner._stream_claude",
                 return_value=_make_result(returncode=1, stdout="", stderr=long_stderr),
             ):
                 with pytest.raises(RuntimeError) as exc_info:
@@ -77,27 +77,36 @@ class TestRunClaude:
     def test_api_key_excluded_from_subprocess_env(self):
         captured = {}
 
-        def fake_run(args, **kwargs):
-            captured["env"] = kwargs.get("env", {})
+        def fake_run(cmd, env, timeout, label):
+            captured["env"] = env
             return _make_result()
 
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "secret-key"}):
             with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-                with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
+                with patch("src.claude_runner._stream_claude", side_effect=fake_run):
                     run_claude("prompt", "test")
 
         assert "ANTHROPIC_API_KEY" not in captured["env"]
 
     def test_stdin_is_devnull(self):
+        """The child must never inherit a terminal: a claude CLI that blocks on
+        stdin would hang a batch run until its timeout."""
         captured = {}
 
-        def fake_run(args, **kwargs):
-            captured["stdin"] = kwargs.get("stdin")
-            return _make_result()
+        class _Proc:
+            stdout = __import__("io").BytesIO(b"")
+            stderr = __import__("io").BytesIO(b"")
+            returncode = 0
 
-        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
-                run_claude("prompt", "test")
+            def wait(self, timeout=None):
+                return 0
+
+        def fake_popen(cmd, **kwargs):
+            captured["stdin"] = kwargs.get("stdin")
+            return _Proc()
+
+        with patch("src.claude_runner.subprocess.Popen", side_effect=fake_popen):
+            claude_runner._stream_claude(["claude"], {}, 300, "test")
 
         assert captured["stdin"] == subprocess.DEVNULL
 
@@ -114,12 +123,12 @@ class TestRunClaude:
         """
         captured = {}
 
-        def fake_run(args, **kwargs):
-            captured["cmd"] = args
+        def fake_run(cmd, env, timeout, label):
+            captured["cmd"] = cmd
             return _make_result()
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
+            with patch("src.claude_runner._stream_claude", side_effect=fake_run):
                 run_claude("prompt", "test")
 
         assert "--disable-slash-commands" in captured["cmd"]
@@ -142,7 +151,7 @@ class TestRunClaudeUsageLogging:
             },
         })
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+            with patch("src.claude_runner._stream_claude", return_value=_make_result(stdout=payload)):
                 with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "briefing")
 
@@ -157,7 +166,7 @@ class TestRunClaudeUsageLogging:
     def test_malformed_output_falls_back_to_stdout_without_logging(self):
         """JSON でない stdout はそのまま（strip して）返し、例外を出さず使用量も記録しない。"""
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout="  plain text  ")):
+            with patch("src.claude_runner._stream_claude", return_value=_make_result(stdout="  plain text  ")):
                 with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
@@ -167,7 +176,7 @@ class TestRunClaudeUsageLogging:
     def test_json_without_usage_returns_result_and_skips_logging(self):
         payload = json.dumps({"result": "ok"})
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+            with patch("src.claude_runner._stream_claude", return_value=_make_result(stdout=payload)):
                 with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
@@ -178,7 +187,7 @@ class TestRunClaudeUsageLogging:
         """result フィールドの無い JSON は raw stdout にフォールバックし、使用量も記録しない。"""
         payload = json.dumps({"foo": 1})
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+            with patch("src.claude_runner._stream_claude", return_value=_make_result(stdout=payload)):
                 with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
@@ -189,7 +198,7 @@ class TestRunClaudeUsageLogging:
         """result が文字列以外でも str() 化して返し、usage は記録する。"""
         payload = json.dumps({"result": ["x", "y"], "usage": {"input_tokens": 5, "output_tokens": 6}})
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout=payload)):
+            with patch("src.claude_runner._stream_claude", return_value=_make_result(stdout=payload)):
                 with patch("src.usage_logger.log_usage") as mock_log:
                     result = run_claude("prompt", "test")
 
@@ -211,7 +220,7 @@ class TestRunClaudeRetry:
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.time.sleep") as mock_sleep:
                 with patch(
-                    "src.claude_runner.subprocess.run",
+                    "src.claude_runner._stream_claude",
                     side_effect=[error_result, success_result],
                 ) as mock_run:
                     result = run_claude("prompt", "test")
@@ -237,7 +246,7 @@ class TestRunClaudeRetry:
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.time.sleep"):
                 with patch(
-                    "src.claude_runner.subprocess.run",
+                    "src.claude_runner._stream_claude",
                     side_effect=[error_result, success_result],
                 ) as mock_run:
                     result = run_claude("prompt", "test")
@@ -258,7 +267,7 @@ class TestRunClaudeRetry:
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.time.sleep"):
                 with patch(
-                    "src.claude_runner.subprocess.run",
+                    "src.claude_runner._stream_claude",
                     side_effect=[error_result, success_result],
                 ) as mock_run:
                     result = run_claude("prompt", "test")
@@ -278,7 +287,7 @@ class TestRunClaudeRetry:
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.time.sleep"):
                 with patch(
-                    "src.claude_runner.subprocess.run",
+                    "src.claude_runner._stream_claude",
                     return_value=error_result,
                 ) as mock_run:
                     with pytest.raises(RuntimeError, match="529"):
@@ -298,7 +307,7 @@ class TestRunClaudeRetry:
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.time.sleep") as mock_sleep:
                 with patch(
-                    "src.claude_runner.subprocess.run",
+                    "src.claude_runner._stream_claude",
                     return_value=error_result,
                 ) as mock_run:
                     with pytest.raises(RuntimeError, match="auth error"):
@@ -315,7 +324,7 @@ class TestRunClaudeRetry:
         """
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.time.sleep") as mock_sleep:
-                with patch("src.claude_runner.subprocess.run", return_value=_make_result(stdout="ok")):
+                with patch("src.claude_runner._stream_claude", return_value=_make_result(stdout="ok")):
                     run_claude("prompt", "test")
         assert mock_sleep.call_count == 0
 
@@ -330,7 +339,7 @@ class TestRunClaudeRetry:
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.time.sleep") as mock_sleep:
-                with patch("src.claude_runner.subprocess.run", return_value=error_result):
+                with patch("src.claude_runner._stream_claude", return_value=error_result):
                     with pytest.raises(RuntimeError):
                         run_claude("prompt", "test")
 
@@ -350,7 +359,7 @@ class TestRunClaudeRetry:
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.time.sleep"):
                 with patch(
-                    "src.claude_runner.subprocess.run",
+                    "src.claude_runner._stream_claude",
                     return_value=error_result,
                 ) as mock_run:
                     with pytest.raises(RuntimeError):
@@ -366,7 +375,7 @@ class TestRunClaudeRetry:
         "rc=0" error. Fail loudly at the boundary instead.
         """
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run") as mock_run:
+            with patch("src.claude_runner._stream_claude") as mock_run:
                 with pytest.raises(ValueError, match="max_attempts"):
                     run_claude("prompt", "test", max_attempts=0)
                 with pytest.raises(ValueError, match="max_attempts"):
@@ -383,7 +392,7 @@ class TestRunClaudeRetry:
         """
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch(
-                "src.claude_runner.subprocess.run",
+                "src.claude_runner._stream_claude",
                 side_effect=subprocess.TimeoutExpired("claude", 300),
             ) as mock_run:
                 with pytest.raises(RuntimeError, match="timed out"):
@@ -407,7 +416,7 @@ class TestRunClaudePartialOutput:
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner.time.sleep"):
-                with patch("src.claude_runner.subprocess.run", return_value=error_result):
+                with patch("src.claude_runner._stream_claude", return_value=error_result):
                     with pytest.raises(RuntimeError):
                         run_claude("prompt", "test-label", max_attempts=2)
 
@@ -423,7 +432,7 @@ class TestRunClaudePartialOutput:
         error_result = _make_result(returncode=1, stdout="", stderr="auth error")
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", return_value=error_result):
+            with patch("src.claude_runner._stream_claude", return_value=error_result):
                 with pytest.raises(RuntimeError):
                     run_claude("prompt", "test-label")
 
@@ -437,7 +446,7 @@ class TestRunClaudePartialOutput:
         exc = subprocess.TimeoutExpired("claude", 300, output="partial before kill")
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", side_effect=exc):
+            with patch("src.claude_runner._stream_claude", side_effect=exc):
                 with pytest.raises(RuntimeError, match="timed out"):
                     run_claude("prompt", "test-label", timeout=300)
 
@@ -454,7 +463,7 @@ class TestRunClaudePartialOutput:
         exc = subprocess.TimeoutExpired("claude", 300)
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", side_effect=exc):
+            with patch("src.claude_runner._stream_claude", side_effect=exc):
                 with pytest.raises(RuntimeError, match="timed out"):
                     run_claude("prompt", "test-label", timeout=300)
 
@@ -471,7 +480,7 @@ class TestRunClaudePartialOutput:
         error_result = _make_result(returncode=1, stdout=json.dumps({"result": "text"}), stderr="auth error")
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", return_value=error_result):
+            with patch("src.claude_runner._stream_claude", return_value=error_result):
                 with pytest.raises(RuntimeError, match="auth error"):
                     run_claude("prompt", "test-label")
 
@@ -626,12 +635,12 @@ class TestRunClaudeAuthMode:
 
         captured = {}
 
-        def fake_run(args, **kwargs):
-            captured["env"] = kwargs.get("env", {})
+        def fake_run(cmd, env, timeout, label):
+            captured["env"] = env
             return _make_result()
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
+            with patch("src.claude_runner._stream_claude", side_effect=fake_run):
                 run_claude("prompt", "test")
 
         assert captured["env"].get("ANTHROPIC_API_KEY") == "from-keychain"
@@ -661,13 +670,174 @@ class TestRunClaudeAuthMode:
 
         captured = {}
 
-        def fake_run(args, **kwargs):
-            captured["env"] = kwargs.get("env", {})
+        def fake_run(cmd, env, timeout, label):
+            captured["env"] = env
             return _make_result()
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
-            with patch("src.claude_runner.subprocess.run", side_effect=fake_run):
+            with patch("src.claude_runner._stream_claude", side_effect=fake_run):
                 run_claude("prompt", "test")
 
         assert "ANTHROPIC_API_KEY" not in captured["env"]
 
+
+
+class _FakeProc:
+    """Minimal Popen stand-in for _stream_claude tests."""
+
+    def __init__(self, stdout_lines, stderr=b"", returncode=0, hangs=False):
+        import io
+        self.stdout = io.BytesIO("\n".join(stdout_lines).encode("utf-8"))
+        self.stderr = io.BytesIO(stderr)
+        self.returncode = returncode
+        self._hangs = hangs
+        self.killed = False
+
+    def wait(self, timeout=None):
+        if self._hangs and timeout is not None:
+            raise subprocess.TimeoutExpired("claude", timeout)
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+        self._hangs = False
+
+
+def _delta_line(text):
+    return json.dumps({
+        "type": "stream_event",
+        "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}},
+    })
+
+
+def _result_line(result="final answer", **fields):
+    return json.dumps({"type": "result", "subtype": "success", "result": result, **fields})
+
+
+def _tool_error_line(msg):
+    return json.dumps({
+        "type": "user",
+        "message": {"content": [{"type": "tool_result", "content": msg}]},
+    })
+
+
+class TestStreamClaude:
+    def test_success_returns_terminal_result_record_as_stdout(self):
+        """The terminal result line is handed back verbatim so the existing
+        JSON parsing / usage-logging path keeps working unchanged."""
+        line = _result_line(result="final answer", usage={"input_tokens": 1})
+        proc = _FakeProc([_delta_line("intermediate chatter\n"), line])
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            result = claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["result"] == "final answer"
+
+    def test_timeout_salvages_streamed_text_and_kills_process(self):
+        """Failure case: the process never exits, so the text streamed so far
+        must survive on the exception the caller already handles."""
+        proc = _FakeProc([_delta_line("first line\nsecond line")], hangs=True)
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            with pytest.raises(subprocess.TimeoutExpired) as exc:
+                claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert "first line" in exc.value.stdout
+        assert "second line" in exc.value.stdout
+        assert proc.killed is True
+
+    def test_timeout_with_no_streamed_text_yields_empty_output(self):
+        """Boundary: nothing streamed before the kill — no text to salvage."""
+        proc = _FakeProc([], hangs=True)
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            with pytest.raises(subprocess.TimeoutExpired) as exc:
+                claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert exc.value.stdout == ""
+
+    def test_stderr_is_captured(self):
+        proc = _FakeProc([_result_line()], stderr=b"warning: something")
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            result = claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert "warning: something" in result.stderr
+
+    def test_in_session_api_errors_are_logged(self, caplog):
+        """A 529 from the WebSearch server tool never fails the process, so it
+        is only observable if the stream is inspected (#421)."""
+        proc = _FakeProc([
+            _tool_error_line("API Error: 529 Overloaded. This is a server-side issue"),
+            _tool_error_line("API Error: 529 Overloaded. This is a server-side issue"),
+            _result_line(),
+        ])
+        with caplog.at_level("WARNING"):
+            with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+                claude_runner._stream_claude(["claude"], {}, 300, "メイン分析")
+        assert "メイン分析" in caplog.text
+        assert "529" in caplog.text
+
+    def test_api_error_log_line_is_capped(self, caplog):
+        """Boundary: a storm of identical 529s must not produce a multi-kilobyte
+        log line — the full count is kept, the quoted messages are capped."""
+        proc = _FakeProc(
+            [_tool_error_line(f"API Error: 529 Overloaded #{i}") for i in range(20)]
+            + [_result_line()]
+        )
+        with caplog.at_level("WARNING"):
+            with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+                claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert "20 in-session API error(s)" in caplog.text
+        assert "#19" not in caplog.text
+
+    def test_pipes_are_closed(self):
+        """Descriptors must not be left to garbage collection: the web process
+        is long-lived and calls this on every run."""
+        proc = _FakeProc([_result_line()])
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert proc.stdout.closed is True
+        assert proc.stderr.closed is True
+
+    def test_pipes_are_closed_on_timeout(self):
+        proc = _FakeProc([_delta_line("partial")], hangs=True)
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            with pytest.raises(subprocess.TimeoutExpired):
+                claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert proc.stdout.closed is True
+        assert proc.stderr.closed is True
+
+    def test_no_api_errors_logs_nothing(self):
+        proc = _FakeProc([_result_line()])
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            with patch("src.claude_runner.logger.warning") as warn:
+                claude_runner._stream_claude(["claude"], {}, 300, "test")
+        warn.assert_not_called()
+
+
+class TestRunClaudeStreaming:
+    def test_cmd_requests_streaming_output(self):
+        """--include-partial-messages is what makes text available before the
+        run finishes; without it a killed call still salvages nothing."""
+        captured = {}
+
+        def fake_stream(cmd, env, timeout, label):
+            captured["cmd"] = cmd
+            return _make_result(stdout=_result_line(result="ok"))
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner._stream_claude", side_effect=fake_stream):
+                run_claude("prompt", "test")
+
+        cmd = captured["cmd"]
+        assert cmd[cmd.index("--output-format") + 1] == "stream-json"
+        assert "--verbose" in cmd
+        assert "--include-partial-messages" in cmd
+
+    def test_timeout_writes_streamed_text_to_partial_output(self, monkeypatch, tmp_path):
+        """End-to-end for #421: a timed-out call leaves the produced text on disk."""
+        monkeypatch.setattr(claude_runner, "PARTIAL_OUTPUT_DIR", tmp_path)
+        proc = _FakeProc([_delta_line("### 見出し\n本文です。")], hangs=True)
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+                with pytest.raises(RuntimeError, match="timed out"):
+                    run_claude("prompt", "メイン分析", timeout=300)
+
+        files = list(tmp_path.glob("*.md"))
+        assert len(files) == 1
+        assert "### 見出し" in files[0].read_text(encoding="utf-8")

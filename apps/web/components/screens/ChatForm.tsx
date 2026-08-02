@@ -17,8 +17,22 @@ function today(): string {
   return formatLocalDate()
 }
 
-export function ChatForm() {
-  const { messages: committedMessages, setMessages } = useChatState()
+interface ChatFormProps {
+  /**
+   * Fill the host's height (scrolling log + composer pinned to the bottom)
+   * instead of stacking at natural height. The host must give this component a
+   * definite height for it to have any effect.
+   */
+  fill?: boolean
+  /**
+   * Called with the appended markdown path each time an answer lands in the
+   * local briefing mirror, so a host rendering that file can refresh it.
+   */
+  onLocalSave?: (path: string) => void
+}
+
+export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
+  const { messages: committedMessages, setMessages, hydrated } = useChatState()
   const chatJob = useChatJobState()
   const { draft: input, setDraft: setInput } = useDraftPersistence({
     storageKey: "ai-agent:chat-draft:v1",
@@ -29,9 +43,14 @@ export function ChatForm() {
   const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
     onTranscript: setInput,
   })
-  // Notion save targets committed turns only — never the in-flight one.
+  // Notion save targets committed turns only — never the in-flight one. It
+  // fires automatically per completed answer when Notion is configured; the
+  // button stays as the manual retry path after a failure.
   const { notionState, saveToNotion } = useNotionSave({
     messages: committedMessages,
+    autoSave: notionReady,
+    hydrated,
+    onLocalSave,
   })
 
   // Latch to enforce "retry at most once per user send" across status flips.
@@ -177,7 +196,7 @@ export function ChatForm() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className={fill ? "flex h-full min-h-0 flex-col gap-4" : "space-y-4"}>
       <ChatMessageList
         messages={displayMessages}
         busy={busy}
@@ -185,6 +204,7 @@ export function ChatForm() {
         notionReady={notionReady}
         notionState={notionState}
         onNotionSave={(idx) => void saveToNotion(idx)}
+        fill={fill}
       />
       <ChatComposer
         input={input}

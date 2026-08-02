@@ -2,18 +2,22 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime
 
 from src import config as config_mod
 from src import credentials as cred_mod
 from src import state as state_mod
+from src.claude_stream import StreamState, consume_stream_line
 from src.constants import (
     DEFAULT_MODEL,
     PARTIAL_OUTPUT_DIR,
     RETRY_BACKOFF_FACTOR,
     RETRY_BASE_DELAY,
     RETRY_MAX_ATTEMPTS,
+    TIMEOUT_CLAUDE_DEFAULT,
 )
 from src.logger import get_logger
 from src.notifier.local_md import write_md_file
@@ -21,6 +25,136 @@ from src.transient_errors import is_transient
 from src.usage_logger import log_usage_from_result
 
 logger = get_logger(__name__)
+
+
+# How long to wait for the reader threads to finish after the child exits or is
+# killed. They are draining closed pipes at that point, so this only bounds a
+# pathological case rather than a normal wait.
+_READER_JOIN_TIMEOUT_SEC = 5
+
+# The count is always logged in full; only the quoted messages are capped, so a
+# storm of identical 529s can't produce a multi-kilobyte log line.
+_API_ERRORS_LOGGED_MAX = 5
+
+
+@dataclass
+class _StreamResult:
+    """Outcome of one streamed claude CLI call.
+
+    Deliberately mirrors the ``subprocess.run`` CompletedProcess attributes
+    run_claude already branches on, so retry / usage / error handling did not
+    have to change when the transport switched to a stream.
+    ``stdout`` is the terminal ``result`` record verbatim — not the whole
+    stream — which keeps ``is_transient`` looking at the same haystack as
+    before rather than at every intermediate tool result.
+    """
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _stream_claude(cmd: list[str], env: dict[str, str], timeout: int, label: str) -> _StreamResult:
+    """Run the claude CLI, parsing ``stream-json`` output as it arrives.
+
+    Streaming exists for the failure path: under ``--output-format json`` the
+    CLI prints nothing until it finishes, so a call killed at its timeout left
+    no trace of work it had already done (#421 — two briefing runs on
+    2026-07-26 each discarded minutes of billed output). Here the text produced
+    so far rides out on ``TimeoutExpired.output``, which the caller already
+    feeds to ``_save_partial_output``.
+
+    Raises ``subprocess.TimeoutExpired`` — same contract as ``subprocess.run``.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+        env=env,
+    )
+    state = StreamState()
+    text_lines: list[str] = []
+    stderr_chunks: list[bytes] = []
+
+    # Each reader closes the pipe it owns. Closing from the main thread instead
+    # could pull the file object out from under a blocked read; leaving them to
+    # garbage collection leaks descriptors in the long-lived web process, which
+    # calls this on every briefing/chat run.
+    def _read_stdout() -> None:
+        try:
+            for raw in proc.stdout:
+                line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                if line:
+                    text_lines.extend(consume_stream_line(line, state))
+        finally:
+            proc.stdout.close()
+
+    def _read_stderr() -> None:
+        # Drained concurrently: a large stderr write would otherwise fill the
+        # OS pipe buffer and block the child mid-run.
+        try:
+            for chunk in iter(lambda: proc.stderr.read(4096), b""):
+                stderr_chunks.append(chunk)
+        finally:
+            proc.stderr.close()
+
+    readers = [
+        threading.Thread(target=_read_stdout, daemon=True),
+        threading.Thread(target=_read_stderr, daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+
+    def _finish_readers() -> None:
+        for reader in readers:
+            reader.join(timeout=_READER_JOIN_TIMEOUT_SEC)
+
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        _finish_readers()
+        _log_api_errors(state, label)
+        raise subprocess.TimeoutExpired(
+            cmd, timeout, output=_collected_text(text_lines, state),
+        ) from None
+
+    _finish_readers()
+    _log_api_errors(state, label)
+    return _StreamResult(
+        returncode=proc.returncode,
+        stdout=state.result_raw or "",
+        stderr=b"".join(stderr_chunks).decode("utf-8", errors="replace"),
+    )
+
+
+def _collected_text(text_lines: list[str], state: StreamState) -> str:
+    """Join the streamed assistant text, including the unterminated last line."""
+    parts = list(text_lines)
+    if state.text_buf:
+        parts.append(state.text_buf)
+    return "\n".join(parts)
+
+
+def _log_api_errors(state: StreamState, label: str) -> None:
+    """Surface upstream API errors that the process exit code hides.
+
+    The WebSearch server tool answers an overload with an "API Error: 529"
+    tool result and the model just retries the query, so the run still exits 0
+    while burning minutes. Without this the only record is the claude CLI's own
+    session transcript.
+    """
+    if not state.api_errors:
+        return
+    shown = state.api_errors[:_API_ERRORS_LOGGED_MAX]
+    suffix = "" if len(state.api_errors) <= _API_ERRORS_LOGGED_MAX else " …"
+    logger.warning(
+        "%d in-session API error(s) during [%s] — the model retried these, "
+        "which inflates wall-clock time: %s%s",
+        len(state.api_errors), label, "; ".join(shown), suffix,
+    )
 
 
 def _parse_and_log_usage(stdout: str, label: str) -> str:
@@ -138,7 +272,7 @@ def build_env(auth_mode: str) -> dict[str, str]:
 def run_claude(
     prompt: str,
     label: str,
-    timeout: int = 300,
+    timeout: int = TIMEOUT_CLAUDE_DEFAULT,
     max_attempts: int = RETRY_MAX_ATTEMPTS,
 ) -> str:
     """Invoke the claude CLI as a subprocess and return the result.
@@ -148,6 +282,15 @@ def run_claude(
 
     Anthropic API 5xx errors (e.g. 529 Overloaded) are retried with exponential
     backoff up to ``max_attempts`` times.
+
+    ``timeout`` defaults to ``TIMEOUT_CLAUDE_DEFAULT`` (900s), sized for the long
+    tail of WebSearch-heavy prompts rather than for interactive latency: a
+    timeout kills the subprocess and throws away everything it has produced, and
+    ``--output-format json`` emits nothing until the very end, so a budget set
+    too tight discards minutes of billed work. Callers on a synchronous or
+    user-facing path should pass a shorter explicit ``timeout`` — every current
+    consumer is an offline batch job (briefing, weekly recap, evaluator, wordset,
+    self-agent profile, XSS intel).
     """
     if max_attempts < 1:
         raise ValueError(f"max_attempts must be >= 1 (got {max_attempts})")
@@ -160,7 +303,13 @@ def run_claude(
     model = get_model()
     cmd = [
         claude_path, "-p", prompt,
-        "--output-format", "json",
+        # stream-json (rather than json) so text is readable before the call
+        # ends — that is what makes a timed-out run salvageable (#421).
+        # --verbose is required by the CLI for stream-json under -p, and
+        # --include-partial-messages is what emits the incremental deltas.
+        "--output-format", "stream-json",
+        "--verbose",
+        "--include-partial-messages",
         "--allowedTools", "WebSearch",
         "--model", model,
         # Project-level settings.local.json can pre-approve Skill(*) and MCP
@@ -180,14 +329,7 @@ def run_claude(
             label, timeout, attempt, max_attempts,
         )
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                stdin=subprocess.DEVNULL,
-                env=env,
-            )
+            result = _stream_claude(cmd, env, timeout, label)
         except subprocess.TimeoutExpired as exc:
             logger.error("claude CLI timeout: %s (%ds)", label, timeout)
             _save_partial_output(label, exc.stdout)

@@ -17,6 +17,12 @@ type Props = {
   notionReady: boolean
   notionState: Record<number, NotionSaveState>
   onNotionSave: (idx: number) => void
+  /**
+   * Grow to fill the available height instead of capping at 60vh. Used by the
+   * split view, where the surrounding pane already has a definite height and
+   * the composer must stay pinned below the scrolling log.
+   */
+  fill?: boolean
 }
 
 export function ChatMessageList({
@@ -26,11 +32,15 @@ export function ChatMessageList({
   notionReady,
   notionState,
   onNotionSave,
+  fill = false,
 }: Props) {
   return (
-    <Card>
+    <Card className={cn(fill && "flex min-h-0 flex-1 flex-col")}>
       <CardContent
-        className="max-h-[60vh] space-y-3 overflow-y-auto pt-6"
+        className={cn(
+          "space-y-3 overflow-y-auto pt-6",
+          fill ? "min-h-0 flex-1" : "max-h-[60vh]",
+        )}
         data-testid="chat-log"
       >
         {messages.length === 0 ? (
@@ -145,6 +155,8 @@ function NotionSaveRow({
           ? "追記中…"
           : status === "saved"
           ? "✓ Notion に追記済"
+          : status === "error"
+          ? "追記を再試行"
           : "Notion ブリーフィングに追記"}
       </Button>
       {status === "saved" && state?.url && (
@@ -157,6 +169,16 @@ function NotionSaveRow({
         >
           ページを開く
         </a>
+      )}
+      {status === "saved" && state?.localSaved && (
+        <span className="text-muted-foreground" data-testid="local-save-note">
+          ローカル md にも追記済
+        </span>
+      )}
+      {status === "saved" && state?.localSaved === false && (
+        <span className="text-destructive" data-testid="local-save-error">
+          ローカル md への追記に失敗: {state.localError ?? "unknown error"}
+        </span>
       )}
       {status === "error" && state?.error && (
         <span className="text-destructive" data-testid="notion-save-error">

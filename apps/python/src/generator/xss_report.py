@@ -1,6 +1,7 @@
 from datetime import date
 from src.claude_runner import run_claude
 from src.config import XssIntelConfig
+from src.constants import TIMEOUT_CLAUDE_DEFAULT
 from src.generator.prompt import render
 from src.logger import get_logger
 from src.prompt_safety import neutralize_user_text
@@ -24,6 +25,6 @@ def generate_xss_report(config: XssIntelConfig) -> str:
 
     logger.debug("target frameworks: %s / libraries: %s", frameworks, libraries)
 
-    text = run_claude(prompt, "XSS Intel", timeout=300)
+    text = run_claude(prompt, "XSS Intel", timeout=TIMEOUT_CLAUDE_DEFAULT)
     logger.info("XSS report generated (%d chars)", len(text))
     return text

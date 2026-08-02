@@ -22,6 +22,10 @@ export type ChatStateContextValue = {
     updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[]),
   ) => void
   reset: () => void
+  // False until the sessionStorage rehydrate effect has run. Consumers that
+  // react to *new* messages (e.g. the Notion/local auto-save) need this to
+  // tell a restored history apart from a turn that just completed.
+  hydrated: boolean
 }
 
 // Bumped if the persisted shape changes incompatibly.
@@ -116,8 +120,8 @@ export function ChatStateProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<ChatStateContextValue>(
-    () => ({ messages, setMessages, reset }),
-    [messages, setMessages, reset],
+    () => ({ messages, setMessages, reset, hydrated }),
+    [messages, setMessages, reset, hydrated],
   )
 
   return (

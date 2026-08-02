@@ -2,7 +2,7 @@
 import type { ReactNode } from "react"
 
 import { createJobStoreProvider } from "./createJobStoreProvider"
-import { parseSseChunk } from "./sse"
+import { appendSseMessageToAnswer, parseSseChunk } from "./sse"
 
 /**
  * Chat-flavored job-backed store. Owns the *currently in-flight* chat turn
@@ -216,10 +216,10 @@ const { Provider, useStore } = createJobStoreProvider<
           if (ev.type === "message") {
             setState((prev) => ({
               ...prev,
-              assistantContent:
-                prev.assistantContent +
-                (prev.assistantContent ? "\n" : "") +
+              assistantContent: appendSseMessageToAnswer(
+                prev.assistantContent,
                 ev.data,
+              ),
             }))
           } else if (ev.type === "stale_session") {
             // Backend wiped .sessions/<date>; ChatForm sees this flag on

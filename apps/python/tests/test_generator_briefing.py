@@ -4,14 +4,18 @@ import pytest
 
 from tests.conftest import HIJACKED_SKILL_COMPLETION_REPORT
 from src.config import BriefingConfig, Conflict, GeopoliticalConfig, PortfolioConfig, WatchEvent, WatchSector
-from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING
+from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING, TIMEOUT_BRIEFING_SECTORS
 from src.generator.briefing import (
+    SECTORS_FAILED_NOTICE,
     build_geopolitical_context,
     build_watch_events_context,
     build_watch_sectors_context,
     generate_briefing,
+    generate_sectors,
+    is_degraded_briefing,
     load_briefing_few_shot,
     looks_like_briefing,
+    merge_recovered_sectors,
 )
 
 
@@ -133,13 +137,76 @@ class TestGenerateBriefing:
         assert "セクター動向" in result
         assert "セクター結果" in result
 
-    def test_main_failure_raises(self):
+    def test_main_failure_keeps_successful_sector_sweep(self):
+        """Verifies: a main-analysis failure degrades to a sectors-only briefing.
+        Why: main and sectors run independently, and a WebSearch 529 storm can
+        blow the main analysis' wall clock while the sector sweep finishes fine
+        (observed 2026-07-26: a 10,721-char sweep was discarded). Raising here
+        threw away work that was already paid for.
+        """
         config = _make_config()
 
         def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
-                raise RuntimeError("API error")
-            return "sectors ok"
+                raise RuntimeError("claude CLI timed out (メイン分析)")
+            return "### 今日のセクター動向\n\n" + "セクター本文。" * 40
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            result = generate_briefing("PLTR: +2%", config)
+
+        assert "セクター本文。" in result
+        assert "メイン分析の取得に失敗しました" in result
+        assert "claude CLI timed out" in result
+
+    def test_main_failure_output_still_looks_like_a_briefing(self):
+        """Regression guard: the degraded body must clear looks_like_briefing().
+        A long claude CLI error detail (run_claude truncates at 2000 chars) must
+        not push the first "### " heading past _HEADING_SEARCH_WINDOW, or
+        handler.py would reject the body and discard the sweep anyway.
+        """
+        config = _make_config()
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                raise RuntimeError("x" * 2000)
+            return "### 今日のセクター動向\n\n" + "セクター本文。" * 40
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            result = generate_briefing("PLTR: +2%", config)
+
+        assert looks_like_briefing(result) is True
+
+    def test_degraded_bodies_are_detectable(self):
+        """Both half-failed shapes must be recognizable as degraded, so the
+        handler's skip guard can let a retry through (see test_handlers)."""
+        config = _make_config()
+        long_body = "### 今日の見出し\n\n" + "本文。" * 40
+
+        def main_fails(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                raise RuntimeError("boom")
+            return long_body
+
+        def sectors_fail(prompt, label, timeout, **kwargs):
+            if label == "セクタースイープ":
+                raise RuntimeError("boom")
+            return long_body
+
+        for mock in (main_fails, sectors_fail):
+            with patch("src.generator.briefing.run_claude", side_effect=mock):
+                assert is_degraded_briefing(generate_briefing("PLTR: +2%", config)) is True
+
+        with patch("src.generator.briefing.run_claude", side_effect=self._mock_run(
+            {"メイン分析": long_body, "セクタースイープ": long_body}
+        )):
+            assert is_degraded_briefing(generate_briefing("PLTR: +2%", config)) is False
+
+    def test_both_failures_raise(self):
+        """Nothing was produced, so there is no briefing to deliver."""
+        config = _make_config()
+
+        def mock(prompt, label, timeout, **kwargs):
+            raise RuntimeError("API error")
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
             with pytest.raises(RuntimeError, match="main analysis"):
@@ -239,3 +306,55 @@ class TestLoadBriefingFewShot:
         # 出力フォーマットの主要セクションを型として含む
         for heading in ("### 今日のサマリー", "### なぜ動いたか", "### 自分への示唆", "### 参考記事"):
             assert heading in text
+
+
+class TestMergeRecoveredSectors:
+    def test_replaces_failure_notice_with_recovered_sectors(self):
+        degraded = (
+            "### 本日の相場\n本文\n\n---\n\n"
+            f"{SECTORS_FAILED_NOTICE}\n"
+            "claude CLI error [セクタースイープ] rc=1: {...}"
+        )
+
+        merged = merge_recovered_sectors(degraded, "### 半導体\n強い")
+
+        assert SECTORS_FAILED_NOTICE not in merged
+        assert merged.startswith("### 本日の相場\n本文")
+        assert merged.endswith("## セクター動向\n\n### 半導体\n強い")
+
+    def test_body_without_failure_notice_is_unchanged(self):
+        body = "### 本日の相場\n本文\n\n---\n\n## セクター動向\n\n### 半導体\n強い"
+
+        assert merge_recovered_sectors(body, "新しいセクター") == body
+
+
+class TestGenerateSectors:
+    def test_runs_only_the_sector_sweep_and_returns_its_text(self):
+        config = _make_config()
+        calls = []
+
+        def mock(prompt, label, timeout, **kwargs):
+            calls.append((label, timeout, kwargs.get("max_attempts")))
+            return "### 半導体\n強い"
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            result = generate_sectors("PLTR: +2%", config)
+
+        assert result == "### 半導体\n強い"
+        assert calls == [
+            ("セクタースイープ", TIMEOUT_BRIEFING_SECTORS, RETRY_MAX_ATTEMPTS_BRIEFING)
+        ]
+
+    def test_prompt_carries_the_configured_watch_sectors(self):
+        config = _make_config(watch_sectors=[WatchSector(sector="防衛", tickers=["RTX"])])
+        prompts = []
+
+        def mock(prompt, label, timeout, **kwargs):
+            prompts.append(prompt)
+            return "ok"
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            generate_sectors("PLTR: +2%", config)
+
+        assert "防衛" in prompts[0]
+        assert "RTX" in prompts[0]

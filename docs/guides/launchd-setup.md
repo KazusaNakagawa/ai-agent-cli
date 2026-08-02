@@ -2,12 +2,43 @@
 
 macOS uses **launchd** instead of cron. `bin/run.sh` (root-level wrapper) sources `.env` and delegates to `apps/python/bin/run.sh`, so API credentials are available in non-interactive shells.
 
+> This is the **currently active** setup on the maintainer's machine. cron + `pmset` is the alternative documented in [cron-setup.md](cron-setup.md). Use one or the other — running both would trigger the briefing twice.
+
+**Why launchd rather than cron:** `man launchd.plist` states it plainly — *"Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up."* On a lid-closed, battery-powered Mac a scheduled `pmset` wake only produces a ~20-second DarkWake, so a 05:00 cron job never fires and is never retried. launchd runs the missed invocation at the next wake instead.
+
 **Schedule behaviour:**
 
 | Day | What runs |
 |---|---|
 | Mon – Sun | `python -m src.handler` (daily market briefing) |
 | Fri | `python -m src.handler` → `python -m src.weekly_handler` (daily + weekly recap) |
+
+## DarkWake severs the sector sweep — the recovery job
+
+On a lid-closed, battery-powered Mac the 05:00 job fires **inside a DarkWake**, which lasts about 45 seconds before macOS goes back to sleep. The claude CLI's HTTPS connection dies with `API Error: Connection closed mid-response`, and because the sector sweep is the long half of the pipeline (~20 web searches) it is the half that reliably loses the race.
+
+Measured on 2026-07-31 (`pmset -g log`):
+
+| Time | Event |
+|---|---|
+| 05:06:54 | DarkWake, `Using BATT` — launchd starts the briefing |
+| 05:07:39 | `Entering Sleep state due to 'Maintenance Sleep'` — 903 s asleep |
+| 05:22:42 / 05:38:31 | Two more DarkWake → sleep cycles |
+| 05:54:19 | Sector sweep fails; wall clock 47 min against only 3 min of actual API time |
+
+`caffeinate -ims` in `apps/python/bin/run.sh` does **not** prevent this: `man caffeinate` restricts `-s` to AC power, and the machine was on battery. Retrying in-process does not help either — the retry lands in the same sleep window.
+
+The fix is a second launchd job that redoes **only** the sector sweep once the Mac is genuinely awake:
+
+```bash
+cp launchd/com.ai-agent.recovery.plist ~/Library/LaunchAgents/   # edit paths first
+plutil -lint ~/Library/LaunchAgents/com.ai-agent.recovery.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ai-agent.recovery.plist
+```
+
+It is scheduled once a day at 08:00 and is a no-op unless today's `briefing_YYYY-MM-DD.md` carries the sector-failure notice — measured at 1.2 s with no claude call on a day the briefing succeeded. Before spending anything it calls `src.power.is_system_awake()`, which reads the last `Sleep` / `Wake` / `DarkWake` event from `pmset -g log` and defers when the machine is not fully awake. A single slot suffices because launchd runs a missed one as soon as the Mac wakes, so in practice it fires right when the lid opens. On success it splices the sweep into today's MD and appends it to the same Notion page — the main analysis is never re-run, so a recovery costs roughly half a full re-briefing.
+
+Run it by hand any time with `bin/recover.sh`.
 
 ## 0. Define variables
 
@@ -58,10 +89,10 @@ Save the following to `$PLIST`:
         <string>/Users/YOUR_USERNAME</string>
     </dict>
 
-    <!-- Every day 07:00 (no Weekday key = all days) -->
+    <!-- Every day 05:00 (no Weekday key = all days) -->
     <key>StartCalendarInterval</key>
     <dict>
-        <key>Hour</key><integer>7</integer>
+        <key>Hour</key><integer>5</integer>
         <key>Minute</key><integer>0</integer>
     </dict>
 
@@ -90,11 +121,15 @@ sed \
 ## 3. Register and verify
 
 ```bash
-# Register
-launchctl load "$PLIST"
+# Validate, then register (`launchctl load` is deprecated)
+plutil -lint "$PLIST"
+launchctl bootstrap gui/$(id -u) "$PLIST"
 
 # Confirm registered (shows "-  0  <LABEL>")
 launchctl list | grep "$(whoami)"
+
+# Confirm the schedule launchd actually holds
+launchctl print "gui/$(id -u)/$LABEL" | grep -A 4 descriptor
 
 # Test trigger immediately
 launchctl start "$LABEL"
@@ -106,7 +141,7 @@ tail -f "$PROJECT/apps/python/log/launchd.stderr.log"
 ## 4. Unregister (if needed)
 
 ```bash
-launchctl unload "$PLIST"
+launchctl bootout "gui/$(id -u)/$LABEL"
 ```
 
 ## Requirements

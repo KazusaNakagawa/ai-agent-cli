@@ -2,6 +2,9 @@
 import { useRef } from "react"
 
 import {
+  axisLabelIndices,
+  formatMetricValue,
+  formatShortTime,
   metricValue,
   niceScale,
   stackedTotal,
@@ -21,11 +24,9 @@ type Props = {
 
 const CHART_HEIGHT = 240
 const Y_AXIS_WIDTH = 48
-
-// Trim trailing zeros so tick labels read "0.5" / "1000" rather than "0.50".
-function formatTick(value: number): string {
-  return Number(value.toFixed(4)).toLocaleString("en-US")
-}
+// A day rarely holds more than a handful of runs, but a busy chat day can; above
+// this many bars the time labels overlap, so they get thinned.
+const MAX_X_LABELS = 12
 
 // Pure presentational SVG-free bar chart. Bars are scaled against a "nice"
 // rounded max so they align with horizontal gridlines drawn at readable
@@ -53,6 +54,8 @@ export function UsageBarChart({
   )
   const max = Math.max(...values, 1)
   const { niceMax, ticks } = niceScale(max)
+
+  const labelled = new Set(axisLabelIndices(records.length, MAX_X_LABELS))
 
   const focusBar = (index: number) => {
     const clamped = Math.max(0, Math.min(records.length - 1, index))
@@ -101,15 +104,18 @@ export function UsageBarChart({
             className="absolute right-2 -translate-y-1/2 text-[11px] tabular-nums text-muted-foreground"
             style={{ bottom: `${(t / niceMax) * 100}%` }}
           >
-            {formatTick(t)}
+            {formatMetricValue(metric, t)}
           </span>
         ))}
       </div>
 
+      {/* Plot column: the framed plot area plus the x-axis label row beneath it,
+          so the labels share the plot's width and stay clear of the legend. */}
+      <div className="flex min-w-0 flex-1 flex-col">
       {/* Plot area: gridlines behind, bars in front. Left + bottom = axis frame. */}
       <div
         data-testid="usage-plot-area"
-        className="relative flex-1 border-b border-l border-border"
+        className="relative w-full border-b border-l border-border"
         style={{ height: CHART_HEIGHT }}
         onMouseLeave={() => onActiveChange?.(null)}
       >
@@ -141,7 +147,7 @@ export function UsageBarChart({
                 type="button"
                 data-testid={`usage-bar-${i}`}
                 data-active={active}
-                aria-label={`${record.label}: ${value}`}
+                aria-label={`${record.label} ${formatShortTime(record.timestamp)}: ${formatMetricValue(metric, value)}`}
                 title={record.label}
                 className="flex h-full flex-1 flex-col justify-end"
                 onMouseEnter={() => onActiveChange?.(i)}
@@ -186,6 +192,22 @@ export function UsageBarChart({
               </button>
             )
           })}
+        </div>
+      </div>
+
+        {/* X-axis: run start time under each bar. Cells mirror the bars' flex
+            layout (same gap, same flex-1) so labels line up; a thinned-out bar
+            still gets an empty cell to preserve that alignment. */}
+        <div className="flex gap-1" aria-hidden>
+          {records.map((record, i) => (
+            <span
+              key={`${record.timestamp}-label-${i}`}
+              data-testid={labelled.has(i) ? `usage-bar-x-label-${i}` : undefined}
+              className="min-w-0 flex-1 truncate pt-1 text-center text-[11px] tabular-nums text-muted-foreground"
+            >
+              {labelled.has(i) ? formatShortTime(record.timestamp) : ""}
+            </span>
+          ))}
         </div>
       </div>
 

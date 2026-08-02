@@ -233,6 +233,49 @@ def test_gather_context_is_day_based(tmp_path, monkeypatch):
     assert "note D" not in blob
 
 
+class TestJournalChatTrustedWriteDirs:
+    """#414: configured trusted_write_dirs flow into the claude CLI invocation
+    so Journal chat can actually save to a known directory instead of being
+    silently denied."""
+
+    async def test_configured_dirs_add_permission_flags(
+        self, authed_client, journal_dir, monkeypatch, tmp_path
+    ):
+        trusted_dir = str(tmp_path / "zenn-docs")
+        monkeypatch.setattr(
+            "web.routers.chat.config.get_journal_chat_trusted_write_dirs",
+            lambda: [trusted_dir],
+        )
+        factory = _make_popen()
+        monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+        response = await authed_client.post("/api/journal/chat", json={"question": "q"})
+        assert response.status_code == 202
+
+        cmd = factory.calls[0][0]
+        assert "--permission-mode" in cmd
+        assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
+        assert "--add-dir" in cmd
+        assert cmd[cmd.index("--add-dir") + 1] == trusted_dir
+
+    async def test_no_configured_dirs_omits_permission_flags(
+        self, authed_client, journal_dir, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "web.routers.chat.config.get_journal_chat_trusted_write_dirs",
+            lambda: [],
+        )
+        factory = _make_popen()
+        monkeypatch.setattr("web.routers.chat.subprocess.Popen", factory)
+
+        response = await authed_client.post("/api/journal/chat", json={"question": "q"})
+        assert response.status_code == 202
+
+        cmd = factory.calls[0][0]
+        assert "--add-dir" not in cmd
+        assert "--permission-mode" not in cmd
+
+
 class TestJournalChatVision:
     async def test_journal_chat_rejects_traversal_image_path(self, authed_client, journal_dir):
         """image_path outside IMAGES_ROOT is rejected with 400."""
