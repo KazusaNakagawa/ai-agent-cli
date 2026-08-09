@@ -1,16 +1,19 @@
 import json
+import re
 from unittest.mock import patch
 
 import pytest
 
 from src.fetcher.stocks import StockQuote
 from src.portfolio_snapshot import (
+    FX_SCENARIOS,
     Holdings,
     Position,
     Snapshot,
     build_snapshot,
     fetch_quotes,
     load_holdings,
+    main,
     render_snapshot,
     value_positions,
 )
@@ -260,8 +263,22 @@ class TestRender:
         text = render_snapshot(s)
         for heading in ("## 保有一覧", "## 通貨エクスポージャー", "## 区分別の集中度", "## ルール判定"):
             assert heading in text
-        assert "USD/JPY **140**" in text
         assert "マイクロソフト" in text
+
+    def test_every_configured_fx_scenario_is_priced(self):
+        # Driven off FX_SCENARIOS so adding a rate can't silently go unrendered.
+        s = _snapshot(
+            [Position(ticker="MSFT", shares=10)], quotes={"MSFT": _quote("MSFT", 500)}
+        )
+        text = render_snapshot(s)
+        for rate in FX_SCENARIOS:
+            assert re.search(
+                rf"USD/JPY \*\*{rate}\*\* まで円高が進んだ場合の総資産インパクト: \*\*-?\d+\.\d%\*\*",
+                text,
+            ), f"scenario {rate} is missing or its impact line changed shape"
+
+    def test_unknown_totals_render_as_a_dash_without_a_stray_currency_symbol(self):
+        assert "¥—" not in render_snapshot(_snapshot([]))
 
     def test_manual_rows_are_labelled_and_sourced(self):
         holdings = Holdings(
@@ -292,6 +309,43 @@ class TestRender:
             quotes={"MSFT": _quote("MSFT", 500)},
         )
         assert "## 口座をまたぐ銘柄の合計" in render_snapshot(split)
+
+
+class TestCli:
+    def _holdings_file(self, tmp_path):
+        path = tmp_path / "holdings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "as_of": "2026-08-09",
+                    "positions": [{"ticker": "MSFT", "shares": 10}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def test_fx_option_values_at_the_given_rate_without_fetching_it(self, tmp_path, capsys):
+        # Also the escape hatch for FX_FALLBACK: a stale fallback never has to
+        # be edited in code to value the portfolio at a chosen rate.
+        with patch(
+            "src.portfolio_snapshot.fetch_stock_quotes",
+            return_value={"MSFT": _quote("MSFT", 100)},
+        ) as fetch:
+            main(["--stdout", "--holdings", str(self._holdings_file(tmp_path)), "--fx", "200"])
+        out = capsys.readouterr().out
+        assert "USD/JPY **200.00**（指定値）" in out
+        assert all(call.args[0] != ["JPY=X"] for call in fetch.call_args_list)
+
+    def test_without_fx_option_the_rate_is_fetched(self, tmp_path, capsys):
+        def _quotes(tickers):
+            if tickers == ["JPY=X"]:
+                return {"JPY=X": _quote("JPY=X", 157.74, currency="JPY")}
+            return {"MSFT": _quote("MSFT", 100)}
+
+        with patch("src.portfolio_snapshot.fetch_stock_quotes", side_effect=_quotes):
+            main(["--stdout", "--holdings", str(self._holdings_file(tmp_path))])
+        assert "USD/JPY **157.74**（yfinance 直近値）" in capsys.readouterr().out
 
 
 class TestBuildSnapshot:

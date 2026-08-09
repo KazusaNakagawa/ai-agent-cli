@@ -13,6 +13,7 @@ Usage:
     python -m src.portfolio_snapshot                 # write the snapshot file
     python -m src.portfolio_snapshot --stdout        # print instead
     python -m src.portfolio_snapshot --holdings PATH # use another holdings file
+    python -m src.portfolio_snapshot --fx 150        # value at a fixed USD/JPY
 """
 from __future__ import annotations
 
@@ -226,6 +227,9 @@ class Snapshot:
     holdings: Holdings
     valued: list[Valued]
     fx: float
+    # True when the rate came from --fx rather than a live quote, so the header
+    # can't claim a hand-picked rate is the market's.
+    fx_is_override: bool = False
 
     @property
     def cash_jpy(self) -> float:
@@ -281,6 +285,7 @@ def build_snapshot(holdings: Holdings, *, fx: float | None = None) -> Snapshot:
         holdings=holdings,
         valued=value_positions(holdings.positions, fetch_quotes(holdings.positions), rate),
         fx=rate,
+        fx_is_override=fx is not None,
     )
 
 
@@ -291,6 +296,11 @@ def build_snapshot(holdings: Holdings, *, fx: float | None = None) -> Snapshot:
 
 def _yen(value: float | None) -> str:
     return "—" if value is None else f"{value:,.0f}"
+
+
+def _yen_symbol(value: float | None) -> str:
+    """Yen with its symbol, or a bare em dash — never a symbol with no number."""
+    return "—" if value is None else f"¥{value:,.0f}"
 
 
 def _pct(value: float | None) -> str:
@@ -319,9 +329,9 @@ def _render_header(s: Snapshot) -> list[str]:
     lines = [
         f"# ポートフォリオ・スナップショット {s.holdings.as_of}",
         "",
-        f"- USD/JPY **{s.fx:,.2f}**（yfinance 直近値）",
-        f"- 株式評価額 **¥{_yen(s.equity_jpy)}** ／ 現金 **¥{_yen(s.cash_jpy)}**"
-        f" ／ 総資産 **¥{_yen(s.total_jpy)}**",
+        f"- USD/JPY **{s.fx:,.2f}**（{'指定値' if s.fx_is_override else 'yfinance 直近値'}）",
+        f"- 株式評価額 **{_yen_symbol(s.equity_jpy)}** ／ 現金 **{_yen_symbol(s.cash_jpy)}**"
+        f" ／ 総資産 **{_yen_symbol(s.total_jpy)}**",
     ]
     if s.unvalued_tickers:
         lines.append(
@@ -445,10 +455,10 @@ def _render_rules(s: Snapshot) -> list[str]:
 
     if s.holdings.nisa_growth_remaining_jpy:
         lines.append(
-            f"- NISA成長投資枠 残 **¥{s.holdings.nisa_growth_remaining_jpy:,.0f}**"
+            f"- NISA成長投資枠 残 **{_yen_symbol(s.holdings.nisa_growth_remaining_jpy)}**"
             "（配当のある円建て・長期保有向け）"
         )
-    lines.append(f"- 現金余力 **¥{s.cash_jpy:,.0f}** → 分割エントリー何回分かの原資")
+    lines.append(f"- 現金余力 **{_yen_symbol(s.cash_jpy)}** → 分割エントリー何回分かの原資")
     return lines
 
 
@@ -476,10 +486,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--holdings", type=Path, default=HOLDINGS_PATH, help="path to the holdings file"
     )
+    parser.add_argument(
+        "--fx",
+        type=float,
+        default=None,
+        help=f"USD/JPY to value at, instead of fetching it (fallback when the fetch fails: {FX_FALLBACK})",
+    )
     args = parser.parse_args(argv)
 
     holdings = load_holdings(args.holdings)
-    text = render_snapshot(build_snapshot(holdings))
+    text = render_snapshot(build_snapshot(holdings, fx=args.fx))
 
     if args.stdout:
         print(text)
