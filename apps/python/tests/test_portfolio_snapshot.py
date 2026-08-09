@@ -6,6 +6,7 @@ import pytest
 
 from src.fetcher.stocks import StockQuote
 from src.portfolio_snapshot import (
+    EXAMPLE_PATH,
     FX_SCENARIOS,
     Holdings,
     Position,
@@ -82,10 +83,16 @@ class TestHoldingsParsing:
         position = Position.from_dict({"ticker": "MSFT", "_comment": "note"})
         assert position.ticker == "MSFT"
 
-    def test_absent_file_exits_with_a_pointer_to_the_example(self, tmp_path):
+    def test_absent_file_names_both_the_missing_path_and_the_template(self, tmp_path):
+        # With --holdings the missing file is not the default one, so the
+        # message has to name the path actually looked for.
+        missing = tmp_path / "nope.json"
         with pytest.raises(SystemExit) as excinfo:
-            load_holdings(tmp_path / "nope.json")
-        assert "holdings.json.example" in str(excinfo.value)
+            load_holdings(missing)
+        message = str(excinfo.value)
+        assert str(missing) in message
+        assert str(EXAMPLE_PATH) in message
+        assert EXAMPLE_PATH.exists(), "the template the message points at must be tracked"
 
 
 class TestQuoteFetching:
@@ -95,13 +102,13 @@ class TestQuoteFetching:
             Position(ticker="PLTR", shares=4, account="NISA"),
             Position(ticker="MSFT", shares=10),
         ]
-        with patch("src.portfolio_snapshot.fetch_stock_quotes", return_value={}) as fetch:
+        with patch("src.portfolio_snapshot.valuation.fetch_stock_quotes", return_value={}) as fetch:
             fetch_quotes(positions)
         assert fetch.call_args.args[0] == ["PLTR", "MSFT"]
 
     def test_manual_positions_are_never_quoted(self):
         positions = [Position(ticker="楽天VTI", manual_value_jpy=1000)]
-        with patch("src.portfolio_snapshot.fetch_stock_quotes") as fetch:
+        with patch("src.portfolio_snapshot.valuation.fetch_stock_quotes") as fetch:
             assert fetch_quotes(positions) == {}
         fetch.assert_not_called()
 
@@ -329,7 +336,7 @@ class TestCli:
         # Also the escape hatch for FX_FALLBACK: a stale fallback never has to
         # be edited in code to value the portfolio at a chosen rate.
         with patch(
-            "src.portfolio_snapshot.fetch_stock_quotes",
+            "src.portfolio_snapshot.valuation.fetch_stock_quotes",
             return_value={"MSFT": _quote("MSFT", 100)},
         ) as fetch:
             main(["--stdout", "--holdings", str(self._holdings_file(tmp_path)), "--fx", "200"])
@@ -343,7 +350,7 @@ class TestCli:
                 return {"JPY=X": _quote("JPY=X", 157.74, currency="JPY")}
             return {"MSFT": _quote("MSFT", 100)}
 
-        with patch("src.portfolio_snapshot.fetch_stock_quotes", side_effect=_quotes):
+        with patch("src.portfolio_snapshot.valuation.fetch_stock_quotes", side_effect=_quotes):
             main(["--stdout", "--holdings", str(self._holdings_file(tmp_path))])
         assert "USD/JPY **157.74**（yfinance 直近値）" in capsys.readouterr().out
 
@@ -352,7 +359,7 @@ class TestBuildSnapshot:
     def test_fetches_fx_and_quotes_once(self):
         holdings = Holdings(as_of="2026-08-09", positions=[Position(ticker="MSFT", shares=2)])
         with patch(
-            "src.portfolio_snapshot.fetch_stock_quotes",
+            "src.portfolio_snapshot.valuation.fetch_stock_quotes",
             return_value={"MSFT": _quote("MSFT", 500)},
         ):
             s = build_snapshot(holdings, fx=FX)
