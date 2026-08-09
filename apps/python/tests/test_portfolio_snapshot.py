@@ -11,6 +11,7 @@ from src.portfolio_snapshot import (
     FX_FALLBACK,
     FX_SCENARIOS,
     Holdings,
+    HoldingsError,
     Position,
     Snapshot,
     build_snapshot,
@@ -90,7 +91,7 @@ class TestHoldingsParsing:
         # With --holdings the missing file is not the default one, so the
         # message has to name the path actually looked for.
         missing = tmp_path / "nope.json"
-        with pytest.raises(SystemExit) as excinfo:
+        with pytest.raises(HoldingsError) as excinfo:
             load_holdings(missing)
         message = str(excinfo.value)
         assert str(missing) in message
@@ -101,7 +102,7 @@ class TestHoldingsParsing:
     def test_malformed_json_names_the_file_and_the_position(self, tmp_path):
         path = tmp_path / "holdings.json"
         path.write_text('{"as_of": "2026-08-09",}', encoding="utf-8")
-        with pytest.raises(SystemExit) as excinfo:
+        with pytest.raises(HoldingsError) as excinfo:
             load_holdings(path)
         message = str(excinfo.value)
         assert "not valid JSON" in message
@@ -390,6 +391,23 @@ class TestRender:
         for rate in FX_SCENARIOS:
             assert f"USD/JPY **{rate}**" in text
 
+    @pytest.mark.parametrize("configured", [[0, -140, 130], [0], [-1]])
+    def test_unusable_configured_rates_are_dropped(self, configured):
+        # A hand-edited briefing.json can hold a zero or negative rate; those
+        # would render a nonsense scenario, so they never reach the output.
+        s = _snapshot(
+            [Position(ticker="MSFT", shares=10)], quotes={"MSFT": _quote("MSFT", 500)}
+        )
+        with patch(
+            "src.portfolio_snapshot.render.get_fx_scenario_rates", return_value=configured
+        ):
+            text = render_snapshot(s)
+        assert "USD/JPY **0**" not in text
+        assert "USD/JPY **-140**" not in text
+        expected = [r for r in configured if r > 0] or list(FX_SCENARIOS)
+        for rate in expected:
+            assert f"USD/JPY **{rate:g}**" in text
+
     def test_every_configured_fx_scenario_is_priced(self):
         # Driven off FX_SCENARIOS so adding a rate can't silently go unrendered.
         s = _snapshot(
@@ -461,6 +479,11 @@ class TestCli:
         out = capsys.readouterr().out
         assert "USD/JPY **200.00**（指定値）" in out
         assert all(call.args[0] != ["JPY=X"] for call in fetch.call_args_list)
+
+    def test_a_holdings_error_exits_with_the_message_not_a_traceback(self, tmp_path):
+        with pytest.raises(SystemExit) as excinfo:
+            main(["--stdout", "--holdings", str(tmp_path / "absent.json")])
+        assert "holdings file not found" in str(excinfo.value)
 
     @pytest.mark.parametrize("bad", ["0", "-150"])
     def test_non_positive_fx_is_rejected_before_any_fetch(self, tmp_path, bad):

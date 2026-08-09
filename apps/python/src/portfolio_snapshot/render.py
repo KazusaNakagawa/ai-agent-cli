@@ -22,10 +22,17 @@ FX_SCENARIOS = (150, 140, 130)
 def fx_scenarios() -> tuple[float, ...]:
     """Scenario rates, preferring briefing.json so the two surfaces can't drift.
 
-    The snapshot must keep working without briefing.json (it is optional), so
-    an absent or empty section falls back to ``FX_SCENARIOS``.
+    The snapshot must keep working without briefing.json (it is optional), and
+    a hand-edited section can hold a zero or a negative rate that would render
+    a nonsense scenario — so unusable values are dropped and, if nothing
+    usable remains, ``FX_SCENARIOS`` is used.
     """
-    return tuple(get_fx_scenario_rates()) or FX_SCENARIOS
+    configured = tuple(
+        float(rate)
+        for rate in get_fx_scenario_rates()
+        if isinstance(rate, (int, float)) and not isinstance(rate, bool) and rate > 0
+    )
+    return configured or FX_SCENARIOS
 
 
 # Allocation guidelines from the 2026-08-04 analyses, checked automatically so a

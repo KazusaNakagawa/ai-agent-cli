@@ -33,6 +33,14 @@ def bucket_label(bucket: str) -> str:
     return BUCKET_LABELS.get(bucket, bucket)
 
 
+class HoldingsError(Exception):
+    """The holdings file is missing or unreadable.
+
+    A domain exception rather than SystemExit so this layer stays usable as a
+    library; the CLI turns it into an exit with the message.
+    """
+
+
 @dataclass(frozen=True)
 class Position:
     """One line of the holdings file."""
@@ -99,7 +107,7 @@ def load_holdings(path: Path = HOLDINGS_PATH) -> Holdings:
     if not path.exists():
         # Name both paths: with --holdings the missing file is not the default
         # one, and "copy the example to <that path>" is the actionable fix.
-        raise SystemExit(
+        raise HoldingsError(
             f"holdings file not found: {path}\n"
             f"copy the template and fill in shares / avg_cost:\n"
             f"  cp {EXAMPLE_PATH} {path}"
@@ -108,7 +116,7 @@ def load_holdings(path: Path = HOLDINGS_PATH) -> Holdings:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         # Hand-edited config: a raw traceback hides which file and where.
-        raise SystemExit(
+        raise HoldingsError(
             f"holdings file is not valid JSON: {path}\n"
             f"  line {exc.lineno}, column {exc.colno}: {exc.msg}\n"
             f"a trailing comma or an unquoted key is the usual cause; "

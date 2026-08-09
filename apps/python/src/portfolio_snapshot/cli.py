@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .models import HOLDINGS_PATH, OUTPUT_DIR, load_holdings
+from .models import HOLDINGS_PATH, OUTPUT_DIR, HoldingsError, load_holdings
 from .render import render_snapshot
 from .valuation import FX_FALLBACK, build_snapshot
 
@@ -27,7 +27,12 @@ def main(argv: list[str] | None = None) -> None:
         # multiple of this rate, so a non-positive one has no useful output.
         parser.error(f"--fx must be a positive rate, got {args.fx}")
 
-    holdings = load_holdings(args.holdings)
+    try:
+        holdings = load_holdings(args.holdings)
+    except HoldingsError as exc:
+        # The message is written for a person at a terminal; a traceback here
+        # would only bury it.
+        raise SystemExit(str(exc)) from exc
     text = render_snapshot(build_snapshot(holdings, fx=args.fx))
 
     if args.stdout:
