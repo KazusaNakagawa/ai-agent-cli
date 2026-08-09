@@ -1,0 +1,40 @@
+{
+  "as_of": "2026-01-01",
+  "source": "どの残高データを写したかを書く（例: 楽天証券 保有残高 2026-01-01 取得）。株式は yfinance で現在値に更新されるが、manual_value_jpy の行はここに書いた時点の評価額のまま。",
+  "cash": {
+    "JPY": 0,
+    "USD": 0
+  },
+  "nisa_growth_remaining_jpy": 0,
+  "positions": [
+    {
+      "_comment": "株式・ETF: yfinance で現在値を取得する行。avg_cost は現地通貨（米国株は USD、東証は円）。bucket は ai_growth / high_risk / healthcare / defense / japan / defensive / index / other。",
+      "ticker": "MSFT",
+      "name": "マイクロソフト",
+      "shares": 10,
+      "avg_cost": 289.22,
+      "account": "特定",
+      "bucket": "ai_growth"
+    },
+    {
+      "_comment": "円建てだが中身が外貨の商品は fx_exposure で実質の外貨比率を指定する（省略時は上場通貨から判定：USD建て=1.0 / 円建て=0.0）。",
+      "ticker": "1554.T",
+      "name": "上場MSCI世界株",
+      "shares": 100,
+      "avg_cost": 2549.0,
+      "account": "特定",
+      "bucket": "index",
+      "fx_exposure": 0.95
+    },
+    {
+      "_comment": "投資信託: yfinance に無いので manual_value_jpy / manual_cost_jpy に円建ての評価額・取得原価を直接書く。出力では「手入力」と表示される。",
+      "ticker": "楽天VTI",
+      "name": "楽天・全米株式",
+      "account": "つみたてNISA",
+      "bucket": "index",
+      "fx_exposure": 1.0,
+      "manual_value_jpy": 1000000,
+      "manual_cost_jpy": 400000
+    }
+  ]
+}
