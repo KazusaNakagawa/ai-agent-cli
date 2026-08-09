@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from unittest.mock import patch
 
@@ -7,11 +8,13 @@ import pytest
 from src.fetcher.stocks import StockQuote
 from src.portfolio_snapshot import (
     EXAMPLE_PATH,
+    FX_FALLBACK,
     FX_SCENARIOS,
     Holdings,
     Position,
     Snapshot,
     build_snapshot,
+    fetch_fx,
     fetch_quotes,
     load_holdings,
     main,
@@ -158,11 +161,74 @@ class TestValuation:
         )[0]
         assert valued.value_jpy is None
 
+    def test_a_price_of_zero_is_valued_at_zero_not_left_unknown(self):
+        # A written-off holding still quotes; 0 must not read as "no price".
+        valued = value_positions(
+            [Position(ticker="DEAD", shares=10, avg_cost=50)], {"DEAD": _quote("DEAD", 0.0)}, FX
+        )[0]
+        assert valued.value_jpy == 0.0
+        assert valued.pnl_pct == -100.0
+
+    def test_zero_shares_is_valued_at_zero(self):
+        valued = value_positions(
+            [Position(ticker="MSFT", shares=0)], {"MSFT": _quote("MSFT", 500)}, FX
+        )[0]
+        assert valued.value_jpy == 0.0
+
     def test_failed_quote_is_left_unvalued_and_keeps_the_error(self):
         quote = StockQuote(ticker="MSFT", error="Stock fetch error (boom)")
         valued = value_positions([Position(ticker="MSFT", shares=10)], {"MSFT": quote}, FX)[0]
         assert valued.value_jpy is None
         assert valued.error == "Stock fetch error (boom)"
+
+
+class TestFetchFx:
+    def test_missing_usd_jpy_quote_falls_back_and_warns(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            with patch("src.portfolio_snapshot.valuation.fetch_stock_quotes", return_value={}):
+                assert fetch_fx() == FX_FALLBACK
+        assert "USD/JPY fetch failed" in caplog.text
+
+    def test_quote_without_a_price_falls_back_too(self, caplog):
+        quote = StockQuote(ticker="JPY=X", error="Stock fetch error (boom)")
+        with caplog.at_level(logging.WARNING):
+            with patch(
+                "src.portfolio_snapshot.valuation.fetch_stock_quotes",
+                return_value={"JPY=X": quote},
+            ):
+                assert fetch_fx() == FX_FALLBACK
+        assert "USD/JPY fetch failed" in caplog.text
+
+    def test_a_good_quote_is_used_as_is(self):
+        with patch(
+            "src.portfolio_snapshot.valuation.fetch_stock_quotes",
+            return_value={"JPY=X": _quote("JPY=X", 157.74, currency="JPY")},
+        ):
+            assert fetch_fx() == 157.74
+
+
+class TestZeroValuedPositions:
+    """A position worth exactly 0 is known, not unknown — it must not vanish."""
+
+    def _zero(self):
+        return _snapshot(
+            [
+                Position(ticker="DEAD", shares=10, bucket="ai_growth", account="特定"),
+                Position(ticker="MSFT", shares=10, bucket="ai_growth", account="特定"),
+            ],
+            quotes={"DEAD": _quote("DEAD", 0.0), "MSFT": _quote("MSFT", 100)},
+        )
+
+    def test_it_is_not_reported_as_unvalued(self):
+        assert self._zero().unvalued_tickers == []
+
+    def test_it_appears_in_the_per_ticker_and_bucket_totals(self):
+        s = self._zero()
+        assert s.by_ticker()["DEAD"] == 0.0
+        assert s.by_bucket()["ai_growth"] == 10 * 100 * FX
+
+    def test_it_is_listed_in_the_table_with_a_zero_value(self):
+        assert "| DEAD |" in render_snapshot(self._zero())
 
 
 class TestFxExposure:

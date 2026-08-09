@@ -166,7 +166,9 @@ class Snapshot:
 
     @property
     def equity_jpy(self) -> float:
-        return sum(v.value_jpy for v in self.valued if v.value_jpy)
+        # `is not None`, not truthiness: a position valued at exactly 0 is
+        # held and known, unlike one whose value could not be determined.
+        return sum(v.value_jpy for v in self.valued if v.value_jpy is not None)
 
     @property
     def total_jpy(self) -> float:
@@ -191,7 +193,7 @@ class Snapshot:
     def by_bucket(self) -> dict[str, float]:
         out: dict[str, float] = {}
         for v in self.valued:
-            if v.value_jpy:
+            if v.value_jpy is not None:
                 out[v.position.bucket] = out.get(v.position.bucket, 0) + v.value_jpy
         return out
 
@@ -199,7 +201,7 @@ class Snapshot:
         """Value per ticker, summed across accounts."""
         out: dict[str, float] = {}
         for v in self.valued:
-            if v.value_jpy:
+            if v.value_jpy is not None:
                 out[v.position.ticker] = out.get(v.position.ticker, 0) + v.value_jpy
         return out
 
@@ -214,6 +216,6 @@ class Snapshot:
             {
                 v.position.account
                 for v in self.valued
-                if v.position.ticker == ticker and v.value_jpy
+                if v.position.ticker == ticker and v.value_jpy is not None
             }
         )

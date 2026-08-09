@@ -27,6 +27,7 @@ def fx_scenarios() -> tuple[float, ...]:
     """
     return tuple(get_fx_scenario_rates()) or FX_SCENARIOS
 
+
 # Allocation guidelines from the 2026-08-04 analyses, checked automatically so a
 # snapshot answers "am I inside my own rules" without re-deriving them.
 HIGH_RISK_BUCKET_MAX = 0.15  # the high-risk sleeve as a whole
@@ -86,7 +87,10 @@ def _render_positions(s: Snapshot) -> list[str]:
         "| 銘柄 | 口座 | 区分 | 株数 | 取得単価 | 現在値 | 評価額(円) | 損益率 | 比率 |",
         "|---|---|---|---:|---:|---:|---:|---:|---:|",
     ]
-    for v in sorted(s.valued, key=lambda x: (x.value_jpy or -1), reverse=True):
+    # Unvalued rows sort last; a genuine 0 keeps its place above them.
+    for v in sorted(
+        s.valued, key=lambda x: (x.value_jpy is not None, x.value_jpy or 0), reverse=True
+    ):
         p = v.position
         label = p.ticker + (f"<br>{p.name}" if p.name else "")
         lines.append(
@@ -166,7 +170,7 @@ def _render_rules(s: Snapshot) -> list[str]:
         f" → {'OK' if high_risk <= HIGH_RISK_BUCKET_MAX * 100 else '超過'}"
     )
     for v in s.valued:
-        if v.position.bucket == HIGH_RISK_BUCKET and v.value_jpy:
+        if v.position.bucket == HIGH_RISK_BUCKET and v.value_jpy is not None:
             w = s.weight(v.value_jpy) or 0
             lines.append(
                 f"  - {v.position.ticker} {w:.1f}%（1銘柄 {SINGLE_HIGH_RISK_MAX:.0%} 以内）"

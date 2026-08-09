@@ -51,11 +51,18 @@ def value_positions(
         price = quote.last_price if quote else None
         currency = quote.currency if quote else "USD"
         rate = 1.0 if currency == "JPY" else fx
+        # `is not None`, not truthiness: a price or a holding of exactly 0 is a
+        # known value, while a missing one has to stay unvalued.
+        priced = price is not None and p.shares is not None
         valued.append(
             Valued(
                 position=p,
-                value_jpy=price * p.shares * rate if (price and p.shares) else None,
-                cost_jpy=p.avg_cost * p.shares * rate if (p.avg_cost and p.shares) else None,
+                value_jpy=price * p.shares * rate if priced else None,
+                cost_jpy=(
+                    p.avg_cost * p.shares * rate
+                    if (p.avg_cost is not None and p.shares is not None)
+                    else None
+                ),
                 price=price,
                 currency=currency,
                 error=quote.error if quote else "no quote",
