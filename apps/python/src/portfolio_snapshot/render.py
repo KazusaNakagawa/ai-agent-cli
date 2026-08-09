@@ -4,6 +4,8 @@ Reads a ``Snapshot`` and returns text; it never fetches or computes valuations.
 """
 from __future__ import annotations
 
+from src.config import get_fx_scenario_rates
+
 from .models import (
     HIGH_RISK_BUCKET,
     INDEX_BUCKET,
@@ -12,9 +14,18 @@ from .models import (
     bucket_label,
 )
 
-# Yen-strengthening levels to price the portfolio against. Mirrors
-# briefing.json's fx.scenario_rates so both surfaces tell the same story.
+# Yen-strengthening levels to price the portfolio against, used when
+# briefing.json is absent or has no fx.scenario_rates.
 FX_SCENARIOS = (150, 140, 130)
+
+
+def fx_scenarios() -> tuple[float, ...]:
+    """Scenario rates, preferring briefing.json so the two surfaces can't drift.
+
+    The snapshot must keep working without briefing.json (it is optional), so
+    an absent or empty section falls back to ``FX_SCENARIOS``.
+    """
+    return tuple(get_fx_scenario_rates()) or FX_SCENARIOS
 
 # Allocation guidelines from the 2026-08-04 analyses, checked automatically so a
 # snapshot answers "am I inside my own rules" without re-deriving them.
@@ -122,12 +133,16 @@ def _render_fx_exposure(s: Snapshot) -> list[str]:
         f"| 円建て | {_yen(domestic)} | {_pct(s.weight(domestic))} |",
         "",
     ]
-    if s.total_jpy:
-        for rate in FX_SCENARIOS:
+    # s.fx can be anything --fx was given; a non-positive rate makes the ratio
+    # below meaningless (and divides by zero at 0), so say so instead.
+    if s.total_jpy and s.fx > 0:
+        for rate in fx_scenarios():
             impact = foreign * (rate / s.fx - 1) / s.total_jpy * 100
             lines.append(
-                f"- USD/JPY **{rate}** まで円高が進んだ場合の総資産インパクト: **{impact:.1f}%**"
+                f"- USD/JPY **{rate:g}** まで円高が進んだ場合の総資産インパクト: **{impact:.1f}%**"
             )
+    elif s.total_jpy:
+        lines.append("- USD/JPY が不正なため円高シナリオを計算できません。")
     return lines
 
 

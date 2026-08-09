@@ -22,6 +22,10 @@ def main(argv: list[str] | None = None) -> None:
         help=f"USD/JPY to value at, instead of fetching it (fallback when the fetch fails: {FX_FALLBACK})",
     )
     args = parser.parse_args(argv)
+    if args.fx is not None and args.fx <= 0:
+        # Rejected here rather than rendered: every value in the snapshot is a
+        # multiple of this rate, so a non-positive one has no useful output.
+        parser.error(f"--fx must be a positive rate, got {args.fx}")
 
     holdings = load_holdings(args.holdings)
     text = render_snapshot(build_snapshot(holdings, fx=args.fx))

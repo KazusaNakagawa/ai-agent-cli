@@ -95,6 +95,17 @@ class TestHoldingsParsing:
         assert EXAMPLE_PATH.exists(), "the template the message points at must be tracked"
 
 
+    def test_malformed_json_names_the_file_and_the_position(self, tmp_path):
+        path = tmp_path / "holdings.json"
+        path.write_text('{"as_of": "2026-08-09",}', encoding="utf-8")
+        with pytest.raises(SystemExit) as excinfo:
+            load_holdings(path)
+        message = str(excinfo.value)
+        assert "not valid JSON" in message
+        assert str(path) in message
+        assert "line 1, column" in message
+
+
 class TestQuoteFetching:
     def test_one_fetch_per_ticker_even_when_held_in_two_accounts(self):
         positions = [
@@ -204,6 +215,18 @@ class TestTotals:
         assert s.by_ticker()["PLTR"] == 104 * 100 * FX
         assert s.account_count("PLTR") == 2
 
+    def test_two_rows_in_one_account_are_not_counted_as_two_accounts(self):
+        # A split purchase inside 特定 is one holding, not a cross-account one.
+        s = _snapshot(
+            [
+                Position(ticker="MSFT", shares=5, account="特定"),
+                Position(ticker="MSFT", shares=5, account="特定"),
+            ],
+            quotes={"MSFT": _quote("MSFT", 100)},
+        )
+        assert s.account_count("MSFT") == 1
+        assert "## 口座をまたぐ銘柄の合計" not in render_snapshot(s)
+
     def test_unvalued_tickers_are_reported_rather_than_silently_dropped(self):
         s = _snapshot([Position(ticker="MSFT")], quotes={"MSFT": _quote("MSFT", 500)})
         assert s.unvalued_tickers == ["MSFT"]
@@ -271,6 +294,35 @@ class TestRender:
         for heading in ("## 保有一覧", "## 通貨エクスポージャー", "## 区分別の集中度", "## ルール判定"):
             assert heading in text
         assert "マイクロソフト" in text
+
+    def test_non_positive_fx_reports_instead_of_dividing_by_zero(self):
+        # --fx is rejected upstream, but a Snapshot can be built directly.
+        s = Snapshot(
+            holdings=Holdings(as_of="2026-08-09", positions=[], cash_jpy=1000),
+            valued=[],
+            fx=0.0,
+        )
+        text = render_snapshot(s)
+        assert "円高シナリオを計算できません" in text
+        assert "総資産インパクト" not in text
+
+    def test_scenario_rates_come_from_config_when_present(self):
+        s = _snapshot(
+            [Position(ticker="MSFT", shares=10)], quotes={"MSFT": _quote("MSFT", 500)}
+        )
+        with patch("src.portfolio_snapshot.render.get_fx_scenario_rates", return_value=[120]):
+            text = render_snapshot(s)
+        assert "USD/JPY **120**" in text
+        assert "USD/JPY **150**" not in text
+
+    def test_scenario_rates_fall_back_when_config_is_absent(self):
+        s = _snapshot(
+            [Position(ticker="MSFT", shares=10)], quotes={"MSFT": _quote("MSFT", 500)}
+        )
+        with patch("src.portfolio_snapshot.render.get_fx_scenario_rates", return_value=[]):
+            text = render_snapshot(s)
+        for rate in FX_SCENARIOS:
+            assert f"USD/JPY **{rate}**" in text
 
     def test_every_configured_fx_scenario_is_priced(self):
         # Driven off FX_SCENARIOS so adding a rate can't silently go unrendered.
@@ -343,6 +395,14 @@ class TestCli:
         out = capsys.readouterr().out
         assert "USD/JPY **200.00**（指定値）" in out
         assert all(call.args[0] != ["JPY=X"] for call in fetch.call_args_list)
+
+    @pytest.mark.parametrize("bad", ["0", "-150"])
+    def test_non_positive_fx_is_rejected_before_any_fetch(self, tmp_path, bad):
+        with patch("src.portfolio_snapshot.valuation.fetch_stock_quotes") as fetch:
+            with pytest.raises(SystemExit) as excinfo:
+                main(["--stdout", "--holdings", str(self._holdings_file(tmp_path)), "--fx", bad])
+        assert excinfo.value.code == 2  # argparse usage error
+        fetch.assert_not_called()
 
     def test_without_fx_option_the_rate_is_fetched(self, tmp_path, capsys):
         def _quotes(tickers):

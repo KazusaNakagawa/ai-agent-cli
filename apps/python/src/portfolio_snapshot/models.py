@@ -104,7 +104,17 @@ def load_holdings(path: Path = HOLDINGS_PATH) -> Holdings:
             f"copy the template and fill in shares / avg_cost:\n"
             f"  cp {EXAMPLE_PATH} {path}"
         )
-    return Holdings.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        # Hand-edited config: a raw traceback hides which file and where.
+        raise SystemExit(
+            f"holdings file is not valid JSON: {path}\n"
+            f"  line {exc.lineno}, column {exc.colno}: {exc.msg}\n"
+            f"a trailing comma or an unquoted key is the usual cause; "
+            f"compare against {EXAMPLE_PATH}"
+        ) from exc
+    return Holdings.from_dict(data)
 
 
 @dataclass(frozen=True)
@@ -194,4 +204,16 @@ class Snapshot:
         return out
 
     def account_count(self, ticker: str) -> int:
-        return sum(1 for v in self.valued if v.position.ticker == ticker and v.value_jpy)
+        """Distinct accounts holding this ticker.
+
+        Counted by account, not by row: one account can hold the same ticker on
+        several lines (a split purchase), and those must not read as "held
+        across accounts".
+        """
+        return len(
+            {
+                v.position.account
+                for v in self.valued
+                if v.position.ticker == ticker and v.value_jpy
+            }
+        )
