@@ -99,6 +99,45 @@ class TestHoldingsParsing:
         assert EXAMPLE_PATH.exists(), "the template the message points at must be tracked"
 
 
+    @pytest.mark.parametrize(
+        "data, expected",
+        [
+            ({"cash": {"JPY": "1,000,000"}, "positions": []}, "cash.JPY"),
+            ({"cash": {"USD": "abc"}, "positions": []}, "cash.USD"),
+            (
+                {"nisa_growth_remaining_jpy": "969,000", "positions": []},
+                "nisa_growth_remaining_jpy",
+            ),
+            ({"positions": [{"ticker": "MSFT", "shares": "10 shares"}]}, "MSFT.shares"),
+            ({"positions": [{"ticker": "MSFT", "avg_cost": "$289"}]}, "MSFT.avg_cost"),
+            (
+                {"positions": [{"ticker": "楽天VTI", "manual_value_jpy": "1,994,755"}]},
+                "楽天VTI.manual_value_jpy",
+            ),
+        ],
+    )
+    def test_a_non_numeric_field_names_the_field_instead_of_crashing_later(
+        self, data, expected
+    ):
+        # Valid JSON, invalid number: without this the failure surfaces as a
+        # TypeError deep in the valuation with nothing pointing at the line.
+        with pytest.raises(HoldingsError) as excinfo:
+            Holdings.from_dict(data)
+        assert expected in str(excinfo.value)
+
+    def test_numeric_strings_are_accepted(self):
+        # A quoted plain number is unambiguous, so it parses rather than errors.
+        holdings = Holdings.from_dict(
+            {"cash": {"JPY": "1000"}, "positions": [{"ticker": "MSFT", "shares": "10"}]}
+        )
+        assert holdings.cash_jpy == 1000.0
+        assert holdings.positions[0].shares == 10.0
+
+    def test_a_position_without_a_ticker_is_reported(self):
+        with pytest.raises(HoldingsError) as excinfo:
+            Holdings.from_dict({"positions": [{"shares": 10}]})
+        assert "missing its ticker" in str(excinfo.value)
+
     def test_malformed_json_names_the_file_and_the_position(self, tmp_path):
         path = tmp_path / "holdings.json"
         path.write_text('{"as_of": "2026-08-09",}', encoding="utf-8")

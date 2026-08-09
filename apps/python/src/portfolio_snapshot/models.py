@@ -41,6 +41,26 @@ class HoldingsError(Exception):
     """
 
 
+def _number(value: object, *, field: str) -> float | None:
+    """Coerce a hand-edited numeric field to float, naming it when it isn't one.
+
+    Valid JSON can still hold ``"1,000,000"`` or ``"10 shares"``; without this
+    the file parses and the failure surfaces much later as a TypeError deep in
+    the valuation, with nothing pointing at the line that caused it.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise HoldingsError(f"{field} must be a number, got {value!r}")
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise HoldingsError(
+            f"{field} must be a number, got {value!r} "
+            "(write it as a plain number, without commas or units)"
+        ) from exc
+
+
 @dataclass(frozen=True)
 class Position:
     """One line of the holdings file."""
@@ -62,16 +82,23 @@ class Position:
 
     @classmethod
     def from_dict(cls, raw: dict) -> Position:
+        if "ticker" not in raw:
+            raise HoldingsError(f"a position is missing its ticker: {raw!r}")
+        ticker = str(raw["ticker"]).strip()
+
+        def num(key: str) -> float | None:
+            return _number(raw.get(key), field=f"{ticker}.{key}")
+
         return cls(
-            ticker=str(raw["ticker"]).strip(),
-            shares=raw.get("shares"),
-            avg_cost=raw.get("avg_cost"),
+            ticker=ticker,
+            shares=num("shares"),
+            avg_cost=num("avg_cost"),
             account=raw.get("account") or "-",
             bucket=raw.get("bucket") or "other",
             name=raw.get("name") or "",
-            manual_value_jpy=raw.get("manual_value_jpy"),
-            manual_cost_jpy=raw.get("manual_cost_jpy"),
-            fx_exposure=raw.get("fx_exposure"),
+            manual_value_jpy=num("manual_value_jpy"),
+            manual_cost_jpy=num("manual_cost_jpy"),
+            fx_exposure=num("fx_exposure"),
         )
 
     @property
@@ -96,9 +123,11 @@ class Holdings:
         return cls(
             as_of=data.get("as_of") or datetime.now().strftime("%Y-%m-%d"),
             positions=[Position.from_dict(p) for p in data.get("positions", [])],
-            cash_jpy=float(cash.get("JPY") or 0),
-            cash_usd=float(cash.get("USD") or 0),
-            nisa_growth_remaining_jpy=data.get("nisa_growth_remaining_jpy"),
+            cash_jpy=_number(cash.get("JPY"), field="cash.JPY") or 0.0,
+            cash_usd=_number(cash.get("USD"), field="cash.USD") or 0.0,
+            nisa_growth_remaining_jpy=_number(
+                data.get("nisa_growth_remaining_jpy"), field="nisa_growth_remaining_jpy"
+            ),
             source=data.get("source") or "",
         )
 
