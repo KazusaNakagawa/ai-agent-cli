@@ -280,8 +280,19 @@ class TestProxyValuation:
             [self._fund(price_at_manual=100.0)], quotes={"VTI": _quote("VTI", 110.0)}
         )
         text = render_snapshot(s)
-        assert "推定（VTI 連動）" in text
+        # The statement date rides along: staleness drives the error.
+        assert "推定（2026-07-29基準・VTI連動）" in text
         assert "FUND→VTI" in text
+
+    def test_an_estimate_without_a_statement_date_still_names_its_proxy(self):
+        position = Position(
+            ticker="FUND",
+            bucket="index",
+            manual_value_jpy=1_000_000,
+            proxy=Proxy(ticker="VTI", price_at_manual=100.0),
+        )
+        s = _snapshot([position], quotes={"VTI": _quote("VTI", 110.0)})
+        assert "推定（VTI連動）" in render_snapshot(s)
 
     def test_an_unaged_manual_row_shows_its_statement_date(self):
         s = _snapshot(

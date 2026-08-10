@@ -63,7 +63,12 @@ def _money(value: float | None, currency: str) -> str:
 
 def _price_cell(v: Valued) -> str:
     if v.estimated and v.position.proxy:
-        return f"推定（{v.position.proxy.ticker} 連動）"
+        # The base date belongs here too: the older the statement, the more
+        # tracking error the estimate has accumulated.
+        proxy = v.position.proxy.ticker
+        if v.position.manual_as_of:
+            return f"推定（{v.position.manual_as_of}基準・{proxy}連動）"
+        return f"推定（{proxy}連動）"
     if v.is_manual:
         return f"手入力（{v.position.manual_as_of}）" if v.position.manual_as_of else "手入力"
     if v.price is None:
