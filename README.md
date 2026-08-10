@@ -75,6 +75,10 @@ bin/chat.sh            # new or resumed session
 bin/chat.sh 2026-05-16 # specific past briefing
 bin/chat.sh --list     # list saved sessions
 
+# Portfolio snapshot — weights, FX exposure and allocation-rule checks
+bin/portfolio.sh            # writes apps/python/output/portfolio/snapshot_<date>.md
+bin/portfolio.sh --stdout   # print instead of writing
+
 # Web UI — FastAPI (:8000) + Next.js (:3000), opens the browser
 bin/serve.sh
 bin/serve.sh --no-browser
@@ -97,6 +101,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 | `self_agent.sh` | Turn judgment-log entries into a persona profile and post it to Notion |
 | `briefing_api.sh` | Generate a briefing via the API entry point |
 | `chart.sh` | Generate charts (e.g. stock price comparison) |
+| `portfolio.sh` | Render a portfolio snapshot (weights, look-through FX exposure, allocation-rule checks) from `config/holdings.json` |
 | `gen_wordset.sh` | Generate word-set JSON (Stage 1) |
 | `evaluate.sh` | Run the briefing evaluation pipeline |
 | `eval_report.sh` | Extract → score → report evaluation results |
