@@ -1,6 +1,6 @@
 {
   "as_of": "2026-01-01",
-  "source": "どの残高データを写したかを書く（例: 楽天証券 保有残高 2026-01-01 取得）。株式は yfinance で現在値に更新されるが、manual_value_jpy の行はここに書いた時点の評価額のまま。",
+  "source": "どの残高データを写したかを書く（例: 証券会社の保有残高 2026-01-01 取得）。株式は yfinance で現在値に更新されるが、manual_value_jpy の行はここに書いた時点の評価額のまま。",
   "cash": {
     "JPY": 0,
     "USD": 0
@@ -12,7 +12,7 @@
       "ticker": "MSFT",
       "name": "マイクロソフト",
       "shares": 10,
-      "avg_cost": 289.22,
+      "avg_cost": 300.0,
       "account": "特定",
       "bucket": "ai_growth"
     },
@@ -21,20 +21,37 @@
       "ticker": "1554.T",
       "name": "上場MSCI世界株",
       "shares": 100,
-      "avg_cost": 2549.0,
+      "avg_cost": 2000.0,
       "account": "特定",
       "bucket": "index",
       "fx_exposure": 0.95
     },
     {
       "_comment": "投資信託: yfinance に無いので manual_value_jpy / manual_cost_jpy に円建ての評価額・取得原価を直接書く。出力では「手入力」と表示される。",
-      "ticker": "楽天VTI",
-      "name": "楽天・全米株式",
+      "ticker": "FUND-A",
+      "name": "米国株式インデックスファンド",
       "account": "つみたてNISA",
       "bucket": "index",
       "fx_exposure": 1.0,
       "manual_value_jpy": 1000000,
-      "manual_cost_jpy": 400000
+      "manual_cost_jpy": 400000,
+      "manual_as_of": "2026-01-01"
+    },
+    {
+      "_comment": "proxy を付けると、基準日(manual_as_of)の評価額を連動指数と為替の変化で更新した推定値になる（残高を取り直さなくても現在値に追従する）。price_at_manual / fx_at_manual は基準日時点の proxy 価格と USD/JPY。円建てで外貨資産を持つ投信は為替でも動くので fx_at_manual を入れる。国内資産のみの投信では省略する。",
+      "ticker": "FUND-B",
+      "name": "S&P500 インデックスファンド",
+      "account": "NISAつみたて枠",
+      "bucket": "index",
+      "fx_exposure": 1.0,
+      "manual_value_jpy": 900000,
+      "manual_cost_jpy": 500000,
+      "manual_as_of": "2026-01-01",
+      "proxy": {
+        "ticker": "^GSPC",
+        "price_at_manual": 7000.0,
+        "fx_at_manual": 160.0
+      }
     }
   ]
 }

@@ -62,8 +62,15 @@ def _money(value: float | None, currency: str) -> str:
 
 
 def _price_cell(v: Valued) -> str:
+    if v.estimated and v.position.proxy:
+        # The base date belongs here too: the older the statement, the more
+        # tracking error the estimate has accumulated.
+        proxy = v.position.proxy.ticker
+        if v.position.manual_as_of:
+            return f"推定（{v.position.manual_as_of}基準・{proxy}連動）"
+        return f"推定（{proxy}連動）"
     if v.is_manual:
-        return "手入力"
+        return f"手入力（{v.position.manual_as_of}）" if v.position.manual_as_of else "手入力"
     if v.price is None:
         return v.error or "—"
     return _money(v.price, v.currency)
@@ -81,7 +88,15 @@ def _render_header(s: Snapshot) -> list[str]:
         lines.append(
             f"- ⚠️ 株数または現在値が取れず集計に含めていない銘柄: {', '.join(s.unvalued_tickers)}"
         )
-    if any(v.is_manual for v in s.valued) and s.holdings.source:
+    estimated = [v for v in s.valued if v.estimated]
+    if estimated:
+        proxies = ", ".join(
+            sorted({f"{v.position.ticker}→{v.position.proxy.ticker}" for v in estimated})
+        )
+        lines.append(
+            f"- 「推定」の行は基準日の評価額をベンチマークと為替の変化で更新した概算（{proxies}）"
+        )
+    if any(v.is_manual and not v.estimated for v in s.valued) and s.holdings.source:
         lines.append(f"- ⚠️ 「手入力」の行は holdings.json 記載時点の評価額。出典: {s.holdings.source}")
     return lines
 
