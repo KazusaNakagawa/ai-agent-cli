@@ -13,6 +13,7 @@ from src.portfolio_snapshot import (
     Holdings,
     HoldingsError,
     Position,
+    Proxy,
     Snapshot,
     build_snapshot,
     fetch_fx,
@@ -61,7 +62,7 @@ class TestHoldingsParsing:
                     "as_of": "2026-08-09",
                     "source": "brokerage export",
                     "cash": {"JPY": 1000, "USD": 20},
-                    "nisa_growth_remaining_jpy": 969000,
+                    "nisa_growth_remaining_jpy": 500000,
                     "positions": [
                         {"ticker": "MSFT", "shares": 10, "avg_cost": 300, "account": "特定"}
                     ],
@@ -73,7 +74,7 @@ class TestHoldingsParsing:
         assert holdings.as_of == "2026-08-09"
         assert holdings.cash_jpy == 1000
         assert holdings.cash_usd == 20
-        assert holdings.nisa_growth_remaining_jpy == 969000
+        assert holdings.nisa_growth_remaining_jpy == 500000
         assert holdings.positions[0] == Position(
             ticker="MSFT", shares=10, avg_cost=300, account="特定"
         )
@@ -111,8 +112,8 @@ class TestHoldingsParsing:
             ({"positions": [{"ticker": "MSFT", "shares": "10 shares"}]}, "MSFT.shares"),
             ({"positions": [{"ticker": "MSFT", "avg_cost": "$289"}]}, "MSFT.avg_cost"),
             (
-                {"positions": [{"ticker": "楽天VTI", "manual_value_jpy": "1,994,755"}]},
-                "楽天VTI.manual_value_jpy",
+                {"positions": [{"ticker": "FUND", "manual_value_jpy": "1,000,000"}]},
+                "FUND.manual_value_jpy",
             ),
         ],
     )
@@ -161,7 +162,7 @@ class TestQuoteFetching:
         assert fetch.call_args.args[0] == ["PLTR", "MSFT"]
 
     def test_manual_positions_are_never_quoted(self):
-        positions = [Position(ticker="楽天VTI", manual_value_jpy=1000)]
+        positions = [Position(ticker="FUND", manual_value_jpy=1000)]
         with patch("src.portfolio_snapshot.valuation.fetch_stock_quotes") as fetch:
             assert fetch_quotes(positions) == {}
         fetch.assert_not_called()
@@ -188,11 +189,11 @@ class TestValuation:
 
     def test_manual_position_uses_its_supplied_yen_figures(self):
         valued = value_positions(
-            [Position(ticker="楽天VTI", manual_value_jpy=1994755, manual_cost_jpy=799999)],
+            [Position(ticker="FUND", manual_value_jpy=1_000_000, manual_cost_jpy=400_000)],
             {},
             FX,
         )[0]
-        assert valued.value_jpy == 1994755
+        assert valued.value_jpy == 1_000_000
         assert valued.is_manual
 
     def test_position_without_shares_is_left_unvalued(self):
@@ -220,6 +221,104 @@ class TestValuation:
         valued = value_positions([Position(ticker="MSFT", shares=10)], {"MSFT": quote}, FX)[0]
         assert valued.value_jpy is None
         assert valued.error == "Stock fetch error (boom)"
+
+
+class TestProxyValuation:
+    """A manual value is aged forward by the index the fund tracks."""
+
+    def _fund(self, **proxy):
+        return Position(
+            ticker="FUND",
+            bucket="index",
+            manual_value_jpy=1_000_000,
+            manual_cost_jpy=400_000,
+            manual_as_of="2026-07-29",
+            proxy=Proxy(ticker="VTI", **proxy),
+        )
+
+    def test_price_change_scales_the_manual_value(self):
+        valued = value_positions(
+            [self._fund(price_at_manual=100.0)], {"VTI": _quote("VTI", 110.0)}, FX
+        )[0]
+        assert valued.value_jpy == pytest.approx(1_100_000)
+        assert valued.estimated
+
+    def test_fx_change_compounds_with_the_price_change(self):
+        # A yen-denominated fund holding US assets moves with both.
+        valued = value_positions(
+            [self._fund(price_at_manual=100.0, fx_at_manual=100.0)],
+            {"VTI": _quote("VTI", 110.0)},
+            200.0,
+        )[0]
+        assert valued.value_jpy == pytest.approx(1_000_000 * 1.1 * 2.0)
+
+    def test_cost_basis_is_never_aged(self):
+        valued = value_positions(
+            [self._fund(price_at_manual=100.0)], {"VTI": _quote("VTI", 110.0)}, FX
+        )[0]
+        assert valued.cost_jpy == 400_000
+
+    def test_a_failed_proxy_quote_keeps_the_statement_value(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            valued = value_positions(
+                [self._fund(price_at_manual=100.0)],
+                {"VTI": StockQuote(ticker="VTI", error="Stock fetch error (boom)")},
+                FX,
+            )[0]
+        assert valued.value_jpy == 1_000_000
+        assert not valued.estimated
+        assert "proxy VTI" in caplog.text
+
+    def test_proxy_tickers_are_fetched_alongside_the_positions(self):
+        positions = [self._fund(price_at_manual=100.0), Position(ticker="MSFT", shares=1)]
+        with patch("src.portfolio_snapshot.valuation.fetch_stock_quotes", return_value={}) as f:
+            fetch_quotes(positions)
+        assert f.call_args.args[0] == ["VTI", "MSFT"]
+
+    def test_the_table_marks_an_estimate_and_names_its_proxy(self):
+        s = _snapshot(
+            [self._fund(price_at_manual=100.0)], quotes={"VTI": _quote("VTI", 110.0)}
+        )
+        text = render_snapshot(s)
+        assert "推定（VTI 連動）" in text
+        assert "FUND→VTI" in text
+
+    def test_an_unaged_manual_row_shows_its_statement_date(self):
+        s = _snapshot(
+            [
+                Position(
+                    ticker="FUND",
+                    bucket="index",
+                    manual_value_jpy=1000,
+                    manual_as_of="2026-07-29",
+                )
+            ]
+        )
+        assert "手入力（2026-07-29）" in render_snapshot(s)
+
+    @pytest.mark.parametrize(
+        "proxy, expected",
+        [
+            ({"price_at_manual": 100.0}, "proxy is missing its ticker"),
+            ({"ticker": "VTI"}, "price_at_manual must be a positive number"),
+            ({"ticker": "VTI", "price_at_manual": 0}, "price_at_manual must be a positive"),
+            ({"ticker": "VTI", "price_at_manual": -1}, "price_at_manual must be a positive"),
+            (
+                {"ticker": "VTI", "price_at_manual": 100, "fx_at_manual": 0},
+                "fx_at_manual must be positive",
+            ),
+            ({"ticker": "VTI", "price_at_manual": "abc"}, "price_at_manual must be a number"),
+        ],
+    )
+    def test_invalid_proxy_config_names_the_field(self, proxy, expected):
+        with pytest.raises(HoldingsError) as excinfo:
+            Position.from_dict({"ticker": "FUND", "manual_value_jpy": 1, "proxy": proxy})
+        assert expected in str(excinfo.value)
+
+    def test_a_non_object_proxy_is_rejected(self):
+        with pytest.raises(HoldingsError) as excinfo:
+            Position.from_dict({"ticker": "FUND", "proxy": "VTI"})
+        assert "proxy must be an object" in str(excinfo.value)
 
 
 class TestFetchFx:
@@ -359,9 +458,9 @@ class TestRules:
 
     def test_index_funds_are_exempt_from_the_single_name_rule(self):
         s = _snapshot(
-            [Position(ticker="楽天VTI", bucket="index", manual_value_jpy=1_000_000)],
+            [Position(ticker="FUND", bucket="index", manual_value_jpy=1_000_000)],
         )
-        assert "楽天VTI 比率" not in self._rules(s)
+        assert "FUND 比率" not in self._rules(s)
 
     def test_high_risk_sleeve_flags_both_the_bucket_and_the_single_name(self):
         s = _snapshot(
@@ -465,7 +564,7 @@ class TestRender:
     def test_manual_rows_are_labelled_and_sourced(self):
         holdings = Holdings(
             as_of="2026-08-09",
-            positions=[Position(ticker="楽天VTI", bucket="index", manual_value_jpy=1000)],
+            positions=[Position(ticker="FUND", bucket="index", manual_value_jpy=1000)],
             source="brokerage export 2026-07-29",
         )
         s = Snapshot(

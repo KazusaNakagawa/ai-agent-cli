@@ -62,6 +62,36 @@ def _number(value: object, *, field: str) -> float | None:
 
 
 @dataclass(frozen=True)
+class Proxy:
+    """A quoted instrument used to age a manually entered valuation forward.
+
+    Mutual funds have no quote, so their value would otherwise stay frozen at
+    the statement date until the next brokerage export. Tracking the index the
+    fund follows lets the snapshot move the figure with the market: the manual
+    value is scaled by the proxy's price change, and by the FX change too when
+    the fund is yen-denominated but holds foreign assets.
+    """
+
+    ticker: str
+    price_at_manual: float
+    fx_at_manual: float | None = None
+
+    @classmethod
+    def from_dict(cls, raw: dict, *, owner: str) -> Proxy:
+        if "ticker" not in raw:
+            raise HoldingsError(f"{owner}.proxy is missing its ticker")
+        price = _number(raw.get("price_at_manual"), field=f"{owner}.proxy.price_at_manual")
+        if price is None or price <= 0:
+            raise HoldingsError(
+                f"{owner}.proxy.price_at_manual must be a positive number, got {price!r}"
+            )
+        fx = _number(raw.get("fx_at_manual"), field=f"{owner}.proxy.fx_at_manual")
+        if fx is not None and fx <= 0:
+            raise HoldingsError(f"{owner}.proxy.fx_at_manual must be positive, got {fx!r}")
+        return cls(ticker=str(raw["ticker"]).strip(), price_at_manual=price, fx_at_manual=fx)
+
+
+@dataclass(frozen=True)
 class Position:
     """One line of the holdings file."""
 
@@ -75,6 +105,11 @@ class Position:
     # directly in JPY — stale as of the statement date, and flagged as such.
     manual_value_jpy: float | None = None
     manual_cost_jpy: float | None = None
+    # Statement date the manual figures came from, shown so a stale value is
+    # never mistaken for a live one.
+    manual_as_of: str = ""
+    # Optional index to age the manual value forward with; see Proxy.
+    proxy: Proxy | None = None
     # Share of this position exposed to non-JPY currencies. A TSE-listed world
     # index (1554) is quoted in yen but is ~95% foreign underneath, so listing
     # currency alone understates FX risk. Defaults by listing currency.
@@ -89,6 +124,10 @@ class Position:
         def num(key: str) -> float | None:
             return _number(raw.get(key), field=f"{ticker}.{key}")
 
+        proxy_raw = raw.get("proxy")
+        if proxy_raw is not None and not isinstance(proxy_raw, dict):
+            raise HoldingsError(f"{ticker}.proxy must be an object, got {proxy_raw!r}")
+
         return cls(
             ticker=ticker,
             shares=num("shares"),
@@ -98,6 +137,8 @@ class Position:
             name=raw.get("name") or "",
             manual_value_jpy=num("manual_value_jpy"),
             manual_cost_jpy=num("manual_cost_jpy"),
+            manual_as_of=raw.get("manual_as_of") or "",
+            proxy=Proxy.from_dict(proxy_raw, owner=ticker) if proxy_raw else None,
             fx_exposure=num("fx_exposure"),
         )
 
@@ -164,6 +205,9 @@ class Valued:
     price: float | None = None
     currency: str = "USD"
     error: str | None = None
+    # A manual value aged forward by its proxy, rather than the raw statement
+    # figure. False when there is no proxy or its quote could not be fetched.
+    estimated: bool = False
 
     @property
     def is_manual(self) -> bool:
