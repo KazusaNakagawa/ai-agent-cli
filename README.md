@@ -95,7 +95,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 
 | Script | Purpose |
 |---|---|
-| `run.sh` | Run the daily briefing (+ weekly recap on Fri) — see [Architecture](#architecture) for the disabled XSS intel agent |
+| `run.sh` | Run the daily briefing (+ weekly recap on Fri) — **manual execution is the active schedule** on the maintainer machine; see [launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active). See [Architecture](#architecture) for the disabled XSS intel agent |
 | `chat.sh` | Interactive Q&A on a briefing session |
 | `serve.sh` | Launch the full Web UI — FastAPI + Next.js; `API_PORT` / `WEB_PORT` overridable |
 | `self_agent.sh` | Turn judgment-log entries into a persona profile and post it to Notion |
@@ -116,7 +116,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 | Topic | Link |
 |---|---|
 | Configuration (env vars, config schema, prompts) | [docs/guides/configuration.md](docs/guides/configuration.md) |
-| Scheduled execution (macOS launchd) | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
+| Daily briefing (manual `./bin/run.sh`; optional launchd) | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
 | Scheduled execution (cron + pmset, alternative) | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |
 | Briefing archive (monthly zip → Google Drive via rclone) | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | Testing & dependency management | [docs/guides/testing.md](docs/guides/testing.md) |
