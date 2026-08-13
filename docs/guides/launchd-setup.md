@@ -24,7 +24,7 @@ If today's sector sweep failed partway through, re-run only that half:
 ### Unload launchd (already done on maintainer machine)
 
 ```bash
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.kazusa.ai-agent-briefing.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.$(whoami).ai-agent-briefing.plist
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ai-agent.recovery.plist
 launchctl list | grep ai-agent   # should print nothing
 ```
@@ -35,7 +35,7 @@ Plist files under `~/Library/LaunchAgents/` are left in place so they can be re-
 
 ## Optional: launchd scheduling
 
-The sections below describe how to **re-enable** automatic daily runs. Only do this when the Mac is reliably awake at 05:00 (lid open on AC, or a always-on host).
+The sections below describe how to **re-enable** automatic daily runs. Only do this when the Mac is reliably awake at 05:00 (lid open on AC, or an always-on host).
 
 **Why launchd rather than cron:** `man launchd.plist` states it plainly — *"Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up."* On a lid-closed, battery-powered Mac a scheduled `pmset` wake only produces a ~20-second DarkWake, so a 05:00 cron job never fires and is never retried. launchd runs the missed invocation at the next wake instead — which is exactly what caused the 2026-08-12 token burn when the wake was a short DarkWake.
 
@@ -81,7 +81,11 @@ Run these in your shell before following any step below:
 PROJECT="/path/to/ai-agent"          # absolute path to this repo
 LABEL="com.$(whoami).ai-agent-briefing"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
+RECOVERY_LABEL="com.ai-agent.recovery"
+RECOVERY_PLIST="$HOME/Library/LaunchAgents/${RECOVERY_LABEL}.plist"
 ```
+
+Steps 0–4 below refer to the two jobs only through `$PLIST` / `$RECOVERY_PLIST`, so export these first. The standalone snippets outside those steps ([Manual execution](#manual-execution-active) unload, the recovery-job registration above) spell the same two paths out literally, because they are meant to be pasted into a shell where these variables were never set.
 
 > Replace `/path/to/ai-agent` with the actual absolute path (e.g. `/Users/$(whoami)/work/ai-agent`).
 
@@ -175,7 +179,7 @@ tail -f "$PROJECT/apps/python/log/launchd.stderr.log"
 
 ```bash
 launchctl bootout gui/$(id -u) "$PLIST"
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ai-agent.recovery.plist
+launchctl bootout gui/$(id -u) "$RECOVERY_PLIST"
 launchctl list | grep ai-agent   # should print nothing
 ```
 
