@@ -2,9 +2,42 @@
 
 macOS uses **launchd** instead of cron. `bin/run.sh` (root-level wrapper) sources `.env` and delegates to `apps/python/bin/run.sh`, so API credentials are available in non-interactive shells.
 
-> This is the **currently active** setup on the maintainer's machine. cron + `pmset` is the alternative documented in [cron-setup.md](cron-setup.md). Use one or the other — running both would trigger the briefing twice.
+> **Current setup (2026-08-12): manual execution.** The maintainer's machine no longer loads the daily briefing or recovery launchd jobs. Run `./bin/run.sh` by hand once the Mac is open and fully awake. launchd remains documented below for AC-powered / always-awake setups only. cron + `pmset` is the other alternative — [cron-setup.md](cron-setup.md). Use at most one scheduler; running both would trigger the briefing twice.
 
-**Why launchd rather than cron:** `man launchd.plist` states it plainly — *"Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up."* On a lid-closed, battery-powered Mac a scheduled `pmset` wake only produces a ~20-second DarkWake, so a 05:00 cron job never fires and is never retried. launchd runs the missed invocation at the next wake instead.
+## Manual execution (active)
+
+Run from the repo root after opening the lid and confirming the Mac is awake (not DarkWake):
+
+```bash
+cd /path/to/ai-agent
+./bin/run.sh
+```
+
+If today's sector sweep failed partway through, re-run only that half:
+
+```bash
+./bin/recover.sh
+```
+
+**Why not launchd on a lid-closed laptop?** On 2026-08-12 a missed 05:00 job started in DarkWake, transient retries burned the Anthropic session limit for >$2, and no briefing MD was produced ([#443](https://github.com/KazusaNakagawa/ai-agent-cli/issues/443)). `caffeinate` does not keep battery-powered DarkWake alive long enough for the claude CLI calls to finish.
+
+### Unload launchd (already done on maintainer machine)
+
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.$(whoami).ai-agent-briefing.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ai-agent.recovery.plist
+launchctl list | grep ai-agent   # should print nothing
+```
+
+Plist files under `~/Library/LaunchAgents/` are left in place so they can be re-registered later; only the loaded jobs are removed.
+
+---
+
+## Optional: launchd scheduling
+
+The sections below describe how to **re-enable** automatic daily runs. Only do this when the Mac is reliably awake at 05:00 (lid open on AC, or an always-on host).
+
+**Why launchd rather than cron:** `man launchd.plist` states it plainly — *"Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up."* On a lid-closed, battery-powered Mac a scheduled `pmset` wake only produces a ~20-second DarkWake, so a 05:00 cron job never fires and is never retried. launchd runs the missed invocation at the next wake instead — which is exactly what caused the 2026-08-12 token burn when the wake was a short DarkWake.
 
 **Schedule behaviour:**
 
@@ -48,7 +81,11 @@ Run these in your shell before following any step below:
 PROJECT="/path/to/ai-agent"          # absolute path to this repo
 LABEL="com.$(whoami).ai-agent-briefing"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
+RECOVERY_LABEL="com.ai-agent.recovery"
+RECOVERY_PLIST="$HOME/Library/LaunchAgents/${RECOVERY_LABEL}.plist"
 ```
+
+Steps 0–4 below refer to the two jobs only through `$PLIST` / `$RECOVERY_PLIST`, so export these first. The standalone snippets outside those steps ([Manual execution](#manual-execution-active) unload, the recovery-job registration above) spell the same two paths out literally, because they are meant to be pasted into a shell where these variables were never set.
 
 > Replace `/path/to/ai-agent` with the actual absolute path (e.g. `/Users/$(whoami)/work/ai-agent`).
 
@@ -138,10 +175,12 @@ launchctl start "$LABEL"
 tail -f "$PROJECT/apps/python/log/launchd.stderr.log"
 ```
 
-## 4. Unregister (if needed)
+## 4. Unregister (switch back to manual)
 
 ```bash
-launchctl bootout "gui/$(id -u)/$LABEL"
+launchctl bootout gui/$(id -u) "$PLIST"
+launchctl bootout gui/$(id -u) "$RECOVERY_PLIST"
+launchctl list | grep ai-agent   # should print nothing
 ```
 
 ## Requirements

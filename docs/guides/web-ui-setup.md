@@ -161,6 +161,6 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/run/<job_id>
 | `GET /api/chat/{job_id}/stream` に `event: stale_session` が流れる | 保存セッション ID が無効。バックエンドが古いセッションファイルを削除済みなので、同じ payload を再送すれば新規セッションで実行される (Web UI は 1 回だけ自動リトライする) |
 | Monitor タブの数値が Settings > Usage と合わない | 仕様。データ源が別 (全 Claude Code トラフィック vs 本アプリの実行分)。[`usage-monitoring.md`](./usage-monitoring.md) 参照 |
 
-## バッチ実行 (cron) との関係
+## バッチ実行との関係
 
-このサーバーは UI/管理用のフロントエンドであり、定期実行とは独立しています。launchd でのスケジューリングは [`launchd-setup.md`](./launchd-setup.md) を参照。`PUT /api/config` で更新した内容は launchd 経由のバッチが次回起動時に自動的に反映します (毎回 `load_config()` が走るため)。
+このサーバーは UI/管理用のフロントエンドであり、定期実行とは独立しています。日次ブリーフィングは maintainer 環境では **手動 `./bin/run.sh`** が現行運用 ([`launchd-setup.md` — Manual execution](./launchd-setup.md#manual-execution-active))。launchd / cron の再設定手順も同ドキュメントにあります。`PUT /api/config` で更新した内容は、次回 `./bin/run.sh` (または launchd 経由のバッチ) 起動時に自動的に反映されます (毎回 `load_config()` が走るため)。
