@@ -1,6 +1,14 @@
 # My World Briefing — Personal Market Intelligence Agent
 
-Automatically collects geopolitical events, stock market moves, and key themes every morning, then delivers a 3-minute brief to Discord and Notion — contextualized to your own portfolio.
+*English | [日本語](README.ja.md)*
+
+An LLM agent system that collects geopolitical events, stock moves, and sector themes each morning, interprets them against a specific portfolio, and delivers a 3-minute brief to Discord and Notion. Built as a daily driver, not a demo — it has been the maintainer's own morning brief since April 2026.
+
+| | |
+|---|---|
+| **Stack** | Python 3.13 · FastAPI · Next.js 14 · TypeScript · Tailwind |
+| **Agent layer** | Claude Code CLI (subprocess + WebSearch), parallel prompt orchestration, opt-in local LLM mode (Ollama + Chroma) |
+| **Ops** | launchd/cron scheduling, degraded-mode delivery, sleep-recovery re-run, usage & cost monitoring |
 
 ---
 
@@ -10,6 +18,12 @@ Automatically collects geopolitical events, stock market moves, and key themes e
 
 Bloomberg and NewsPicks surface raw data. This agent ties every event to your holdings, themes, and geopolitical risks, and generates "what this means for you" every day.
 
+The interesting problem here is not calling an LLM — it is making a non-deterministic agent dependable enough to trust unattended every morning: partial-failure handling, recovery after a missed run, injection containment where yesterday's model output becomes today's prompt, and cost visibility. Those constraints drove most of the design below.
+
+![Briefing viewer](docs/screenshots/briefing-viewer.png)
+
+<sub>The Web UI's briefing viewer — searchable archive on the left, rendered brief with a generated table of contents on the right. Every entry is one unattended 05:00 run.</sub>
+
 ---
 
 ## Architecture
@@ -18,7 +32,7 @@ Bloomberg and NewsPicks surface raw data. This agent ties every event to your ho
 
 <sub>Source: [docs/architecture.drawio](docs/architecture.drawio) — sequence-level detail in [docs/sequence-diagrams.md](docs/sequence-diagrams.md)</sub>
 
-```
+```bash
 bin/*.sh → apps/python/bin/*.sh          # thin wrappers that exec into the Python app
 
 apps/python/
@@ -43,13 +57,35 @@ apps/web/                         # Next.js UI — briefing viewer, chat, journa
 - No NewsAPI — Claude Code CLI's built-in WebSearch handles real-time search
 - No per-token Anthropic API billing — runs on the Claude Code CLI OAuth session, which requires an active paid Claude subscription (Pro/Max); the free plan cannot run this
 - Geopolitical → stock causality is baked into every daily output
-- Degraded mode — if the sector sweep fails, the main analysis is still delivered
+- Single choke point for LLM calls — every `claude` invocation goes through `src/claude_runner.py`, so auth mode, env handling, and retries have exactly one implementation
+
+**Running an agent unattended**
+
+The system assumes the LLM step can fail, hang, or return something unusable, and that nobody is watching at 05:00:
+
+| Concern | Where it is handled |
+|---|---|
+| Partial failure — sector sweep dies, briefing must still ship | Degraded mode in `src/handler.py`; `notifier/local_md.py` writes to disk *before* any network delivery |
+| Missed run (machine asleep through the schedule) | `bin/recover.sh` → `src/recovery_handler.py`, a no-op when today's briefing is already complete |
+| Prompt injection | `src/prompt_safety.py` — `neutralize_user_text` defuses role markers in config-supplied strings; `wrap_untrusted` fences reused LLM output (yesterday's briefing fed into today's chat) as data, not instructions |
+| Transient API/network errors | `src/transient_errors.py`, retried inside `claude_runner` |
+| Cost drift | `src/usage_logger.py` / `usage_monitor.py` / `claude_rates.py`, surfaced in the Web UI's Monitor tab |
+
+> **Precondition — no scheduler can fix a sleeping Mac.** Everything above assumes the machine is genuinely awake at the scheduled time: **lid open, on AC power** (`pmset -g custom` reports `sleep 0` on AC). Closing the lid sleeps the machine regardless of power source.
+>
+> On a lid-closed, battery-powered Mac the 05:00 job fires inside a ~45-second DarkWake. The claude CLI's connection dies with `API Error: Connection closed mid-response`, and the transient retries then burn subscription tokens **without producing a briefing at all** — measured at over \$2 on 2026-08-12 ([#443](https://github.com/KazusaNakagawa/ai-agent-cli/issues/443)). `caffeinate -ims` does not rescue this: `man caffeinate` restricts `-s` to AC power, so it cannot hold a battery-powered DarkWake open long enough for the calls to finish.
+>
+> This is why **manual execution is the maintainer's current schedule** rather than launchd or cron. Details and measurements: [launchd-setup.md](docs/guides/launchd-setup.md), [cron-setup.md](docs/guides/cron-setup.md).
+
+![Usage monitor](docs/screenshots/usage-monitor.png)
+
+<sub>Monitor tab — API-equivalent cost per day, broken down by model and project. Models with no published rate are excluded from the total rather than silently priced at zero.</sub>
 
 ---
 
 ## Setup
 
-**Prerequisites:** Python 3.11+, [uv](https://github.com/astral-sh/uv), [Claude Code CLI](https://claude.ai/code) authenticated, Discord Bot, Notion integration.
+**Prerequisites:** Python 3.13 (CI-pinned; older versions untested), [uv](https://github.com/astral-sh/uv), [Claude Code CLI](https://claude.ai/code) authenticated, Discord Bot, Notion integration.
 
 ```bash
 git clone https://github.com/KazusaNakagawa/ai-agent-cli.git
@@ -108,6 +144,18 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 | `local_llm.sh` | Local LLM mode (Ollama + Chroma) |
 | `archive.sh` | Archive a month's briefings to Google Drive via rclone |
 | `recover.sh` | Re-run today's sector sweep if the 05:00 briefing lost it to a DarkWake sleep — no-op when today's briefing is already complete |
+
+---
+
+## Tests
+
+```bash
+cd apps/python && .venv/bin/pytest -v   # 1,053 cases / 72 files
+cd apps/web && npm test                 # vitest (unit + component)
+cd apps/web && npm run test:e2e         # Playwright
+```
+
+Both suites run on push via GitHub Actions ([`pytest.yml`](.github/workflows/pytest.yml), [`web.yml`](.github/workflows/web.yml)). Tests load `apps/python/tests/config/briefing.json` — `conftest.py` pins `BRIEFING_CONFIG_PATH` before any `src.config` import, so no personal config is ever needed to run them.
 
 ---
 
