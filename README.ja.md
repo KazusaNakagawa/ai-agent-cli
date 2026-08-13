@@ -71,11 +71,18 @@ apps/web/                         # Next.js UI — ブリーフィング閲覧�
 | 一時的な API / ネットワークエラー | `src/transient_errors.py`。`claude_runner` 内でリトライ |
 | コストの逸脱 | `src/usage_logger.py` / `usage_monitor.py` / `claude_rates.py`。Web UI の Monitor タブで可視化 |
 
-> **前提条件 — スリープ中の Mac は、どんなスケジューラでも救えない。** 上記はすべて、スケジュール時刻にマシンが本当に起きていることを前提としている。すなわち**蓋を開けた状態で AC アダプタに接続**していること（AC 接続時は `pmset -g custom` が `sleep 0` を返す）。蓋を閉じれば電源の種類に関係なくスリープする。
->
-> 蓋を閉じたバッテリー駆動の Mac では、5 時のジョブは約 45 秒しかない DarkWake の中で起動する。claude CLI の接続が `API Error: Connection closed mid-response` で切れ、その後の一時エラーリトライが**ブリーフィングを 1 つも生成しないまま**サブスクリプションのトークンを消費する。2026-08-12 の実測で \$2 超を浪費した（[#443](https://github.com/KazusaNakagawa/ai-agent-cli/issues/443)）。`caffeinate -ims` でも防げない — `man caffeinate` にある通り `-s` は AC 電源時のみ有効で、バッテリー駆動の DarkWake を呼び出し完了まで延命できない。
->
-> このため、メンテナの環境では launchd や cron ではなく**手動実行を現行の運用としている**。詳細と実測ログは [launchd-setup.md](docs/guides/launchd-setup.md)、[cron-setup.md](docs/guides/cron-setup.md) を参照。
+<details>
+<summary><b>前提条件 — スリープ中の Mac は、どんなスケジューラでも救えない。</b> 無人実行には「蓋を開けた状態 + AC 電源」が必要。満たさない場合に何が起きるかを記載。</summary>
+
+<br>
+
+上記はすべて、スケジュール時刻にマシンが本当に起きていることを前提としている。すなわち**蓋を開けた状態で AC アダプタに接続**していること（AC 接続時は `pmset -g custom` が `sleep 0` を返す）。蓋を閉じれば電源の種類に関係なくスリープする。
+
+蓋を閉じたバッテリー駆動の Mac では、5 時のジョブは約 45 秒しかない DarkWake の中で起動する。claude CLI の接続が `API Error: Connection closed mid-response` で切れ、その後の一時エラーリトライが**ブリーフィングを 1 つも生成しないまま**サブスクリプションのトークンを消費する。2026-08-12 の実測で \$2 超を浪費した（[#443](https://github.com/KazusaNakagawa/ai-agent-cli/issues/443)）。`caffeinate -ims` でも防げない — `man caffeinate` にある通り `-s` は AC 電源時のみ有効で、バッテリー駆動の DarkWake を呼び出し完了まで延命できない。
+
+このため、メンテナの環境では launchd や cron ではなく**手動実行を現行の運用としている**。詳細と実測ログは [launchd-setup.md](docs/guides/launchd-setup.md)、[cron-setup.md](docs/guides/cron-setup.md) を参照。
+
+</details>
 
 ![使用量モニター](docs/screenshots/usage-monitor.png)
 

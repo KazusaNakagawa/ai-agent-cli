@@ -71,11 +71,18 @@ The system assumes the LLM step can fail, hang, or return something unusable, an
 | Transient API/network errors | `src/transient_errors.py`, retried inside `claude_runner` |
 | Cost drift | `src/usage_logger.py` / `usage_monitor.py` / `claude_rates.py`, surfaced in the Web UI's Monitor tab |
 
-> **Precondition — no scheduler can fix a sleeping Mac.** Everything above assumes the machine is genuinely awake at the scheduled time: **lid open, on AC power** (`pmset -g custom` reports `sleep 0` on AC). Closing the lid sleeps the machine regardless of power source.
->
-> On a lid-closed, battery-powered Mac the 05:00 job fires inside a ~45-second DarkWake. The claude CLI's connection dies with `API Error: Connection closed mid-response`, and the transient retries then burn subscription tokens **without producing a briefing at all** — measured at over \$2 on 2026-08-12 ([#443](https://github.com/KazusaNakagawa/ai-agent-cli/issues/443)). `caffeinate -ims` does not rescue this: `man caffeinate` restricts `-s` to AC power, so it cannot hold a battery-powered DarkWake open long enough for the calls to finish.
->
-> This is why **manual execution is the maintainer's current schedule** rather than launchd or cron. Details and measurements: [launchd-setup.md](docs/guides/launchd-setup.md), [cron-setup.md](docs/guides/cron-setup.md).
+<details>
+<summary><b>Precondition — no scheduler can fix a sleeping Mac.</b> Unattended runs need the lid open and AC power; here is what happens when they don't have it.</summary>
+
+<br>
+
+Everything above assumes the machine is genuinely awake at the scheduled time: **lid open, on AC power** (`pmset -g custom` reports `sleep 0` on AC). Closing the lid sleeps the machine regardless of power source.
+
+On a lid-closed, battery-powered Mac the 05:00 job fires inside a ~45-second DarkWake. The claude CLI's connection dies with `API Error: Connection closed mid-response`, and the transient retries then burn subscription tokens **without producing a briefing at all** — measured at over \$2 on 2026-08-12 ([#443](https://github.com/KazusaNakagawa/ai-agent-cli/issues/443)). `caffeinate -ims` does not rescue this: `man caffeinate` restricts `-s` to AC power, so it cannot hold a battery-powered DarkWake open long enough for the calls to finish.
+
+This is why **manual execution is the maintainer's current schedule** rather than launchd or cron. Details and measurements: [launchd-setup.md](docs/guides/launchd-setup.md), [cron-setup.md](docs/guides/cron-setup.md).
+
+</details>
 
 ![Usage monitor](docs/screenshots/usage-monitor.png)
 
