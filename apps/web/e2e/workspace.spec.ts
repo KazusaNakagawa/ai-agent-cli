@@ -13,7 +13,13 @@ type FakeTreeNode = {
 
 const FAKE_TREE: FakeTreeNode = {
   name: "demo-repo",
-  files: { "readme.md": "# Demo\n\nHello.\n" },
+  files: {
+    "readme.md": "# Demo\n\nHello.\n",
+    // Byte-level PDF header. Decoded as text this is the mojibake the viewer
+    // used to render; it must reach the PDF frame instead. See #449.
+    "report.pdf": "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n",
+    "bundle.zip": "PK\u0003\u0004binary-garbage",
+  },
   dirs: [
     {
       name: "src",
@@ -168,4 +174,33 @@ test("sidebar filename filter narrows the tree to matching files by extension", 
   // Clearing the filter restores the normal hierarchical tree.
   await page.getByTestId("workspace-name-filter").fill("")
   await expect(page.getByTestId("tree-dir-src")).toBeVisible()
+})
+
+test("a PDF renders in a frame and cannot be edited or saved", async ({ page }) => {
+  await page.goto("/workspace")
+  await page.getByTestId("workspace-open-folder").click()
+
+  await page.getByTestId("tree-file-report.pdf").click()
+  await expect(page.getByTestId("workspace-active-file")).toHaveText("report.pdf")
+
+  // Rendered in a frame, not decoded into the text editor.
+  await expect(page.getByTestId("workspace-pdf")).toBeVisible()
+  await expect(page.getByTestId("workspace-editor")).toHaveCount(0)
+
+  // No Save button, so the file cannot be overwritten with decoded mojibake.
+  await expect(page.getByTestId("workspace-save")).toHaveCount(0)
+})
+
+test("a binary with no viewer shows a notice instead of decoded bytes", async ({
+  page,
+}) => {
+  await page.goto("/workspace")
+  await page.getByTestId("workspace-open-folder").click()
+
+  await page.getByTestId("tree-file-bundle.zip").click()
+  await expect(page.getByTestId("workspace-active-file")).toHaveText("bundle.zip")
+
+  await expect(page.getByTestId("workspace-binary-notice")).toBeVisible()
+  await expect(page.getByTestId("workspace-editor")).toHaveCount(0)
+  await expect(page.getByTestId("workspace-save")).toHaveCount(0)
 })
