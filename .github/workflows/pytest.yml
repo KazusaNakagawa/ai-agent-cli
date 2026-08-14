@@ -1,12 +1,14 @@
 name: pytest
 
+# Runs on every PR to dev — deliberately NOT path-filtered.
+# `test` is a required status check on dev. A path-filtered workflow reports
+# nothing when it is skipped, so the required context stays pending forever and
+# docs-only PRs become unmergeable without an admin override (#447).
+# The job therefore always starts and decides internally whether to do real work.
 on:
   pull_request:
     branches:
       - dev
-    paths:
-      - "apps/python/**"
-      - ".github/workflows/pytest.yml"
 
 jobs:
   test:
@@ -15,19 +17,31 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Check whether Python code changed
+        id: changed
+        uses: ./.github/actions/changed-paths
+        with:
+          pattern: '^(apps/python/|\.github/(workflows/pytest\.yml$|actions/changed-paths/))'
+          base-sha: ${{ github.event.pull_request.base.sha }}
+
       - uses: actions/setup-python@v5
+        if: steps.changed.outputs.changed == 'true'
         with:
           python-version: "3.13"
 
       - name: Install uv
+        if: steps.changed.outputs.changed == 'true'
         run: pip install uv
 
       - name: Install dependencies
+        if: steps.changed.outputs.changed == 'true'
         working-directory: apps/python
         run: uv pip sync requirements.txt --system
 
       - name: Run pytest
+        if: steps.changed.outputs.changed == 'true'
         working-directory: apps/python
         run: pytest -v
