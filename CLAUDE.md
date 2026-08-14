@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> Project overview and user-facing docs: [README.md](README.md) and [docs/](docs/).
+> Project overview and user-facing docs: [README.md](README.md) (日本語版: [README.ja.md](README.ja.md)) and [docs/](docs/).
 > Custom Claude Code skills: [.claude/skills/](.claude/skills/README.md).
 
 ## Layout
@@ -57,6 +57,10 @@ bin/chat.sh   # Launch chat session
 ## Code Style
 
 - **Code comments and docstrings must be written in English** (both Python and TypeScript), unified across the codebase. User-facing chat responses stay in Japanese, but in-code documentation is English only — do not mix languages within a file.
+- **`README.md` and `README.ja.md` are a translation pair — edit both in the same commit.** `README.md` is the source of truth; the Japanese file mirrors its structure. Neither is generated, so nothing catches drift automatically. After changing either, confirm the heading count and table-row count still match:
+  ```bash
+  for f in README.md README.ja.md; do echo "$f: $(grep -c '^## ' $f) headings, $(grep -c '^| ' $f) table rows"; done
+  ```
 
 ## Git Conventions
 
