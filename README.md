@@ -6,7 +6,7 @@ An LLM agent system that collects geopolitical events, stock moves, and sector t
 
 | | |
 |---|---|
-| **Stack** | Python 3.13 · FastAPI · Next.js 14 · TypeScript · Tailwind |
+| **Stack** | Python 3.11–3.13 · FastAPI · Next.js 14 · TypeScript · Tailwind |
 | **Agent layer** | Claude Code CLI (subprocess + WebSearch), parallel prompt orchestration, opt-in local LLM mode (Ollama + Chroma) |
 | **Ops** | launchd/cron scheduling, degraded-mode delivery, sleep-recovery re-run, usage & cost monitoring |
 
@@ -92,7 +92,7 @@ This is why **manual execution is the maintainer's current schedule** rather tha
 
 ## Setup
 
-**Prerequisites:** Python 3.13 (CI-pinned; older versions untested), [uv](https://github.com/astral-sh/uv), [Claude Code CLI](https://claude.ai/code) authenticated, Discord Bot, Notion integration.
+**Prerequisites:** Python 3.11–3.13 (every version runs in CI), [uv](https://github.com/astral-sh/uv), [Claude Code CLI](https://claude.ai/code) authenticated, Discord Bot, Notion integration.
 
 ```bash
 git clone https://github.com/KazusaNakagawa/ai-agent-cli.git

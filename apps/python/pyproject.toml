@@ -1,0 +1,13 @@
+[project]
+name = "ai-agent-python"
+version = "0.1.0"
+description = "Briefing and XSS intelligence agents driven by the Claude CLI"
+# The supported range is proven by the pytest matrix in
+# .github/workflows/pytest.yml — every version named here is run there, and
+# tests/test_python_version_support.py fails if the two ever drift apart.
+requires-python = ">=3.11,<3.14"
+
+# Dependencies are managed with requirements.in / requirements.txt rather than
+# here, so this file is metadata only and is never built or installed.
+[tool.uv]
+package = false

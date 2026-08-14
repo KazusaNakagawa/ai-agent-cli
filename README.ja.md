@@ -6,7 +6,7 @@
 
 | | |
 |---|---|
-| **技術スタック** | Python 3.13 · FastAPI · Next.js 14 · TypeScript · Tailwind |
+| **技術スタック** | Python 3.11–3.13 · FastAPI · Next.js 14 · TypeScript · Tailwind |
 | **エージェント層** | Claude Code CLI（subprocess + WebSearch）、プロンプトの並列オーケストレーション、オプトインのローカル LLM モード（Ollama + Chroma） |
 | **運用** | launchd/cron スケジューリング、デグレードモード配信、スリープ復帰後の再実行、使用量・コスト監視 |
 
@@ -92,7 +92,7 @@ apps/web/                         # Next.js UI — ブリーフィング閲覧�
 
 ## セットアップ
 
-**前提:** Python 3.13（CI でピン留め。それ以前のバージョンは未検証）、[uv](https://github.com/astral-sh/uv)、認証済みの [Claude Code CLI](https://claude.ai/code)、Discord Bot、Notion インテグレーション。
+**前提:** Python 3.11〜3.13（すべて CI で実行）、[uv](https://github.com/astral-sh/uv)、認証済みの [Claude Code CLI](https://claude.ai/code)、Discord Bot、Notion インテグレーション。
 
 ```bash
 git clone https://github.com/KazusaNakagawa/ai-agent-cli.git

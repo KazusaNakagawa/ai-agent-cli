@@ -11,8 +11,17 @@ on:
       - dev
 
 jobs:
-  test:
+  # One leg per supported interpreter. The range is declared in
+  # apps/python/pyproject.toml (requires-python) and this matrix is what proves
+  # it — tests/test_python_version_support.py fails if the two drift apart (#445).
+  pytest:
     runs-on: ubuntu-latest
+
+    strategy:
+      # Every leg reports, so a failure on one version does not hide the others.
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
@@ -30,7 +39,7 @@ jobs:
       - uses: actions/setup-python@v5
         if: steps.changed.outputs.changed == 'true'
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install uv
         if: steps.changed.outputs.changed == 'true'
@@ -45,3 +54,21 @@ jobs:
         if: steps.changed.outputs.changed == 'true'
         working-directory: apps/python
         run: pytest -v
+
+  # Matrix legs report as `pytest (3.11)` and so on, which no longer matches the
+  # `test` context dev requires. This job collapses them back into that single
+  # name, and runs even when the matrix was cancelled so the check never hangs.
+  test:
+    needs: pytest
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Report matrix result
+        run: |
+          echo "pytest matrix result: ${{ needs.pytest.result }}"
+          # `skipped` cannot happen today (the legs always start and decide
+          # internally), but it is treated as a pass so the required check stays
+          # reportable if the matrix is ever gated at the job level.
+          [ "${{ needs.pytest.result }}" = "success" ] \
+            || [ "${{ needs.pytest.result }}" = "skipped" ]

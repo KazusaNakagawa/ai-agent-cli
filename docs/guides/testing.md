@@ -8,6 +8,28 @@ cd apps/python
 .venv/bin/pytest tests/test_claude_runner.py -v  # specific module
 ```
 
+### Supported Python versions
+
+The supported range is **3.11–3.13**, declared as `requires-python` in
+`apps/python/pyproject.toml`. `.github/workflows/pytest.yml` runs the whole
+suite once per version through a `strategy.matrix`, with `fail-fast: false` so
+one failing version does not mask the others. The matrix legs report as
+`pytest (3.11)`…`pytest (3.13)`; a separate `test` job aggregates them into the
+single required status check that `dev` protects.
+
+`tests/test_python_version_support.py` fails if the declared range, the CI
+matrix and the versions named in `README.md` / `README.ja.md` ever disagree — so
+widening or narrowing support means changing `requires-python` and the matrix
+together, not just the prose.
+
+To reproduce another leg locally:
+
+```bash
+uv venv --python 3.11 .venv-311
+uv pip sync requirements.txt --python .venv-311/bin/python
+.venv-311/bin/pytest -v
+```
+
 `conftest.py` sets `BRIEFING_CONFIG_PATH` to `apps/python/tests/config/briefing.json`
 before any import of `src.config`, so tests never read the personal
 `config/briefing.json`.
@@ -41,8 +63,13 @@ reproduce the reported issue first, then confirm the fix removes it.
 
 ```bash
 # After adding a package to requirements.in
-uv pip compile requirements.in -o requirements.txt
+uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt
 uv pip sync requirements.txt
 ```
 
 `requirements.txt` is auto-generated — only edit `requirements.in`.
+
+`--universal --python-version 3.11` resolves one lock file that is valid across
+the whole supported range instead of only the interpreter that ran the compile.
+Without it the lock omits the backports the older legs need (`backports.tarfile`
+for `keyring` on 3.11, `tomli`, `zipp`) and those CI legs fail on import.
