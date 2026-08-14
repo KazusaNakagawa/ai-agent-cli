@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 
 import {
   colorForFile,
+  isBinaryFile,
   isEnvFile,
   isImageFile,
   isLogFile,
+  isPdfFile,
   languageForFile,
 } from "@/lib/fileColors"
 
@@ -87,5 +89,54 @@ describe("isImageFile", () => {
   it("rejects non-image extensions (failure)", () => {
     expect(isImageFile("notes.md")).toBe(false)
     expect(isImageFile("archive.zip")).toBe(false)
+  })
+})
+
+describe("isPdfFile", () => {
+  it("matches .pdf (success)", () => {
+    expect(isPdfFile("report.pdf")).toBe(true)
+  })
+
+  it("is case-insensitive on the extension (boundary)", () => {
+    expect(isPdfFile("REPORT.PDF")).toBe(true)
+  })
+
+  it("rejects non-pdf extensions (failure)", () => {
+    expect(isPdfFile("notes.md")).toBe(false)
+    expect(isPdfFile("photo.png")).toBe(false)
+  })
+
+  it("does not match a name that merely contains 'pdf' (boundary)", () => {
+    expect(isPdfFile("pdf")).toBe(false)
+    expect(isPdfFile("report.pdf.bak")).toBe(false)
+    expect(isPdfFile("mypdf.txt")).toBe(false)
+  })
+})
+
+describe("isBinaryFile", () => {
+  it("covers images and PDFs, which have dedicated viewers (success)", () => {
+    expect(isBinaryFile("photo.png")).toBe(true)
+    expect(isBinaryFile("report.pdf")).toBe(true)
+  })
+
+  it("covers binaries with no viewer, so they are never decoded as text (success)", () => {
+    for (const ext of ["zip", "gz", "xlsx", "docx", "woff2", "mp4", "sqlite"]) {
+      expect(isBinaryFile(`blob.${ext}`)).toBe(true)
+    }
+  })
+
+  it("rejects text formats so they keep the editable path (failure)", () => {
+    for (const name of ["notes.md", "main.py", "index.ts", "data.json", "app.log", ".env"]) {
+      expect(isBinaryFile(name)).toBe(false)
+    }
+  })
+
+  it("treats an extensionless name as text (boundary)", () => {
+    expect(isBinaryFile("Makefile")).toBe(false)
+    expect(isBinaryFile("LICENSE")).toBe(false)
+  })
+
+  it("is case-insensitive on the extension (boundary)", () => {
+    expect(isBinaryFile("ARCHIVE.ZIP")).toBe(true)
   })
 })
