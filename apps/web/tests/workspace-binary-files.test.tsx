@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { WorkspaceScreen } from "@/components/screens/WorkspaceScreen"
 
@@ -40,6 +40,12 @@ beforeEach(() => {
     createObjectURL: vi.fn(() => "blob:fake-url"),
     revokeObjectURL: vi.fn(),
   })
+})
+
+// `selectedFile` lives at module scope so the mocked store can return a stable
+// object, which means it would otherwise leak into the next test.
+afterEach(() => {
+  selectedFile = null
 })
 
 describe("WorkspaceScreen — PDF files", () => {
