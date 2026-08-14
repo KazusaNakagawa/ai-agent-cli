@@ -21,6 +21,15 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pytest.yml"
 READMES = (REPO_ROOT / "README.md", REPO_ROOT / "README.ja.md")
 TESTING_GUIDE = REPO_ROOT / "docs" / "guides" / "testing.md"
 
+# The job whose matrix defines the supported range. Scoped by name so an
+# unrelated job growing its own matrix later cannot be mistaken for this one.
+MATRIX_JOB = "pytest"
+
+# Only versions introduced by the word "Python" count, optionally as a range
+# ("Python 3.11–3.13", "Python 3.11〜3.13"). A bare `3.x` elsewhere in the docs
+# — a dependency version, an example — is none of this test's business.
+PYTHON_VERSION_IN_PROSE = re.compile(r"Python\s+3\.\d+(?:\s*[–—〜~-]\s*3\.\d+)?")
+
 
 def declared_range() -> tuple[tuple[int, int], tuple[int, int]]:
     """Returns the inclusive lower and exclusive upper bound of requires-python."""
@@ -44,16 +53,21 @@ def supported_versions() -> list[str]:
 
 
 def matrix_versions() -> list[str]:
-    """The python-version matrix the pytest workflow actually runs."""
+    """The python-version matrix the `pytest` job actually runs."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
-    matrices = [
-        job["strategy"]["matrix"]["python-version"]
-        for job in jobs.values()
-        if "strategy" in job and "python-version" in job.get("strategy", {}).get("matrix", {})
-    ]
-    assert len(matrices) == 1, f"expected exactly one python-version matrix, found {len(matrices)}"
-    return [str(version) for version in matrices[0]]
+    assert MATRIX_JOB in jobs, f"{WORKFLOW.name} has no `{MATRIX_JOB}` job"
+    matrix = jobs[MATRIX_JOB]["strategy"]["matrix"]["python-version"]
+    return [str(version) for version in matrix]
+
+
+def documented_versions(text: str) -> set[str]:
+    """Every Python version the prose names, ranges included."""
+    return {
+        version
+        for phrase in PYTHON_VERSION_IN_PROSE.findall(text)
+        for version in re.findall(r"3\.\d+", phrase)
+    }
 
 
 class TestDeclaredMetadata:
@@ -82,17 +96,18 @@ class TestDocumentation:
     @pytest.mark.parametrize("readme", READMES, ids=lambda p: p.name)
     def test_readme_names_only_versions_ci_runs(self, readme: Path):
         """Failure: a stale `3.x` left in the docs fails the build."""
-        mentioned = set(re.findall(r"3\.\d+", readme.read_text(encoding="utf-8")))
+        mentioned = documented_versions(readme.read_text(encoding="utf-8"))
+        assert mentioned != set(), f"{readme.name} states no Python version at all"
         unsupported = mentioned - set(supported_versions())
         assert unsupported == set(), f"{readme.name} names untested versions: {sorted(unsupported)}"
 
     @pytest.mark.parametrize("readme", READMES, ids=lambda p: p.name)
     def test_readme_states_both_ends_of_the_range(self, readme: Path):
         """Boundary: the advertised range must reach the lowest and highest leg."""
-        text = readme.read_text(encoding="utf-8")
+        mentioned = documented_versions(readme.read_text(encoding="utf-8"))
         versions = supported_versions()
         for edge in (versions[0], versions[-1]):
-            assert edge in text, f"{readme.name} does not mention {edge}"
+            assert edge in mentioned, f"{readme.name} does not mention Python {edge}"
 
     def test_testing_guide_documents_the_supported_range(self):
         """Success: the guide states the range and how the matrix runs it."""

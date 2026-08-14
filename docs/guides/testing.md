@@ -71,5 +71,5 @@ uv pip sync requirements.txt
 
 `--universal --python-version 3.11` resolves one lock file that is valid across
 the whole supported range instead of only the interpreter that ran the compile.
-Without it the lock omits the backports the older legs need (`backports.tarfile`
+Without it, the lock omits the backports the older legs need (`backports.tarfile`
 for `keyring` on 3.11, `tomli`, `zipp`) and those CI legs fail on import.
