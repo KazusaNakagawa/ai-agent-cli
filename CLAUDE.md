@@ -16,7 +16,7 @@ Python sources live under `apps/python/`. Root-level `bin/run.sh` and `bin/chat.
 uv venv .venv                  # Create venv (first time only)
 uv pip sync requirements.txt   # Install deps
 .venv/bin/pytest -v            # Run tests
-uv pip compile requirements.in -o requirements.txt  # Recompile deps
+uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt  # Recompile deps
 
 # From repo root
 bin/run.sh    # Run both agents
@@ -31,7 +31,7 @@ bin/chat.sh   # Launch chat session
   - `api`: the key from `credentials.get_credential("ANTHROPIC_API_KEY")` (Keychain → `.env` fallback) is **injected** into the subprocess env.
 
   Route new subprocess calls to claude through `_build_env(state.read_state().auth_mode)`. Never set `ANTHROPIC_API_KEY` directly in the subprocess env outside this helper.
-- **`apps/python/requirements.txt` is auto-generated** — only edit `requirements.in`, then recompile.
+- **`apps/python/requirements.txt` is auto-generated** — only edit `requirements.in`, then recompile. Always recompile with `--universal --python-version 3.11`: the supported range is 3.11–3.13 (`apps/python/pyproject.toml`), and a lock resolved for one interpreter drops the backports the older CI legs need.
 - **`src.config.CONFIG` is lazy.** A module-level `__getattr__` calls `load_config()` on first attribute access — importing `src.config` does **not** read `briefing.json`. Tests that call `load_config()` directly must patch `src.config.CONFIG_PATH`.
 
 ## Config File Rules
