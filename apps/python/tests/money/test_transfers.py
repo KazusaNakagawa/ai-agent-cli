@@ -69,6 +69,17 @@ class TestPairing:
         )
         assert {t.id: t.transfer_peer for t in rows}["out"] == "near"
 
+    def test_equally_close_candidates_do_not_depend_on_row_order(self):
+        # Both candidates sit one day away, so ranking on the gap alone would
+        # let the order the files happened to be imported in decide which
+        # transaction stops counting as spending.
+        out = _tx("out", "2026-01-05", "mufg", -300000)
+        earlier = _tx("earlier", "2026-01-04", "rakuten", 300000)
+        later = _tx("later", "2026-01-06", "rakuten", 300000)
+        for order in ([out, earlier, later], [out, later, earlier]):
+            rows = pair_cross_account(order)
+            assert {t.id: t.transfer_peer for t in rows}["out"] == "earlier"
+
 
 class TestRules:
     def test_flags_a_counterparty_whose_other_side_is_not_imported(self):

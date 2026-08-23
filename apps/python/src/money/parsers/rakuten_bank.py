@@ -11,7 +11,13 @@ import io
 from pathlib import Path
 
 from ..models import MoneyError, Transaction
-from .base import ParseResult, build_transaction, parse_amount, verify_balance_chain
+from .base import (
+    ParseResult,
+    build_transaction,
+    parse_amount,
+    verify_balance_chain,
+    verify_calendar_date,
+)
 
 NAME = "rakuten_bank"
 ACCOUNT = "rakuten_bank"
@@ -32,7 +38,10 @@ def _iso_date(value: str, *, path: Path, line: int) -> str:
     digits = value.strip()
     if len(digits) != 8 or not digits.isdigit():
         raise MoneyError(f"{path.name} line {line}: expected a YYYYMMDD date, got {value!r}")
-    return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    # Eight digits is only the shape; 20260230 has it and is not a day.
+    return verify_calendar_date(
+        f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}", path=path, line=line
+    )
 
 
 def parse(path: Path, text: str) -> ParseResult:
@@ -41,6 +50,14 @@ def parse(path: Path, text: str) -> ParseResult:
     chain: list[tuple[int, int | None]] = []
 
     for line, row in enumerate(reader, start=2):
+        # A truncated row leaves trailing columns as None, which would reach
+        # normalization as an AttributeError with no line number attached.
+        missing = [column for column in COLUMNS if row.get(column) is None]
+        if missing:
+            raise MoneyError(
+                f"{path.name} line {line}: row has fewer columns than the header — "
+                f"missing {', '.join(missing)}"
+            )
         amount = parse_amount(row[AMOUNT_COLUMN], path=path, line=line, column=AMOUNT_COLUMN)
         balance = parse_amount(row[BALANCE_COLUMN], path=path, line=line, column=BALANCE_COLUMN)
         transactions.append(

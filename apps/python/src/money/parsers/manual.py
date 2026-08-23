@@ -21,7 +21,13 @@ import re
 from pathlib import Path
 
 from ..models import MoneyError, Transaction
-from .base import ParseResult, build_transaction, parse_amount, verify_balance_chain
+from .base import (
+    ParseResult,
+    build_transaction,
+    parse_amount,
+    verify_balance_chain,
+    verify_calendar_date,
+)
 
 NAME = "manual"
 
@@ -53,9 +59,29 @@ def parse(path: Path, text: str) -> ParseResult:
     chain: list[tuple[int, int | None]] = []
 
     for line, row in enumerate(reader, start=2):
-        date = (row["date"] or "").strip()
+        # A row with fewer fields than the header leaves the trailing columns
+        # as None. Caught here rather than downstream because the damage is
+        # quiet: a missing balance would merely turn the chain check off, and a
+        # missing description would surface as an AttributeError from
+        # normalization instead of a line number.
+        missing = [column for column in COLUMNS if row.get(column) is None]
+        if missing:
+            raise MoneyError(
+                f"{path.name} line {line}: row has fewer columns than the header — "
+                f"missing {', '.join(missing)}"
+            )
+
+        date = row["date"].strip()
         if not _ISO_DATE.match(date):
             raise MoneyError(f"{path.name} line {line}: expected a YYYY-MM-DD date, got {date!r}")
+        verify_calendar_date(date, path=path, line=line)
+
+        description = row["description"].strip()
+        if not description:
+            raise MoneyError(
+                f"{path.name} line {line}: description is empty, so the row cannot be "
+                "attributed to a counterparty"
+            )
 
         withdrawal = parse_amount(row["withdrawal"], path=path, line=line, column="withdrawal")
         deposit = parse_amount(row["deposit"], path=path, line=line, column="deposit")
@@ -78,6 +104,9 @@ def parse(path: Path, text: str) -> ParseResult:
                 account=account,
                 date=date,
                 amount=amount,
+                # The untouched cell, not the stripped copy used for the check
+                # above: desc_raw is the source text, and folding whitespace
+                # into it would change the ids of rows already stored.
                 desc_raw=row["description"],
                 balance=balance,
                 source_file=path.name,

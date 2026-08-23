@@ -6,6 +6,7 @@ in ``__init__`` would make the import cycle.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 from ..models import MoneyError, Transaction
@@ -45,6 +46,21 @@ def build_transaction(
         balance=balance,
         source_file=source_file,
     )
+
+
+def verify_calendar_date(value: str, *, path: Path, line: int) -> str:
+    """Reject a date that has the right shape but is not a day that exists.
+
+    The shape check each parser runs cannot tell ``2026-02-30`` from a real
+    date. Letting one through would file the row under a month that never
+    happened and blow up later, deep in transfer pairing, with a bare
+    ``ValueError`` instead of a message naming the file and line.
+    """
+    try:
+        date.fromisoformat(value)
+    except ValueError as exc:
+        raise MoneyError(f"{path.name} line {line}: {value} is not a real date") from exc
+    return value
 
 
 def verify_balance_chain(rows: list[tuple[int, int | None]], *, path: Path) -> str:

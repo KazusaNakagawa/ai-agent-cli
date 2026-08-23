@@ -12,6 +12,8 @@ already-stored lines into transfers.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from .models import Transaction
@@ -34,8 +36,28 @@ def save(path: Path, transactions: list[Transaction]) -> None:
     payload = "".join(
         json.dumps(t.to_dict(), ensure_ascii=False) + "\n" for t in ordered
     )
-    # Written whole so an interrupted run cannot leave a half-line behind.
-    path.write_text(payload, encoding="utf-8")
+    # Written to a sibling temporary file and moved into place, so the store is
+    # either the old ledger or the new one and never a truncated mix of the
+    # two. Writing over the file directly would leave it half-written if the
+    # process died mid-write, and this is the only copy of the data.
+    # os.replace is atomic within a filesystem, hence the same directory.
+    handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    )
+    try:
+        with handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(handle.name, path)
+    except BaseException:
+        Path(handle.name).unlink(missing_ok=True)
+        raise
 
 
 def merge(existing: list[Transaction], incoming: list[Transaction]) -> tuple[list[Transaction], int, int]:

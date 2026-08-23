@@ -23,6 +23,28 @@ class TestRakutenBank:
     def test_reports_the_balance_chain_as_verified(self, rakuten_csv):
         assert parse_file(rakuten_csv).checks == ["balance chain: verified (5 rows)"]
 
+    def test_rejects_a_date_that_does_not_exist(self, tmp_path):
+        # Eight digits is only the shape. Left unchecked this reaches transfer
+        # pairing as a bare ValueError and files the row in a month that never
+        # happened.
+        path = tmp_path / "RB-bad.csv"
+        path.write_bytes(
+            (
+                "取引日,入出金(円),取引後残高(円),入出金内容\r\n"
+                "20260230,300000,1300000,ヤマダ\r\n"
+            ).encode("cp932")
+        )
+        with pytest.raises(MoneyError, match="not a real date"):
+            parse_file(path)
+
+    def test_rejects_a_row_with_fewer_columns_than_the_header(self, tmp_path):
+        path = tmp_path / "RB-short.csv"
+        path.write_bytes(
+            ("取引日,入出金(円),取引後残高(円),入出金内容\r\n20260105,300000\r\n").encode("cp932")
+        )
+        with pytest.raises(MoneyError, match="fewer columns"):
+            parse_file(path)
+
     def test_refuses_a_file_whose_balance_chain_breaks(self, tmp_path):
         # A dropped or mistyped row is invisible in the totals but shows up
         # immediately here, which is what makes a transcribed statement usable.
@@ -70,6 +92,38 @@ class TestManual:
             encoding="utf-8",
         )
         with pytest.raises(MoneyError, match="YYYY-MM-DD"):
+            parse_file(path)
+
+    def test_rejects_a_date_that_does_not_exist(self, tmp_path):
+        # Shaped like a date and typed easily when transcribing by hand.
+        path = tmp_path / "mufg_bad.csv"
+        path.write_text(
+            "date,withdrawal,deposit,description,balance,memo\n2026-02-30,100,,X,1,\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(MoneyError, match="not a real date"):
+            parse_file(path)
+
+    def test_rejects_a_row_with_fewer_columns_than_the_header(self, tmp_path):
+        # A truncated row leaves the trailing cells as None. The description
+        # would blow up in normalization with no line number, and the missing
+        # balance would quietly switch the chain check off — the one guard that
+        # makes a hand-typed statement trustworthy.
+        path = tmp_path / "mufg_short.csv"
+        path.write_text(
+            "date,withdrawal,deposit,description,balance,memo\n2026-01-05,100\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(MoneyError, match="fewer columns"):
+            parse_file(path)
+
+    def test_rejects_an_empty_description(self, tmp_path):
+        path = tmp_path / "mufg_blank.csv"
+        path.write_text(
+            "date,withdrawal,deposit,description,balance,memo\n2026-01-05,100,, ,1,\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(MoneyError, match="description is empty"):
             parse_file(path)
 
 

@@ -26,7 +26,9 @@ MAX_PAIR_DAYS = 2
 
 
 def _as_date(value: str) -> date:
-    return date(int(value[:4]), int(value[5:7]), int(value[8:10]))
+    # Stored dates are validated at parse time, so this cannot see a date that
+    # does not exist.
+    return date.fromisoformat(value)
 
 
 def apply_transfer_rules(transactions: list[Transaction], rules) -> list[Transaction]:
@@ -73,17 +75,23 @@ def pair_cross_account(
             continue
         out_date = _as_date(out.date)
         best: Transaction | None = None
-        best_gap = max_days + 1
+        best_key: tuple[int, str, str] | None = None
         for candidate in incoming:
             if candidate.id in paired or candidate.account == out.account:
                 continue
             if candidate.amount != -out.amount:
                 continue
             gap = abs((_as_date(candidate.date) - out_date).days)
-            # Same-day matches win; a tie keeps the earlier candidate, which is
-            # the one the statements list first.
-            if gap <= max_days and gap < best_gap:
-                best, best_gap = candidate, gap
+            if gap > max_days:
+                continue
+            # Closest date wins, then the earlier one, then the id. Ranking on
+            # the gap alone would leave equally close candidates to be decided
+            # by the order rows happen to sit in the store, so which
+            # transaction dropped out of spending would depend on the order the
+            # files were imported.
+            key = (gap, candidate.date, candidate.id)
+            if best_key is None or key < best_key:
+                best, best_key = candidate, key
         if best is not None:
             paired[out.id] = best.id
             paired[best.id] = out.id
