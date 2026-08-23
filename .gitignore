@@ -5,6 +5,7 @@
 briefing.json
 self_agent_profile.md
 holdings.json
+money_rules.json
 *.bk
 
 # Claude Code

@@ -145,6 +145,7 @@ cd apps/python
 | `briefing_api.sh` | API エントリポイント経由でブリーフィングを生成 |
 | `chart.sh` | チャート生成（株価比較など） |
 | `portfolio.sh` | `config/holdings.json` からポートフォリオ・スナップショット（構成比、ルックスルーの為替エクスポージャー、配分ルール検査）を生成 |
+| `money.sh` | 銀行明細 CSV を取り込み、月次収支をレポート — `import` / `report` / `review`。設計は [household-finance.md](docs/ideas/household-finance.md) |
 | `gen_wordset.sh` | ワードセット JSON の生成（Stage 1） |
 | `evaluate.sh` | ブリーフィング評価パイプラインの実行 |
 | `eval_report.sh` | 抽出 → スコアリング → 評価レポート出力 |
