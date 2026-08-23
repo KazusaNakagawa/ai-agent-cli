@@ -61,6 +61,26 @@ class TestReportCommand:
             _run(["report", "--month", "2030-01", "--stdout"], store_path)
         assert "2026-01" in str(exit_info.value)
 
+    def test_an_unpadded_month_is_a_usage_error(self, rakuten_csv, store_path):
+        # Months are compared as text, so "2026-1" would sort outside every
+        # real month and report missing data instead of a typo.
+        _run(["import", str(rakuten_csv)], store_path)
+        with pytest.raises(SystemExit) as exit_info:
+            _run(["report", "--month", "2026-1", "--stdout"], store_path)
+        assert "YYYY-MM" in str(exit_info.value)
+
+    def test_a_range_endpoint_that_is_not_a_month_is_refused(self, rakuten_csv, store_path):
+        _run(["import", str(rakuten_csv)], store_path)
+        with pytest.raises(SystemExit) as exit_info:
+            _run(["report", "--range", "2026-1:2026-2", "--stdout"], store_path)
+        assert "YYYY-MM" in str(exit_info.value)
+
+    def test_a_backwards_range_says_so(self, rakuten_csv, store_path):
+        _run(["import", str(rakuten_csv)], store_path)
+        with pytest.raises(SystemExit) as exit_info:
+            _run(["report", "--range", "2026-02:2026-01", "--stdout"], store_path)
+        assert "開始月が終了月より後" in str(exit_info.value)
+
     def test_reporting_before_importing_says_so(self, store_path):
         with pytest.raises(SystemExit) as exit_info:
             _run(["report", "--stdout"], store_path)

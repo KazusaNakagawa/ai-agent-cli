@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -51,11 +52,28 @@ def _load_classified(args: argparse.Namespace, rules: Rules) -> list[Transaction
     return rebuild(store.load(args.store), rules)
 
 
+_MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def _valid_month(value: str, *, option: str) -> str:
+    """Insist on a zero-padded YYYY-MM.
+
+    Months are compared as text against the store, so an unpadded `2026-1`
+    would not select January — it would sort outside every real month and
+    report that nothing matched, which reads like missing data rather than a
+    typo.
+    """
+    if not _MONTH.match(value):
+        raise MoneyError(f"{option} は YYYY-MM の形式で指定してください（例: 2026-07）: {value}")
+    return value
+
+
 def _resolve_months(transactions: list[Transaction], args: argparse.Namespace) -> list[str]:
     available = report_mod.months_covered(transactions)
     if not available:
         raise MoneyError("ストアが空です。先に `import` を実行してください")
     if args.month:
+        _valid_month(args.month, option="--month")
         if args.month not in available:
             raise MoneyError(
                 f"{args.month} の明細がありません（取り込み済み: {available[0]}〜{available[-1]}）"
@@ -66,6 +84,10 @@ def _resolve_months(transactions: list[Transaction], args: argparse.Namespace) -
             start, end = args.range.split(":", 1)
         except ValueError as exc:
             raise MoneyError("--range は YYYY-MM:YYYY-MM の形式で指定してください") from exc
+        _valid_month(start, option="--range の開始月")
+        _valid_month(end, option="--range の終了月")
+        if start > end:
+            raise MoneyError(f"--range の開始月が終了月より後です: {start} > {end}")
         months = [m for m in available if start <= m <= end]
         if not months:
             raise MoneyError(f"{args.range} に該当する月がありません")

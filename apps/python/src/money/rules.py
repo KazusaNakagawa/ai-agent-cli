@@ -93,6 +93,32 @@ def make_matcher(pattern: str, *, where: str) -> Matcher:
     return Matcher(source=pattern, raw=raw, folded=folded)
 
 
+def _section(data: dict, key: str, expected: type, *, where: str):
+    """Read one top-level key, insisting it has the shape the rest assumes.
+
+    A hand-edited config is the most likely thing in this package to be wrong,
+    and every wrong shape here otherwise surfaces as an ``AttributeError`` from
+    somewhere the person editing the file cannot connect to what they typed.
+    """
+    value = data.get(key)
+    if value is None:
+        return expected()
+    if not isinstance(value, expected):
+        raise MoneyError(
+            f"{where}: '{key}' must be "
+            f"{'an object' if expected is dict else 'a list'}, "
+            f"got {type(value).__name__}"
+        )
+    return value
+
+
+def _strings(values: list, key: str, *, where: str) -> list[str]:
+    for value in values:
+        if not isinstance(value, str):
+            raise MoneyError(f"{where}: every entry in '{key}' must be text, got {value!r}")
+    return values
+
+
 def load_rules(path: Path | None) -> Rules:
     """Read the rules file if it exists; otherwise return the built-ins alone."""
     rules = Rules(categories=_builtin_rules())
@@ -104,34 +130,43 @@ def load_rules(path: Path | None) -> Rules:
     except json.JSONDecodeError as exc:
         raise MoneyError(f"{path}: is not valid JSON ({exc})") from exc
 
+    where = path.name
+    if not isinstance(data, dict):
+        raise MoneyError(f"{where}: must be a JSON object, got {type(data).__name__}")
+
     # Keys beginning with "_" are documentation the example file carries, so a
     # copied-and-edited config never turns its own comments into rules.
-    for key, value in (data.get("accounts") or {}).items():
+    for key, value in _section(data, "accounts", dict, where=where).items():
         if key.startswith("_"):
             continue
         rules.accounts[key] = value.get("label", key) if isinstance(value, dict) else str(value)
 
     # Stored folded so a name written the natural way still matches whatever
     # spelling the bank used.
-    rules.self_names = [
-        match_key(name) for name in data.get("self_names") or [] if not name.startswith("_")
-    ]
+    self_names = _strings(_section(data, "self_names", list, where=where), "self_names", where=where)
+    rules.self_names = [match_key(name) for name in self_names if not name.startswith("_")]
 
+    patterns = _strings(
+        _section(data, "transfer_patterns", list, where=where), "transfer_patterns", where=where
+    )
     rules.transfer_patterns = [
-        make_matcher(p, where=f"{path.name} transfer_patterns")
-        for p in data.get("transfer_patterns") or []
+        make_matcher(p, where=f"{where} transfer_patterns")
+        for p in patterns
         if not p.startswith("_")
     ]
 
     # User rules are evaluated before the built-ins so a specific counterparty
     # can override a generic keyword.
     user_rules = []
-    for entry in data.get("categories") or []:
+    for entry in _section(data, "categories", list, where=where):
+        if not isinstance(entry, dict):
+            raise MoneyError(f"{where}: every category rule must be an object, got {entry!r}")
         if "pattern" not in entry or "category" not in entry:
-            raise MoneyError(f"{path.name}: every category rule needs 'pattern' and 'category'")
+            raise MoneyError(f"{where}: every category rule needs 'pattern' and 'category'")
+        _strings([entry["pattern"], entry["category"]], "categories", where=where)
         user_rules.append(
             CategoryRule(
-                matcher=make_matcher(entry["pattern"], where=f"{path.name} categories"),
+                matcher=make_matcher(entry["pattern"], where=f"{where} categories"),
                 category=entry["category"],
                 label=entry.get("label", ""),
                 fixed_cost=bool(entry.get("fixed_cost", False)),

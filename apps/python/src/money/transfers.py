@@ -66,35 +66,55 @@ def pair_cross_account(
     spending.
     """
     by_id = {t.id: t for t in transactions}
-    outgoing = sorted((t for t in transactions if t.amount < 0), key=lambda t: t.date)
+    outgoing = sorted((t for t in transactions if t.amount < 0), key=lambda t: (t.date, t.id))
     incoming = [t for t in transactions if t.amount > 0]
-    paired: dict[str, str] = {}
 
+    # Every incoming row this outgoing row could be the other half of, most
+    # preferred first: closest date, then the earlier one, then the id.
+    # Ranking on the gap alone would leave equally close candidates to be
+    # decided by the order rows happen to sit in the store, so which
+    # transaction dropped out of spending would depend on the order the files
+    # were imported.
+    candidates: dict[str, list[str]] = {}
     for out in outgoing:
-        if out.id in paired:
-            continue
         out_date = _as_date(out.date)
-        best: Transaction | None = None
-        best_key: tuple[int, str, str] | None = None
+        ranked = []
         for candidate in incoming:
-            if candidate.id in paired or candidate.account == out.account:
-                continue
-            if candidate.amount != -out.amount:
+            if candidate.account == out.account or candidate.amount != -out.amount:
                 continue
             gap = abs((_as_date(candidate.date) - out_date).days)
-            if gap > max_days:
+            if gap <= max_days:
+                ranked.append(((gap, candidate.date, candidate.id), candidate.id))
+        candidates[out.id] = [candidate_id for _, candidate_id in sorted(ranked)]
+
+    claimed_by: dict[str, str] = {}  # incoming id -> outgoing id holding it
+
+    def claim(out_id: str, tried: set[str]) -> bool:
+        """Take a candidate, moving whoever already holds it if that is possible.
+
+        Taking each outgoing row's favourite and moving on would pair fewer
+        rows than the data allows: an outgoing row can be the only one able to
+        reach a candidate its neighbour merely prefers, and would then be left
+        counting as spending. Handing back a contested candidate whenever its
+        holder has somewhere else to go leaves no pair unmade.
+        """
+        for candidate_id in candidates[out_id]:
+            if candidate_id in tried:
                 continue
-            # Closest date wins, then the earlier one, then the id. Ranking on
-            # the gap alone would leave equally close candidates to be decided
-            # by the order rows happen to sit in the store, so which
-            # transaction dropped out of spending would depend on the order the
-            # files were imported.
-            key = (gap, candidate.date, candidate.id)
-            if best_key is None or key < best_key:
-                best, best_key = candidate, key
-        if best is not None:
-            paired[out.id] = best.id
-            paired[best.id] = out.id
+            tried.add(candidate_id)
+            holder = claimed_by.get(candidate_id)
+            if holder is None or claim(holder, tried):
+                claimed_by[candidate_id] = out_id
+                return True
+        return False
+
+    for out in outgoing:
+        claim(out.id, set())
+
+    paired: dict[str, str] = {}
+    for candidate_id, out_id in claimed_by.items():
+        paired[candidate_id] = out_id
+        paired[out_id] = candidate_id
 
     return [
         by_id[t.id].with_(is_transfer=True, transfer_peer=paired[t.id])

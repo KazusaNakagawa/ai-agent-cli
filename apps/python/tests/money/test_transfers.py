@@ -80,6 +80,24 @@ class TestPairing:
             rows = pair_cross_account(order)
             assert {t.id: t.transfer_peer for t in rows}["out"] == "earlier"
 
+    def test_a_contested_candidate_is_handed_over_rather_than_leaving_a_pair_unmade(self):
+        # "near" is the only candidate the later transfer can reach, while the
+        # earlier one can also reach "far". Taking each row's favourite and
+        # moving on would pair one transfer and leave the other counting as
+        # spending, even though both halves are present.
+        rows = pair_cross_account(
+            [
+                _tx("early_out", "2026-01-03", "mufg", -300000),
+                _tx("late_out", "2026-01-05", "mufg", -300000),
+                _tx("near", "2026-01-03", "rakuten", 300000),
+                _tx("far", "2026-01-01", "rakuten", 300000),
+            ]
+        )
+        peers = {t.id: t.transfer_peer for t in rows}
+        assert all(t.is_transfer for t in rows)
+        assert peers["late_out"] == "near"
+        assert peers["early_out"] == "far"
+
 
 class TestRules:
     def test_flags_a_counterparty_whose_other_side_is_not_imported(self):

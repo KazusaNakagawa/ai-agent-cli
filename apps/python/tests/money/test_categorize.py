@@ -97,6 +97,30 @@ class TestUserRules:
         with pytest.raises(MoneyError, match="not valid JSON"):
             load_rules(path)
 
+    def test_valid_json_of_the_wrong_shape_is_reported_too(self, tmp_path):
+        # A file can parse and still be nothing this can read. Without the
+        # shape check the CLI prints an AttributeError traceback, which says
+        # nothing about the line the person edited.
+        path = tmp_path / "money_rules.json"
+        path.write_text('["a", "b"]', encoding="utf-8")
+        with pytest.raises(MoneyError, match="must be a JSON object"):
+            load_rules(path)
+
+    def test_a_section_of_the_wrong_type_names_the_key(self, tmp_path):
+        path = _write_rules(tmp_path, {"self_names": "ヤマダ タロウ"})
+        with pytest.raises(MoneyError, match="'self_names' must be a list"):
+            load_rules(path)
+
+    def test_a_non_text_entry_names_the_key(self, tmp_path):
+        path = _write_rules(tmp_path, {"transfer_patterns": [123]})
+        with pytest.raises(MoneyError, match="'transfer_patterns' must be text"):
+            load_rules(path)
+
+    def test_a_category_rule_that_is_not_an_object_is_refused(self, tmp_path):
+        path = _write_rules(tmp_path, {"categories": ["ホケン"]})
+        with pytest.raises(MoneyError, match="must be an object"):
+            load_rules(path)
+
 
 class TestReviewList:
     def test_transfers_are_not_asked_about(self):
