@@ -45,8 +45,11 @@ bin/chat.sh   # Launch chat session
 | `apps/python/config/self_agent_profile.md.example` | Schema documentation and template | Tracked |
 | `apps/python/config/holdings.json` | Portfolio positions for `bin/portfolio.sh` (personal data) | Ignored |
 | `apps/python/config/holdings.json.example` | Schema documentation and template | Tracked |
+| `apps/python/config/money_rules.json` | Categorization and transfer rules for `bin/money.sh` (personal data) | Ignored |
+| `apps/python/config/money_rules.json.example` | Schema documentation and template | Tracked |
 
-- `apps/python/config/briefing.json` and `holdings.json` are **never committed**.
+- `apps/python/config/briefing.json`, `holdings.json` and `money_rules.json` are **never committed**.
+  Neither is anything under `input/` or `output/` — raw statements and generated reports stay local.
 - CI and local `pytest` always load `apps/python/tests/config/briefing.json` — `conftest.py` sets `BRIEFING_CONFIG_PATH` before any import of `src.config`.
 - When adding or changing config schema, update both `.example` and `tests/config/briefing.json`.
 

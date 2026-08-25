@@ -145,6 +145,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 | `briefing_api.sh` | Generate a briefing via the API entry point |
 | `chart.sh` | Generate charts (e.g. stock price comparison) |
 | `portfolio.sh` | Render a portfolio snapshot (weights, look-through FX exposure, allocation-rule checks) from `config/holdings.json` |
+| `money.sh` | Import bank statement CSVs and report monthly cash flow — `import` / `report` / `review`; see [household-finance.md](docs/ideas/household-finance.md) |
 | `gen_wordset.sh` | Generate word-set JSON (Stage 1) |
 | `evaluate.sh` | Run the briefing evaluation pipeline |
 | `eval_report.sh` | Extract → score → report evaluation results |

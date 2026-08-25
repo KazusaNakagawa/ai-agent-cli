@@ -1,0 +1,34 @@
+{
+  "_comment": {
+    "file": "Copy to money_rules.json and edit. Personal — never committed. Every key is optional: with no file at all the built-in rules still cover salary / bonus / interest, and every other counterparty shows up under `bin/money.sh review`.",
+    "patterns": "Patterns are regular expressions. Each is tried against the normalized description and against the folded match key (small kana enlarged, long marks and spaces removed, billing-period suffixes like 「6月分」 stripped). A pattern with no regex metacharacters is folded the same way before matching, so you can write a name the way the world spells it even though the bank writes it with full-size kana.",
+    "accounts": "Keys are the account ids the parsers produce. Rakuten Bank always reports as `rakuten_bank`; hand-maintained CSVs take their id from the filename up to the first `_` or `-` (mufg_2025-07.csv -> mufg). Labels are for display only.",
+    "self_names": "Your own account holder name as it appears on transfers between your accounts, in katakana. Matching lines are treated as transfer candidates rather than income or spending.",
+    "transfer_patterns": "Counterparties that move money rather than spend it, for the cases cross-account pairing cannot see because the other side is not imported — a brokerage, a time deposit, another bank.",
+    "categories": "Evaluated top to bottom; the first match wins. These run before the built-in rules, so a specific counterparty can override a generic keyword. `label` is the display name for the whole category, so rules sharing a category should share a label — when they disagree the report falls back to the raw category key rather than labelling a combined total with one counterparty's name. `fixed_cost` and `note` are carried into the recurring-expense report in a later phase; `note` is for counterparties whose actual contents the statement never shows."
+  },
+
+  "accounts": {
+    "rakuten_bank": { "label": "楽天銀行" },
+    "mufg": { "label": "三菱UFJ銀行" }
+  },
+
+  "self_names": ["ヤマダ タロウ"],
+
+  "transfer_patterns": ["ショウケンガイシャ", "テイキヨキン"],
+
+  "categories": [
+    {
+      "pattern": "ホケン|セイメイ",
+      "category": "insurance",
+      "label": "保険",
+      "fixed_cost": true,
+      "note": "契約内容は明細から分からない。要問い合わせ"
+    },
+    { "pattern": "デンキ|デンリョク", "category": "utility_electricity", "label": "電気", "fixed_cost": true },
+    { "pattern": "ガス", "category": "utility_gas", "label": "ガス", "fixed_cost": true },
+    { "pattern": "スイドウ", "category": "utility_water", "label": "水道", "fixed_cost": true },
+    { "pattern": "カードサービス", "category": "card_payment", "label": "カード引き落とし" },
+    { "pattern": "ハウジング|フドウサン", "category": "housing", "label": "住居" }
+  ]
+}
