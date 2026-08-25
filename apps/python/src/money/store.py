@@ -16,17 +16,33 @@ import os
 import tempfile
 from pathlib import Path
 
-from .models import Transaction
+from .models import MoneyError, Transaction
 
 
 def load(path: Path) -> list[Transaction]:
     if not path.exists():
         return []
     transactions = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = line.strip()
-        if line:
-            transactions.append(Transaction.from_dict(json.loads(line)))
+        if not line:
+            continue
+        # The ledger is meant to be repairable by hand, so a hand-edit that
+        # breaks a line has to name the line instead of surfacing as a
+        # traceback from json or from the dataclass constructor.
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise MoneyError(f"{path} line {number}: is not valid JSON ({exc.msg})") from exc
+        if not isinstance(data, dict):
+            raise MoneyError(
+                f"{path} line {number}: expected a transaction object, got "
+                f"{type(data).__name__}"
+            )
+        try:
+            transactions.append(Transaction.from_dict(data))
+        except TypeError as exc:
+            raise MoneyError(f"{path} line {number}: is not a transaction ({exc})") from exc
     return transactions
 
 

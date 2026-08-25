@@ -93,12 +93,16 @@ def parse(path: Path, text: str) -> ParseResult:
         # has to know this format had them separate.
         amount = deposit - withdrawal
 
-        raw_balance = (row.get("balance") or "").strip()
-        balance = (
-            parse_amount(raw_balance, path=path, line=line, column="balance")
-            if raw_balance
-            else None
-        )
+        # A blank balance is refused rather than tolerated: the running balance
+        # is the only thing that proves a transcribed statement is complete, and
+        # one empty cell would switch that check off for the whole file.
+        raw_balance = row["balance"].strip()
+        if not raw_balance:
+            raise MoneyError(
+                f"{path.name} line {line}: balance is empty, and the balance chain is "
+                "what makes a transcribed statement checkable — fill it in"
+            )
+        balance = parse_amount(raw_balance, path=path, line=line, column="balance")
         transactions.append(
             build_transaction(
                 account=account,

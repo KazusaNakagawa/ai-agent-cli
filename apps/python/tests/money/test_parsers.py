@@ -1,7 +1,10 @@
+from pathlib import Path
+
 import pytest
 
 from src.money.models import MoneyError
 from src.money.parsers import detect, parse_file, read_text
+from src.money.parsers.base import verify_balance_chain
 
 
 class TestRakutenBank:
@@ -125,6 +128,34 @@ class TestManual:
         )
         with pytest.raises(MoneyError, match="description is empty"):
             parse_file(path)
+
+    def test_rejects_an_empty_balance(self, tmp_path):
+        # The blank cell used to become None, which turned the chain check off
+        # for the whole file — the file would import, unverified, and look fine.
+        path = tmp_path / "mufg_noblance.csv"
+        path.write_text(
+            "date,withdrawal,deposit,description,balance,memo\n"
+            "2026-01-05,100,,X,1000,\n"
+            "2026-01-06,100,,Y,,\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(MoneyError, match="balance is empty"):
+            parse_file(path)
+
+
+class TestBalanceChain:
+    def test_skips_only_when_no_row_carries_a_balance(self):
+        assert "skipped" in verify_balance_chain(
+            [(-100, None), (-200, None)], path=Path("nobalance.csv")
+        )
+
+    def test_refuses_a_gap_in_a_file_that_otherwise_has_balances(self):
+        # Bailing out on the first missing balance would leave every later row
+        # unchecked, so a single gap has to be an error rather than a skip.
+        with pytest.raises(MoneyError, match="balance is missing"):
+            verify_balance_chain(
+                [(-100, 900), (-200, None), (-300, 400)], path=Path("gap.csv")
+            )
 
 
 class TestDetection:

@@ -72,10 +72,19 @@ def verify_balance_chain(rows: list[tuple[int, int | None]], *, path: Path) -> s
     """
     if not rows:
         return "balance chain: skipped (no rows)"
+    # Skipping is only honest when the format carries no balance at all. A file
+    # that has the column but leaves some rows blank used to skip the check
+    # entirely on the first gap, so a single empty cell disabled verification
+    # for every other row in the file.
+    if all(balance is None for _, balance in rows):
+        return "balance chain: skipped (no balance column)"
     previous: int | None = None
     for index, (amount, balance) in enumerate(rows, start=2):
         if balance is None:
-            return "balance chain: skipped (no balance column)"
+            raise MoneyError(
+                f"{path.name} line {index}: balance is missing while other rows have "
+                "one, so the chain cannot be verified; the file was not imported."
+            )
         if previous is not None and previous + amount != balance:
             raise MoneyError(
                 f"{path.name} line {index}: balance chain broken — "
