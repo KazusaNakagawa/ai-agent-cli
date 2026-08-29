@@ -16,6 +16,6 @@ than on the local Mac.
 
 ## Previous run
 
-An earlier execution of the same plan ran locally and recorded a Darwin host
-(`nakagawakazusanoMacBook-Air.local`, `arm64`, from a local agent worktree).
-This file now records the cloud run, which is what the plan set out to verify.
+An earlier execution of the same plan ran locally and recorded a Darwin
+(`arm64`) host from a local agent worktree. This file now records the cloud
+run, which is what the plan set out to verify.
