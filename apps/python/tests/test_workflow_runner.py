@@ -298,7 +298,7 @@ def test_a_failed_run_record_is_attached_to_the_raised_exception():
 # --- dry run ----------------------------------------------------------------
 
 
-def test_dry_run_executes_only_dry_run_ok_steps():
+def test_dry_run_executes_only_preamble_steps():
     calls = []
     wf = Workflow(
         id="w",

@@ -78,7 +78,7 @@ def test_run_executes_the_named_workflow(registered):
     assert calls == ["preflight", "work"]
 
 
-def test_run_dry_run_executes_only_dry_run_ok_steps(registered):
+def test_run_dry_run_executes_only_preamble_steps(registered):
     calls = []
     registered(_echo_workflow(calls))
 

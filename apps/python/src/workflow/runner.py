@@ -118,10 +118,15 @@ def run_workflow(
 ) -> RunRecord:
     """Execute a workflow and return its record.
 
-    ``force`` bypasses ``wf.guard``. ``dry_run`` executes only the steps marked
-    ``dry_run_ok`` so credentials and config can be validated without
-    delivering anything, and bypasses the guard for the same reason ``force``
-    does — there is no real work for it to protect.
+    Execution order is: every ``preamble`` step, then ``wf.guard``, then the
+    rest. Preamble steps are side-effect-free, so running them ahead of the
+    guard means a run that turns out to have nothing to do still validates its
+    configuration.
+
+    ``force`` bypasses ``wf.guard``. ``dry_run`` runs the preamble and skips
+    every other step, so credentials and config can be validated without
+    delivering anything; it bypasses the guard for the same reason ``force``
+    does — there is no real work for the guard to protect.
 
     A step that raises and is not ``best_effort`` propagates its original
     exception — callers such as ``src.handler`` depend on the exception type
