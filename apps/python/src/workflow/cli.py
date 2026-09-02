@@ -87,7 +87,9 @@ def _cmd_list(*, hint: bool = True) -> int:
     if hint:
         # A real id, not "<workflow_id>": with the placeholder, the nearest
         # thing on screen that looks like a value is the TITLE column header.
-        print(f"\nrun one with: workflow run {sorted(found)[0]}")
+        example = sorted(found)[0]
+        print(f"\nrun one with: workflow run {example}")
+        print(f"an unambiguous prefix works too: workflow run {example[:3]}")
     return 0
 
 
@@ -106,10 +108,15 @@ def _cmd_run(workflow_id: str | None, options: Sequence[str]) -> int:
         return 1
 
     try:
-        wf = registry.get(workflow_id)
+        wf = registry.resolve(workflow_id)
     except KeyError as exc:
         print(str(exc).strip("\"'"), file=sys.stderr)
         return 1
+
+    # Say what an abbreviation expanded to: the whole point of running this is
+    # that something happens, and you should not have to guess to what.
+    if wf.id != workflow_id:
+        print(f"{workflow_id} → {wf.id}")
 
     opts = vars(_workflow_parser(wf).parse_args(list(options)))
     force = opts.pop("force")

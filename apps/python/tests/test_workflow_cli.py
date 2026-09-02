@@ -221,6 +221,28 @@ def test_run_help_for_a_workflow_shows_its_declared_options(registered, capsys):
     assert "--dry-run" in out
 
 
+def test_run_accepts_an_unambiguous_prefix_and_says_what_it_expanded_to(registered, capsys):
+    calls = []
+    registered(_echo_workflow(calls))
+
+    assert cli.main(["run", "dem"]) == 0
+
+    assert calls == ["preflight", "work"]
+    assert "dem → demo" in capsys.readouterr().out
+
+
+def test_run_refuses_an_ambiguous_prefix(registered, capsys):
+    registered(
+        Workflow(id="report_daily", title="D", steps=(Step("a", lambda ctx: None),)),
+        Workflow(id="report_weekly", title="W", steps=(Step("a", lambda ctx: None),)),
+    )
+
+    assert cli.main(["run", "report"]) == 1
+
+    err = capsys.readouterr().err
+    assert "report_daily" in err and "report_weekly" in err
+
+
 def test_run_reports_an_unknown_workflow(registered, capsys):
     registered(_echo_workflow([]))
 

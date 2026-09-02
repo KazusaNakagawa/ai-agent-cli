@@ -146,6 +146,58 @@ def test_get_raises_a_readable_error_for_an_unknown_id(definitions_package):
         registry.get("nope", package=pkg)
 
 
+@pytest.fixture
+def two_workflows(definitions_package):
+    return definitions_package(
+        "defs_resolve",
+        {
+            "alpha": f"""
+                {_STEP_IMPORT}
+                ALPHA = Workflow(id="briefing", title="B", steps=(Step("a", lambda ctx: None),))
+            """,
+            "beta": f"""
+                {_STEP_IMPORT}
+                BETA = Workflow(id="brief_weekly", title="W", steps=(Step("b", lambda ctx: None),))
+            """,
+            "gamma": f"""
+                {_STEP_IMPORT}
+                GAMMA = Workflow(id="incident", title="I", steps=(Step("c", lambda ctx: None),))
+            """,
+        },
+    )
+
+
+def test_resolve_accepts_an_exact_id(two_workflows):
+    assert registry.resolve("briefing", package=two_workflows).id == "briefing"
+
+
+def test_resolve_accepts_an_unambiguous_prefix(two_workflows):
+    assert registry.resolve("inc", package=two_workflows).id == "incident"
+
+
+def test_resolve_prefers_an_exact_id_over_a_longer_match(two_workflows):
+    # "briefing" is also a prefix of nothing else here, but the exact-match
+    # rule is what stops an id that prefixes another id from being ambiguous.
+    assert registry.resolve("briefing", package=two_workflows).id == "briefing"
+
+
+def test_resolve_refuses_an_ambiguous_prefix(two_workflows):
+    with pytest.raises(KeyError, match="brief_weekly"):
+        registry.resolve("brief", package=two_workflows)
+
+
+def test_resolve_reports_an_unknown_prefix(two_workflows):
+    with pytest.raises(KeyError, match="zzz"):
+        registry.resolve("zzz", package=two_workflows)
+
+
+def test_get_does_not_prefix_match(two_workflows):
+    # Code naming a workflow must keep naming the same one after another
+    # workflow is added; only human input gets abbreviations.
+    with pytest.raises(KeyError):
+        registry.get("inc", package=two_workflows)
+
+
 def test_the_real_definitions_package_is_discoverable():
     # The shipped package may legitimately be empty until #457 lands; what
     # matters is that discovery runs against it without raising.

@@ -47,9 +47,35 @@ def discover(package: ModuleType | None = None) -> dict[str, Workflow]:
 
 
 def get(workflow_id: str, *, package: ModuleType | None = None) -> Workflow:
-    """Return one registered workflow, or raise ``KeyError`` naming the alternatives."""
+    """Return one registered workflow by its exact id.
+
+    Deliberately exact: code naming a workflow must keep naming the same one
+    after another workflow is added. Abbreviations are for people typing at a
+    terminal — see ``resolve``.
+    """
     found = discover(package)
     if workflow_id not in found:
         available = ", ".join(sorted(found)) or "none"
         raise KeyError(f"unknown workflow {workflow_id!r} (available: {available})")
     return found[workflow_id]
+
+
+def resolve(typed: str, *, package: ModuleType | None = None) -> Workflow:
+    """Resolve what a person typed: an exact id, or an unambiguous prefix.
+
+    Prefix matching rather than list positions, because a position moves when
+    a workflow is added — ``run 2`` would quietly start running something
+    else. A prefix can only ever resolve to a name that begins with what was
+    typed, and an ambiguous one is refused rather than guessed.
+    """
+    found = discover(package)
+    if typed in found:
+        return found[typed]
+
+    matches = sorted(name for name in found if name.startswith(typed))
+    if len(matches) == 1:
+        return found[matches[0]]
+    if not matches:
+        available = ", ".join(sorted(found)) or "none"
+        raise KeyError(f"unknown workflow {typed!r} (available: {available})")
+    raise KeyError(f"{typed!r} matches {len(matches)} workflows: {', '.join(matches)}")
