@@ -45,6 +45,26 @@ def test_list_prints_every_registered_workflow(registered, capsys):
     assert "other" in out
 
 
+def test_list_labels_the_id_column(registered, capsys):
+    # Unlabelled, the first column reads as a display name and nothing tells
+    # the reader it is the <workflow_id> every usage string asks for.
+    registered(_echo_workflow([]))
+
+    cli.main(["list"])
+
+    out = capsys.readouterr().out
+    assert "WORKFLOW_ID" in out
+    assert "workflow run demo" in out
+
+
+def test_list_with_no_workflows_says_where_to_add_one(registered, capsys):
+    registered()
+
+    cli.main(["list"])
+
+    assert "src/workflow/definitions" in capsys.readouterr().out
+
+
 def test_list_names_declared_inputs(registered, capsys):
     registered(
         Workflow(
@@ -76,7 +96,7 @@ def test_no_arguments_lists_workflows_and_says_how_to_run_one(registered, capsys
 
     out = capsys.readouterr().out
     assert "demo" in out
-    assert "workflow run <workflow_id>" in out
+    assert "workflow run demo" in out
 
 
 def test_an_unknown_top_level_option_is_rejected(registered):

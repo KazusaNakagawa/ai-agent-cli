@@ -38,7 +38,7 @@ def _run_usage() -> None:
     print("Options go after the workflow id — which options exist depends on the")
     print("workflow. See them with: workflow run <workflow_id> --help")
     print()
-    _cmd_list()
+    _cmd_list(hint=False)
 
 
 def _workflow_parser(wf: Workflow) -> argparse.ArgumentParser:
@@ -66,17 +66,28 @@ def _available() -> str:
     return ", ".join(sorted(registry.discover())) or "none"
 
 
-def _cmd_list(*, hint: bool = False) -> int:
+def _cmd_list(*, hint: bool = True) -> int:
+    """Print the registered workflows.
+
+    The header names the first column ``WORKFLOW_ID`` on purpose: without it
+    the column reads as a display name, and nothing connects it to the
+    ``<workflow_id>`` the usage strings ask for.
+    """
     found = registry.discover()
     if not found:
         print("no workflows registered")
+        print(f"add one as a module under {registry.DEFINITIONS_PACKAGE.replace('.', '/')}/")
         return 0
+
+    print(f"{'WORKFLOW_ID':<20} TITLE")
     for workflow_id in sorted(found):
         wf = found[workflow_id]
         options = " ".join(f"--{spec.id}" for spec in wf.inputs)
         print(f"{workflow_id:<20} {wf.title}" + (f"  [{options}]" if options else ""))
     if hint:
-        print("\nrun one with: workflow run <workflow_id> [options]")
+        # A real id, not "<workflow_id>": with the placeholder, the nearest
+        # thing on screen that looks like a value is the TITLE column header.
+        print(f"\nrun one with: workflow run {sorted(found)[0]}")
     return 0
 
 
@@ -126,7 +137,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Bare `workflow` answers the question someone running it is actually
     # asking — what can I run? — instead of an argparse usage error.
     if not argv:
-        return _cmd_list(hint=True)
+        return _cmd_list()
 
     if argv[0] == "run":
         rest = argv[1:]
