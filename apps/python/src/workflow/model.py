@@ -44,9 +44,12 @@ class Step:
     Chroma indexing in the briefing pipeline is the original example. Anything
     else that raises fails the run and propagates.
 
-    ``dry_run_ok`` marks a step that is safe to execute during a dry run
-    (credential preflight, validation). Every other step is skipped, so a dry
-    run never delivers anything.
+    ``preamble`` marks a side-effect-free step — credential preflight,
+    validation. Being free of side effects has two consequences, and the field
+    carries both: a preamble step runs *before* the guard, because checking the
+    configuration is worth doing even on a run that turns out to have nothing
+    to do; and it is the only kind of step a dry run executes, because it
+    cannot deliver anything. Preamble steps must be declared first.
 
     There is intentionally no ``timeout`` field. Steps run in-process and a
     wall-clock limit could not actually interrupt arbitrary Python, so the field
@@ -57,7 +60,7 @@ class Step:
     id: str
     run: Callable[[StepContext], Any]
     best_effort: bool = False
-    dry_run_ok: bool = False
+    preamble: bool = False
     skip_if: Callable[[StepContext], bool] | None = None
 
     def __post_init__(self) -> None:
@@ -111,10 +114,20 @@ class Workflow:
         if not self.steps:
             raise ValueError(f"workflow {self.id!r} must declare at least one step")
         seen: set[str] = set()
+        main_started = False
         for step in self.steps:
             if step.id in seen:
                 raise ValueError(f"workflow {self.id!r}: duplicate step id {step.id!r}")
             seen.add(step.id)
+            # Preamble steps run before the guard, so declaring one after a
+            # normal step would put the declared order and the executed order
+            # out of step — reject it rather than silently reordering.
+            if step.preamble and main_started:
+                raise ValueError(
+                    f"workflow {self.id!r}: preamble step {step.id!r} must be declared "
+                    "before every non-preamble step"
+                )
+            main_started = main_started or not step.preamble
 
 
 @dataclass

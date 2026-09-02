@@ -26,7 +26,7 @@ def _echo_workflow(calls):
         id="demo",
         title="Demo workflow",
         steps=(
-            Step("preflight", lambda ctx: calls.append("preflight"), dry_run_ok=True),
+            Step("preflight", lambda ctx: calls.append("preflight"), preamble=True),
             Step("work", lambda ctx: calls.append("work")),
         ),
     )

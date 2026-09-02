@@ -168,6 +168,27 @@ def test_guard_returning_none_lets_the_run_proceed():
     assert calls == ["a"]
 
 
+def test_preamble_steps_run_before_the_guard():
+    # Config validation is worth doing even on a run that turns out to have
+    # nothing to do — the briefing's credential preflight relies on this.
+    calls = []
+    wf = Workflow(
+        id="w",
+        title="W",
+        steps=(
+            Step("preflight", _recorder(calls, "preflight"), preamble=True),
+            Step("work", _recorder(calls, "work")),
+        ),
+        guard=lambda ctx: "already ran today",
+    )
+
+    record = run_workflow(wf)
+
+    assert record.status == "skipped"
+    assert calls == ["preflight"]
+    assert [s.id for s in record.steps] == ["preflight"]
+
+
 def test_force_bypasses_the_guard():
     calls = []
     wf = Workflow(
@@ -283,7 +304,7 @@ def test_dry_run_executes_only_dry_run_ok_steps():
         id="w",
         title="W",
         steps=(
-            Step("preflight", _recorder(calls, "preflight"), dry_run_ok=True),
+            Step("preflight", _recorder(calls, "preflight"), preamble=True),
             Step("deliver", _recorder(calls, "deliver")),
         ),
     )
@@ -293,6 +314,24 @@ def test_dry_run_executes_only_dry_run_ok_steps():
     assert calls == ["preflight"]
     assert record.status == "dry_run"
     assert {s.id: s.status for s in record.steps} == {"preflight": "done", "deliver": "skipped"}
+
+
+def test_dry_run_bypasses_the_guard():
+    # The guard stops real work being repeated; a dry run does no real work,
+    # so validating config must not answer "skipped" just because the workflow
+    # already ran today.
+    calls = []
+    wf = Workflow(
+        id="w",
+        title="W",
+        steps=(Step("preflight", _recorder(calls, "preflight"), preamble=True),),
+        guard=lambda ctx: "already ran today",
+    )
+
+    record = run_workflow(wf, dry_run=True)
+
+    assert record.status == "dry_run"
+    assert calls == ["preflight"]
 
 
 def test_dry_run_still_validates_inputs():

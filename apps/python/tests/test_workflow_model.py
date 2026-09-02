@@ -35,6 +35,27 @@ def test_workflow_rejects_duplicate_step_ids():
         Workflow(id="w", title="W", steps=(Step("a", _noop), Step("a", _noop)))
 
 
+def test_workflow_accepts_preamble_steps_declared_first():
+    wf = Workflow(
+        id="w",
+        title="W",
+        steps=(Step("check", _noop, preamble=True), Step("work", _noop)),
+    )
+
+    assert [s.id for s in wf.steps] == ["check", "work"]
+
+
+def test_workflow_rejects_a_preamble_step_declared_after_a_normal_step():
+    # Preamble steps run before the guard, so a late declaration would put the
+    # declared order and the executed order out of step.
+    with pytest.raises(ValueError, match="preamble step"):
+        Workflow(
+            id="w",
+            title="W",
+            steps=(Step("work", _noop), Step("check", _noop, preamble=True)),
+        )
+
+
 def test_workflow_rejects_no_steps():
     with pytest.raises(ValueError, match="at least one step"):
         Workflow(id="w", title="W", steps=())

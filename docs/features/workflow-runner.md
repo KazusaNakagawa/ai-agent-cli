@@ -74,7 +74,7 @@ class Step:
     id: str
     run: Callable[[StepContext], Any]
     best_effort: bool = False       # 失敗を warning にして続行（index_briefings 相当）
-    dry_run_ok: bool = False        # dry run でも実行してよい（認証情報の preflight 等）
+    preamble: bool = False          # 副作用のないステップ（認証情報の preflight 等）
     skip_if: Callable[[StepContext], bool] | None = None
 
 
@@ -103,7 +103,9 @@ class Workflow:
 - `Step.timeout` は**持たない**。ステップはインプロセスで同期実行されるため、壁時計での打ち切りは任意の Python を実際には中断できない。強制されているように見えて強制されないフィールドは、無いより悪い。LLM の timeout は `run_claude()` がすでに持っている
 - `Step.approval` は**このモデルにまだ入れない**。承認ゲートを実装する #456 でフィールドとゲートを同時に追加する。フィールドだけ先にあると、`approval=True` と書いたステップが承認されないまま実行される状態が生まれる
 
-代わりに `dry_run_ok` を追加した。`--dry-run` で認証情報の preflight は実行しつつ、配信を伴うステップはすべてスキップさせるために要る（§7 の briefing がまさにこの形）。
+代わりに `preamble` を追加した。**副作用がない**ということから2つの帰結が出るので、フィールドはその両方を担う。①ガードより**前**に走る — 設定の検証は、結果的にやることが無かったランでも価値があるため。②dry run が実行する唯一の種類のステップである — 何も配信し得ないため。宣言順でも先頭に固めることを強制する（そうしないと宣言順と実行順がずれる）。
+
+この形は briefing の移植で必然的に出てきた。現状の `lambda_handler` は `_preflight()` を dry-run チェックよりもスキップガードよりも前に実行しており、既存テストがその挙動を固定している。
 
 ### 2. StepContext
 
@@ -134,7 +136,7 @@ run_workflow(
 1. `inputs` を `wf.inputs` に対して検証する。必須欠落**と未宣言キー**は最初のステップより前に失敗させる（未宣言キーを黙って捨てると、CLI の打ち間違いがステップ内の欠損値として遠くで表面化する）
 2. `guard` を評価し、スキップ理由が返ったら `status="skipped"` で即 return（`force=True` なら評価自体しない）
 3. 各 Step を宣言順に実行する
-4. `dry_run` かつ `dry_run_ok=False` のステップ、および `skip_if` が真のステップはスキップする
+4. `dry_run` かつ `preamble=False` のステップ、および `skip_if` が真のステップはスキップする
 5. `approval=True` なら実行**前**に承認を求める（§6 / #456 で追加）
 6. `best_effort=True` のステップは例外を warning に落として続行、それ以外は**元の例外型のまま**伝播させてランを失敗させる（`src/handler.py` の呼び出し元が例外型とメッセージに依存しているため）
 7. 各ステップの開始 / 終了 / 所要時間 / 例外 / 承認情報を `RunRecord` に記録し、永続化する（§5）
@@ -221,21 +223,25 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 
 | 現 `handler.py` | Step | 属性 |
 |---|---|---|
-| `_preflight()` (L21) | `preflight` | `dry_run_ok=True` |
+| `_preflight()` (L21) | `preflight` | `preamble=True` |
 | `BRIEFING_SKIP_IF_EXISTS` + `_is_degraded_md` (L51) | `Workflow.guard` | `force` で無視 |
 | `fetch_fx_context` (L63) | `fx` | — |
 | `fetch_stock_moves` (L66) | `stocks` | — |
 | `generate_briefing` + `looks_like_briefing` (L69-79) | `generate` | 内部の2並列は generator 側に残す |
 | `save_briefing_md` (L87) | `persist` | 配信ステップより必ず前。`OSError` を自身で捕捉し `md_written` を bool で返す |
-| `index_briefings` (L104) | `index` | `best_effort=True`, `skip_if=lambda ctx: not ctx.results["persist"]` |
+| `index_briefings` (L104) | `index` | ステップ自身が例外を握り潰す, `skip_if=lambda ctx: not ctx.results["persist"]` |
 | `send_to_discord` (L110) | `deliver_discord` | `skip_if=` 認証情報未設定 |
 | `send_to_notion` (L119) | `deliver_notion` | `skip_if=` 認証情報未設定 |
 
 **移植で挙動を変えない。** 現状 Discord / Notion 送信は best-effort ではなく例外が伝播するので、`best_effort=False` のまま移植する。ここを変えるかどうかは別 issue で判断する。
 
+`index` も `best_effort=True` に**しない**。ランナーの汎用メッセージは「`index` というステップが失敗した」としか言えないが、現状のログは「chromadb へのインデックス作成が失敗した」と原因を名指ししている。朝のログで読むものとしては後者の方が明確に良い。ステップ自身が例外を握り潰して従来どおりのメッセージで警告する。
+
+移植の結果、briefing は `best_effort` を1つも使わなかった。`persist` は後続が参照する戻り値を返す必要があり、`index` はドメイン固有のログ文言が要る — 寛容な扱いが必要なステップは、たいてい**どう寛容にするか**まで自分で決めたい、ということかもしれない。`best_effort` はランナー側で実際に強制されており（`timeout` と違って飾りではない）残すが、次のワークフローで使われなければ削除を検討する。
+
 `persist` を `best_effort=True` に**しない**のも同じ理由。現状の `handler.py` (L86-95) が握り潰すのは `OSError` だけで、`best_effort=True` はあらゆる例外を握り潰してしまう。ステップ自身が `OSError` だけを捕まえて `md_written` を bool で返せば、挙動は完全に一致し、後続の `index` と戻り値の両方がその bool を参照できる。
 
-`dry_run` はランナーが処理する。現状の `lambda_handler` は dry-run でも `_preflight()` だけは実行して認証情報の欠落を警告するので、`preflight` に `dry_run_ok=True` を付けてこの挙動を保つ。`RunRecord.status == "dry_run"` を受けて、ラッパは現在と同じ `{"statusCode": 200, "body": "dry-run"}` を返す。
+`dry_run` はランナーが処理する。現状の `lambda_handler` は dry-run でも `_preflight()` だけは実行して認証情報の欠落を警告するので、`preflight` を `preamble=True` にしてこの挙動を保つ。`RunRecord.status == "dry_run"` を受けて、ラッパは現在と同じ `{"statusCode": 200, "body": "dry-run"}` を返す。
 
 ### 8. 後方互換
 
