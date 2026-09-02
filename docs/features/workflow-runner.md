@@ -67,6 +67,7 @@
 
 ```python
 # src/workflow/model.py
+from __future__ import annotations   # Step.run が StepContext を前方参照するため必須
 
 @dataclass(frozen=True)
 class Step:
@@ -190,9 +191,11 @@ bin/workflow.sh resume <run_id>       # 承認待ちからの再開（§6）
 記録項目:
 
 ```
-run_id, workflow_id, status, started_at, finished_at, inputs
-steps[]: { id, status, duration_ms, error, approved_at }
+run_id, workflow_id, status, started_at, finished_at, inputs, skip_reason
+steps[]: { id, status, duration_ms, error, skip_reason, approved_at }
 ```
+
+`StepContext.results`（各ステップの戻り値）は**記録に含めない**。ブリーフィング本文まるごとが入り得るので、永続的に持ち続ける記録としては重すぎる。例外は承認ゲート付きワークフローで、その扱いは §6 に書く。
 
 これは journal `2026-09-02_083119` で「本命」として挙げたエージェント実行のメトリクス層を、ワークフロー粒度で自動的に満たす。使えば勝手に貯まるので継続コストがかからない。
 
@@ -201,6 +204,14 @@ steps[]: { id, status, duration_ms, error, approved_at }
 - `approval=True` の Step に到達したら、ステップ id・入力サマリを表示して `y/n` を受ける
 - **非対話環境（launchd / cron / Web の BackgroundTasks）では承認待ちに入らない。** `status="awaiting_approval"` で `RunRecord` を保存して中断し、`bin/workflow.sh resume <run_id>` で再開する
 - `--approve-all` を用意する（バッチ用のエスケープハッチ、既定オフ）
+
+**再開時に先行ステップの結果をどう復元するか。** ここが承認ゲートの実質的な難所になる。ステップ間の受け渡しは `results[step_id]` だけ（§2）なのに、中断でプロセスが落ちれば `results` はメモリごと消える。素朴に再開すると、承認されたステップが必要な値を失うか、副作用のある先行ステップを再実行するかのどちらかになる。
+
+そこで**承認ステップを持つワークフローに限り**、中断時点までの `results` を実行記録に含めて永続化する。
+
+- 承認ステップより前のステップの戻り値は **JSON シリアライズ可能**でなければならない。シリアライズできない値を返したステップがあった場合、中断時点で**明示的にエラーにする** — 黙って落として再開時に `KeyError` を出すより、その場で気づける方がよい
+- `resume` は記録から `results` を復元して `StepContext` を組み立て、`status="done"` の記録があるステップは**再実行しない**
+- 承認ステップを持たないワークフロー（briefing を含む）はこの制約を受けず、`results` は従来どおりメモリ内のみ
 
 briefing には承認ステップが無いため、パイロットでは骨格を作って通すだけになる。実際に使われるのは後続の業務プロセスから。
 
@@ -215,12 +226,14 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 | `fetch_fx_context` (L63) | `fx` | — |
 | `fetch_stock_moves` (L66) | `stocks` | — |
 | `generate_briefing` + `looks_like_briefing` (L69-79) | `generate` | 内部の2並列は generator 側に残す |
-| `save_briefing_md` (L87) | `persist` | 配信ステップより必ず前 |
-| `index_briefings` (L104) | `index` | `best_effort=True` |
+| `save_briefing_md` (L87) | `persist` | 配信ステップより必ず前。`OSError` を自身で捕捉し `md_written` を bool で返す |
+| `index_briefings` (L104) | `index` | `best_effort=True`, `skip_if=lambda ctx: not ctx.results["persist"]` |
 | `send_to_discord` (L110) | `deliver_discord` | `skip_if=` 認証情報未設定 |
 | `send_to_notion` (L119) | `deliver_notion` | `skip_if=` 認証情報未設定 |
 
 **移植で挙動を変えない。** 現状 Discord / Notion 送信は best-effort ではなく例外が伝播するので、`best_effort=False` のまま移植する。ここを変えるかどうかは別 issue で判断する。
+
+`persist` を `best_effort=True` に**しない**のも同じ理由。現状の `handler.py` (L86-95) が握り潰すのは `OSError` だけで、`best_effort=True` はあらゆる例外を握り潰してしまう。ステップ自身が `OSError` だけを捕まえて `md_written` を bool で返せば、挙動は完全に一致し、後続の `index` と戻り値の両方がその bool を参照できる。
 
 `dry_run` はランナーが処理する。現状の `lambda_handler` は dry-run でも `_preflight()` だけは実行して認証情報の欠落を警告するので、`preflight` に `dry_run_ok=True` を付けてこの挙動を保つ。`RunRecord.status == "dry_run"` を受けて、ラッパは現在と同じ `{"statusCode": 200, "body": "dry-run"}` を返す。
 
@@ -232,7 +245,16 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 - `bin/run.sh` → `python -m src.handler`
 - `apps/python/tests/test_handlers.py`, `test_api_run.py`
 
-戻り値の `statusCode` / `body` / `md_written` は `RunRecord` から組み立て直す。`bin/run.sh` も残す（`bin/workflow.sh run briefing` のエイリアスになる）。
+戻り値は `RunRecord` から組み立て直す。対応は次のとおりで、記録スキーマに専用フィールドを足す必要はない。
+
+| 現在の戻り値 | 由来 |
+|---|---|
+| `md_written` | `record.results["persist"]`（`persist` ステップが返す bool） |
+| `body="dry-run"` | `record.status == "dry_run"` |
+| `body="skipped (already generated today)"` | `record.status == "skipped"` と `record.skip_reason` |
+| `statusCode=200` | 上記いずれか。失敗時は `run_workflow` が例外を投げるのでここに来ない |
+
+`bin/run.sh` も残す（`bin/workflow.sh run briefing` のエイリアスになる）。
 
 ### 9. テスト方針
 
