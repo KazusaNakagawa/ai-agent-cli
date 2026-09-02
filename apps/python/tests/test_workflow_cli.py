@@ -67,6 +67,26 @@ def test_list_with_no_workflows_says_so(registered, capsys):
     assert "no workflows" in capsys.readouterr().out.lower()
 
 
+def test_no_arguments_lists_workflows_and_says_how_to_run_one(registered, capsys):
+    # Someone typing the bare command is asking "what can I run?" — answering
+    # with an argparse usage error tells them nothing they wanted to know.
+    registered(_echo_workflow([]))
+
+    assert cli.main([]) == 0
+
+    out = capsys.readouterr().out
+    assert "demo" in out
+    assert "workflow run <workflow_id>" in out
+
+
+def test_an_unknown_top_level_option_is_rejected(registered):
+    # `-list` used to be swallowed and reported as a missing command.
+    registered(_echo_workflow([]))
+
+    with pytest.raises(SystemExit):
+        cli.main(["-list"])
+
+
 # --- run --------------------------------------------------------------------
 
 
@@ -137,6 +157,48 @@ def test_run_rejects_an_undeclared_option(registered):
 
     with pytest.raises(SystemExit):
         cli.main(["run", "demo", "--bogus", "x"])
+
+
+def test_run_without_a_workflow_id_names_the_available_ones(registered, capsys):
+    registered(_echo_workflow([]))
+
+    assert cli.main(["run"]) == 1
+
+    err = capsys.readouterr().err
+    assert "needs a workflow id" in err
+    assert "demo" in err
+
+
+def test_run_with_a_leading_option_explains_the_argument_order(registered, capsys):
+    # `run --dry-run` is a natural thing to type; the answer should say where
+    # the option belongs rather than reporting an unrecognized argument.
+    registered(_echo_workflow([]))
+
+    assert cli.main(["run", "--dry-run"]) == 1
+
+    err = capsys.readouterr().err
+    assert "after the workflow id" in err
+    assert "demo" in err
+
+
+def test_run_help_for_a_workflow_shows_its_declared_options(registered, capsys):
+    registered(
+        Workflow(
+            id="incident",
+            title="Incident",
+            steps=(Step("a", lambda ctx: None),),
+            inputs=(InputSpec("summary", required=True, help="what happened"),),
+        )
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["run", "incident", "--help"])
+
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "--summary" in out
+    assert "what happened" in out
+    assert "--dry-run" in out
 
 
 def test_run_reports_an_unknown_workflow(registered, capsys):

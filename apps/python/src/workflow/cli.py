@@ -1,8 +1,9 @@
 """Command-line entry point shared by every workflow.
 
 One entry point is what stops ``bin/`` gaining another script per business
-process. Workflow-specific options are built at parse time from the selected
-workflow's ``InputSpec``s, so this module never learns any workflow's details.
+process. A workflow's own options are built from its ``InputSpec``s once the
+workflow is known, so this module never learns any workflow's details — and
+``run <id> --help`` can still show them.
 """
 from __future__ import annotations
 
@@ -16,36 +17,56 @@ from src.workflow.runner import WorkflowInputError, run_workflow
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="workflow", description="Run a declared workflow")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(
+        prog="workflow",
+        description="Run a declared workflow. With no arguments, lists what is available.",
+    )
+    sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("list", help="List registered workflows")
 
-    run = sub.add_parser("run", help="Run one workflow")
-    run.add_argument("workflow_id", help="Workflow id (see `list`)")
-    run.add_argument("--force", action="store_true", help="Ignore the workflow's skip guard")
-    run.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Run only the steps marked safe for a dry run; deliver nothing",
-    )
+    # Declared so `workflow --help` lists it, but never routed through: `run`
+    # is dispatched in main() before argparse, because which options are valid
+    # depends on the workflow and this parser cannot know them yet.
+    sub.add_parser("run", help="Run one workflow: workflow run <workflow_id> [options]")
     return parser
 
 
-def _parse_workflow_inputs(wf: Workflow, argv: Sequence[str]) -> dict[str, Any]:
-    """Parse the leftover argv against the workflow's declared inputs.
+def _run_usage() -> None:
+    print("usage: workflow run <workflow_id> [options]")
+    print()
+    print("Options go after the workflow id — which options exist depends on the")
+    print("workflow. See them with: workflow run <workflow_id> --help")
+    print()
+    _cmd_list()
 
-    Undeclared options exit here rather than being ignored — silently dropping
-    a mistyped option is how a run ends up doing the wrong thing quietly.
-    """
-    parser = argparse.ArgumentParser(prog=f"workflow run {wf.id}", add_help=False)
+
+def _workflow_parser(wf: Workflow) -> argparse.ArgumentParser:
+    """Build the option parser for one workflow: runner switches + declared inputs."""
+    parser = argparse.ArgumentParser(
+        prog=f"workflow run {wf.id}",
+        description=wf.title,
+    )
+    parser.add_argument("--force", action="store_true", help="Ignore the workflow's skip guard")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run only the side-effect-free preamble steps; deliver nothing",
+    )
     for spec in wf.inputs:
-        parser.add_argument(f"--{spec.id}", dest=spec.id, help=spec.help or None)
-    parsed = vars(parser.parse_args(list(argv)))
-    return {key: value for key, value in parsed.items() if value is not None}
+        # Required-ness and defaults are deliberately not declared here: the
+        # runner's resolve_inputs owns both, so the CLI and a future web form
+        # report the same thing for the same workflow.
+        suffix = " (required)" if spec.required else ""
+        parser.add_argument(f"--{spec.id}", dest=spec.id, help=(spec.help or "") + suffix or None)
+    return parser
 
 
-def _cmd_list() -> int:
+def _available() -> str:
+    return ", ".join(sorted(registry.discover())) or "none"
+
+
+def _cmd_list(*, hint: bool = False) -> int:
     found = registry.discover()
     if not found:
         print("no workflows registered")
@@ -54,20 +75,38 @@ def _cmd_list() -> int:
         wf = found[workflow_id]
         options = " ".join(f"--{spec.id}" for spec in wf.inputs)
         print(f"{workflow_id:<20} {wf.title}" + (f"  [{options}]" if options else ""))
+    if hint:
+        print("\nrun one with: workflow run <workflow_id> [options]")
     return 0
 
 
-def _cmd_run(args: argparse.Namespace, extra: Sequence[str]) -> int:
+def _cmd_run(workflow_id: str | None, options: Sequence[str]) -> int:
+    if workflow_id is None:
+        print("workflow run needs a workflow id", file=sys.stderr)
+        print(f"available: {_available()}", file=sys.stderr)
+        return 1
+
+    if workflow_id.startswith("-"):
+        print(
+            f"options go after the workflow id: workflow run <workflow_id> {workflow_id} ...",
+            file=sys.stderr,
+        )
+        print(f"available: {_available()}", file=sys.stderr)
+        return 1
+
     try:
-        wf = registry.get(args.workflow_id)
+        wf = registry.get(workflow_id)
     except KeyError as exc:
         print(str(exc).strip("\"'"), file=sys.stderr)
         return 1
 
-    inputs = _parse_workflow_inputs(wf, extra)
+    opts = vars(_workflow_parser(wf).parse_args(list(options)))
+    force = opts.pop("force")
+    dry_run = opts.pop("dry_run")
+    inputs = {key: value for key, value in opts.items() if value is not None}
 
     try:
-        record = run_workflow(wf, inputs, force=args.force, dry_run=args.dry_run)
+        record = run_workflow(wf, inputs, force=force, dry_run=dry_run)
     except WorkflowInputError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -83,10 +122,21 @@ def _cmd_run(args: argparse.Namespace, extra: Sequence[str]) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args, extra = _build_parser().parse_known_args(argv)
-    if args.command == "list":
-        return _cmd_list()
-    return _cmd_run(args, extra)
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # Bare `workflow` answers the question someone running it is actually
+    # asking — what can I run? — instead of an argparse usage error.
+    if not argv:
+        return _cmd_list(hint=True)
+
+    if argv[0] == "run":
+        rest = argv[1:]
+        if rest and rest[0] in ("-h", "--help"):
+            _run_usage()
+            return 0
+        return _cmd_run(rest[0] if rest else None, rest[1:])
+
+    _build_parser().parse_args(argv)  # only `list` reaches here; else it exits
+    return _cmd_list()
 
 
 if __name__ == "__main__":
