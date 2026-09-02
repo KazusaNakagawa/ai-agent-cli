@@ -72,9 +72,8 @@
 class Step:
     id: str
     run: Callable[[StepContext], Any]
-    timeout: int | None = None      # None は無制限（LLM の timeout は run_claude 側の責務）
     best_effort: bool = False       # 失敗を warning にして続行（index_briefings 相当）
-    approval: bool = False          # 実行前に人間の承認を要求
+    dry_run_ok: bool = False        # dry run でも実行してよい（認証情報の preflight 等）
     skip_if: Callable[[StepContext], bool] | None = None
 
 
@@ -98,6 +97,13 @@ class Workflow:
 
 `inputs` はワークフロー固有のパラメータのみを宣言する。`dry_run` / `force` はランナー共通なので含めない。briefing は固有入力を持たないため `inputs=()` になる。この宣言があることで、CLI も将来の Web フォームも**ワークフローの中身を知らずに**入力を受け取れる。
 
+**「実際には効いていないフィールド」を置かない。** 実装時（#454）に2点を確定させた。
+
+- `Step.timeout` は**持たない**。ステップはインプロセスで同期実行されるため、壁時計での打ち切りは任意の Python を実際には中断できない。強制されているように見えて強制されないフィールドは、無いより悪い。LLM の timeout は `run_claude()` がすでに持っている
+- `Step.approval` は**このモデルにまだ入れない**。承認ゲートを実装する #456 でフィールドとゲートを同時に追加する。フィールドだけ先にあると、`approval=True` と書いたステップが承認されないまま実行される状態が生まれる
+
+代わりに `dry_run_ok` を追加した。`--dry-run` で認証情報の preflight は実行しつつ、配信を伴うステップはすべてスキップさせるために要る（§7 の briefing がまさにこの形）。
+
 ### 2. StepContext
 
 ステップ間の受け渡しは `results[step_id]` 経由のみとし、グローバル状態を持たない。
@@ -115,16 +121,24 @@ class StepContext:
 ### 3. ランナーの責務
 
 ```python
-run_workflow(wf: Workflow, inputs: dict, *, resume_from: str | None = None) -> RunRecord
+run_workflow(
+    wf: Workflow,
+    inputs: dict | None = None,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+) -> RunRecord
 ```
 
-1. `inputs` を `wf.inputs` に対して検証する（必須欠落は実行前に失敗させる）
-2. `guard` を評価し、スキップ理由が返ったら `status="skipped"` で即 return
+1. `inputs` を `wf.inputs` に対して検証する。必須欠落**と未宣言キー**は最初のステップより前に失敗させる（未宣言キーを黙って捨てると、CLI の打ち間違いがステップ内の欠損値として遠くで表面化する）
+2. `guard` を評価し、スキップ理由が返ったら `status="skipped"` で即 return（`force=True` なら評価自体しない）
 3. 各 Step を宣言順に実行する
-4. `skip_if` が真なら `status="skipped"` で次へ
-5. `approval=True` なら実行**前**に承認を求める（§6）
-6. `best_effort=True` のステップは例外を warning に落として続行、それ以外は伝播させてランを失敗させる
+4. `dry_run` かつ `dry_run_ok=False` のステップ、および `skip_if` が真のステップはスキップする
+5. `approval=True` なら実行**前**に承認を求める（§6 / #456 で追加）
+6. `best_effort=True` のステップは例外を warning に落として続行、それ以外は**元の例外型のまま**伝播させてランを失敗させる（`src/handler.py` の呼び出し元が例外型とメッセージに依存しているため）
 7. 各ステップの開始 / 終了 / 所要時間 / 例外 / 承認情報を `RunRecord` に記録し、永続化する（§5）
+
+失敗して例外を投げる場合、`RunRecord` を例外の `workflow_run_record` 属性に載せる。失敗したランの唯一の痕跡が記録なので、raise で消えてはいけない。
 
 **責務外**（明示しておく）— LLM 呼び出しとそのリトライは `run_claude()` が持つ。通知先の知識は Step の中に閉じる。ランナーはステップの順序・スキップ・承認・記録だけを見る。
 
@@ -196,7 +210,7 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 
 | 現 `handler.py` | Step | 属性 |
 |---|---|---|
-| `_preflight()` (L21) | `preflight` | — |
+| `_preflight()` (L21) | `preflight` | `dry_run_ok=True` |
 | `BRIEFING_SKIP_IF_EXISTS` + `_is_degraded_md` (L51) | `Workflow.guard` | `force` で無視 |
 | `fetch_fx_context` (L63) | `fx` | — |
 | `fetch_stock_moves` (L66) | `stocks` | — |
@@ -208,7 +222,7 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 
 **移植で挙動を変えない。** 現状 Discord / Notion 送信は best-effort ではなく例外が伝播するので、`best_effort=False` のまま移植する。ここを変えるかどうかは別 issue で判断する。
 
-`dry_run` は Step ではなくランナー入口で処理し、現在と同じ `{"statusCode": 200, "body": "dry-run"}` を返す。
+`dry_run` はランナーが処理する。現状の `lambda_handler` は dry-run でも `_preflight()` だけは実行して認証情報の欠落を警告するので、`preflight` に `dry_run_ok=True` を付けてこの挙動を保つ。`RunRecord.status == "dry_run"` を受けて、ラッパは現在と同じ `{"statusCode": 200, "body": "dry-run"}` を返す。
 
 ### 8. 後方互換
 
