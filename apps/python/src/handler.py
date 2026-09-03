@@ -1,3 +1,12 @@
+"""Daily market briefing.
+
+The pipeline itself is declared as a workflow in
+``src/workflow/definitions/briefing.py``; the steps it references live here, so
+that everything the briefing touches — config, fetchers, notifiers — stays in
+one module. ``lambda_handler`` remains the entry point and keeps its original
+signature and response shape for ``bin/run.sh``, the web run route and the
+existing tests.
+"""
 from datetime import date
 
 from src.claude_runner import get_model
@@ -14,6 +23,8 @@ from src.notifier.local_md import save_briefing_md
 from src.notifier.notion import send_to_notion
 from src.logger import get_logger
 from src.utils import is_configured as _is_configured
+from src.workflow.registry import get as get_workflow
+from src.workflow.runner import run_workflow
 
 logger = get_logger(__name__)
 
@@ -39,35 +50,47 @@ def _is_degraded_md(path) -> bool:
         return False
 
 
-def lambda_handler(event=None, context=None, *, dry_run: bool = False, force: bool = False):
-    """Lambda handler that generates the stock briefing and delivers it to Discord/Notion/local MD."""
-    logger.info("=== My World Briefing start ===")
+# --- workflow guard ---------------------------------------------------------
+
+
+def briefing_guard(ctx) -> str | None:
+    """Skip a second run on a day that already produced a real briefing.
+
+    A degraded body does not count: it must not block the retry that would
+    replace it, or the full briefing stays unobtainable until tomorrow.
+    """
+    if not BRIEFING_SKIP_IF_EXISTS:
+        return None
+    today_md = BRIEFING_OUTPUT_DIR / f"briefing_{date.today().strftime('%Y-%m-%d')}.md"
+    if today_md.exists() and not _is_degraded_md(today_md):
+        return f"already generated today ({today_md})"
+    return None
+
+
+# --- workflow steps ---------------------------------------------------------
+
+
+def step_preflight(ctx) -> None:
     _preflight()
 
-    if dry_run:
-        logger.info("Dry-run mode — skipping the pipeline")
-        return {"statusCode": 200, "body": "dry-run"}
 
-    if BRIEFING_SKIP_IF_EXISTS and not force:
-        today_md = BRIEFING_OUTPUT_DIR / f"briefing_{date.today().strftime('%Y-%m-%d')}.md"
-        if today_md.exists() and not _is_degraded_md(today_md):
-            logger.info(
-                "Briefing already generated today (%s) — skipping. Pass --force to override.",
-                today_md,
-            )
-            return {"statusCode": 200, "body": "skipped (already generated today)"}
-
-    # FX first: its day-over-day move is what converts each USD-quoted holding
-    # into the JPY move the holder actually experiences.
+def step_fx(ctx) -> tuple[str, float | None]:
+    """FX first: its day-over-day move is what converts each USD-quoted holding
+    into the JPY move the holder actually experiences."""
     logger.info("fetching FX rates...")
-    fx, fx_change_pct = fetch_fx_context(CONFIG)
+    return fetch_fx_context(CONFIG)
 
+
+def step_stocks(ctx) -> str:
     logger.info("fetching stock moves...")
-    stocks = fetch_stock_moves(CONFIG.portfolio.tickers, fx_change_pct)
+    _, fx_change_pct = ctx.results["fx"]
+    return fetch_stock_moves(CONFIG.portfolio.tickers, fx_change_pct)
 
+
+def step_generate(ctx) -> str:
     logger.info("generating briefing (WebSearch)...")
-    briefing = generate_briefing(stocks, CONFIG, fx)
-
+    fx, _ = ctx.results["fx"]
+    briefing = generate_briefing(ctx.results["stocks"], CONFIG, fx)
     logger.debug("briefing generated (length=%d)", len(briefing))
 
     if not looks_like_briefing(briefing):
@@ -77,56 +100,104 @@ def lambda_handler(event=None, context=None, *, dry_run: bool = False, force: bo
         raise RuntimeError(
             f"generated briefing does not look like a real briefing body (len={len(briefing)})"
         )
+    return briefing
 
-    discord_ok = _is_configured(CONFIG.discord_token, CONFIG.discord_channel_id)
-    notion_ok = _is_configured(CONFIG.notion_api_key, CONFIG.notion_database_id)
 
-    # Write local MD first: keep the body on disk even if Discord/Notion raise.
-    md_written = False
+def step_persist(ctx) -> bool:
+    """Write the local MD before any delivery, and report whether it landed.
+
+    Only ``OSError`` is absorbed — a blanket catch would hide real defects
+    while still returning 200. ``best_effort`` on the step would do exactly
+    that, which is why the tolerance lives here instead.
+    """
     try:
         save_briefing_md(
-            briefing,
+            ctx.results["generate"],
             BRIEFING_OUTPUT_DIR,
             BRIEFING_MD_RETENTION_DAYS,
             rotation_enabled=BRIEFING_MD_ROTATION_ENABLED,
         )
-        md_written = True
+        return True
     except OSError as exc:
         logger.warning("local MD write failed: %s — continuing", exc)
+        return False
 
-    # Best-effort: index today's briefing for cross-date chat RAG (#395). The
-    # experimental local-LLM stack (Ollama/Chroma) is not guaranteed to be
-    # running, so any failure here is logged and swallowed — it must never
-    # block the primary Discord/Notion/local-MD deliveries (degraded mode,
-    # same philosophy as the sector-sweep fallback).
-    if md_written:
-        try:
-            index_briefings(load_local_llm_config())
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("briefing indexing into chromadb failed: %s — continuing", exc)
 
-    if discord_ok:
-        logger.info("sending to Discord...")
-        send_to_discord(briefing, CONFIG.discord_token, CONFIG.discord_channel_id)
+def skip_index(ctx) -> bool:
+    return not ctx.results["persist"]
 
-    if notion_ok:
-        logger.info("creating Notion page...")
-        model = get_model()
-        notion_text = briefing + f"\n\n---\nModel: {model}"
-        metrics = extract_briefing_metrics(briefing, CONFIG.portfolio.tickers)
-        page_url = send_to_notion(
-            notion_text,
-            CONFIG.notion_api_key,
-            CONFIG.notion_database_id,
-            title=f"マーケットブリーフィング — {date.today().strftime('%Y-%m-%d')}",
-            tags=["agent"],
-            extra_properties=metrics,
+
+def step_index(ctx) -> None:
+    """Index today's briefing for cross-date chat RAG (#395).
+
+    The experimental local-LLM stack (Ollama/Chroma) is not guaranteed to be
+    running, so a failure here is logged and swallowed — it must never block
+    the primary Discord/Notion/local-MD deliveries.
+
+    The tolerance lives in the step rather than in ``Step.best_effort`` so the
+    warning keeps naming what actually failed. The runner's generic message
+    would say only that a step called ``index`` failed, which is a worse thing
+    to find in the morning's log.
+    """
+    try:
+        index_briefings(load_local_llm_config())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("briefing indexing into chromadb failed: %s — continuing", exc)
+
+
+def skip_discord(ctx) -> bool:
+    return not _is_configured(CONFIG.discord_token, CONFIG.discord_channel_id)
+
+
+def step_deliver_discord(ctx) -> None:
+    logger.info("sending to Discord...")
+    send_to_discord(ctx.results["generate"], CONFIG.discord_token, CONFIG.discord_channel_id)
+
+
+def skip_notion(ctx) -> bool:
+    return not _is_configured(CONFIG.notion_api_key, CONFIG.notion_database_id)
+
+
+def step_deliver_notion(ctx) -> str | None:
+    logger.info("creating Notion page...")
+    briefing = ctx.results["generate"]
+    notion_text = briefing + f"\n\n---\nModel: {get_model()}"
+    metrics = extract_briefing_metrics(briefing, CONFIG.portfolio.tickers)
+    page_url = send_to_notion(
+        notion_text,
+        CONFIG.notion_api_key,
+        CONFIG.notion_database_id,
+        title=f"マーケットブリーフィング — {date.today().strftime('%Y-%m-%d')}",
+        tags=["agent"],
+        extra_properties=metrics,
+    )
+    if page_url:
+        logger.info("Notion ページ: %s", page_url)
+    return page_url
+
+
+# --- entry point ------------------------------------------------------------
+
+
+def lambda_handler(event=None, context=None, *, dry_run: bool = False, force: bool = False):
+    """Run the briefing workflow and return the legacy response shape."""
+    logger.info("=== My World Briefing start ===")
+
+    record = run_workflow(get_workflow("briefing"), force=force, dry_run=dry_run)
+
+    if record.status == "dry_run":
+        logger.info("Dry-run mode — skipping the pipeline")
+        return {"statusCode": 200, "body": "dry-run"}
+
+    if record.status == "skipped":
+        logger.info(
+            "Briefing already generated today (%s) — skipping. Pass --force to override.",
+            record.skip_reason,
         )
-        if page_url:
-            logger.info("Notion ページ: %s", page_url)
+        return {"statusCode": 200, "body": "skipped (already generated today)"}
 
     logger.info("=== done ===")
-    return {"statusCode": 200, "body": "Briefing sent.", "md_written": md_written}
+    return {"statusCode": 200, "body": "Briefing sent.", "md_written": record.results["persist"]}
 
 
 if __name__ == "__main__":

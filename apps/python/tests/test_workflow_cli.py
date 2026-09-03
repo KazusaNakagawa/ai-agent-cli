@@ -26,7 +26,7 @@ def _echo_workflow(calls):
         id="demo",
         title="Demo workflow",
         steps=(
-            Step("preflight", lambda ctx: calls.append("preflight"), dry_run_ok=True),
+            Step("preflight", lambda ctx: calls.append("preflight"), preamble=True),
             Step("work", lambda ctx: calls.append("work")),
         ),
     )
@@ -43,6 +43,26 @@ def test_list_prints_every_registered_workflow(registered, capsys):
     out = capsys.readouterr().out
     assert "demo" in out and "Demo workflow" in out
     assert "other" in out
+
+
+def test_list_labels_the_id_column(registered, capsys):
+    # Unlabelled, the first column reads as a display name and nothing tells
+    # the reader it is the <workflow_id> every usage string asks for.
+    registered(_echo_workflow([]))
+
+    cli.main(["list"])
+
+    out = capsys.readouterr().out
+    assert "WORKFLOW_ID" in out
+    assert "workflow run demo" in out
+
+
+def test_list_with_no_workflows_says_where_to_add_one(registered, capsys):
+    registered()
+
+    cli.main(["list"])
+
+    assert "src/workflow/definitions" in capsys.readouterr().out
 
 
 def test_list_names_declared_inputs(registered, capsys):
@@ -67,6 +87,26 @@ def test_list_with_no_workflows_says_so(registered, capsys):
     assert "no workflows" in capsys.readouterr().out.lower()
 
 
+def test_no_arguments_lists_workflows_and_says_how_to_run_one(registered, capsys):
+    # Someone typing the bare command is asking "what can I run?" — answering
+    # with an argparse usage error tells them nothing they wanted to know.
+    registered(_echo_workflow([]))
+
+    assert cli.main([]) == 0
+
+    out = capsys.readouterr().out
+    assert "demo" in out
+    assert "workflow run demo" in out
+
+
+def test_an_unknown_top_level_option_is_rejected(registered):
+    # `-list` used to be swallowed and reported as a missing command.
+    registered(_echo_workflow([]))
+
+    with pytest.raises(SystemExit):
+        cli.main(["-list"])
+
+
 # --- run --------------------------------------------------------------------
 
 
@@ -78,7 +118,7 @@ def test_run_executes_the_named_workflow(registered):
     assert calls == ["preflight", "work"]
 
 
-def test_run_dry_run_executes_only_dry_run_ok_steps(registered):
+def test_run_dry_run_executes_only_preamble_steps(registered):
     calls = []
     registered(_echo_workflow(calls))
 
@@ -137,6 +177,70 @@ def test_run_rejects_an_undeclared_option(registered):
 
     with pytest.raises(SystemExit):
         cli.main(["run", "demo", "--bogus", "x"])
+
+
+def test_run_without_a_workflow_id_names_the_available_ones(registered, capsys):
+    registered(_echo_workflow([]))
+
+    assert cli.main(["run"]) == 1
+
+    err = capsys.readouterr().err
+    assert "needs a workflow id" in err
+    assert "demo" in err
+
+
+def test_run_with_a_leading_option_explains_the_argument_order(registered, capsys):
+    # `run --dry-run` is a natural thing to type; the answer should say where
+    # the option belongs rather than reporting an unrecognized argument.
+    registered(_echo_workflow([]))
+
+    assert cli.main(["run", "--dry-run"]) == 1
+
+    err = capsys.readouterr().err
+    assert "after the workflow id" in err
+    assert "demo" in err
+
+
+def test_run_help_for_a_workflow_shows_its_declared_options(registered, capsys):
+    registered(
+        Workflow(
+            id="incident",
+            title="Incident",
+            steps=(Step("a", lambda ctx: None),),
+            inputs=(InputSpec("summary", required=True, help="what happened"),),
+        )
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["run", "incident", "--help"])
+
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "--summary" in out
+    assert "what happened" in out
+    assert "--dry-run" in out
+
+
+def test_run_accepts_an_unambiguous_prefix_and_says_what_it_expanded_to(registered, capsys):
+    calls = []
+    registered(_echo_workflow(calls))
+
+    assert cli.main(["run", "dem"]) == 0
+
+    assert calls == ["preflight", "work"]
+    assert "dem → demo" in capsys.readouterr().out
+
+
+def test_run_refuses_an_ambiguous_prefix(registered, capsys):
+    registered(
+        Workflow(id="report_daily", title="D", steps=(Step("a", lambda ctx: None),)),
+        Workflow(id="report_weekly", title="W", steps=(Step("a", lambda ctx: None),)),
+    )
+
+    assert cli.main(["run", "report"]) == 1
+
+    err = capsys.readouterr().err
+    assert "report_daily" in err and "report_weekly" in err
 
 
 def test_run_reports_an_unknown_workflow(registered, capsys):
