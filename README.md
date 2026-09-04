@@ -127,6 +127,12 @@ bin/chat.sh --list     # list saved sessions
 bin/portfolio.sh            # writes apps/python/output/portfolio/snapshot_<date>.md
 bin/portfolio.sh --stdout   # print instead of writing
 
+# Price comparison chart — every holding rebased to 100, on a log axis
+bin/chart.sh price                                  # portfolio tickers, last 3 months
+bin/chart.sh price --period 1y                      # the window the briefing attaches
+bin/chart.sh price --tickers PLTR NVDA --period 5y  # any tickers instead of the portfolio
+# writes apps/python/output/charts/price-comparison-<date>.png
+
 # Web UI — FastAPI (:8000) + Next.js (:3000), opens the browser
 bin/serve.sh
 bin/serve.sh --no-browser
@@ -149,7 +155,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 | `serve.sh` | Launch the full Web UI — FastAPI + Next.js; `API_PORT` / `WEB_PORT` overridable |
 | `self_agent.sh` | Turn judgment-log entries into a persona profile and post it to Notion |
 | `briefing_api.sh` | Generate a briefing via the API entry point |
-| `chart.sh` | Generate charts (e.g. stock price comparison) |
+| `chart.sh` | `chart.sh price` renders a price comparison for the portfolio (`--tickers` overrides, `--period` defaults to `3mo`) into `apps/python/output/charts/`. The daily briefing renders the same chart over 1y and attaches it to the Discord message |
 | `portfolio.sh` | Render a portfolio snapshot (weights, look-through FX exposure, allocation-rule checks) from `config/holdings.json` |
 | `money.sh` | Import bank statement CSVs and report monthly cash flow — `import` / `report` / `review`; see [household-finance.md](docs/ideas/household-finance.md) |
 | `gen_wordset.sh` | Generate word-set JSON (Stage 1) |
@@ -164,7 +170,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 ## Tests
 
 ```bash
-cd apps/python && .venv/bin/pytest -v   # 1,053 cases / 72 files
+cd apps/python && .venv/bin/pytest -v   # 1,308 cases / 87 files
 cd apps/web && npm test                 # vitest (unit + component)
 cd apps/web && npm run test:e2e         # Playwright
 ```

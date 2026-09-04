@@ -127,6 +127,12 @@ bin/chat.sh --list     # 保存済みセッション一覧
 bin/portfolio.sh            # apps/python/output/portfolio/snapshot_<date>.md へ出力
 bin/portfolio.sh --stdout   # ファイル出力せず標準出力へ
 
+# 株価比較チャート — 全保有銘柄を 100 起点に指数化、対数軸
+bin/chart.sh price                                  # 保有銘柄・直近3か月
+bin/chart.sh price --period 1y                      # ブリーフィングが添付する期間
+bin/chart.sh price --tickers PLTR NVDA --period 5y  # 保有銘柄の代わりに任意の銘柄を指定
+# apps/python/output/charts/price-comparison-<date>.png へ出力
+
 # Web UI — FastAPI (:8000) + Next.js (:3000)、ブラウザを自動で開く
 bin/serve.sh
 bin/serve.sh --no-browser
@@ -149,7 +155,7 @@ cd apps/python
 | `serve.sh` | Web UI 一式（FastAPI + Next.js）の起動。`API_PORT` / `WEB_PORT` で上書き可 |
 | `self_agent.sh` | 判断ログをペルソナプロファイル化して Notion へ投稿 |
 | `briefing_api.sh` | API エントリポイント経由でブリーフィングを生成 |
-| `chart.sh` | チャート生成（株価比較など） |
+| `chart.sh` | `chart.sh price` で保有銘柄の株価比較チャートを `apps/python/output/charts/` へ生成（`--tickers` で銘柄指定、`--period` の既定は `3mo`）。日次ブリーフィングは同じチャートを1年で生成し Discord メッセージに添付する |
 | `portfolio.sh` | `config/holdings.json` からポートフォリオ・スナップショット（構成比、ルックスルーの為替エクスポージャー、配分ルール検査）を生成 |
 | `money.sh` | 銀行明細 CSV を取り込み、月次収支をレポート — `import` / `report` / `review`。設計は [household-finance.md](docs/ideas/household-finance.md) |
 | `gen_wordset.sh` | ワードセット JSON の生成（Stage 1） |
@@ -164,7 +170,7 @@ cd apps/python
 ## テスト
 
 ```bash
-cd apps/python && .venv/bin/pytest -v   # 1,053 ケース / 72 ファイル
+cd apps/python && .venv/bin/pytest -v   # 1,308 ケース / 87 ファイル
 cd apps/web && npm test                 # vitest（ユニット + コンポーネント）
 cd apps/web && npm run test:e2e         # Playwright
 ```
