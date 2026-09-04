@@ -35,7 +35,9 @@ _SERIES_COLORS = (
     "#ea6a5e",
     "#b388ff",
     "#4ec98a",
-    "#ff9e64",
+    # Magenta rather than another warm tone: a seven-holding portfolio reaches
+    # this slot, and an orange here reads as the salmon four positions up.
+    "#f26fd0",
     "#c792ea",
 )
 
@@ -72,23 +74,37 @@ def _cjk_font_name() -> str | None:
 
 
 def normalize_to_index(close_df: pd.DataFrame) -> pd.DataFrame:
-    """Rebase each column to 100 at the first row so differently-priced
-    tickers share one comparable axis. Columns whose first value is NaN or
-    zero cannot be rebased and are dropped.
+    """Rebase each column to 100 at its first traded value so differently-priced
+    tickers share one comparable axis. Columns with no usable value at all, or
+    whose baseline is zero, are dropped.
 
-    A frame with no rows drops every column: there is no first row to rebase
+    Holdings on two exchanges do not share a calendar, and yfinance returns the
+    union of their sessions: on a Tokyo-only session every US column is NaN, and
+    vice versa. Two consequences are handled here.
+
+    Forward-filling carries the last close across the other market's holidays,
+    so a line is continuous instead of dashed with a gap at every foreign
+    session. And the baseline is each column's first *valid* value rather than
+    its first row — keying on the first row dropped every US holding from a
+    mixed portfolio whose window happened to open on a Tokyo-only session.
+    A consequence worth knowing: baselines can then sit a session apart.
+
+    A frame with no rows drops every column: there is nothing to rebase
     against. Returning an empty frame rather than raising keeps the "no usable
     data" decision with the callers, both of which already own that contract —
     yfinance can answer with the requested ticker columns and no price rows.
     """
     if close_df.empty:
         return pd.DataFrame(index=close_df.index)
+    filled = close_df.ffill()
     out = {}
-    for col in close_df.columns:
-        first = close_df[col].iloc[0]
-        if pd.isna(first) or first == 0:
+    for col in filled.columns:
+        # Leading NaNs survive the ffill (nothing precedes them to carry), which
+        # is what a ticker listed mid-window should look like.
+        baseline = filled[col].dropna()
+        if baseline.empty or baseline.iloc[0] == 0:
             continue
-        out[col] = close_df[col] / first * 100
+        out[col] = filled[col] / baseline.iloc[0] * 100
     return pd.DataFrame(out, index=close_df.index)
 
 

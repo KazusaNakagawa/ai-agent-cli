@@ -31,14 +31,53 @@ def test_normalize_rebases_each_column_to_100():
     assert out.iloc[2]["NVDA"] == pytest.approx(110.0)  # 110/100*100
 
 
-def test_normalize_drops_columns_with_unusable_first_value():
+def test_normalize_drops_only_columns_with_no_usable_baseline():
+    """A leading NaN is a late start, not unusable data.
+
+    A column is dropped when it has no value at all, or when its baseline is
+    zero and the rebase would divide by it.
+    """
     idx = pd.to_datetime(["2026-01-01", "2026-01-02"])
     df = pd.DataFrame(
-        {"OK": [5.0, 6.0], "ZERO": [0.0, 1.0], "NAN": [float("nan"), 2.0]},
+        {
+            "OK": [5.0, 6.0],
+            "ZERO": [0.0, 1.0],
+            "LATE": [float("nan"), 2.0],
+            "EMPTY": [float("nan"), float("nan")],
+        },
         index=idx,
     )
     out = normalize_to_index(df)
-    assert list(out.columns) == ["OK"]
+    assert list(out.columns) == ["OK", "LATE"]
+    # LATE is rebased on its own first traded value, not on the frame's first row.
+    assert out.iloc[1]["LATE"] == pytest.approx(100.0)
+
+
+def test_normalize_keeps_every_ticker_across_two_exchanges():
+    """Regression: a mixed JP/US portfolio lost all of its US holdings.
+
+    yfinance returns the union of both calendars, so a window opening on a
+    Tokyo-only session leaves every US column NaN in row 0. Keying the rebase
+    on that row dropped all six US tickers and charted the lone JP one.
+    """
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-05"])
+    df = pd.DataFrame(
+        {"PLTR": [float("nan"), 100.0, 110.0], "4676.T": [3000.0, float("nan"), 3300.0]},
+        index=idx,
+    )
+    out = normalize_to_index(df)
+    assert list(out.columns) == ["PLTR", "4676.T"]
+    assert out.iloc[2]["PLTR"] == pytest.approx(110.0)
+    assert out.iloc[2]["4676.T"] == pytest.approx(110.0)
+
+
+def test_normalize_forward_fills_across_a_foreign_session():
+    """The other market's holiday must not break the line into dashes."""
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-05"])
+    df = pd.DataFrame({"A": [10.0, float("nan"), 12.0]}, index=idx)
+    out = normalize_to_index(df)
+    assert out["A"].isna().sum() == 0
+    assert out.iloc[1]["A"] == pytest.approx(100.0)  # carried, not interpolated
 
 
 def test_render_writes_a_nonempty_png(tmp_path: Path):
