@@ -153,19 +153,15 @@ def step_index(ctx) -> None:
         logger.warning("briefing indexing into chromadb failed: %s — continuing", exc)
 
 
-def skip_chart(ctx) -> bool:
-    """Skip the render when nothing can carry the result.
-
-    Rendering costs a yfinance download, and the chart's only consumer today is
-    the Discord attachment — so an unconfigured Discord means the work has no
-    destination. Delegating to ``skip_discord`` keeps that coupling in one
-    predicate: when a second consumer appears, this is the only place to widen.
-    """
-    return skip_discord(ctx)
-
-
 def step_chart(ctx) -> str:
-    """Render the portfolio comparison chart delivered with the briefing.
+    """Render the portfolio comparison chart that accompanies the briefing.
+
+    Deliberately unconditional. The dated PNG under ``CHART_OUTPUT_DIR`` is the
+    chart's primary destination — it sits alongside the dated briefing MD and
+    is what the maintainer's own setup reads, Discord being unconfigured there.
+    Gating the render on Discord (as a review suggested) skipped it entirely on
+    exactly the machine the feature was built for. The attachment is the
+    opportunistic extra, not the reason to render.
 
     Declared ``best_effort``: the chart is an illustration of the text, so a
     yfinance outage must cost the reader the picture and not the briefing.

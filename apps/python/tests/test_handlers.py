@@ -195,23 +195,24 @@ class TestBriefingHandler:
         assert mock_discord.call_args.kwargs["attachment"] == str(stub_chart)
 
     @pytest.mark.usefixtures("disable_skip_guard")
-    def test_chart_is_skipped_when_discord_is_not_configured(self, tmp_path):
-        """Verifies: no Discord credentials means no chart render.
-        Why: the render costs a yfinance download, and the attachment is its
-        only consumer — with no destination the work has nothing to produce.
+    def test_chart_renders_without_discord(self, tmp_path, stub_chart):
+        """Verifies: the chart still renders when Discord is unconfigured.
+        Why: the dated PNG is its primary destination, and the maintainer's own
+        setup delivers to Notion only. Gating the render on Discord skipped the
+        feature entirely on exactly the machine it was built for.
         """
         with (
             patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
             patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
             patch("src.handler.CONFIG", _no_api_config_mock()) as mock_cfg,
             patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
-            patch("src.handler.generate_price_comparison") as mock_chart,
+            patch("src.handler.generate_price_comparison", return_value=stub_chart) as mock_chart,
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             result = briefing_handler()
 
         assert result["statusCode"] == 200
-        mock_chart.assert_not_called()
+        mock_chart.assert_called_once()
 
     @pytest.mark.usefixtures("disable_skip_guard")
     def test_chart_failure_still_delivers_the_briefing(self, tmp_path):
