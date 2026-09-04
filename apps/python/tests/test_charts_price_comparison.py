@@ -49,6 +49,105 @@ def test_render_writes_a_nonempty_png(tmp_path: Path):
     assert out_path.stat().st_size > 0
 
 
+@pytest.fixture(autouse=True)
+def _clear_font_cache():
+    """_cjk_font_name is lru_cached; a test that patches the candidate list
+    would otherwise be decided by whichever test ran first.
+
+    getattr: tests that monkeypatch _cjk_font_name itself replace it with a
+    plain function, which carries no cache to clear.
+    """
+    def _clear():
+        clear = getattr(pc_module._cjk_font_name, "cache_clear", None)
+        if clear is not None:
+            clear()
+
+    _clear()
+    yield
+    _clear()
+
+
+class _CapturingAxes:
+    """Records the axes calls the assertions below care about."""
+
+    def __init__(self, real):
+        self._real = real
+        self.yscale = None
+        self.title = None
+        self.annotations = []
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def set_yscale(self, scale, *a, **k):
+        self.yscale = scale
+        return self._real.set_yscale(scale, *a, **k)
+
+    def set_title(self, label, *a, **k):
+        self.title = label
+        return self._real.set_title(label, *a, **k)
+
+    def annotate(self, text, *a, **k):
+        self.annotations.append(text)
+        return self._real.annotate(text, *a, **k)
+
+
+def _render_capturing(tmp_path, monkeypatch) -> _CapturingAxes:
+    """Render once, returning the recorder wrapped around the real axes."""
+    real_subplots = pc_module.plt.subplots
+    captured = {}
+
+    def _subplots(*a, **k):
+        fig, ax = real_subplots(*a, **k)
+        captured["ax"] = _CapturingAxes(ax)
+        return fig, captured["ax"]
+
+    monkeypatch.setattr(pc_module.plt, "subplots", _subplots)
+    render_price_comparison(_close_df(), tmp_path / "chart.png")
+    return captured["ax"]
+
+
+def test_render_uses_a_log_y_axis(tmp_path, monkeypatch):
+    """A portfolio's indexed returns span an order of magnitude; on a linear
+    axis every line but the leader collapses onto the baseline."""
+    assert _render_capturing(tmp_path, monkeypatch).yscale == "log"
+
+
+def test_render_labels_each_line_end_with_its_last_value(tmp_path, monkeypatch):
+    # 凡例ではなく線の終端にラベルを置く（色と銘柄の照合を読者にさせない）
+    texts = _render_capturing(tmp_path, monkeypatch).annotations
+    assert any("PLTR" in t and "120" in t for t in texts)  # 12/10*100
+    assert any("NVDA" in t and "110" in t for t in texts)  # 110/100*100
+
+
+def test_title_is_japanese_when_a_cjk_font_is_available(tmp_path, monkeypatch):
+    monkeypatch.setattr(pc_module, "_cjk_font_name", lambda: "Hiragino Sans GB")
+    assert "リターン比較" in _render_capturing(tmp_path, monkeypatch).title
+
+
+def test_title_falls_back_to_english_without_a_cjk_font(tmp_path, monkeypatch):
+    """Linux CI ships no CJK face — a Japanese title there would render as a
+    row of tofu boxes, so the label language follows the font."""
+    monkeypatch.setattr(pc_module, "_cjk_font_name", lambda: None)
+    title = _render_capturing(tmp_path, monkeypatch).title
+    assert "Return comparison" in title
+    assert title.isascii()
+
+
+def test_cjk_font_name_is_none_when_no_candidate_exists(monkeypatch):
+    monkeypatch.setattr(pc_module, "_CJK_FONT_CANDIDATES", ("/nonexistent/font.ttc",))
+    assert pc_module._cjk_font_name() is None
+
+
+def test_render_drops_non_positive_values(tmp_path):
+    """A log axis cannot place a zero; it must be dropped rather than left for
+    matplotlib to clip silently."""
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"])
+    df = pd.DataFrame({"A": [10.0, 0.0, 12.0]}, index=idx)
+    out = render_price_comparison(df, tmp_path / "chart.png")
+    assert out.stat().st_size > 0
+
+
 def _yf_multiindex(tickers, with_data=True):
     """Mimic yfinance.download() output: columns are a MultiIndex
     (field, ticker) including a top-level 'Close'."""

@@ -49,6 +49,13 @@ OUTPUT_DIR = Path(__file__).parent.parent / "output"
 BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
 # Salvaged text from claude CLI calls that ultimately failed (see run_claude)
 PARTIAL_OUTPUT_DIR = OUTPUT_DIR / "partial"
+# Portfolio comparison charts (bin/chart.sh and the briefing's chart step)
+CHART_OUTPUT_DIR = OUTPUT_DIR / "charts"
+
+# Lookback for the chart attached to the daily briefing. A year is long enough
+# for a trend to be visible and short enough that a single day's move still
+# reads on the line — the 3mo CLI default is too short for the former.
+BRIEFING_CHART_PERIOD = "1y"
 
 # Briefing local MD retention (number of newest dated files to keep)
 BRIEFING_MD_RETENTION_DAYS = 7
