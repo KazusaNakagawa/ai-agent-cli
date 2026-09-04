@@ -9,9 +9,17 @@ existing tests.
 """
 from datetime import date
 
+from src.charts.price_comparison import generate_price_comparison
 from src.claude_runner import get_model
 from src.config import CONFIG
-from src.constants import BRIEFING_MD_RETENTION_DAYS, BRIEFING_MD_ROTATION_ENABLED, BRIEFING_OUTPUT_DIR, BRIEFING_SKIP_IF_EXISTS
+from src.constants import (
+    BRIEFING_CHART_PERIOD,
+    BRIEFING_MD_RETENTION_DAYS,
+    BRIEFING_MD_ROTATION_ENABLED,
+    BRIEFING_OUTPUT_DIR,
+    BRIEFING_SKIP_IF_EXISTS,
+    CHART_OUTPUT_DIR,
+)
 from src.fetcher.fx import fetch_fx_context
 from src.fetcher.stocks import fetch_stock_moves
 from src.generator.briefing import generate_briefing, is_degraded_briefing, looks_like_briefing
@@ -145,13 +153,41 @@ def step_index(ctx) -> None:
         logger.warning("briefing indexing into chromadb failed: %s — continuing", exc)
 
 
+def step_chart(ctx) -> str:
+    """Render the portfolio comparison chart that accompanies the briefing.
+
+    Deliberately unconditional. The dated PNG under ``CHART_OUTPUT_DIR`` is the
+    chart's primary destination — it sits alongside the dated briefing MD and
+    is what the maintainer's own setup reads, Discord being unconfigured there.
+    Gating the render on Discord (as a review suggested) skipped it entirely on
+    exactly the machine the feature was built for. The attachment is the
+    opportunistic extra, not the reason to render.
+
+    Declared ``best_effort``: the chart is an illustration of the text, so a
+    yfinance outage must cost the reader the picture and not the briefing.
+    """
+    logger.info("rendering portfolio chart...")
+    path = generate_price_comparison(
+        list(CONFIG.portfolio.tickers), CHART_OUTPUT_DIR, BRIEFING_CHART_PERIOD
+    )
+    logger.info("chart written: %s", path)
+    return str(path)
+
+
 def skip_discord(ctx) -> bool:
     return not _is_configured(CONFIG.discord_token, CONFIG.discord_channel_id)
 
 
 def step_deliver_discord(ctx) -> None:
     logger.info("sending to Discord...")
-    send_to_discord(ctx.results["generate"], CONFIG.discord_token, CONFIG.discord_channel_id)
+    # .get(): a failed best-effort step records no result, so the delivery has
+    # to tolerate the key being absent entirely.
+    send_to_discord(
+        ctx.results["generate"],
+        CONFIG.discord_token,
+        CONFIG.discord_channel_id,
+        attachment=ctx.results.get("chart"),
+    )
 
 
 def skip_notion(ctx) -> bool:

@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import requests
+
 from src.notifier.discord import (
     _chunk_preserving_fences,
     _wrap_tables_in_codeblock,
@@ -110,3 +112,61 @@ class TestSendToDiscord:
         with patch("src.notifier.discord.requests.post", return_value=mock_resp) as mock_post:
             send_to_discord("x\n" * 2000, token="tok", channel_id="ch123")
         assert mock_post.call_count > 1
+
+
+class TestSendToDiscordAttachment:
+    def _png(self, tmp_path):
+        path = tmp_path / "price-comparison-20260905.png"
+        path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return path
+
+    def test_attachment_posted_as_multipart_after_the_text(self, tmp_path):
+        # 本文は従来どおり JSON、添付は後続メッセージとして multipart で送る
+        png = self._png(tmp_path)
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        with patch("src.notifier.discord.requests.post", return_value=mock_resp) as mock_post:
+            send_to_discord("hello", token="tok", channel_id="ch123", attachment=png)
+
+        assert mock_post.call_count == 2
+        text_call, file_call = mock_post.call_args_list
+        assert text_call.kwargs["json"]["content"] == "hello"
+        assert "files" not in text_call.kwargs
+        filename, data, mime = file_call.kwargs["files"]["files[0]"]
+        assert filename == png.name
+        assert data == png.read_bytes()
+        assert mime == "image/png"
+
+    def test_no_attachment_keeps_the_json_only_post(self, tmp_path):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        with patch("src.notifier.discord.requests.post", return_value=mock_resp) as mock_post:
+            send_to_discord("hello", token="tok", channel_id="ch123")
+        assert mock_post.call_count == 1
+        assert "files" not in mock_post.call_args.kwargs
+
+    def test_missing_attachment_file_is_skipped(self, tmp_path):
+        # 生成に失敗してパスだけ残ったケース: 本文は送られ、例外は出さない
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        with patch("src.notifier.discord.requests.post", return_value=mock_resp) as mock_post:
+            send_to_discord(
+                "hello", token="tok", channel_id="ch123", attachment=tmp_path / "gone.png"
+            )
+        assert mock_post.call_count == 1
+
+    def test_upload_failure_does_not_raise(self, tmp_path):
+        """本文送信後に添付だけ失敗しても例外にしない。
+
+        step_deliver_discord は best_effort ではないので、ここで送出すると
+        既に配信済みのブリーフィングごと run が failed になる。
+        """
+        png = self._png(tmp_path)
+        ok = MagicMock()
+        ok.raise_for_status.return_value = None
+        with patch(
+            "src.notifier.discord.requests.post",
+            side_effect=[ok, requests.RequestException("413 payload too large")],
+        ) as mock_post:
+            send_to_discord("hello", token="tok", channel_id="ch123", attachment=png)
+        assert mock_post.call_count == 2

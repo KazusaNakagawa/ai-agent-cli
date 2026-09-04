@@ -30,6 +30,7 @@ def test_step_order_puts_the_local_copy_before_every_delivery():
         "fx",
         "stocks",
         "generate",
+        "chart",
         "persist",
         "index",
         "deliver_discord",
@@ -37,6 +38,18 @@ def test_step_order_puts_the_local_copy_before_every_delivery():
     ]
     assert ids.index("persist") < ids.index("deliver_discord")
     assert ids.index("persist") < ids.index("deliver_notion")
+
+
+def test_chart_is_rendered_before_the_delivery_that_carries_it():
+    ids = [s.id for s in BRIEFING.steps]
+    # After generate so a chart failure cannot waste the paid LLM call, and
+    # before the Discord delivery that attaches the PNG.
+    assert ids.index("generate") < ids.index("chart") < ids.index("deliver_discord")
+
+
+def test_chart_is_best_effort():
+    # The briefing body must ship with or without its illustration.
+    assert next(s for s in BRIEFING.steps if s.id == "chart").best_effort is True
 
 
 def test_preflight_is_the_only_preamble_step():
@@ -51,6 +64,13 @@ def test_deliveries_are_not_best_effort():
     for step_id in ("deliver_discord", "deliver_notion", "persist", "generate"):
         step = next(s for s in BRIEFING.steps if s.id == step_id)
         assert step.best_effort is False
+
+
+def test_chart_is_not_gated_on_any_delivery():
+    """The dated PNG is the chart's primary destination, so it renders whether
+    or not a delivery target happens to be configured. Gating it on Discord
+    skipped it entirely on a Notion-only setup."""
+    assert next(s for s in BRIEFING.steps if s.id == "chart").skip_if is None
 
 
 @pytest.mark.parametrize("step_id", ["index", "deliver_discord", "deliver_notion"])

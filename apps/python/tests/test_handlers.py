@@ -42,6 +42,20 @@ def _no_api_config_mock():
     return cfg
 
 
+@pytest.fixture(autouse=True)
+def stub_chart(tmp_path):
+    """Keep the briefing's chart step off the network.
+
+    ``step_chart`` calls yfinance, and every pipeline test in this module runs
+    it. Autouse rather than per-test, so a test added later cannot silently
+    reintroduce a live download.
+    """
+    png = tmp_path / "price-comparison-20260905.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    with patch("src.handler.generate_price_comparison", return_value=png):
+        yield png
+
+
 # ---------------------------------------------------------------------------
 # Briefing handler
 # ---------------------------------------------------------------------------
@@ -155,6 +169,81 @@ class TestBriefingHandler:
         assert result["md_written"] is False
         mock_discord.assert_called_once()
         mock_notion.assert_called_once()
+
+    @pytest.mark.usefixtures("disable_skip_guard")
+    def test_chart_is_attached_to_the_discord_delivery(self, tmp_path, stub_chart):
+        """Verifies: the PNG produced by step_chart reaches send_to_discord.
+        Why: the chart step exists only to put a picture in the Discord
+        message — a rendered file nobody delivers is the bug this guards.
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord") as mock_discord,
+            patch("src.notifier.notion.Client", return_value=_notion_mock()),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        assert mock_discord.call_args.kwargs["attachment"] == str(stub_chart)
+
+    @pytest.mark.usefixtures("disable_skip_guard")
+    def test_chart_renders_without_discord(self, tmp_path, stub_chart):
+        """Verifies: the chart still renders when Discord is unconfigured.
+        Why: the dated PNG is its primary destination, and the maintainer's own
+        setup delivers to Notion only. Gating the render on Discord skipped the
+        feature entirely on exactly the machine it was built for.
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.CONFIG", _no_api_config_mock()) as mock_cfg,
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch("src.handler.generate_price_comparison", return_value=stub_chart) as mock_chart,
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        mock_chart.assert_called_once()
+
+    @pytest.mark.usefixtures("disable_skip_guard")
+    def test_chart_failure_still_delivers_the_briefing(self, tmp_path):
+        """Verifies: when the chart render raises, the run still succeeds and
+        Discord is called with no attachment.
+        Why: the chart is best_effort. A yfinance outage must cost the reader
+        the picture, never the briefing — and a failed best-effort step records
+        no result, so the delivery has to tolerate the key being absent.
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord") as mock_discord,
+            patch("src.notifier.notion.Client", return_value=_notion_mock()),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch(
+                "src.handler.generate_price_comparison",
+                side_effect=ValueError("no usable ticker data for chart"),
+            ),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        mock_discord.assert_called_once()
+        assert mock_discord.call_args.kwargs["attachment"] is None
 
     @pytest.mark.usefixtures("disable_skip_guard")
     def test_unexpected_md_error_propagates(self, tmp_path):
