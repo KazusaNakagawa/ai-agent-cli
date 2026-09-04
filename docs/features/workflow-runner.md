@@ -19,7 +19,7 @@
 | ファイル | 役割 | 移植対象 |
 |---|---|---|
 | `src/handler.py` (141行) | デイリーブリーフィング（`bin/run.sh`） | ✅ パイロット |
-| `src/weekly_handler.py` | 週次リキャップ + Notion コメント取り込み | 後続 |
+| `src/weekly_handler.py` | 週次リキャップ + Notion コメント取り込み | ✅ 移植済み（#462） |
 | `src/self_agent_handler.py` | judgment ログ → ペルソナプロファイル | 後続 |
 | `src/money/`, `src/portfolio_snapshot/` | 家計簿・ポートフォリオ集計 | 後続 |
 | `src/xss_handler.py` | XSS インテリジェンス（現在 `run.sh` では無効） | ❌ 除外 |
@@ -272,6 +272,6 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 
 - Web UI での承認（`job_store` の永続化を伴う）、Discord 承認
 - Skills ブリッジ — Python から `subprocess` + `claude -p` で登録済みスキルを呼ぶ
-- 残りのハンドラ移植（weekly / self_agent / money / portfolio）と `recovery_handler.py` のステップ重複解消。**`xss_handler.py` は移植しない**
+- 残りのハンドラ移植（self_agent / money / portfolio）と `recovery_handler.py` のステップ重複解消。**`xss_handler.py` は移植しない**（weekly は #462 で移植済み）
 - 並列ステップ、条件分岐、ワークフローからワークフローの呼び出し — briefing の2並列は generator 内に閉じており、ランナー側には不要。実際に必要とするワークフローが出るまで作らない
 - Web の `run.py` を汎用化して任意のワークフローを起動できるようにする（レジストリができれば実装は小さい）

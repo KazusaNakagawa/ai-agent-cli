@@ -42,7 +42,7 @@ apps/python/
   │     ├── notifier/local_md.py  # 最初に output/briefing_YYYY-MM-DD.md へ書き出し
   │     ├── notifier/discord.py
   │     └── notifier/notion.py
-  src/weekly_handler.py           # 金曜のみ: 週次リキャップ + Notion コメント取り込み
+  src/weekly_handler.py           # 週次リキャップ + Notion コメント取り込み（ワークフロー: weekly）
   src/self_agent_handler.py       # 判断ログ → ペルソナプロファイル → Notion（bin/self_agent.sh）
   src/xss_handler.py              # XSS インテリジェンスエージェント — run.sh では現在無効
   src/claude_runner.py            # claude CLI 共通ヘルパー（subprocess + WebSearch）
@@ -111,7 +111,12 @@ cd ../web && npm install  # Web UI を使う場合のみ
 ## 実行
 
 ```bash
-bin/run.sh             # 日次ブリーフィング（金曜は週次リキャップも）
+bin/run.sh             # 日次ブリーフィング → 週次リキャップ（金曜以外は何もしない）
+
+# ワークフロー — 宣言済みパイプライン共通の入口
+bin/workflow.sh                   # 登録済みワークフロー一覧
+bin/workflow.sh run briefing      # 日次ブリーフィング
+bin/workflow.sh run weekly        # 週次リキャップ。金曜以外はスキップ、--force で強制実行
 
 # 当日のブリーフィングに対する対話 Q&A
 bin/chat.sh            # 新規セッション、または再開
@@ -138,7 +143,8 @@ cd apps/python
 
 | スクリプト | 用途 |
 |---|---|
-| `run.sh` | 日次ブリーフィングの実行（金曜は週次リキャップも）。メンテナのマシンでは**手動実行が現行の運用**（[launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active) 参照）。無効化中の XSS エージェントについては[アーキテクチャ](#アーキテクチャ)を参照 |
+| `run.sh` | 日次ブリーフィング → 週次リキャップ（週次は金曜のみ実体が走る）。メンテナのマシンでは**手動実行が現行の運用**（[launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active) 参照）。無効化中の XSS エージェントについては[アーキテクチャ](#アーキテクチャ)を参照 |
+| `workflow.sh` | 宣言済みワークフロー共通の入口。`workflow.sh` で一覧、`workflow.sh run <id>` で実行（`--force` / `--dry-run`）。個別スクリプトよりこちらを優先 — [workflow-runner.md](docs/features/workflow-runner.md) 参照 |
 | `chat.sh` | ブリーフィングセッションに対する対話 Q&A |
 | `serve.sh` | Web UI 一式（FastAPI + Next.js）の起動。`API_PORT` / `WEB_PORT` で上書き可 |
 | `self_agent.sh` | 判断ログをペルソナプロファイル化して Notion へ投稿 |

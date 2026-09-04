@@ -43,8 +43,10 @@ The sections below describe how to **re-enable** automatic daily runs. Only do t
 
 | Day | What runs |
 |---|---|
-| Mon – Sun | `python -m src.handler` (daily market briefing) |
-| Fri | `python -m src.handler` → `python -m src.weekly_handler` (daily + weekly recap) |
+| Mon – Sun | `python -m src.handler` → `python -m src.workflow run weekly` (daily market briefing; the recap reports `skipped` and costs nothing) |
+| Fri | `python -m src.handler` → `python -m src.workflow run weekly` (daily + weekly recap) |
+
+The weekday rule lives in the `weekly` workflow's guard (`WEEKLY_RECAP_WEEKDAY`), not in `bin/run.sh`, so the same command is safe to schedule daily and `bin/workflow.sh run weekly` behaves identically.
 
 ## DarkWake severs the sector sweep — the recovery job
 
