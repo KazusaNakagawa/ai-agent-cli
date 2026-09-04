@@ -66,7 +66,7 @@ def test_deliveries_are_not_best_effort():
         assert step.best_effort is False
 
 
-@pytest.mark.parametrize("step_id", ["index", "deliver_discord", "deliver_notion"])
+@pytest.mark.parametrize("step_id", ["chart", "index", "deliver_discord", "deliver_notion"])
 def test_conditional_steps_declare_a_skip_predicate(step_id):
     assert next(s for s in BRIEFING.steps if s.id == step_id).skip_if is not None
 

@@ -195,6 +195,25 @@ class TestBriefingHandler:
         assert mock_discord.call_args.kwargs["attachment"] == str(stub_chart)
 
     @pytest.mark.usefixtures("disable_skip_guard")
+    def test_chart_is_skipped_when_discord_is_not_configured(self, tmp_path):
+        """Verifies: no Discord credentials means no chart render.
+        Why: the render costs a yfinance download, and the attachment is its
+        only consumer — with no destination the work has nothing to produce.
+        """
+        with (
+            patch("src.handler.fetch_stock_moves", return_value="PLTR: ↑1.0%"),
+            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.CONFIG", _no_api_config_mock()) as mock_cfg,
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch("src.handler.generate_price_comparison") as mock_chart,
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            result = briefing_handler()
+
+        assert result["statusCode"] == 200
+        mock_chart.assert_not_called()
+
+    @pytest.mark.usefixtures("disable_skip_guard")
     def test_chart_failure_still_delivers_the_briefing(self, tmp_path):
         """Verifies: when the chart render raises, the run still succeeds and
         Discord is called with no attachment.

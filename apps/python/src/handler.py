@@ -153,6 +153,17 @@ def step_index(ctx) -> None:
         logger.warning("briefing indexing into chromadb failed: %s — continuing", exc)
 
 
+def skip_chart(ctx) -> bool:
+    """Skip the render when nothing can carry the result.
+
+    Rendering costs a yfinance download, and the chart's only consumer today is
+    the Discord attachment — so an unconfigured Discord means the work has no
+    destination. Delegating to ``skip_discord`` keeps that coupling in one
+    predicate: when a second consumer appears, this is the only place to widen.
+    """
+    return skip_discord(ctx)
+
+
 def step_chart(ctx) -> str:
     """Render the portfolio comparison chart delivered with the briefing.
 

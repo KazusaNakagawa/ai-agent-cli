@@ -74,7 +74,15 @@ def _cjk_font_name() -> str | None:
 def normalize_to_index(close_df: pd.DataFrame) -> pd.DataFrame:
     """Rebase each column to 100 at the first row so differently-priced
     tickers share one comparable axis. Columns whose first value is NaN or
-    zero cannot be rebased and are dropped."""
+    zero cannot be rebased and are dropped.
+
+    A frame with no rows drops every column: there is no first row to rebase
+    against. Returning an empty frame rather than raising keeps the "no usable
+    data" decision with the callers, both of which already own that contract —
+    yfinance can answer with the requested ticker columns and no price rows.
+    """
+    if close_df.empty:
+        return pd.DataFrame(index=close_df.index)
     out = {}
     for col in close_df.columns:
         first = close_df[col].iloc[0]
@@ -150,11 +158,19 @@ def render_price_comparison(close_df: pd.DataFrame, out_path: Path) -> Path:
     order of magnitude, and on a linear axis every line but the leader collapses
     onto the baseline. On a log axis equal slope means equal percentage change,
     which is the comparison the chart exists to make.
+
+    Raises ValueError when nothing plottable is left, rather than writing a PNG
+    of empty default axes that looks like a successful render.
     """
     normalized = normalize_to_index(close_df)
     # A log axis cannot place non-positive values; drop them rather than let
     # matplotlib silently clip the series.
     normalized = normalized.mask(normalized <= 0)
+    # Covers both ways of arriving with nothing to draw: no columns, and no
+    # rows. The mask above cannot empty a column normalize_to_index kept — that
+    # column's first row is exactly 100 — so it needs no guard of its own.
+    if normalized.dropna(how="all").empty:
+        raise ValueError("no usable ticker data for chart")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     cjk = _cjk_font_name()

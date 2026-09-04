@@ -148,6 +148,48 @@ def test_render_drops_non_positive_values(tmp_path):
     assert out.stat().st_size > 0
 
 
+def _rowless(tickers) -> pd.DataFrame:
+    """yfinance can answer with the requested ticker columns and no price rows."""
+    return pd.DataFrame({t: [] for t in tickers}, index=pd.to_datetime([]))
+
+
+def test_normalize_returns_empty_frame_for_a_rowless_input():
+    # There is no first row to rebase against, so every column drops out — and
+    # .iloc[0] on the empty column must not raise on the way there.
+    assert normalize_to_index(_rowless(["PLTR", "NVDA"])).columns.empty
+
+
+def test_render_raises_valueerror_for_a_rowless_input(tmp_path):
+    with pytest.raises(ValueError):
+        render_price_comparison(_rowless(["PLTR"]), tmp_path / "chart.png")
+
+
+def test_mask_cannot_empty_a_surviving_column(tmp_path):
+    """A kept column always has a positive value to draw.
+
+    Pins the reasoning behind the guard in render_price_comparison: rebasing
+    makes the first row exactly 100, so the non-positive mask can never empty a
+    column that normalize_to_index kept — later negatives only punch holes.
+    """
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    out = normalize_to_index(pd.DataFrame({"A": [10.0, -5.0]}, index=idx))
+    assert out.iloc[0]["A"] == pytest.approx(100.0)
+    assert not out.mask(out <= 0).dropna(how="all").empty
+
+
+def test_generate_raises_valueerror_for_a_rowless_download(tmp_path, monkeypatch):
+    """The rowless case must surface as the documented ValueError, not the
+    IndexError that .iloc[0] on an empty column used to raise."""
+    tickers = ["PLTR", "NVDA"]
+    cols = pd.MultiIndex.from_product([["Close"], tickers])
+    rowless = pd.DataFrame(
+        {("Close", t): [] for t in tickers}, index=pd.to_datetime([]), columns=cols
+    )
+    monkeypatch.setattr(pc_module.yf, "download", lambda *a, **k: rowless)
+    with pytest.raises(ValueError):
+        generate_price_comparison(tickers, tmp_path)
+
+
 def _yf_multiindex(tickers, with_data=True):
     """Mimic yfinance.download() output: columns are a MultiIndex
     (field, ticker) including a top-level 'Close'."""
