@@ -39,6 +39,10 @@ USAGE_LOG_ROTATION_ENABLED = False
 
 # Weekly recap lookback window (briefing pages + Notion comment ingestion, #396)
 WEEKLY_WINDOW_DAYS = 7
+# ISO weekday the recap runs on (1=Mon … 7=Sun). It is the workflow's guard, not
+# a caller's job: `workflow run weekly` is safe to invoke any day and acts only
+# on this one. Pass --force to run it off-schedule.
+WEEKLY_RECAP_WEEKDAY = 5
 
 # Output directory for MD output
 OUTPUT_DIR = Path(__file__).parent.parent / "output"

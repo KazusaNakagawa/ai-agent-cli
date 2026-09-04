@@ -42,7 +42,7 @@ apps/python/
   │     ├── notifier/local_md.py  # Writes output/briefing_YYYY-MM-DD.md first
   │     ├── notifier/discord.py
   │     └── notifier/notion.py
-  src/weekly_handler.py           # Fridays only: weekly recap + Notion comment ingestion
+  src/weekly_handler.py           # Weekly recap + Notion comment ingestion (workflow: weekly)
   src/self_agent_handler.py       # Judgment log → persona profile → Notion (bin/self_agent.sh)
   src/xss_handler.py              # XSS intel agent — currently disabled in run.sh
   src/claude_runner.py            # Shared claude CLI helper (subprocess + WebSearch)
@@ -111,7 +111,12 @@ See [docs/guides/configuration.md](docs/guides/configuration.md) for all environ
 ## Run
 
 ```bash
-bin/run.sh             # daily briefing (+ weekly recap on Fridays)
+bin/run.sh             # daily briefing, then the weekly recap (a no-op except on Fridays)
+
+# Workflows — one entry point for every declared pipeline
+bin/workflow.sh                   # list what is registered
+bin/workflow.sh run briefing      # daily briefing
+bin/workflow.sh run weekly        # weekly recap; skipped unless it is Friday, --force overrides
 
 # Interactive Q&A on today's briefing
 bin/chat.sh            # new or resumed session
@@ -138,7 +143,8 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 
 | Script | Purpose |
 |---|---|
-| `run.sh` | Run the daily briefing (+ weekly recap on Fri) — **manual execution is the active schedule** on the maintainer machine; see [launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active). See [Architecture](#architecture) for the disabled XSS intel agent |
+| `run.sh` | Run the daily briefing, then the weekly recap (which acts only on Fridays) — **manual execution is the active schedule** on the maintainer machine; see [launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active). See [Architecture](#architecture) for the disabled XSS intel agent |
+| `workflow.sh` | The one entry point for declared workflows: `workflow.sh` lists them, `workflow.sh run <id>` runs one (`--force`, `--dry-run`). Prefer it over the per-process scripts — see [workflow-runner.md](docs/features/workflow-runner.md) |
 | `chat.sh` | Interactive Q&A on a briefing session |
 | `serve.sh` | Launch the full Web UI — FastAPI + Next.js; `API_PORT` / `WEB_PORT` overridable |
 | `self_agent.sh` | Turn judgment-log entries into a persona profile and post it to Notion |
