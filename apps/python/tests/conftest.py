@@ -8,7 +8,7 @@ os.environ.setdefault("BRIEFING_CONFIG_PATH", str(Path(__file__).parent / "confi
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src import credentials, journal_store, state as state_mod
+from src import credentials, journal_store, state as state_mod, weekly_recap_state
 from web import auth
 from web.app import app
 
@@ -72,6 +72,18 @@ def isolated_state(monkeypatch, tmp_path):
     """Pin ``state.STATE_FILE`` to a tmp path so tests are independent of the
     host's ``~/.ai-agent/state.json``."""
     monkeypatch.setattr(state_mod, "STATE_FILE", tmp_path / "state.json")
+
+
+@pytest.fixture(autouse=True)
+def isolated_weekly_recap_state(monkeypatch, tmp_path):
+    """Pin ``weekly_recap_state.STATE_FILE`` to a tmp path for every test.
+
+    Autouse rather than opt-in: recording the delivered week is a side effect of
+    ``weekly_handler.step_deliver_notion``, so any test that reaches the Notion
+    delivery would otherwise overwrite the operator's real
+    ``~/.ai-agent/weekly_recap.json`` and suppress their next real recap.
+    """
+    monkeypatch.setattr(weekly_recap_state, "STATE_FILE", tmp_path / "weekly_recap.json")
 
 
 @pytest.fixture

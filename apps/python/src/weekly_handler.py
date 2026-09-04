@@ -11,7 +11,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from src import judgment_ingest, notion_comment_state
+from src import judgment_ingest, notion_comment_state, weekly_recap_state
 from src.config import CONFIG
 from src.constants import BRIEFING_OUTPUT_DIR, WEEKLY_RECAP_WEEKDAY, WEEKLY_WINDOW_DAYS
 from src.generator.weekly_summary import generate_weekly_summary, week_label
@@ -73,7 +73,11 @@ def _ingest_notion_comments() -> None:
 
 
 def _existing_recap_this_week(today: date, output_dir: Path) -> Path | None:
-    """Return this ISO week's recap file, if one was already written.
+    """Return this ISO week's local recap file, if one was already written.
+
+    Only consulted before the first delivery is recorded (see
+    ``recap_reason_to_skip``): the file is written before the Notion post, so
+    it proves a recap was *generated*, not that it was delivered.
 
     ISO week membership rather than "a file exists": last week's recap must not
     suppress this week's, and a recap forced earlier in the same week must.
@@ -96,27 +100,46 @@ def _existing_recap_this_week(today: date, output_dir: Path) -> Path | None:
     return None
 
 
-def recap_reason_to_skip(today: date, output_dir: Path) -> str | None:
+def recap_reason_to_skip(today: date, output_dir: Path, posted_week: str | None) -> str | None:
     """Return why the recap should not run on ``today``, or ``None`` to run.
 
-    This is the rule that used to be the ``date +%u = 5`` branch in
+    The weekday half is the rule that used to be the ``date +%u = 5`` branch in
     ``bin/run.sh``. Keeping it here rather than in the shell is what lets the
     recap be reached from ``bin/workflow.sh`` like every other workflow, and
     makes running it every day harmless.
+
+    ``posted_week`` — the ISO week of the last *delivered* recap — is what makes
+    the second half honest: a week whose local MD was written but whose Notion
+    post failed is not recapped, and must be retried rather than skipped.
+
+    The local-MD check survives only as a bootstrap for the state file's first
+    run. ``posted_week is None`` means no recap has ever been recorded, which
+    on an existing checkout is indistinguishable from "the recap ran last week,
+    before this file existed" — so the MD is honoured until the first delivery
+    replaces it as the marker, and never consulted again after that.
     """
     if today.isoweekday() != WEEKLY_RECAP_WEEKDAY:
         expected = _WEEKDAY_NAMES[WEEKLY_RECAP_WEEKDAY - 1]
         actual = _WEEKDAY_NAMES[today.isoweekday() - 1]
         return f"the weekly recap runs on {expected}曜; today is {actual}曜 (--force to run anyway)"
 
-    existing = _existing_recap_this_week(today, output_dir)
-    if existing:
-        return f"this week was already recapped ({existing.name}) (--force to run anyway)"
+    this_week = weekly_recap_state.week_key(today)
+    if posted_week == this_week:
+        return f"{this_week} was already recapped and delivered (--force to run anyway)"
+
+    if posted_week is None:
+        existing = _existing_recap_this_week(today, output_dir)
+        if existing:
+            return f"this week was already recapped ({existing.name}) (--force to run anyway)"
     return None
 
 
 def weekly_guard(ctx) -> str | None:
-    return recap_reason_to_skip(date.today(), BRIEFING_OUTPUT_DIR)
+    return recap_reason_to_skip(
+        date.today(),
+        BRIEFING_OUTPUT_DIR,
+        weekly_recap_state.read_posted_week(),
+    )
 
 
 # --- workflow steps ---------------------------------------------------------
@@ -184,7 +207,10 @@ def step_deliver_notion(ctx) -> str | None:
     if not page_url:
         logger.error("failed to create the page in Notion")
         return page_url
+
     logger.info("Notion page: %s", page_url)
+    # Only now is the week genuinely recapped — this is what the guard reads.
+    weekly_recap_state.record_posted(weekly_recap_state.week_key(date.today()), page_url)
     return page_url
 
 
