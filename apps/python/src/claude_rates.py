@@ -2,36 +2,71 @@
 
 Used by src.usage_monitor, scripts/token_usage_report.py, and
 scripts/sdd_token_cost.py so the rates are maintained in one place.
+
+The rates themselves live in ``config/model_rates.json`` rather than in this
+module. There is no pricing API to fetch them from — the Models API returns
+ids, context windows and capabilities but no prices — so the table is
+hand-maintained, and ``scripts/check_model_rates.py`` is what catches a model
+that has appeared in transcripts without one. See
+``docs/guides/usage-monitoring.md``.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# USD per 1M tokens:
-#   (input, output, cache_write_5m, cache_write_1h, cache_read)
-# Source: published Anthropic API pricing as of 2026-09.
-# Cache rates follow the standard multipliers on the input rate — 5-minute
-# write 1.25x, 1-hour write 2x, read 0.1x — unless a model publishes its own,
-# as Claude Fable 5.1 does for reads.
-# Keyed by exact model id; add new ids here as models are released rather
-# than relying on substring matching, which can mis-map as model names
-# evolve (e.g. a future id containing "claude-sonnet-5" as a substring but
-# priced differently).
-RATES = {
-    "claude-fable-5-1": (10.00, 50.00, 12.50, 20.00, 0.25),
-    "claude-fable-5": (10.00, 50.00, 12.50, 20.00, 1.00),
-    "claude-opus-5": (5.00, 25.00, 6.25, 10.00, 0.50),
-    "claude-opus-4-8": (5.00, 25.00, 6.25, 10.00, 0.50),
-    "claude-opus-4-7": (5.00, 25.00, 6.25, 10.00, 0.50),
-    "claude-opus-4-6": (5.00, 25.00, 6.25, 10.00, 0.50),
-    "claude-sonnet-5": (2.00, 10.00, 2.50, 4.00, 0.20),
-    "claude-sonnet-4-6": (3.00, 15.00, 3.75, 6.00, 0.30),
-    "claude-haiku-4-5": (1.00, 5.00, 1.25, 2.00, 0.10),
-    "claude-haiku-4-5-20251001": (1.00, 5.00, 1.25, 2.00, 0.10),
-}
+RATES_PATH = Path(
+    os.getenv(
+        "MODEL_RATES_PATH", str(Path(__file__).parents[1] / "config" / "model_rates.json")
+    )
+)
+
+# Order matters: the loaded tuple is (input, output, cache_write_5m,
+# cache_write_1h, cache_read) and every consumer unpacks it positionally.
+RATE_FIELDS = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read")
+
+
+def load_rates(path: Path) -> dict[str, tuple[float, float, float, float, float]]:
+    """Read a rate table from ``path``, in USD per 1M tokens.
+
+    Every field is required per model. A partially specified model is rejected
+    rather than defaulted, because a silent 0 for one component is exactly the
+    failure this file exists to prevent.
+    """
+    try:
+        raw = json.loads(path.read_text())
+    except FileNotFoundError:
+        raise FileNotFoundError(f"model rate table not found: {path}") from None
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{path} is not valid JSON: {e}") from e
+
+    if not isinstance(raw, dict) or not isinstance(raw.get("rates"), dict):
+        raise ValueError(f"{path} must contain a top-level 'rates' object")
+
+    table: dict[str, tuple[float, float, float, float, float]] = {}
+    for model, fields in raw["rates"].items():
+        if not isinstance(fields, dict):
+            raise ValueError(f"{path}: rates for {model!r} must be an object")
+        values = []
+        for name in RATE_FIELDS:
+            if name not in fields:
+                raise ValueError(f"{path}: {model!r} is missing the {name!r} rate")
+            value = fields[name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{path}: {model!r} has a non-numeric {name!r} rate")
+            if value < 0:
+                raise ValueError(f"{path}: {model!r} has a negative {name!r} rate")
+            values.append(float(value))
+        table[model] = tuple(values)  # type: ignore[assignment]
+    return table
+
+
+RATES = load_rates(RATES_PATH)
 
 # Process-global so a long batch run logs each unknown model once instead of
 # once per message. That makes it shared state between tests — see
