@@ -11,21 +11,40 @@ import logging
 logger = logging.getLogger(__name__)
 
 # USD per 1M tokens: (input, output, cache_write, cache_read)
-# Source: published Anthropic API pricing as of 2026-07.
+# Source: published Anthropic API pricing as of 2026-09.
+# Cache rates follow the standard multipliers on the input rate (write 1.25x,
+# read 0.1x) unless a model publishes its own, as Claude Fable 5.1 does.
 # Keyed by exact model id; add new ids here as models are released rather
 # than relying on substring matching, which can mis-map as model names
 # evolve (e.g. a future id containing "claude-sonnet-5" as a substring but
 # priced differently).
 RATES = {
-    "claude-sonnet-5": (3.00, 15.00, 3.75, 0.30),
-    "claude-opus-4-8": (15.00, 75.00, 18.75, 1.50),
-    "claude-haiku-4-5": (0.80, 4.00, 1.00, 0.08),
-    "claude-haiku-4-5-20251001": (0.80, 4.00, 1.00, 0.08),
+    "claude-fable-5-1": (10.00, 50.00, 12.50, 0.25),
     "claude-fable-5": (10.00, 50.00, 12.50, 1.00),
+    "claude-opus-5": (5.00, 25.00, 6.25, 0.50),
+    "claude-opus-4-8": (5.00, 25.00, 6.25, 0.50),
+    "claude-opus-4-7": (5.00, 25.00, 6.25, 0.50),
+    "claude-opus-4-6": (5.00, 25.00, 6.25, 0.50),
+    "claude-sonnet-5": (2.00, 10.00, 2.50, 0.20),
     "claude-sonnet-4-6": (3.00, 15.00, 3.75, 0.30),
+    "claude-haiku-4-5": (1.00, 5.00, 1.25, 0.10),
+    "claude-haiku-4-5-20251001": (1.00, 5.00, 1.25, 0.10),
 }
 
+# Process-global so a long batch run logs each unknown model once instead of
+# once per message. That makes it shared state between tests — see
+# reset_unpriced_warnings().
 _unpriced_models_warned: set[str] = set()
+
+
+def reset_unpriced_warnings() -> None:
+    """Forget which models have already been warned about.
+
+    Test-support hook: without it the first suite to hit an unknown model
+    suppresses the warning for every later test in the same process, so
+    assertions on the warning pass or fail depending on collection order.
+    """
+    _unpriced_models_warned.clear()
 
 
 def rate_for(model: str) -> tuple[float, float, float, float]:
