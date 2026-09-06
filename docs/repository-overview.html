@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My World Briefing — リポジトリ解説</title>
+<script>
+/* Resolve the theme before the first paint so a light-mode reader never sees
+   the dark default flash. The toggle at the bottom of the page reuses the key. */
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("doc-theme"); } catch (e) { /* storage may be unavailable */ }
+  var prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (prefersLight ? "light" : "dark"));
+})();
+</script>
+<style>
+/* ============================================================
+   Theme tokens
+   ============================================================ */
+:root {
+  --bg:            #ffffff;
+  --bg-sidebar:    #fafaf9;
+  --bg-code:       #f5f5f4;
+  --bg-hover:      #f0efed;
+  --bg-active:     #ebe9e6;
+  --fg:            #1c1917;
+  --fg-muted:      #78716c;
+  --fg-subtle:     #a8a29e;
+  --border:        #e7e5e4;
+  --accent:        #c15f3c;
+  --accent-soft:   rgba(193, 95, 60, .12);
+  --note-bg:       #f4f7fb;
+  --note-border:   #6b93c9;
+  --warn-bg:       #fdf6ec;
+  --warn-border:   #d99a3a;
+  --sidebar-w:     280px;
+  --content-w:     860px;
+  --font-sans:     -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+                   "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
+  --font-mono:     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+html[data-theme="dark"] {
+  --bg:            #191817;
+  --bg-sidebar:    #141312;
+  --bg-code:       #232120;
+  --bg-hover:      #262322;
+  --bg-active:     #2e2a28;
+  --fg:            #ecebe9;
+  --fg-muted:      #a1998f;
+  --fg-subtle:     #6f6862;
+  --border:        #2c2927;
+  --accent:        #e08a5f;
+  --accent-soft:   rgba(224, 138, 95, .14);
+  --note-bg:       #1a1f27;
+  --note-border:   #5b82b5;
+  --warn-bg:       #241f16;
+  --warn-border:   #b8853a;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.85;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ============================================================
+   Layout
+   ============================================================ */
+.layout { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 24px 0 48px;
+}
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px 18px;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: .01em;
+}
+.sidebar__brand-mark {
+  width: 22px; height: 22px;
+  flex: 0 0 22px;
+  border-radius: 6px;
+  background: var(--accent);
+  display: grid; place-items: center;
+  color: #fff; font-size: 12px; font-weight: 800;
+}
+.sidebar__search { padding: 0 16px 16px; }
+.sidebar__search input {
+  width: 100%;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.sidebar__search input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.sidebar__search input::placeholder { color: var(--fg-subtle); }
+
+#toc { list-style: none; margin: 0; padding: 0 10px; }
+#toc li { margin: 0; }
+#toc a {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+}
+#toc a:hover { background: var(--bg-hover); color: var(--fg); }
+#toc a.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+#toc .toc--h2 { margin-top: 10px; }
+#toc .toc--h3 a { padding-left: 24px; font-size: 13px; }
+#toc .toc--h3 a::before {
+  content: "";
+  position: relative; left: -10px;
+  display: inline-block;
+  width: 4px; height: 1px;
+  vertical-align: middle;
+  background: var(--fg-subtle);
+}
+#toc .is-empty { padding: 8px 10px; font-size: 13px; color: var(--fg-subtle); }
+
+.main { flex: 1 1 auto; min-width: 0; }
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 32px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.breadcrumb { font-size: 13px; color: var(--fg-muted); }
+.breadcrumb span + span::before { content: "›"; margin: 0 8px; color: var(--fg-subtle); }
+.topbar__spacer { flex: 1 1 auto; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  font: inherit; font-size: 13px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.btn:hover { background: var(--bg-hover); color: var(--fg); }
+.menu-toggle { display: none; }
+
+.content { max-width: var(--content-w); padding: 40px 32px 120px; }
+
+/* ============================================================
+   Typography
+   ============================================================ */
+h1 { font-size: 34px; line-height: 1.35; font-weight: 700; letter-spacing: -.02em; margin: 0 0 12px; }
+.lead { font-size: 17px; color: var(--fg-muted); margin: 0 0 32px; }
+h2 { font-size: 24px; font-weight: 700; letter-spacing: -.01em; margin: 56px 0 14px; padding-top: 8px; scroll-margin-top: 72px; }
+h3 { font-size: 18px; font-weight: 650; margin: 36px 0 10px; scroll-margin-top: 72px; }
+p { margin: 0 0 16px; }
+ul, ol { margin: 0 0 16px; padding-left: 24px; }
+li { margin: 4px 0; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 48px 0; }
+
+.anchor { margin-left: 8px; font-size: .7em; color: var(--fg-subtle); opacity: 0; text-decoration: none; }
+h2:hover .anchor, h3:hover .anchor { opacity: 1; }
+
+/* ============================================================
+   Components
+   ============================================================ */
+code {
+  font-family: var(--font-mono); font-size: .875em;
+  background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: 5px; padding: 1px 5px;
+}
+pre {
+  background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px; margin: 0 0 20px;
+  overflow-x: auto; line-height: 1.7;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 13.5px; }
+
+.table-wrap { overflow-x: auto; margin: 0 0 20px; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-weight: 650; color: var(--fg-muted); font-size: 13px; letter-spacing: .02em; }
+tbody tr:hover { background: var(--bg-hover); }
+
+.callout {
+  border: 1px solid var(--border); border-left: 3px solid var(--fg-subtle);
+  border-radius: 8px; padding: 14px 18px; margin: 0 0 20px; background: var(--bg-code);
+}
+.callout > :last-child { margin-bottom: 0; }
+.callout__title { font-weight: 650; font-size: 14px; margin: 0 0 6px; }
+.callout--note { background: var(--note-bg); border-left-color: var(--note-border); }
+.callout--warn { background: var(--warn-bg); border-left-color: var(--warn-border); }
+
+.steps { counter-reset: step; list-style: none; padding: 0; margin: 0 0 20px; }
+.steps > li { counter-increment: step; position: relative; padding-left: 40px; margin: 0 0 18px; }
+.steps > li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 2px;
+  width: 26px; height: 26px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+  font-size: 13px; font-weight: 700;
+}
+
+/* --- Additions for this document --- */
+.figure { margin: 0 0 24px; }
+.figure svg { display: block; width: 100%; height: auto; overflow: visible; }
+.figure__cap { font-size: 13px; color: var(--fg-muted); margin: 8px 0 0; }
+.dg-box { fill: var(--bg-code); stroke: var(--border); }
+.dg-box--accent { fill: var(--accent-soft); stroke: var(--accent); }
+.dg-lane { fill: none; stroke: var(--border); stroke-dasharray: 4 4; }
+.dg-t { fill: var(--fg); font-size: 13px; font-family: var(--font-sans); font-weight: 600; }
+.dg-s { fill: var(--fg-muted); font-size: 11.5px; font-family: var(--font-mono); }
+.dg-lbl { fill: var(--fg-muted); font-size: 11px; font-family: var(--font-sans); letter-spacing: .08em; }
+.dg-line { stroke: var(--fg-subtle); stroke-width: 1.4; fill: none; }
+.dg-line--accent { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+
+.tag {
+  display: inline-block; font-size: 11.5px; font-weight: 650;
+  padding: 1px 8px; border-radius: 999px; line-height: 1.7;
+  background: var(--accent-soft); color: var(--accent);
+}
+.tag--muted { background: var(--bg-active); color: var(--fg-muted); }
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed; z-index: 40; left: 0; top: 0;
+    transform: translateX(-100%); transition: transform .2s ease;
+    box-shadow: 0 0 40px rgba(0,0,0,.35);
+  }
+  body.nav-open .sidebar { transform: translateX(0); }
+  body.nav-open .scrim { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); }
+  .menu-toggle { display: inline-flex; }
+  .topbar { padding: 12px 20px; }
+  .content { padding: 28px 20px 96px; }
+  h1 { font-size: 27px; }
+  h2 { font-size: 21px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar__brand">
+      <span class="sidebar__brand-mark">M</span>
+      <span>My World Briefing</span>
+    </div>
+    <div class="sidebar__search">
+      <input type="search" id="toc-filter" placeholder="項目を絞り込む" aria-label="目次を絞り込む" autocomplete="off">
+    </div>
+    <ul id="toc"></ul>
+  </aside>
+  <div class="scrim" id="scrim" aria-hidden="true"></div>
+
+  <main class="main">
+    <div class="topbar">
+      <button class="btn menu-toggle" id="menu-toggle" aria-label="目次を開く" aria-controls="sidebar" aria-expanded="false">☰</button>
+      <nav class="breadcrumb"><span>ai-agent-cli</span><span>リポジトリ解説</span></nav>
+      <div class="topbar__spacer"></div>
+      <button class="btn" id="theme-toggle" aria-label="テーマ切り替え">◐ テーマ</button>
+    </div>
+
+    <article class="content" id="content">
+
+      <h1>My World Briefing — リポジトリ解説</h1>
+      <p class="lead">
+        地政学イベント・株価変動・セクターテーマを毎朝収集し、特定のポートフォリオに引きつけて解釈したうえで、
+        3 分で読めるブリーフィングを Discord と Notion に配信する LLM エージェントシステム。
+        本ドキュメントは、このリポジトリの構造・設計判断・運用方法を一望するための解説資料です。
+      </p>
+
+      <div class="callout callout--note">
+        <p class="callout__title">この資料の位置づけ</p>
+        <p>
+          正本は <code>README.md</code>（日本語版 <code>README.ja.md</code>）と <code>docs/</code> 配下の各ドキュメントです。
+          本資料はそれらを読む前の全体像として、リポジトリを初めて触る人が「どこに何があり、なぜそうなっているか」を掴めることを目的にしています。
+          個別の手順は各ガイドへのリンクを辿ってください。
+        </p>
+      </div>
+
+      <h2>コンセプト</h2>
+      <p>
+        一般のニュース・市況サービスは、不特定多数に向けて同じ紙面を配ります。このエージェントは読者が 1 人しかいない前提で、
+        拾ったイベントを<strong>自分の保有銘柄・ウォッチテーマ・地政学リスク</strong>に紐づけ、
+        「これが自分にとって何を意味するか」まで踏み込んだ文章を毎日生成します。
+        情報を<em>集める</em>ツールではなく、自分のレンズを通して情報を<em>解釈する</em>エージェントという位置づけです。
+      </p>
+      <p>
+        技術的な難所は LLM を呼ぶこと自体ではありません。<strong>非決定的なエージェントを、毎朝無人で走らせて信頼できる水準まで持っていくこと</strong>です。
+        部分障害のハンドリング、実行漏れからの復旧、昨日のモデル出力が今日のプロンプトになる構造でのインジェクション封じ込め、コストの可視化 —
+        以下に示す設計の大半は、この制約から導かれています。
+      </p>
+
+      <h2>全体アーキテクチャ</h2>
+      <p>
+        入口（CLI スクリプト / Web UI）、ドメインごとのハンドラ、共通基盤、外部サービスという 4 層構成です。
+        LLM 呼び出しはすべて <code>claude_runner.py</code> という 1 点を通ります。
+      </p>
+
+      <div class="figure">
+        <svg viewBox="0 0 860 470" role="img" aria-label="4層構成のアーキテクチャ図">
+          <!-- lane labels -->
+          <text class="dg-lbl" x="0" y="14">ENTRY POINTS</text>
+          <rect class="dg-box" x="0" y="24" width="250" height="66" rx="9"/>
+          <text class="dg-t" x="16" y="50">CLI スクリプト</text>
+          <text class="dg-s" x="16" y="72">bin/*.sh → apps/python/bin/*.sh</text>
+
+          <rect class="dg-box" x="270" y="24" width="250" height="66" rx="9"/>
+          <text class="dg-t" x="286" y="50">Web UI (Next.js 14)</text>
+          <text class="dg-s" x="286" y="72">apps/web — :3000</text>
+
+          <rect class="dg-box" x="540" y="24" width="320" height="66" rx="9"/>
+          <text class="dg-t" x="556" y="50">FastAPI バックエンド</text>
+          <text class="dg-s" x="556" y="72">apps/python/web — :8000 / Bearer 認証</text>
+
+          <!-- Web UI talks to the backend, then both entry points fan out to every handler -->
+          <path class="dg-line" d="M520 57 L534 57" marker-end="url(#ar)"/>
+          <path class="dg-line" d="M125 90 L125 112"/>
+          <path class="dg-line" d="M700 90 L700 112"/>
+          <path class="dg-line" d="M102 112 L755 112"/>
+          <path class="dg-line--accent" d="M102 112 L102 126" marker-end="url(#ar-a)"/>
+          <path class="dg-line" d="M320 112 L320 126" marker-end="url(#ar)"/>
+          <path class="dg-line" d="M535 112 L535 126" marker-end="url(#ar)"/>
+          <path class="dg-line" d="M755 112 L755 126" marker-end="url(#ar)"/>
+
+          <!-- handlers -->
+          <text class="dg-lbl" x="0" y="142">APPLICATION — ドメインごとのハンドラ</text>
+          <rect class="dg-box dg-box--accent" x="0" y="152" width="205" height="72" rx="9"/>
+          <text class="dg-t" x="16" y="178">日次ブリーフィング</text>
+          <text class="dg-s" x="16" y="200">src/handler.py</text>
+
+          <rect class="dg-box" x="220" y="152" width="200" height="72" rx="9"/>
+          <text class="dg-t" x="236" y="178">週次リキャップ</text>
+          <text class="dg-s" x="236" y="200">src/weekly_handler.py</text>
+
+          <rect class="dg-box" x="435" y="152" width="200" height="72" rx="9"/>
+          <text class="dg-t" x="451" y="178">self-agent</text>
+          <text class="dg-s" x="451" y="200">src/self_agent_handler.py</text>
+
+          <rect class="dg-box" x="650" y="152" width="210" height="72" rx="9"/>
+          <text class="dg-t" x="666" y="178">家計 / ポートフォリオ</text>
+          <text class="dg-s" x="666" y="200">src/money · portfolio</text>
+
+          <path class="dg-line--accent" d="M102 224 L102 268" marker-end="url(#ar-a)"/>
+          <path class="dg-line" d="M320 224 L320 268" marker-end="url(#ar)"/>
+          <path class="dg-line" d="M535 224 L535 268" marker-end="url(#ar)"/>
+          <path class="dg-line" d="M755 224 L755 268" marker-end="url(#ar)"/>
+
+          <!-- platform -->
+          <text class="dg-lbl" x="0" y="288">PLATFORM — 全ハンドラ共通</text>
+          <rect class="dg-lane" x="0" y="298" width="860" height="76" rx="10"/>
+          <rect class="dg-box dg-box--accent" x="12" y="310" width="196" height="52" rx="8"/>
+          <text class="dg-t" x="26" y="332">claude_runner</text>
+          <text class="dg-s" x="26" y="350">LLM 呼び出しの単一入口</text>
+
+          <rect class="dg-box" x="220" y="310" width="196" height="52" rx="8"/>
+          <text class="dg-t" x="234" y="332">prompt_safety</text>
+          <text class="dg-s" x="234" y="350">インジェクション封じ込め</text>
+
+          <rect class="dg-box" x="428" y="310" width="196" height="52" rx="8"/>
+          <text class="dg-t" x="442" y="332">transient_errors</text>
+          <text class="dg-s" x="442" y="350">リトライ判定</text>
+
+          <rect class="dg-box" x="636" y="310" width="212" height="52" rx="8"/>
+          <text class="dg-t" x="650" y="332">usage_logger / monitor</text>
+          <text class="dg-s" x="650" y="350">コスト計測</text>
+
+          <path class="dg-line--accent" d="M110 374 L110 406" marker-end="url(#ar-a)"/>
+
+          <!-- external -->
+          <text class="dg-lbl" x="0" y="426">EXTERNAL</text>
+          <rect class="dg-box" x="0" y="436" width="250" height="34" rx="8"/>
+          <text class="dg-s" x="16" y="458">Claude Code CLI + WebSearch</text>
+
+          <rect class="dg-box" x="266" y="436" width="180" height="34" rx="8"/>
+          <text class="dg-s" x="282" y="458">yfinance</text>
+
+          <rect class="dg-box" x="462" y="436" width="180" height="34" rx="8"/>
+          <text class="dg-s" x="478" y="458">Discord</text>
+
+          <rect class="dg-box" x="658" y="436" width="202" height="34" rx="8"/>
+          <text class="dg-s" x="674" y="458">Notion / Google Drive</text>
+
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor" style="fill: var(--fg-subtle)"/>
+            </marker>
+            <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" style="fill: var(--accent)"/>
+            </marker>
+          </defs>
+        </svg>
+        <p class="figure__cap">
+          外部サービスのうち Claude Code CLI だけが <code>claude_runner</code> を経由します。yfinance・Discord・Notion へは
+          各ハンドラの <code>fetcher/</code> <code>notifier/</code> が直接アクセスするため、図では線を省略しています。
+          データフローの作図元は <code>docs/architecture.drawio</code>、シーケンスレベルの詳細は
+          <code>docs/sequence-diagrams.md</code> にあります。
+        </p>
+      </div>
+
+      <h3>ディレクトリ構成</h3>
+      <pre><code>bin/*.sh → apps/python/bin/*.sh   # Python アプリへ exec する薄いラッパー
+
+apps/python/
+  src/handler.py                  # 日次マーケットブリーフィング（bin/run.sh）
+  │     ├── fetcher/stocks.py     # yfinance 経由の前日比
+  │     ├── generator/briefing.py # プロンプト構築、run_claude() を並列呼び出し
+  │     ├── notifier/local_md.py  # 最初に output/briefing_YYYY-MM-DD.md へ書き出し
+  │     ├── notifier/discord.py
+  │     └── notifier/notion.py
+  src/weekly_handler.py           # 金曜のみ: 週次リキャップ + Notion コメント取り込み
+  src/self_agent_handler.py       # 判断ログ → ペルソナプロファイル → Notion
+  src/xss_handler.py              # XSS インテリジェンスエージェント（run.sh では無効）
+  src/claude_runner.py            # claude CLI 共通ヘルパー（subprocess + WebSearch）
+  src/money/ · portfolio_snapshot/ · evaluator/ · local_llm/ · metrics/
+  web/                            # Web UI 用 FastAPI バックエンド
+  config/briefing.json            # ポートフォリオ、ウォッチセクター、地政学リスク
+
+apps/web/                         # Next.js UI — 閲覧・チャット・ジャーナル・使用量モニター</code></pre>
+
+      <h2>日次ブリーフィングの流れ</h2>
+      <p><code>bin/run.sh</code> の 1 回の実行で起きることを、時系列に並べたものです。</p>
+
+      <div class="figure">
+        <svg viewBox="0 0 860 150" role="img" aria-label="日次ブリーフィングの処理フロー">
+          <g>
+            <rect class="dg-box" x="0" y="30" width="152" height="62" rx="9"/>
+            <text class="dg-t" x="14" y="56">1. 収集</text>
+            <text class="dg-s" x="14" y="76">fetcher/stocks.py</text>
+
+            <rect class="dg-box dg-box--accent" x="177" y="30" width="152" height="62" rx="9"/>
+            <text class="dg-t" x="191" y="56">2. 並列生成</text>
+            <text class="dg-s" x="191" y="76">generator/briefing</text>
+
+            <rect class="dg-box" x="354" y="30" width="152" height="62" rx="9"/>
+            <text class="dg-t" x="368" y="56">3. ローカル保存</text>
+            <text class="dg-s" x="368" y="76">notifier/local_md</text>
+
+            <rect class="dg-box" x="531" y="30" width="152" height="62" rx="9"/>
+            <text class="dg-t" x="545" y="56">4. 配信</text>
+            <text class="dg-s" x="545" y="76">discord · notion</text>
+
+            <rect class="dg-box" x="708" y="30" width="152" height="62" rx="9"/>
+            <text class="dg-t" x="722" y="56">5. 記録</text>
+            <text class="dg-s" x="722" y="76">usage_logger</text>
+
+            <path class="dg-line" d="M152 61 L172 61" marker-end="url(#ar2)"/>
+            <path class="dg-line--accent" d="M329 61 L349 61" marker-end="url(#ar2a)"/>
+            <path class="dg-line" d="M506 61 L526 61" marker-end="url(#ar2)"/>
+            <path class="dg-line" d="M683 61 L703 61" marker-end="url(#ar2)"/>
+
+            <text class="dg-lbl" x="177" y="118">失敗しても止めない ↓</text>
+            <text class="dg-s" x="177" y="138">セクター調査が落ちてもデグレードモードで配信を継続</text>
+            <text class="dg-lbl" x="354" y="20">ネットワーク配信より先にディスクへ ↓</text>
+          </g>
+          <defs>
+            <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" style="fill: var(--fg-subtle)"/>
+            </marker>
+            <marker id="ar2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" style="fill: var(--accent)"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+
+      <ol class="steps">
+        <li>
+          <strong>市況データの収集</strong><br>
+          <code>fetcher/stocks.py</code> が yfinance から保有銘柄・ウォッチ銘柄の前日比を取得します。
+          対象は <code>config/briefing.json</code> の定義に従います。
+        </li>
+        <li>
+          <strong>プロンプト構築と並列生成</strong><br>
+          <code>generator/briefing.py</code> がセクション別のプロンプトを組み立て、<code>run_claude()</code> を並列に呼び出します。
+          リアルタイム検索は Claude Code CLI 内蔵の WebSearch が担当し、外部ニュース API は使いません。
+        </li>
+        <li>
+          <strong>ローカル書き出し（配信より先）</strong><br>
+          <code>notifier/local_md.py</code> が <code>output/briefing_YYYY-MM-DD.md</code> を書き出します。
+          ネットワーク配信より先にディスクへ落とすのは、Discord や Notion が落ちても生成物を失わないためです。
+          あわせて <code>output/charts/</code> にポートフォリオ比較チャートの PNG が出力されます。
+          チャート生成は <code>best_effort</code> のステップで、yfinance の不調で落ちてもブリーフィング本体の配信は止まりません。
+        </li>
+        <li>
+          <strong>Discord / Notion への配信</strong><br>
+          それぞれ独立した notifier として実装されており、片方の失敗がもう片方を巻き込みません。
+          Discord へはテキスト配信のあとにチャート PNG を続けて送ります（添付のアップロード失敗も配信済みのブリーフィングを巻き込みません）。
+        </li>
+        <li>
+          <strong>使用量とコストの記録</strong><br>
+          <code>usage_logger.py</code> が実行ごとのトークン使用量を残し、Web UI の Monitor タブで日次・モデル別に可視化されます。
+        </li>
+      </ol>
+      <p>金曜日はこれに加えて <code>weekly_handler.py</code> が走り、週次リキャップと Notion コメントの取り込みを行います。</p>
+
+      <h2>主要な設計判断</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>判断</th><th>理由</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>外部ニュース API を使わない</strong></td>
+              <td>リアルタイム検索は Claude Code CLI 内蔵の WebSearch が担う。API キー管理と契約が 1 つ減る</td>
+            </tr>
+            <tr>
+              <td><strong>Anthropic API のトークン従量課金を使わない</strong></td>
+              <td>Claude Code CLI の OAuth セッション上で動作する。有効な Claude 有料プラン（Pro/Max）が前提で、無料プランでは動かせない</td>
+            </tr>
+            <tr>
+              <td><strong>LLM 呼び出しの入口を 1 か所に集約</strong></td>
+              <td>すべての <code>claude</code> 実行が <code>src/claude_runner.py</code> を通るため、認証モード・環境変数の扱い・リトライの実装が 1 つしか存在しない</td>
+            </tr>
+            <tr>
+              <td><strong>地政学 → 株価の因果を毎日の出力に織り込む</strong></td>
+              <td>「ニュースの要約」ではなく「自分のポジションへの影響」を出力するための、プロンプト設計上の固定要件</td>
+            </tr>
+            <tr>
+              <td><strong>個人データはリポジトリに入れない</strong></td>
+              <td>実データは <code>.example</code> とスキーマだけを追跡し、実体は Git 管理外に置く（<a href="#設定ファイルの扱い">後述</a>）</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>LLM 呼び出しの単一入口</h3>
+      <p>
+        <code>claude_runner.run_claude()</code> がすべての claude CLI 呼び出しを引き受けます。
+        認証まわりはモード依存で、<code>state.read_state().auth_mode</code>（既定は <code>cli</code>）に応じて
+        <code>_build_env()</code> が subprocess の環境変数を組み立てます。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>auth_mode</th><th><code>ANTHROPIC_API_KEY</code> の扱い</th><th>結果</th></tr></thead>
+          <tbody>
+            <tr><td><code>cli</code> <span class="tag">既定</span></td><td>環境変数から<strong>除去</strong>する</td><td>claude CLI が自身の OAuth セッションを使う</td></tr>
+            <tr><td><code>api</code></td><td>Keychain →<code>.env</code> の順で解決し<strong>注入</strong>する</td><td>API キーによる従量課金で動作する</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout callout--warn">
+        <p class="callout__title">実装時の注意</p>
+        <p>
+          claude への新しい subprocess 呼び出しを追加するときは、必ず <code>_build_env(state.read_state().auth_mode)</code> を経由させてください。
+          このヘルパーの外側で <code>ANTHROPIC_API_KEY</code> を直接セットすると、認証モードの切り替えが壊れます。
+        </p>
+      </div>
+
+      <h2>無人運用のための設計</h2>
+      <p>
+        このシステムは、LLM のステップが失敗する・ハングする・使い物にならない出力を返すことを前提にしており、
+        かつ朝 5 時には誰も見ていないことを前提にしています。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>懸念</th><th>対処箇所</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>部分障害 — セクター調査が落ちてもブリーフィング本体は届けたい</td>
+              <td><code>src/handler.py</code> のデグレードモード。<code>notifier/local_md.py</code> がネットワーク配信より<strong>先に</strong>ディスクへ書き出す</td>
+            </tr>
+            <tr>
+              <td>部分的な取りこぼし — DarkWake で長いセクター調査だけが切れた</td>
+              <td><code>bin/recover.sh</code> → <code>src/recovery_handler.py</code>。<strong>セクター調査のみ</strong>を再実行して当日の MD と Notion ページに追記する。当日分にセクター失敗の注記がなければ no-op（claude 呼び出しゼロ）で、実行前に <code>src.power.is_system_awake()</code> がマシンの覚醒を確認する</td>
+            </tr>
+            <tr>
+              <td>プロンプトインジェクション</td>
+              <td><code>src/prompt_safety.py</code>。<code>neutralize_user_text</code> が設定文字列中のロールマーカーを無害化し、<code>wrap_untrusted</code> が再利用される LLM 出力（昨日のブリーフィングを今日のチャットに投入するケース）を「命令ではなくデータ」として囲む</td>
+            </tr>
+            <tr>
+              <td>一時的な API / ネットワークエラー</td>
+              <td><code>src/transient_errors.py</code>。<code>claude_runner</code> 内でリトライ</td>
+            </tr>
+            <tr>
+              <td>コストの逸脱</td>
+              <td><code>src/usage_logger.py</code> / <code>usage_monitor.py</code> / <code>claude_rates.py</code>。Web UI の Monitor タブで可視化。公表レートのないモデルはゼロ円として混ぜず、合計から除外する</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>前提条件 — スリープ中の Mac はスケジューラでは救えない</h3>
+      <p>
+        上記はすべて、スケジュール時刻にマシンが本当に起きていることを前提としています。すなわち
+        <strong>蓋を開けた状態で AC アダプタに接続</strong>していること（AC 接続時は <code>pmset -g custom</code> が <code>sleep 0</code> を返す）。
+        蓋を閉じれば電源の種類に関係なくスリープします。
+      </p>
+      <p>
+        蓋を閉じたバッテリー駆動の Mac では、5 時のジョブは約 45 秒しかない DarkWake の中で起動します。
+        claude CLI の接続が <code>API Error: Connection closed mid-response</code> で切れ、その後の一時エラーリトライが
+        <strong>ブリーフィングを 1 つも生成しないまま</strong>サブスクリプションの利用枠を食い潰します
+        （2026-08-12 の実測で API 換算 $2 超相当、Issue #443）。
+        <code>caffeinate -ims</code> でも防げません — <code>-s</code> は AC 電源時のみ有効で、バッテリー駆動の DarkWake を呼び出し完了まで延命できないためです。
+      </p>
+      <p>
+        このため、メンテナの環境では launchd や cron ではなく<strong>手動実行を現行の運用</strong>としています。
+        詳細と実測ログは <code>docs/guides/launchd-setup.md</code> と <code>docs/guides/cron-setup.md</code> にあります。
+      </p>
+
+      <h2>Web UI</h2>
+      <p>
+        <code>bin/serve.sh</code> で FastAPI（:8000）と Next.js（:3000）が同時に立ち上がります。
+        バックエンドは localhost + Bearer トークンで保護され、外部公開は想定していません。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>サービス</th><th>画面</th><th>できること</th></tr></thead>
+          <tbody>
+            <tr><td rowspan="6">Briefing</td><td>Portfolio</td><td>構成比、ルックスルーの為替エクスポージャー、配分ルール検査</td></tr>
+            <tr><td>Watch Sectors</td><td>ウォッチセクター定義の編集</td></tr>
+            <tr><td>Geopolitical Risks</td><td>地政学リスク定義の編集</td></tr>
+            <tr><td>Run</td><td>ブリーフィング実行の起動と進捗表示</td></tr>
+            <tr><td>Q&amp;A Chat</td><td>当日または過去のブリーフィングに対する対話 Q&amp;A（SSE ストリーミング）</td></tr>
+            <tr><td>Briefing</td><td>過去のブリーフィングを検索・閲覧。目次付きでレンダリングされる</td></tr>
+            <tr><td>Journal</td><td>Journal</td><td>ブレストチャットと Notion 同期</td></tr>
+            <tr><td>Monitor</td><td>Monitor</td><td>API 換算コストの日次推移をモデル別・プロジェクト別に表示</td></tr>
+            <tr><td>Workspace</td><td>Workspace</td><td>ワークスペース内のファイル閲覧と編集（Markdown はライブプレビュー）</td></tr>
+            <tr><td>（グローバル）</td><td>Credentials / Config</td><td>認証情報と設定ファイルの編集。サービスのナビには属さない</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>セットアップと実行</h2>
+      <p><strong>前提:</strong> Python 3.11〜3.13（すべて CI で実行）、uv、認証済みの Claude Code CLI、Discord Bot、Notion インテグレーション。</p>
+      <pre><code>git clone https://github.com/KazusaNakagawa/ai-agent-cli.git
+cd ai-agent-cli
+cp .env.example .env      # DISCORD_TOKEN, NOTION_API_KEY などを設定
+
+cd apps/python
+uv venv .venv
+uv pip sync requirements.txt
+
+cd ../web && npm install  # Web UI を使う場合のみ</code></pre>
+
+      <h3>よく使うコマンド</h3>
+      <pre><code>bin/run.sh              # 日次ブリーフィング（金曜は週次リキャップも）
+
+bin/chat.sh             # 当日ブリーフィングへの対話 Q&A（新規 / 再開）
+bin/chat.sh 2026-05-16  # 過去の特定日
+bin/chat.sh --list      # 保存済みセッション一覧
+
+bin/portfolio.sh        # ポートフォリオ・スナップショットを出力
+bin/serve.sh            # Web UI 一式を起動（--no-browser でブラウザを開かない）
+
+cd apps/python && .venv/bin/python -m src.handler --dry-run   # 認証情報だけ検証</code></pre>
+
+      <h3>バッチスクリプト一覧（<code>bin/</code>）</h3>
+      <p><code>apps/python/bin/</code> へ <code>exec</code> する薄いラッパーです。それぞれが特定のタスクに対応します。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>スクリプト</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td><code>run.sh</code></td><td>日次ブリーフィングの実行（金曜は週次リキャップも）。<span class="tag">手動実行が現行運用</span></td></tr>
+            <tr><td><code>chat.sh</code></td><td>ブリーフィングセッションに対する対話 Q&amp;A</td></tr>
+            <tr><td><code>serve.sh</code></td><td>Web UI 一式の起動。<code>API_PORT</code> / <code>WEB_PORT</code> で上書き可</td></tr>
+            <tr><td><code>self_agent.sh</code></td><td>判断ログをペルソナプロファイル化して Notion へ投稿</td></tr>
+            <tr><td><code>briefing_api.sh</code></td><td>API エントリポイント経由でブリーフィングを生成</td></tr>
+            <tr><td><code>chart.sh</code></td><td>チャート生成（株価比較など）。日次ブリーフィングも同じ生成処理を呼ぶ</td></tr>
+            <tr><td><code>workflow.sh</code></td><td>宣言的ワークフロー（<code>src/workflow/</code>）の実行 — <code>list</code> で登録済み一覧、<code>run &lt;workflow_id&gt;</code> で実行</td></tr>
+            <tr><td><code>portfolio.sh</code></td><td><code>config/holdings.json</code> からポートフォリオ・スナップショットを生成</td></tr>
+            <tr><td><code>money.sh</code></td><td>銀行明細 CSV の取り込みと月次収支レポート — <code>import</code> / <code>report</code> / <code>review</code></td></tr>
+            <tr><td><code>gen_wordset.sh</code></td><td>ワードセット JSON の生成（Stage 1）</td></tr>
+            <tr><td><code>evaluate.sh</code> / <code>eval_report.sh</code></td><td>ブリーフィング評価パイプラインの実行と、抽出 → スコアリング → レポート出力</td></tr>
+            <tr><td><code>local_llm.sh</code></td><td>ローカル LLM モード（Ollama + Chroma）</td></tr>
+            <tr><td><code>archive.sh</code></td><td>月次のブリーフィングを rclone で Google Drive へアーカイブ</td></tr>
+            <tr><td><code>recover.sh</code></td><td>DarkWake でセクター調査を落とした場合の再実行。当日分が完成済みなら何もしない</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="設定ファイルの扱い">設定ファイルの扱い</h2>
+      <p>
+        個人データを含む設定ファイルは <strong>一切コミットしません</strong>。追跡するのはスキーマを示す
+        <code>.example</code> と、CI 用のフィクスチャだけです。<code>input/</code> と <code>output/</code> 配下（生の明細や生成レポート）も同様にローカル限定です。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ファイル</th><th>役割</th><th>Git</th></tr></thead>
+          <tbody>
+            <tr><td><code>config/briefing.json</code></td><td>実運用の設定（個人データ）</td><td><span class="tag--muted tag">ignored</span></td></tr>
+            <tr><td><code>config/briefing.json.example</code></td><td>スキーマとテンプレート</td><td><span class="tag">tracked</span></td></tr>
+            <tr><td><code>tests/config/briefing.json</code></td><td>CI・ローカルテスト用フィクスチャ</td><td><span class="tag">tracked</span></td></tr>
+            <tr><td><code>config/self_agent_profile.md</code></td><td>self-agent の永続ペルソナ</td><td><span class="tag--muted tag">ignored</span></td></tr>
+            <tr><td><code>config/holdings.json</code></td><td><code>bin/portfolio.sh</code> 用の保有ポジション</td><td><span class="tag--muted tag">ignored</span></td></tr>
+            <tr><td><code>config/money_rules.json</code></td><td><code>bin/money.sh</code> 用の分類・振替ルール</td><td><span class="tag--muted tag">ignored</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout callout--note">
+        <p class="callout__title">スキーマを変更するとき</p>
+        <p><code>.example</code> と <code>tests/config/briefing.json</code> の<strong>両方</strong>を同時に更新してください。片方だけ直すと CI が実態とずれます。</p>
+      </div>
+
+      <h2>テストと CI</h2>
+      <pre><code>cd apps/python && .venv/bin/pytest -v   # Python 側の全スイート
+cd apps/web && npm test                 # vitest（ユニット + コンポーネント）
+cd apps/web && npm run test:e2e         # Playwright</code></pre>
+      <p>
+        両スイートとも push 時に GitHub Actions で実行されます（<code>.github/workflows/pytest.yml</code>、<code>web.yml</code>）。
+        テストは <code>apps/python/tests/config/briefing.json</code> を読み込み、<code>conftest.py</code> が <code>src.config</code> の import より前に
+        <code>BRIEFING_CONFIG_PATH</code> を固定するため、<strong>実行に個人設定は一切不要</strong>です。
+      </p>
+      <p>
+        依存関係は <code>requirements.in</code> のみを編集し、<code>uv pip compile --universal --python-version 3.11</code> で
+        <code>requirements.txt</code> を再生成します。サポート範囲が 3.11〜3.13 のため、単一インタプリタで解決したロックでは
+        古い CI レグが必要とする backports が落ちます。
+      </p>
+
+      <h2>開発規約</h2>
+      <h3>ブランチとコミット</h3>
+      <p>
+        <code>dev</code> が作業ブランチです。フィーチャーブランチは <code>dev</code> から分岐し、PR の base も <code>dev</code>。
+        <code>main</code> は <code>dev</code> → <code>main</code> の PR でのみ同期します。
+      </p>
+      <ul>
+        <li>ブランチ名: <code>feature/</code> <code>fix/</code> <code>refactor/</code> <code>docs/</code> <code>chore/</code></li>
+        <li>コミット: Conventional Commits（<code>&lt;type&gt;: &lt;英語の要約&gt;</code>）</li>
+        <li>PR: タイトルはコミット形式に準拠（70 文字未満）、本文は箇条書きサマリ + テスト計画のチェックリスト</li>
+      </ul>
+
+      <h3>コードスタイル</h3>
+      <ul>
+        <li>コード内のコメント・docstring は <strong>英語で統一</strong>（Python / TypeScript とも）。ユーザー向けのチャット応答は日本語だが、コード内ドキュメントは英語のみ。1 ファイル内で言語を混ぜない</li>
+        <li><code>README.md</code> と <code>README.ja.md</code> は<strong>翻訳ペア</strong>。同一コミットで両方を更新し、見出し数とテーブル行数が一致することを確認する</li>
+        <li><code>apps/web</code> の画面を変更したときは、コードリーディングだけで済ませず Playwright で実ブラウザ検証する。まず問題を再現し、修正で消えることを確認する</li>
+      </ul>
+
+      <h2>関連ドキュメント</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>トピック</th><th>パス</th></tr></thead>
+          <tbody>
+            <tr><td>設定（環境変数、設定スキーマ、プロンプト）</td><td><code>docs/guides/configuration.md</code></td></tr>
+            <tr><td>日次ブリーフィング（手動実行、任意で launchd）</td><td><code>docs/guides/launchd-setup.md</code></td></tr>
+            <tr><td>スケジュール実行（cron + pmset）</td><td><code>docs/guides/cron-setup.md</code></td></tr>
+            <tr><td>ブリーフィングのアーカイブ（rclone → Google Drive）</td><td><code>docs/guides/briefing-archive.md</code></td></tr>
+            <tr><td>テストと依存関係の管理</td><td><code>docs/guides/testing.md</code></td></tr>
+            <tr><td>Web UI のセットアップ</td><td><code>docs/guides/web-ui-setup.md</code></td></tr>
+            <tr><td>使用量モニタリング</td><td><code>docs/guides/usage-monitoring.md</code></td></tr>
+            <tr><td>ブリーフィング評価パイプライン</td><td><code>docs/features/evaluation.md</code></td></tr>
+            <tr><td>ジャーナル ↔ Notion 同期</td><td><code>docs/features/journal-notion-sync.md</code></td></tr>
+            <tr><td>Notion コメント → 判断ログ取り込み</td><td><code>docs/features/notion-comment-judgment-ingestion.md</code></td></tr>
+            <tr><td>ローカル LLM モード（Ollama + Chroma）</td><td><code>docs/features/local-llm.md</code></td></tr>
+            <tr><td>シーケンス図（主要フロー）</td><td><code>docs/sequence-diagrams.md</code></td></tr>
+            <tr><td>家計管理（<code>bin/money.sh</code>）</td><td><code>docs/ideas/household-finance.md</code></td></tr>
+            <tr><td>XSS インテリジェンスエージェント（構想段階）</td><td><code>docs/ideas/xss-vulnerability-detection-agent.md</code></td></tr>
+            <tr><td>レポート・監査</td><td><code>docs/reports/</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <hr>
+      <p style="color: var(--fg-muted); font-size: 14px;">
+        ライセンス: MIT
+      </p>
+
+    </article>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SELECTOR = "h2, h3";
+  var content  = document.getElementById("content");
+  var toc      = document.getElementById("toc");
+  var headings = Array.prototype.slice.call(content.querySelectorAll(SELECTOR));
+  var links    = [];
+
+  /* ---- Build the table of contents from the headings ---- */
+  headings.forEach(function (h, i) {
+    if (!h.id) {
+      h.id = (h.textContent.trim().replace(/\s+/g, "-") || "section") + "-" + i;
+    }
+
+    var li = document.createElement("li");
+    li.className = "toc--" + h.tagName.toLowerCase();
+
+    var a = document.createElement("a");
+    a.href = "#" + h.id;
+    a.textContent = h.textContent.trim();
+    li.appendChild(a);
+    toc.appendChild(li);
+    links.push(a);
+
+    var anchor = document.createElement("a");
+    anchor.className = "anchor";
+    anchor.href = "#" + h.id;
+    anchor.textContent = "#";
+    anchor.setAttribute("aria-label", "この見出しへのリンク");
+    h.appendChild(anchor);
+  });
+
+  /* ---- Highlight the section currently in view ---- */
+  var current = null;
+  function setActive(id) {
+    if (id === current) return;
+    current = id;
+    links.forEach(function (a) {
+      a.classList.toggle("is-active", a.getAttribute("href") === "#" + id);
+    });
+  }
+
+  function syncActive() {
+    var offset = 90;
+    var active = headings[0];
+    for (var i = 0; i < headings.length; i++) {
+      if (headings[i].getBoundingClientRect().top <= offset) active = headings[i];
+      else break;
+    }
+    if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 2) {
+      active = headings[headings.length - 1];
+    }
+    if (active) setActive(active.id);
+  }
+
+  var ticking = false;
+  window.addEventListener("scroll", function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () { syncActive(); ticking = false; });
+  }, { passive: true });
+  window.addEventListener("resize", syncActive);
+  syncActive();
+
+  /* ---- Filter the table of contents ---- */
+  var filter = document.getElementById("toc-filter");
+  var empty  = document.createElement("li");
+  empty.className = "is-empty";
+  empty.textContent = "該当なし";
+  empty.hidden = true;
+  toc.appendChild(empty);
+
+  filter.addEventListener("input", function () {
+    var q = filter.value.trim().toLowerCase();
+    var hit = 0;
+    links.forEach(function (a) {
+      var match = !q || a.textContent.toLowerCase().indexOf(q) !== -1;
+      a.parentNode.hidden = !match;
+      if (match) hit++;
+    });
+    empty.hidden = hit > 0;
+  });
+
+  /* ---- Theme toggle (the head script already resolved the initial theme) ---- */
+  var root = document.documentElement;
+  document.getElementById("theme-toggle").addEventListener("click", function () {
+    var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("doc-theme", next); } catch (e) { /* ignore */ }
+  });
+
+  /* ---- Mobile drawer ---- */
+  var body   = document.body;
+  var toggle = document.getElementById("menu-toggle");
+
+  function setNav(open) {
+    body.classList.toggle("nav-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+  }
+
+  toggle.addEventListener("click", function () {
+    setNav(!body.classList.contains("nav-open"));
+  });
+  document.getElementById("scrim").addEventListener("click", function () { setNav(false); });
+  toc.addEventListener("click", function (e) {
+    if (e.target.tagName === "A") setNav(false);
+  });
+})();
+</script>
+</body>
+</html>
