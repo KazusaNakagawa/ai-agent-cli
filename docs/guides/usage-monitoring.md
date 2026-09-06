@@ -12,6 +12,17 @@ All costs on both screens are **API-equivalent estimates**. Usage runs on a
 Claude Pro/Max subscription, so the dollar figures are a "what this would have
 cost on the API" yardstick, not a bill.
 
+Treat them as a rough guide — good enough to see scale and spot a spike, not
+good enough to reconcile against anything. Three known gaps, surfaced in the UI
+under *Why the numbers are approximate* and printed by the CLI report:
+
+- **Rates are hand-maintained** from published pricing. There is no pricing API,
+  so an upstream change lands here late — see [Drift detection](#2b-drift-detection--scriptscheck_model_ratespy).
+- **Server-side tool use is not counted.** Web search bills `$0.01` per request
+  on top of tokens and never reaches the total.
+- **Cache writes with no recorded TTL** fall back to the cheaper 5-minute rate,
+  so those entries read low.
+
 ## Monitor: where the data comes from
 
 Nothing is stored locally for the Monitor tab. Each request re-scans the
