@@ -181,3 +181,72 @@ def test_rates_shared_with_sdd_script():
     import sdd_token_cost
 
     assert sdd_token_cost.RATES is RATES
+
+
+# --- cache-write TTL pricing ---
+
+
+def test_one_hour_cache_writes_bill_above_five_minute_writes():
+    in_rate, _, cw5m_rate, cw1h_rate, _ = RATES["claude-opus-5"]
+    assert (cw5m_rate, cw1h_rate) == (in_rate * 1.25, in_rate * 2.0)
+
+    base = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}
+    five_min = usage_cost(
+        {
+            **base,
+            "cache_creation_input_tokens": 1_000_000,
+            "cache_creation": {"ephemeral_5m_input_tokens": 1_000_000},
+        },
+        "claude-opus-5",
+    )
+    one_hour = usage_cost(
+        {
+            **base,
+            "cache_creation_input_tokens": 1_000_000,
+            "cache_creation": {"ephemeral_1h_input_tokens": 1_000_000},
+        },
+        "claude-opus-5",
+    )
+    assert five_min == pytest.approx(cw5m_rate)
+    assert one_hour == pytest.approx(cw1h_rate)
+
+
+def test_mixed_ttl_cache_writes_are_billed_per_share():
+    _, _, cw5m_rate, cw1h_rate, _ = RATES["claude-opus-5"]
+    cost = usage_cost(
+        {
+            "cache_creation_input_tokens": 1_000_000,
+            "cache_creation": {
+                "ephemeral_1h_input_tokens": 750_000,
+                "ephemeral_5m_input_tokens": 250_000,
+            },
+        },
+        "claude-opus-5",
+    )
+    assert cost == pytest.approx(0.75 * cw1h_rate + 0.25 * cw5m_rate)
+
+
+def test_cache_writes_without_a_ttl_breakdown_use_the_five_minute_rate():
+    # Older transcripts predate the cache_creation split; charging the cheaper
+    # rate keeps them counted instead of dropped or over-billed.
+    _, _, cw5m_rate, _, _ = RATES["claude-opus-5"]
+    assert usage_cost(
+        {"cache_creation_input_tokens": 1_000_000}, "claude-opus-5"
+    ) == pytest.approx(cw5m_rate)
+    assert usage_cost(
+        {"cache_creation_input_tokens": 1_000_000, "cache_creation": None},
+        "claude-opus-5",
+    ) == pytest.approx(cw5m_rate)
+
+
+def test_one_hour_share_cannot_exceed_the_reported_cache_write_total():
+    # Guards against a malformed entry billing more tokens than it reports.
+    _, _, _, cw1h_rate, _ = RATES["claude-opus-5"]
+    cost = usage_cost(
+        {
+            "cache_creation_input_tokens": 1_000_000,
+            "cache_creation": {"ephemeral_1h_input_tokens": 9_000_000},
+        },
+        "claude-opus-5",
+    )
+    assert cost == pytest.approx(cw1h_rate)
