@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from src.claude_rates import RATES, usage_cost
+from src import claude_rates
+from src.claude_rates import usage_cost
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,7 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
                 model = msg.get("model", "unknown")
                 tokens = sum(usage.get(k, 0) for k in USAGE_KEYS)
                 cost = usage_cost(usage, model)
-                if model not in RATES:
+                if model not in claude_rates.RATES:
                     report.unpriced_models.add(model)
 
                 date_models = report.by_date_model.setdefault(date, {})

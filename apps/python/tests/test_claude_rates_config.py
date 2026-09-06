@@ -22,6 +22,47 @@ def _write_rates(path: Path, rates: dict) -> Path:
     return path
 
 
+# --- lazy loading ---
+
+
+def test_the_table_is_not_read_at_import():
+    """No module-level RATES assignment — that is what makes loading lazy.
+
+    Eager loading made ``scripts/check_model_rates.py`` — the tool whose whole
+    job is to diagnose this file — die during import with a traceback, before
+    argparse ran.
+    """
+    assert "RATES" not in vars(claude_rates)
+    assert claude_rates.RATES  # resolved through __getattr__ on first use
+
+
+def test_a_broken_table_raises_on_use_rather_than_import(monkeypatch, tmp_path):
+    monkeypatch.setattr(claude_rates, "RATES_PATH", tmp_path / "missing.json")
+    monkeypatch.setattr(claude_rates, "_cached_rates", None)
+
+    with pytest.raises(FileNotFoundError, match="model rate table not found"):
+        claude_rates.RATES  # noqa: B018 — attribute access is the trigger
+
+
+def test_the_table_is_read_once_and_cached(monkeypatch):
+    calls = []
+    real = claude_rates.load_rates
+    monkeypatch.setattr(claude_rates, "_cached_rates", None)
+    monkeypatch.setattr(
+        claude_rates, "load_rates", lambda p: calls.append(p) or real(p)
+    )
+
+    first, second = claude_rates.RATES, claude_rates.RATES
+
+    assert first is second
+    assert len(calls) == 1
+
+
+def test_an_unknown_module_attribute_still_raises_attribute_error():
+    with pytest.raises(AttributeError, match="no attribute 'NOPE'"):
+        claude_rates.NOPE
+
+
 # --- success ---
 
 

@@ -66,7 +66,39 @@ def load_rates(path: Path) -> dict[str, tuple[float, float, float, float, float]
     return table
 
 
-RATES = load_rates(RATES_PATH)
+_cached_rates: dict[str, tuple[float, float, float, float, float]] | None = None
+
+
+def _rates() -> dict[str, tuple[float, float, float, float, float]]:
+    """The rate table, loaded on first call and cached.
+
+    Module-level ``__getattr__`` only fires for attribute access from outside,
+    so code inside this module has to go through here rather than naming
+    ``RATES`` directly — a bare reference would be an unresolved global.
+    """
+    global _cached_rates
+    if _cached_rates is None:
+        _cached_rates = load_rates(RATES_PATH)
+    return _cached_rates
+
+
+def __getattr__(name: str):
+    """Read the rate table on first use rather than at import.
+
+    Mirrors ``src.config.CONFIG``. Loading eagerly meant a typo in
+    ``model_rates.json`` raised during the import of anything that transitively
+    touched this module — including ``scripts/check_model_rates.py``, whose
+    entire job is to diagnose that file, and which died with a traceback before
+    argparse ran. Deferring keeps a bad table a runtime error at the point that
+    actually needs the rates, where it can be reported properly.
+
+    Consumers must reach the table through the module (``claude_rates.RATES``);
+    a ``from src.claude_rates import RATES`` at module scope resolves it at
+    import time and gives the eager behaviour back.
+    """
+    if name == "RATES":
+        return _rates()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # Process-global so a long batch run logs each unknown model once instead of
 # once per message. That makes it shared state between tests — see
@@ -86,8 +118,9 @@ def reset_unpriced_warnings() -> None:
 
 def rate_for(model: str) -> tuple[float, float, float, float, float]:
     """Return the rate tuple for a model, warning once per unknown model."""
-    if model in RATES:
-        return RATES[model]
+    rates = _rates()
+    if model in rates:
+        return rates[model]
     if model not in _unpriced_models_warned:
         _unpriced_models_warned.add(model)
         logger.warning("no rate table entry for model '%s' — cost shown as $0", model)

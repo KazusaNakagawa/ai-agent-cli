@@ -69,7 +69,13 @@ loads them into a dict of **exact** model id →
 Matching is exact on purpose — substring matching mis-maps as model ids evolve.
 Every field is required per model: a partially specified model is rejected
 rather than defaulted, because a silent `0` for one component is the failure the
-file exists to prevent. A model missing from the table costs `$0` and is
+file exists to prevent. The table is read on **first use, not at import**
+(module-level `__getattr__`, mirroring `src.config.CONFIG`) — loading eagerly
+made a typo in the JSON raise during the import of anything that touched the
+module, including the checker whose job is to diagnose that file. Reach it
+through the module (`claude_rates.RATES`); a `from src.claude_rates import
+RATES` at module scope resolves it at import time and gives the eager behaviour
+back. A model missing from the table costs `$0` and is
 surfaced in the response as `unpriced_models`, which the UI renders as an amber
 warning line.
 

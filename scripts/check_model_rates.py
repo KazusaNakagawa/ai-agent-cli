@@ -163,7 +163,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    rates = load_rates(args.rates)
+    # A broken table is the very thing this script reports on, so it gets the
+    # same treatment as any other finding rather than a traceback.
+    try:
+        rates = load_rates(args.rates)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Rate table cannot be read: {e}")
+        return 1
 
     if not args.transcripts.is_dir():
         print(f"no transcripts found at {args.transcripts} — nothing to check")
