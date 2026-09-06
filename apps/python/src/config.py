@@ -220,6 +220,23 @@ def get_obsidian_config() -> ObsidianConfig | None:
         return None
 
 
+def get_fx_scenario_rates() -> list[float]:
+    """Return ``fx.scenario_rates`` from briefing.json, or an empty list.
+
+    Best-effort like ``get_obsidian_config()``: the portfolio snapshot runs
+    without briefing.json, so callers fall back to their own defaults rather
+    than failing. Sharing this section is what keeps the briefing's FX
+    scenarios and the snapshot's from drifting apart.
+    """
+    try:
+        return list(load_config().fx.scenario_rates)
+    except FileNotFoundError:
+        return []
+    except Exception:
+        logger.warning("get_fx_scenario_rates: briefing.json could not be loaded", exc_info=True)
+        return []
+
+
 def get_journal_chat_trusted_write_dirs() -> list[str]:
     """Return Journal chat's trusted write directories, ``~`` expanded.
 

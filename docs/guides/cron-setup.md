@@ -1,8 +1,8 @@
 # Scheduled Execution — cron + pmset Setup
 
-This is the **alternative** scheduling setup. The active one is launchd, documented in [launchd-setup.md](launchd-setup.md) — use one or the other, running both would trigger the briefing twice. `bin/run.sh` (root-level wrapper) sources `.env` and delegates to `apps/python/bin/run.sh`, so API credentials are available in non-interactive shells.
+This is an **alternative** scheduling setup. The **currently active** approach is manual `./bin/run.sh` — see [launchd-setup.md](launchd-setup.md#manual-execution-active). launchd is documented there for always-awake / AC setups; use **at most one** scheduler (cron, launchd, or manual). `bin/run.sh` (root-level wrapper) sources `.env` and delegates to `apps/python/bin/run.sh`, so API credentials are available in non-interactive shells.
 
-> **Only use cron if the Mac stays awake at the scheduled time.** cron skips a job entirely when the machine is asleep and never retries it. Measured on this machine: with the lid closed on battery, the `pmset repeat` wake at 04:55 produced only a ~20-second DarkWake before returning to sleep, so the 05:00 job never fired — for days, silently, with no log file created at all. launchd does not have this failure mode.
+> **Only use cron if the Mac stays awake at the scheduled time.** cron skips a job entirely when the machine is asleep and never retries it. Measured on this machine: with the lid closed on battery, the `pmset repeat` wake at 04:55 produced only a ~20-second DarkWake before returning to sleep, so the 05:00 job never fired — for days, silently, with no log file created at all. launchd retries on wake but can burn tokens in short DarkWake windows ([#443](https://github.com/KazusaNakagawa/ai-agent-cli/issues/443)); manual execution avoids both failure modes on a laptop.
 
 **Schedule behaviour:**
 

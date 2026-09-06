@@ -19,7 +19,7 @@ source "$PROJECT_ROOT/.venv/bin/activate"
 PYTHONPATH="$PROJECT_ROOT" python -m src.handler
 # PYTHONPATH="$PROJECT_ROOT" python -m src.xss_handler
 
-# 金曜日のみ週次振り返りを日次実行後に実行 (1=月 … 5=金)
-if [ "$(date +%u)" = "5" ]; then
-    PYTHONPATH="$PROJECT_ROOT" python -m src.weekly_handler
-fi
+# 週次振り返り。「金曜のみ」の判定はワークフローの guard が持つので、ここは
+# 毎日呼んでよい (WEEKLY_RECAP_WEEKDAY 以外の日は skipped で即終了する)。
+# bin/workflow.sh run weekly でも同じものが走る。
+PYTHONPATH="$PROJECT_ROOT" python -m src.workflow run weekly

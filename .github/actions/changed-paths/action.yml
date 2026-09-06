@@ -1,0 +1,42 @@
+name: Changed paths
+description: >-
+  Reports whether a pull request touches any file matching a regex. Lets a
+  workflow run unconditionally — so its status context is always reported to
+  branch protection — while still skipping the expensive steps when the change
+  is irrelevant. See #447.
+
+inputs:
+  pattern:
+    description: Extended regex (grep -E) matched against each changed path.
+    required: true
+  base-sha:
+    description: >-
+      Base commit of the PR, normally github.event.pull_request.base.sha.
+      Used instead of an origin/<branch> ref, which is not guaranteed to exist
+      in every checkout configuration.
+    required: true
+
+outputs:
+  changed:
+    description: "'true' when at least one changed file matches the pattern."
+    value: ${{ steps.detect.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    - id: detect
+      shell: bash
+      # Inputs are passed through env rather than interpolated into the script:
+      # the pattern is full of regex metacharacters, and ${{ }} interpolation
+      # into a shell body is a script-injection surface.
+      env:
+        PATTERN: ${{ inputs.pattern }}
+        BASE_SHA: ${{ inputs.base-sha }}
+      run: |
+        if git diff --name-only "$BASE_SHA...HEAD" | grep -qE "$PATTERN"; then
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "Matched $PATTERN — running the real steps."
+        else
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "Nothing matched $PATTERN — skipping and reporting success."
+        fi

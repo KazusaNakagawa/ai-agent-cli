@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> Project overview and user-facing docs: [README.md](README.md) and [docs/](docs/).
+> Project overview and user-facing docs: [README.md](README.md) (日本語版: [README.ja.md](README.ja.md)) and [docs/](docs/).
 > Custom Claude Code skills: [.claude/skills/](.claude/skills/README.md).
 
 ## Layout
@@ -16,7 +16,7 @@ Python sources live under `apps/python/`. Root-level `bin/run.sh` and `bin/chat.
 uv venv .venv                  # Create venv (first time only)
 uv pip sync requirements.txt   # Install deps
 .venv/bin/pytest -v            # Run tests
-uv pip compile requirements.in -o requirements.txt  # Recompile deps
+uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt  # Recompile deps
 
 # From repo root
 bin/run.sh    # Run both agents
@@ -31,7 +31,7 @@ bin/chat.sh   # Launch chat session
   - `api`: the key from `credentials.get_credential("ANTHROPIC_API_KEY")` (Keychain → `.env` fallback) is **injected** into the subprocess env.
 
   Route new subprocess calls to claude through `_build_env(state.read_state().auth_mode)`. Never set `ANTHROPIC_API_KEY` directly in the subprocess env outside this helper.
-- **`apps/python/requirements.txt` is auto-generated** — only edit `requirements.in`, then recompile.
+- **`apps/python/requirements.txt` is auto-generated** — only edit `requirements.in`, then recompile. Always recompile with `--universal --python-version 3.11`: the supported range is 3.11–3.13 (`apps/python/pyproject.toml`), and a lock resolved for one interpreter drops the backports the older CI legs need.
 - **`src.config.CONFIG` is lazy.** A module-level `__getattr__` calls `load_config()` on first attribute access — importing `src.config` does **not** read `briefing.json`. Tests that call `load_config()` directly must patch `src.config.CONFIG_PATH`.
 
 ## Config File Rules
@@ -43,8 +43,13 @@ bin/chat.sh   # Launch chat session
 | `apps/python/tests/config/briefing.json` | Fixture config for CI and local tests | Tracked |
 | `apps/python/config/self_agent_profile.md` | self-agent's persistent persona profile (personal data) | Ignored |
 | `apps/python/config/self_agent_profile.md.example` | Schema documentation and template | Tracked |
+| `apps/python/config/holdings.json` | Portfolio positions for `bin/portfolio.sh` (personal data) | Ignored |
+| `apps/python/config/holdings.json.example` | Schema documentation and template | Tracked |
+| `apps/python/config/money_rules.json` | Categorization and transfer rules for `bin/money.sh` (personal data) | Ignored |
+| `apps/python/config/money_rules.json.example` | Schema documentation and template | Tracked |
 
-- `apps/python/config/briefing.json` is **never committed**.
+- `apps/python/config/briefing.json`, `holdings.json` and `money_rules.json` are **never committed**.
+  Neither is anything under `input/` or `output/` — raw statements and generated reports stay local.
 - CI and local `pytest` always load `apps/python/tests/config/briefing.json` — `conftest.py` sets `BRIEFING_CONFIG_PATH` before any import of `src.config`.
 - When adding or changing config schema, update both `.example` and `tests/config/briefing.json`.
 
@@ -55,6 +60,10 @@ bin/chat.sh   # Launch chat session
 ## Code Style
 
 - **Code comments and docstrings must be written in English** (both Python and TypeScript), unified across the codebase. User-facing chat responses stay in Japanese, but in-code documentation is English only — do not mix languages within a file.
+- **`README.md` and `README.ja.md` are a translation pair — edit both in the same commit.** `README.md` is the source of truth; the Japanese file mirrors its structure. Neither is generated, so nothing catches drift automatically. After changing either, confirm the heading count and table-row count still match:
+  ```bash
+  for f in README.md README.ja.md; do echo "$f: $(grep -c '^## ' $f) headings, $(grep -c '^| ' $f) table rows"; done
+  ```
 
 ## Git Conventions
 

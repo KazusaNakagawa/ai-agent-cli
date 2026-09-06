@@ -1,5 +1,9 @@
+import mimetypes
 import re
+from pathlib import Path
+
 import requests
+
 from src.logger import get_logger
 
 logger = get_logger(__name__)
@@ -74,8 +78,43 @@ def _chunk_preserving_fences(text: str, chunk_size: int = 1900) -> list[str]:
     return chunks or [""]
 
 
-def send_to_discord(text: str, token: str, channel_id: str):
-    """Send a message to a channel via the Discord Bot API (chunked for the 2000-char limit)."""
+def _post_attachment(url: str, headers: dict, path: Path) -> None:
+    """Upload one file as a follow-up message (multipart/form-data).
+
+    Deliberately its own message rather than an attachment on the last text
+    chunk: a multipart post that fails would otherwise take that chunk of the
+    briefing down with it. For the same reason every failure here is absorbed —
+    by the time this runs the text has already been delivered, and losing the
+    chart is not worth failing a delivered briefing over.
+    """
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        logger.warning("Discord attachment %s unreadable: %s — text already sent", path, exc)
+        return
+    mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    try:
+        res = requests.post(
+            url, headers=headers, files={"files[0]": (path.name, data, mime)}
+        )
+        res.raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("Discord attachment upload failed: %s — text already sent", exc)
+        return
+    logger.info("Discord attachment sent (%s, %d bytes)", path.name, len(data))
+
+
+def send_to_discord(
+    text: str,
+    token: str,
+    channel_id: str,
+    attachment: str | Path | None = None,
+):
+    """Send a message to a channel via the Discord Bot API (chunked for the 2000-char limit).
+
+    ``attachment`` is an optional local file posted as a follow-up message once
+    the text is delivered; a missing path is skipped rather than raising.
+    """
     if not token or not channel_id:
         logger.error("DISCORD_TOKEN or CHANNEL_ID unset")
         return
@@ -88,3 +127,11 @@ def send_to_discord(text: str, token: str, channel_id: str):
         res.raise_for_status()
         logger.debug("Discord send done (chunk %d/%d)", i, len(chunks))
     logger.info("Discord send done (%d chunks total)", len(chunks))
+
+    if attachment is None:
+        return
+    path = Path(attachment)
+    if not path.is_file():
+        logger.warning("Discord attachment %s does not exist — skipping", path)
+        return
+    _post_attachment(url, headers, path)

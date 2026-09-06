@@ -65,6 +65,35 @@ export function isImageFile(name: string): boolean {
   return IMAGE_EXTENSIONS.has(extensionOf(name))
 }
 
+/** True for PDFs, which the browser renders in a frame rather than as text. */
+export function isPdfFile(name: string): boolean {
+  return extensionOf(name) === "pdf"
+}
+
+// Binaries with no in-app viewer. Decoding any of these with `file.text()`
+// produces mojibake, and saving that back would corrupt the file on disk — so
+// they are recognised here purely to keep them off the editable text path.
+const OPAQUE_BINARY_EXTENSIONS = new Set([
+  // archives
+  "zip", "gz", "tgz", "bz2", "xz", "7z", "rar", "jar",
+  // office documents
+  "xlsx", "xls", "docx", "doc", "pptx", "ppt",
+  // fonts
+  "woff", "woff2", "ttf", "otf", "eot",
+  // audio / video
+  "mp3", "wav", "flac", "ogg", "mp4", "mov", "avi", "mkv", "webm",
+  // executables, databases and other opaque blobs
+  "so", "dylib", "dll", "exe", "bin", "wasm", "sqlite", "db", "pyc",
+])
+
+/** True for any file whose bytes must not be decoded as text — images and PDFs
+ *  (which have viewers) plus formats with no viewer at all. */
+export function isBinaryFile(name: string): boolean {
+  return (
+    isImageFile(name) || isPdfFile(name) || OPAQUE_BINARY_EXTENSIONS.has(extensionOf(name))
+  )
+}
+
 /** Returns a CSS color for the file's extension, or `currentColor` when unmapped. */
 export function colorForFile(name: string): string {
   if (isEnvFile(name)) return EXTENSION_COLORS.env
