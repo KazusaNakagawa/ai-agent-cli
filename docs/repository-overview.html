@@ -334,7 +334,7 @@ tbody tr:hover { background: var(--bg-hover); }
       <h2>全体アーキテクチャ</h2>
       <p>
         入口（CLI スクリプト / Web UI）、ドメインごとのハンドラ、共通基盤、外部サービスという 4 層構成です。
-        LLM 呼び出しはすべて <code>claude_runner.py</code> という 1 点を通ります。
+        非対話の生成系の LLM 呼び出しは <code>claude_runner.py</code> という 1 点を通ります。
       </p>
 
       <div class="figure">
@@ -548,8 +548,8 @@ apps/web/                         # Next.js UI — 閲覧・チャット・ジ�
               <td>Claude Code CLI の OAuth セッション上で動作する。有効な Claude 有料プラン（Pro/Max）が前提で、無料プランでは動かせない</td>
             </tr>
             <tr>
-              <td><strong>LLM 呼び出しの入口を 1 か所に集約</strong></td>
-              <td>すべての <code>claude</code> 実行が <code>src/claude_runner.py</code> を通るため、認証モード・環境変数の扱い・リトライの実装が 1 つしか存在しない</td>
+              <td><strong>生成系の LLM 呼び出しの入口を 1 か所に集約</strong></td>
+              <td>非対話の <code>claude</code> 実行が <code>src/claude_runner.py</code> を通るため、認証モード・環境変数の扱い・リトライの実装が 1 つしか存在しない（対話セッションは<a href="#対話セッションは別経路">別経路</a>）</td>
             </tr>
             <tr>
               <td><strong>地政学 → 株価の因果を毎日の出力に織り込む</strong></td>
@@ -563,9 +563,10 @@ apps/web/                         # Next.js UI — 閲覧・チャット・ジ�
         </table>
       </div>
 
-      <h3>LLM 呼び出しの単一入口</h3>
+      <h3>生成系 LLM 呼び出しの単一入口</h3>
       <p>
-        <code>claude_runner.run_claude()</code> がすべての claude CLI 呼び出しを引き受けます。
+        <code>claude_runner.run_claude()</code> が<strong>非対話の</strong> claude CLI 呼び出しを引き受けます。
+        ブリーフィング生成・週次リキャップ・評価パイプラインなど、出力をキャプチャして扱う経路がこれに当たります。
         認証まわりはモード依存で、<code>state.read_state().auth_mode</code>（既定は <code>cli</code>）に応じて
         <code>_build_env()</code> が subprocess の環境変数を組み立てます。
       </p>
@@ -585,6 +586,20 @@ apps/web/                         # Next.js UI — 閲覧・チャット・ジ�
           このヘルパーの外側で <code>ANTHROPIC_API_KEY</code> を直接セットすると、認証モードの切り替えが壊れます。
         </p>
       </div>
+
+      <h3 id="対話セッションは別経路">例外 — 対話セッションは別経路</h3>
+      <p>
+        <code>bin/chat.sh</code> の対話 Q&amp;A だけは <code>claude_runner</code> を通りません。
+        <code>src/chat_cli.py</code> が同名の <code>run_claude()</code> を持ち、<code>subprocess.run()</code> を直接呼びます。
+        利用者がその場で入力する以上、子プロセスに端末をそのまま渡す必要があり、
+        出力をキャプチャして再試行する前提の <code>claude_runner</code> には載せられないためです。
+      </p>
+      <p>
+        このため、対話セッションには <code>claude_runner</code> のリトライ・使用量ログが効きません。
+        認証も <code>claude_env()</code> が <code>ANTHROPIC_API_KEY</code> を常に除去するため、
+        <code>auth_mode</code> の設定に関わらず <code>cli</code> モード相当で固定されます。
+        claude を呼ぶコードを追加・監査するときは、この 1 か所が単一入口の外にあることを前提にしてください。
+      </p>
 
       <h2>無人運用のための設計</h2>
       <p>
@@ -770,21 +785,21 @@ cd apps/web && npm run test:e2e         # Playwright</code></pre>
         <table>
           <thead><tr><th>トピック</th><th>パス</th></tr></thead>
           <tbody>
-            <tr><td>設定（環境変数、設定スキーマ、プロンプト）</td><td><code>docs/guides/configuration.md</code></td></tr>
-            <tr><td>日次ブリーフィング（手動実行、任意で launchd）</td><td><code>docs/guides/launchd-setup.md</code></td></tr>
-            <tr><td>スケジュール実行（cron + pmset）</td><td><code>docs/guides/cron-setup.md</code></td></tr>
-            <tr><td>ブリーフィングのアーカイブ（rclone → Google Drive）</td><td><code>docs/guides/briefing-archive.md</code></td></tr>
-            <tr><td>テストと依存関係の管理</td><td><code>docs/guides/testing.md</code></td></tr>
-            <tr><td>Web UI のセットアップ</td><td><code>docs/guides/web-ui-setup.md</code></td></tr>
-            <tr><td>使用量モニタリング</td><td><code>docs/guides/usage-monitoring.md</code></td></tr>
-            <tr><td>ブリーフィング評価パイプライン</td><td><code>docs/features/evaluation.md</code></td></tr>
-            <tr><td>ジャーナル ↔ Notion 同期</td><td><code>docs/features/journal-notion-sync.md</code></td></tr>
-            <tr><td>Notion コメント → 判断ログ取り込み</td><td><code>docs/features/notion-comment-judgment-ingestion.md</code></td></tr>
-            <tr><td>ローカル LLM モード（Ollama + Chroma）</td><td><code>docs/features/local-llm.md</code></td></tr>
-            <tr><td>シーケンス図（主要フロー）</td><td><code>docs/sequence-diagrams.md</code></td></tr>
-            <tr><td>家計管理（<code>bin/money.sh</code>）</td><td><code>docs/ideas/household-finance.md</code></td></tr>
-            <tr><td>XSS インテリジェンスエージェント（構想段階）</td><td><code>docs/ideas/xss-vulnerability-detection-agent.md</code></td></tr>
-            <tr><td>レポート・監査</td><td><code>docs/reports/</code></td></tr>
+            <tr><td>設定（環境変数、設定スキーマ、プロンプト）</td><td><a href="guides/configuration.md"><code>docs/guides/configuration.md</code></a></td></tr>
+            <tr><td>日次ブリーフィング（手動実行、任意で launchd）</td><td><a href="guides/launchd-setup.md"><code>docs/guides/launchd-setup.md</code></a></td></tr>
+            <tr><td>スケジュール実行（cron + pmset）</td><td><a href="guides/cron-setup.md"><code>docs/guides/cron-setup.md</code></a></td></tr>
+            <tr><td>ブリーフィングのアーカイブ（rclone → Google Drive）</td><td><a href="guides/briefing-archive.md"><code>docs/guides/briefing-archive.md</code></a></td></tr>
+            <tr><td>テストと依存関係の管理</td><td><a href="guides/testing.md"><code>docs/guides/testing.md</code></a></td></tr>
+            <tr><td>Web UI のセットアップ</td><td><a href="guides/web-ui-setup.md"><code>docs/guides/web-ui-setup.md</code></a></td></tr>
+            <tr><td>使用量モニタリング</td><td><a href="guides/usage-monitoring.md"><code>docs/guides/usage-monitoring.md</code></a></td></tr>
+            <tr><td>ブリーフィング評価パイプライン</td><td><a href="features/evaluation.md"><code>docs/features/evaluation.md</code></a></td></tr>
+            <tr><td>ジャーナル ↔ Notion 同期</td><td><a href="features/journal-notion-sync.md"><code>docs/features/journal-notion-sync.md</code></a></td></tr>
+            <tr><td>Notion コメント → 判断ログ取り込み</td><td><a href="features/notion-comment-judgment-ingestion.md"><code>docs/features/notion-comment-judgment-ingestion.md</code></a></td></tr>
+            <tr><td>ローカル LLM モード（Ollama + Chroma）</td><td><a href="features/local-llm.md"><code>docs/features/local-llm.md</code></a></td></tr>
+            <tr><td>シーケンス図（主要フロー）</td><td><a href="sequence-diagrams.md"><code>docs/sequence-diagrams.md</code></a></td></tr>
+            <tr><td>家計管理（<code>bin/money.sh</code>）</td><td><a href="ideas/household-finance.md"><code>docs/ideas/household-finance.md</code></a></td></tr>
+            <tr><td>XSS インテリジェンスエージェント（構想段階）</td><td><a href="ideas/xss-vulnerability-detection-agent.md"><code>docs/ideas/xss-vulnerability-detection-agent.md</code></a></td></tr>
+            <tr><td>レポート・監査</td><td><a href="reports/"><code>docs/reports/</code></a></td></tr>
           </tbody>
         </table>
       </div>
