@@ -1,8 +1,8 @@
 # Scheduled Execution — macOS launchd Setup
 
-macOS uses **launchd** instead of cron. `bin/run.sh` (root-level wrapper) sources `.env` and delegates to `apps/python/bin/run.sh`, so API credentials are available in non-interactive shells.
+macOS uses **launchd** instead of cron. `bin/workflow.sh` (root-level wrapper) sources `.env` and delegates to `apps/python/bin/workflow.sh`, so API credentials are available in non-interactive shells. `workflow.sh run daily` is the daily job — the briefing, then the weekly recap on its own day. It replaced `bin/run.sh`, which was retired in #472; a plist still naming `run.sh` must be repointed.
 
-> **Current setup (2026-08-12): manual execution.** The maintainer's machine no longer loads the daily briefing or recovery launchd jobs. Run `./bin/run.sh` by hand once the Mac is open and fully awake. launchd remains documented below for AC-powered / always-awake setups only. cron + `pmset` is the other alternative — [cron-setup.md](cron-setup.md). Use at most one scheduler; running both would trigger the briefing twice.
+> **Current setup (2026-08-12): manual execution.** The maintainer's machine no longer loads the daily briefing or recovery launchd jobs. Run `./bin/workflow.sh run daily` by hand once the Mac is open and fully awake. launchd remains documented below for AC-powered / always-awake setups only. cron + `pmset` is the other alternative — [cron-setup.md](cron-setup.md). Use at most one scheduler; running both would trigger the briefing twice.
 
 ## Manual execution (active)
 
@@ -10,7 +10,7 @@ Run from the repo root after opening the lid and confirming the Mac is awake (no
 
 ```bash
 cd /path/to/ai-agent
-./bin/run.sh
+./bin/workflow.sh run daily
 ```
 
 If today's sector sweep failed partway through, re-run only that half:
@@ -61,7 +61,7 @@ Measured on 2026-07-31 (`pmset -g log`):
 | 05:22:42 / 05:38:31 | Two more DarkWake → sleep cycles |
 | 05:54:19 | Sector sweep fails; wall clock 47 min against only 3 min of actual API time |
 
-`caffeinate -ims` in `apps/python/bin/run.sh` does **not** prevent this: `man caffeinate` restricts `-s` to AC power, and the machine was on battery. Retrying in-process does not help either — the retry lands in the same sleep window.
+`caffeinate -ims` in `apps/python/bin/workflow.sh` does **not** prevent this: `man caffeinate` restricts `-s` to AC power, and the machine was on battery. Retrying in-process does not help either — the retry lands in the same sleep window.
 
 The fix is a second launchd job that redoes **only** the sector sweep once the Mac is genuinely awake:
 
@@ -117,7 +117,9 @@ Save the following to `$PLIST`:
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/path/to/ai-agent/bin/run.sh</string>
+        <string>/path/to/ai-agent/bin/workflow.sh</string>
+        <string>run</string>
+        <string>daily</string>
     </array>
 
     <key>EnvironmentVariables</key>
@@ -189,7 +191,7 @@ launchctl list | grep ai-agent   # should print nothing
 
 | Item | Why |
 |---|---|
-| `.env` at project root | Root `bin/run.sh` sources it for API tokens |
+| `.env` at project root | Root `bin/workflow.sh` sources it for API tokens |
 | `~/.claude/` accessible | Claude Code CLI reads its OAuth token from here |
 | `apps/python/log/` directory exists | Output target for launchd stdout/stderr |
 | `/opt/homebrew/bin` in PATH | Required for `claude` CLI installed via Homebrew |

@@ -13,7 +13,7 @@
 
 ## 1. 日次ブリーフィング（バッチ実行）
 
-`bin/run.sh` → `python -m src.handler` の一本道。claude CLI 2 本を並列実行し、
+`bin/workflow.sh run daily` → `briefing` ワークフロー → `python -m src.handler` の経路。claude CLI 2 本を並列実行し、
 メイン分析が落ちたときだけ全体を失敗させる（セクタースイープは劣化継続）。
 
 エントリポイント: `apps/python/src/handler.py:29` (`lambda_handler`)
@@ -22,7 +22,7 @@
 sequenceDiagram
     autonumber
     actor Op as Operator
-    participant Sh as bin/run.sh
+    participant Sh as bin/workflow.sh
     participant H as src.handler
     participant YF as fetcher.stocks
     participant G as generator.briefing
@@ -31,9 +31,9 @@ sequenceDiagram
     participant DC as notifier.discord
     participant NT as notifier.notion
 
-    Op->>Sh: ./bin/run.sh
+    Op->>Sh: ./bin/workflow.sh run daily
     Note over Sh: caffeinate で再 exec
-    Sh->>H: python -m src.handler
+    Sh->>H: workflow: briefing
     Note over H: _preflight（未設定は WARN）
 
     alt 当日 MD が既にある

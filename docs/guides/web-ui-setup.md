@@ -145,7 +145,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/run/<job_id>
 - **`cli`** (デフォルト) — `claude` CLI の OAuth セッションを使う。Anthropic API キー不要、Claude Pro/Max サブスク前提。
 - **`api`** — `ANTHROPIC_API_KEY` (Keychain → `.env` フォールバック) を環境変数経由で `claude` CLI に渡す。従量課金。
 
-切替は `PUT /api/auth/mode` の 1 リクエストのみ。`~/.ai-agent/state.json` に永続化され、次のバッチ実行 (cron 経由) から即反映される (`bin/run.sh` が毎回新規 Python プロセスを起こすため、再起動不要)。
+切替は `PUT /api/auth/mode` の 1 リクエストのみ。`~/.ai-agent/state.json` に永続化され、次のバッチ実行 (cron 経由) から即反映される (`bin/workflow.sh` が毎回新規 Python プロセスを起こすため、再起動不要)。
 
 詳細は [`apps/python/src/claude_runner.py:build_env`](../../apps/python/src/claude_runner.py) を参照。
 
@@ -163,4 +163,4 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/run/<job_id>
 
 ## バッチ実行との関係
 
-このサーバーは UI/管理用のフロントエンドであり、定期実行とは独立しています。日次ブリーフィングは maintainer 環境では **手動 `./bin/run.sh`** が現行運用 ([`launchd-setup.md` — Manual execution](./launchd-setup.md#manual-execution-active))。launchd / cron の再設定手順も同ドキュメントにあります。`PUT /api/config` で更新した内容は、次回 `./bin/run.sh` (または launchd 経由のバッチ) 起動時に自動的に反映されます (毎回 `load_config()` が走るため)。
+このサーバーは UI/管理用のフロントエンドであり、定期実行とは独立しています。日次ブリーフィングは maintainer 環境では **手動 `./bin/workflow.sh run daily`** が現行運用 ([`launchd-setup.md` — Manual execution](./launchd-setup.md#manual-execution-active))。launchd / cron の再設定手順も同ドキュメントにあります。`PUT /api/config` で更新した内容は、次回 `./bin/workflow.sh run daily` (または launchd 経由のバッチ) 起動時に自動的に反映されます (毎回 `load_config()` が走るため)。

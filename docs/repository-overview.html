@@ -442,7 +442,7 @@ tbody tr:hover { background: var(--bg-hover); }
       <pre><code>bin/*.sh → apps/python/bin/*.sh   # Python アプリへ exec する薄いラッパー
 
 apps/python/
-  src/handler.py                  # 日次マーケットブリーフィング（bin/run.sh）
+  src/handler.py                  # 日次マーケットブリーフィング（workflow: briefing）
   │     ├── fetcher/stocks.py     # yfinance 経由の前日比
   │     ├── generator/briefing.py # プロンプト構築、run_claude() を並列呼び出し
   │     ├── notifier/local_md.py  # 最初に output/briefing_YYYY-MM-DD.md へ書き出し
@@ -450,7 +450,7 @@ apps/python/
   │     └── notifier/notion.py
   src/weekly_handler.py           # 金曜のみ: 週次リキャップ + Notion コメント取り込み
   src/self_agent_handler.py       # 判断ログ → ペルソナプロファイル → Notion
-  src/xss_handler.py              # XSS インテリジェンスエージェント（run.sh では無効）
+  src/xss_handler.py              # XSS インテリジェンスエージェント（どのワークフローにも未接続）
   src/claude_runner.py            # claude CLI 共通ヘルパー（subprocess + WebSearch）
   src/money/ · portfolio_snapshot/ · evaluator/ · local_llm/ · metrics/
   web/                            # Web UI 用 FastAPI バックエンド
@@ -459,7 +459,7 @@ apps/python/
 apps/web/                         # Next.js UI — 閲覧・チャット・ジャーナル・使用量モニター</code></pre>
 
       <h2>日次ブリーフィングの流れ</h2>
-      <p><code>bin/run.sh</code> の 1 回の実行で起きることを、時系列に並べたものです。</p>
+      <p><code>bin/workflow.sh run daily</code> の 1 回の実行で起きることを、時系列に並べたものです。<code>daily</code> は <code>briefing</code> と <code>weekly</code> を順に走らせる合成ワークフローで、以下はその <code>briefing</code> 側にあたります。</p>
 
       <div class="figure">
         <svg viewBox="0 0 860 150" role="img" aria-label="日次ブリーフィングの処理フロー">
@@ -688,7 +688,8 @@ uv pip sync requirements.txt
 cd ../web && npm install  # Web UI を使う場合のみ</code></pre>
 
       <h3>よく使うコマンド</h3>
-      <pre><code>bin/run.sh              # 日次ブリーフィング（金曜は週次リキャップも）
+      <pre><code>bin/workflow.sh run daily   # 日次ブリーフィング（金曜は週次リキャップも）
+bin/workflow.sh             # 登録済みワークフロー一覧
 
 bin/chat.sh             # 当日ブリーフィングへの対話 Q&A（新規 / 再開）
 bin/chat.sh 2026-05-16  # 過去の特定日
@@ -705,13 +706,12 @@ cd apps/python && .venv/bin/python -m src.handler --dry-run   # 認証情報だ�
         <table>
           <thead><tr><th>スクリプト</th><th>用途</th></tr></thead>
           <tbody>
-            <tr><td><code>run.sh</code></td><td>日次ブリーフィングの実行（金曜は週次リキャップも）。<span class="tag">手動実行が現行運用</span></td></tr>
             <tr><td><code>chat.sh</code></td><td>ブリーフィングセッションに対する対話 Q&amp;A</td></tr>
             <tr><td><code>serve.sh</code></td><td>Web UI 一式の起動。<code>API_PORT</code> / <code>WEB_PORT</code> で上書き可</td></tr>
             <tr><td><code>self_agent.sh</code></td><td>判断ログをペルソナプロファイル化して Notion へ投稿</td></tr>
             <tr><td><code>briefing_api.sh</code></td><td>API エントリポイント経由でブリーフィングを生成</td></tr>
             <tr><td><code>chart.sh</code></td><td>チャート生成（株価比較など）。日次ブリーフィングも同じ生成処理を呼ぶ</td></tr>
-            <tr><td><code>workflow.sh</code></td><td>宣言的ワークフロー（<code>src/workflow/</code>）の実行 — <code>list</code> で登録済み一覧、<code>run &lt;workflow_id&gt;</code> で実行</td></tr>
+            <tr><td><code>workflow.sh</code></td><td>宣言的ワークフロー（<code>src/workflow/</code>）の実行 — <code>list</code> で登録済み一覧、<code>run &lt;workflow_id&gt;</code> で実行。<code>run daily</code> が日次の入口（ブリーフィング → その日なら週次リキャップ）で、<span class="tag">手動実行が現行運用</span></td></tr>
             <tr><td><code>portfolio.sh</code></td><td><code>config/holdings.json</code> からポートフォリオ・スナップショットを生成</td></tr>
             <tr><td><code>money.sh</code></td><td>銀行明細 CSV の取り込みと月次収支レポート — <code>import</code> / <code>report</code> / <code>review</code></td></tr>
             <tr><td><code>gen_wordset.sh</code></td><td>ワードセット JSON の生成（Stage 1）</td></tr>

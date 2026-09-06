@@ -148,6 +148,7 @@ def run_workflow(
         inputs=resolved,
         results=record.results,
         logger=logger,
+        force=force,
     )
 
     logger.info("workflow start: %s (run_id=%s, dry_run=%s)", wf.id, record.run_id, dry_run)
