@@ -19,8 +19,8 @@ uv pip sync requirements.txt   # Install deps
 uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt  # Recompile deps
 
 # From repo root
-bin/run.sh    # Run both agents
-bin/chat.sh   # Launch chat session
+bin/workflow.sh run daily   # Daily briefing, then the weekly recap on its day
+bin/chat.sh                 # Launch chat session
 ```
 
 ## Key Implementation Notes

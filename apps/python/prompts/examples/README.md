@@ -25,7 +25,7 @@
 この例も追従させる:
 
 1. 最新の `prompts/briefing.md` で高性能モデルに 1 回ブリーフィングを生成させる
-   （例: `CLAUDE_MODEL=<上位モデル> bin/run.sh`、または手動で `claude -p`）。
+   （例: `CLAUDE_MODEL=<上位モデル> bin/workflow.sh run daily`、または手動で `claude -p`）。
 2. 得られた出力から固有名詞・日付・具体数値を一般化し、構成だけ残す形に整える
    （特定日の相場観をそのまま残さない）。
 3. `briefing_few_shot.md` を置き換え、`prompts/briefing.md` の出力フォーマットと

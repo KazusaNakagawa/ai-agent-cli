@@ -36,7 +36,7 @@ Bloomberg や NewsPicks が見せるのは生のデータ。このエージェ�
 bin/*.sh → apps/python/bin/*.sh          # Python アプリへ exec する薄いラッパー
 
 apps/python/
-  src/handler.py                  # 日次マーケットブリーフィング（bin/run.sh）
+  src/handler.py                  # 日次マーケットブリーフィング（workflow: briefing）
   │     ├── fetcher/stocks.py     # yfinance 経由の前日比
   │     ├── generator/briefing.py # プロンプト構築、run_claude() を並列呼び出し
   │     ├── notifier/local_md.py  # 最初に output/briefing_YYYY-MM-DD.md へ書き出し
@@ -44,7 +44,7 @@ apps/python/
   │     └── notifier/notion.py
   src/weekly_handler.py           # 週次リキャップ + Notion コメント取り込み（ワークフロー: weekly）
   src/self_agent_handler.py       # 判断ログ → ペルソナプロファイル → Notion（bin/self_agent.sh）
-  src/xss_handler.py              # XSS インテリジェンスエージェント — run.sh では現在無効
+  src/xss_handler.py              # XSS インテリジェンスエージェント — 現在どのワークフローにも未接続
   src/claude_runner.py            # claude CLI 共通ヘルパー（subprocess + WebSearch）
   web/                            # Web UI 用 FastAPI バックエンド（localhost + Bearer トークン）
   config/briefing.json            # ポートフォリオ、ウォッチセクター、地政学リスク
@@ -111,11 +111,10 @@ cd ../web && npm install  # Web UI を使う場合のみ
 ## 実行
 
 ```bash
-bin/run.sh             # 日次ブリーフィング → 週次リキャップ（金曜以外は何もしない）
-
 # ワークフロー — 宣言済みパイプライン共通の入口
 bin/workflow.sh                   # 登録済みワークフロー一覧
-bin/workflow.sh run briefing      # 日次ブリーフィング
+bin/workflow.sh run daily         # 日次の実行: ブリーフィング → 週次リキャップ（その日のみ）
+bin/workflow.sh run briefing      # 日次ブリーフィング単体
 bin/workflow.sh run weekly        # 週次リキャップ。金曜以外はスキップ、--force で強制実行
 
 # 当日のブリーフィングに対する対話 Q&A
@@ -138,8 +137,8 @@ bin/serve.sh
 bin/serve.sh --no-browser
 
 # ドライラン（実行せずに認証情報だけ検証）
+bin/workflow.sh run daily --dry-run     # ブリーフィングと週次リキャップの両方を検証
 cd apps/python
-.venv/bin/python -m src.handler --dry-run
 .venv/bin/python -m src.xss_handler --dry-run
 ```
 
@@ -149,8 +148,7 @@ cd apps/python
 
 | スクリプト | 用途 |
 |---|---|
-| `run.sh` | 日次ブリーフィング → 週次リキャップ（週次は金曜のみ実体が走る）。メンテナのマシンでは**手動実行が現行の運用**（[launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active) 参照）。無効化中の XSS エージェントについては[アーキテクチャ](#アーキテクチャ)を参照 |
-| `workflow.sh` | 宣言済みワークフロー共通の入口。`workflow.sh` で一覧、`workflow.sh run <id>` で実行（`--force` / `--dry-run`）。個別スクリプトよりこちらを優先 — [workflow-runner.md](docs/features/workflow-runner.md) 参照 |
+| `workflow.sh` | 宣言済みワークフロー共通の入口。`workflow.sh` で一覧、`workflow.sh run <id>` で実行（`--force` / `--dry-run`）。`run daily` が日次のジョブ（ブリーフィング → その日なら週次リキャップ）で、メンテナのマシンでは**手動実行が現行の運用**（[launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active) 参照）。[workflow-runner.md](docs/features/workflow-runner.md) 参照 |
 | `chat.sh` | ブリーフィングセッションに対する対話 Q&A |
 | `serve.sh` | Web UI 一式（FastAPI + Next.js）の起動。`API_PORT` / `WEB_PORT` で上書き可 |
 | `self_agent.sh` | 判断ログをペルソナプロファイル化して Notion へ投稿 |
@@ -170,7 +168,7 @@ cd apps/python
 ## テスト
 
 ```bash
-cd apps/python && .venv/bin/pytest -v   # 1,308 ケース / 87 ファイル
+cd apps/python && .venv/bin/pytest -v   # 1,317 ケース / 88 ファイル
 cd apps/web && npm test                 # vitest（ユニット + コンポーネント）
 cd apps/web && npm run test:e2e         # Playwright
 ```
@@ -184,7 +182,7 @@ cd apps/web && npm run test:e2e         # Playwright
 | トピック | リンク |
 |---|---|
 | 設定（環境変数、設定スキーマ、プロンプト） | [docs/guides/configuration.md](docs/guides/configuration.md) |
-| 日次ブリーフィング（手動 `./bin/run.sh`、任意で launchd） | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
+| 日次ブリーフィング（手動 `./bin/workflow.sh run daily`、任意で launchd） | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
 | スケジュール実行（cron + pmset、代替手段） | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |
 | ブリーフィングのアーカイブ（月次 zip → rclone で Google Drive） | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | テストと依存関係の管理 | [docs/guides/testing.md](docs/guides/testing.md) |

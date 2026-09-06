@@ -36,7 +36,7 @@ The interesting problem here is not calling an LLM — it is making a non-determ
 bin/*.sh → apps/python/bin/*.sh          # thin wrappers that exec into the Python app
 
 apps/python/
-  src/handler.py                  # Daily market briefing (bin/run.sh)
+  src/handler.py                  # Daily market briefing (workflow: briefing)
   │     ├── fetcher/stocks.py     # Previous-day % change via yfinance
   │     ├── generator/briefing.py # Builds prompts, calls run_claude() in parallel
   │     ├── notifier/local_md.py  # Writes output/briefing_YYYY-MM-DD.md first
@@ -44,7 +44,7 @@ apps/python/
   │     └── notifier/notion.py
   src/weekly_handler.py           # Weekly recap + Notion comment ingestion (workflow: weekly)
   src/self_agent_handler.py       # Judgment log → persona profile → Notion (bin/self_agent.sh)
-  src/xss_handler.py              # XSS intel agent — currently disabled in run.sh
+  src/xss_handler.py              # XSS intel agent — currently not wired into any workflow
   src/claude_runner.py            # Shared claude CLI helper (subprocess + WebSearch)
   web/                            # FastAPI backend for the Web UI (localhost + bearer token)
   config/briefing.json            # Portfolio, watch sectors, geopolitical risks
@@ -111,11 +111,10 @@ See [docs/guides/configuration.md](docs/guides/configuration.md) for all environ
 ## Run
 
 ```bash
-bin/run.sh             # daily briefing, then the weekly recap (a no-op except on Fridays)
-
 # Workflows — one entry point for every declared pipeline
 bin/workflow.sh                   # list what is registered
-bin/workflow.sh run briefing      # daily briefing
+bin/workflow.sh run daily         # the daily run: briefing, then the weekly recap on its day
+bin/workflow.sh run briefing      # daily briefing on its own
 bin/workflow.sh run weekly        # weekly recap; skipped unless it is Friday, --force overrides
 
 # Interactive Q&A on today's briefing
@@ -138,8 +137,8 @@ bin/serve.sh
 bin/serve.sh --no-browser
 
 # Dry-run (validate credentials without executing)
+bin/workflow.sh run daily --dry-run     # covers the briefing and the recap
 cd apps/python
-.venv/bin/python -m src.handler --dry-run
 .venv/bin/python -m src.xss_handler --dry-run
 ```
 
@@ -149,8 +148,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 
 | Script | Purpose |
 |---|---|
-| `run.sh` | Run the daily briefing, then the weekly recap (which acts only on Fridays) — **manual execution is the active schedule** on the maintainer machine; see [launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active). See [Architecture](#architecture) for the disabled XSS intel agent |
-| `workflow.sh` | The one entry point for declared workflows: `workflow.sh` lists them, `workflow.sh run <id>` runs one (`--force`, `--dry-run`). Prefer it over the per-process scripts — see [workflow-runner.md](docs/features/workflow-runner.md) |
+| `workflow.sh` | The one entry point for declared workflows: `workflow.sh` lists them, `workflow.sh run <id>` runs one (`--force`, `--dry-run`). `run daily` is the daily job — the briefing, then the weekly recap on its day — and **manual execution is the active schedule** on the maintainer machine; see [launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active). See [workflow-runner.md](docs/features/workflow-runner.md) |
 | `chat.sh` | Interactive Q&A on a briefing session |
 | `serve.sh` | Launch the full Web UI — FastAPI + Next.js; `API_PORT` / `WEB_PORT` overridable |
 | `self_agent.sh` | Turn judgment-log entries into a persona profile and post it to Notion |
@@ -170,7 +168,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 ## Tests
 
 ```bash
-cd apps/python && .venv/bin/pytest -v   # 1,308 cases / 87 files
+cd apps/python && .venv/bin/pytest -v   # 1,317 cases / 88 files
 cd apps/web && npm test                 # vitest (unit + component)
 cd apps/web && npm run test:e2e         # Playwright
 ```
@@ -184,7 +182,7 @@ Both suites run on push via GitHub Actions ([`pytest.yml`](.github/workflows/pyt
 | Topic | Link |
 |---|---|
 | Configuration (env vars, config schema, prompts) | [docs/guides/configuration.md](docs/guides/configuration.md) |
-| Daily briefing (manual `./bin/run.sh`; optional launchd) | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
+| Daily briefing (manual `./bin/workflow.sh run daily`; optional launchd) | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
 | Scheduled execution (cron + pmset, alternative) | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |
 | Briefing archive (monthly zip → Google Drive via rclone) | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | Testing & dependency management | [docs/guides/testing.md](docs/guides/testing.md) |

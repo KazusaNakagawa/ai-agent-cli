@@ -2,7 +2,7 @@
 
 PUT は disk に書き込むだけで、起動中プロセスの ``src.config.CONFIG`` グローバル
 （import 時に ``load_config()`` 実行）はリロードしない。Phase 1 のブリーフィング
-は cron から ``bin/run.sh`` 経由で別 Python プロセスを起こすので、PUT は次回
+は cron から ``bin/workflow.sh`` 経由で別 Python プロセスを起こすので、PUT は次回
 batch 実行時に自動で反映される。リアルタイム反映が必要になったら、ここで
 ``CONFIG`` を更新するか、別途リロード用エンドポイントを足す方針。
 """
