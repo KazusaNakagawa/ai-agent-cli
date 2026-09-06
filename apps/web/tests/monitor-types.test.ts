@@ -2,11 +2,22 @@ import { describe, expect, it } from "vitest"
 
 import {
   buildModelColorMap,
+  fillDateGaps,
   MODEL_COLOR_PALETTE,
+  MonitorDateEntry,
   MONITOR_METRIC_LABELS,
   monitorMetricValue,
   sinceForRange,
 } from "@/lib/monitor-types"
+
+function entry(date: string, tokens = 10): MonitorDateEntry {
+  return {
+    date,
+    tokens,
+    cost_usd: 1,
+    models: [{ key: "claude-opus-5", tokens, cost_usd: 1 }],
+  }
+}
 
 describe("buildModelColorMap", () => {
   it("assigns a distinct color per model, stable across input order", () => {
@@ -46,6 +57,42 @@ describe("monitorMetricValue", () => {
     const bucket = { key: "claude-sonnet-5", tokens: 120, cost_usd: 0.5 }
     expect(monitorMetricValue(bucket, "tokens")).toBe(120)
     expect(monitorMetricValue(bucket, "cost_usd")).toBe(0.5)
+  })
+})
+
+describe("fillDateGaps", () => {
+  it("inserts empty entries for days with no activity", () => {
+    const filled = fillDateGaps([entry("2026-09-05"), entry("2026-09-07")])
+
+    expect(filled.map((d) => d.date)).toEqual(["2026-09-05", "2026-09-06", "2026-09-07"])
+    expect(filled[1]).toMatchObject({ tokens: 0, cost_usd: 0, models: [] })
+  })
+
+  it("crosses month boundaries", () => {
+    const filled = fillDateGaps([entry("2026-08-30"), entry("2026-09-02")])
+
+    expect(filled.map((d) => d.date)).toEqual([
+      "2026-08-30",
+      "2026-08-31",
+      "2026-09-01",
+      "2026-09-02",
+    ])
+  })
+
+  it("leaves an already-contiguous series untouched", () => {
+    const input = [entry("2026-09-05"), entry("2026-09-06")]
+    expect(fillDateGaps(input)).toBe(input)
+  })
+
+  it("passes through series too short to have a gap", () => {
+    expect(fillDateGaps([])).toEqual([])
+    const single = [entry("2026-09-05")]
+    expect(fillDateGaps(single)).toBe(single)
+  })
+
+  it("refuses to expand a span wider than the 400-day cap", () => {
+    const input = [entry("2024-01-01"), entry("2026-09-07")]
+    expect(fillDateGaps(input)).toBe(input)
   })
 })
 

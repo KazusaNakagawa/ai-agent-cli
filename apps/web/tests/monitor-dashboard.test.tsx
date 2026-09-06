@@ -132,6 +132,23 @@ describe("MonitorDashboard", () => {
     )
   })
 
+  it("keeps the x-axis on a calendar day scale when a day has no activity", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        ...MONITOR,
+        by_date: [MONITOR.by_date[0], { ...MONITOR.by_date[1], date: "2026-07-12" }],
+      }),
+    )
+    render(<MonitorDashboard />)
+
+    await waitFor(() => expect(screen.getByTestId("monitor-total")).toBeInTheDocument())
+    const dateLabels = screen.getAllByTestId("monitor-stack-date-label")
+    expect(dateLabels.map((l) => l.textContent)).toEqual(["Jul 10", "Jul 11", "Jul 12"])
+    // The inserted day is an empty bar, not a missing one.
+    expect(screen.getAllByTestId("monitor-stack-bar")).toHaveLength(3)
+    expect(screen.getAllByTestId("monitor-stack-segment")).toHaveLength(3)
+  })
+
   it("shows an empty state when there is no data", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({

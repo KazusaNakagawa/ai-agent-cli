@@ -8,7 +8,7 @@ os.environ.setdefault("BRIEFING_CONFIG_PATH", str(Path(__file__).parent / "confi
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src import credentials, journal_store, state as state_mod, weekly_recap_state
+from src import claude_rates, credentials, journal_store, state as state_mod, weekly_recap_state
 from web import auth
 from web.app import app
 
@@ -23,6 +23,17 @@ HIJACKED_SKILL_COMPLETION_REPORT = (
     "- ローカル: `output/my-world-briefing_2026-07-21.md`\n"
     "- Notion: https://www.notion.so/3a36396b8c4e8172abcce57f9b706ce4"
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_unpriced_warnings():
+    """Clear the once-per-process unpriced-model warning cache between tests.
+
+    Otherwise the first test to aggregate an unknown model silences the
+    warning for every later test, making warning assertions order-dependent
+    across this suite and scripts/tests/.
+    """
+    claude_rates.reset_unpriced_warnings()
 
 
 @pytest.fixture

@@ -51,10 +51,19 @@ transcripts and the result lives only in memory.
 
 ### 2. Pricing — [`apps/python/src/claude_rates.py`](../../apps/python/src/claude_rates.py)
 
-`RATES` maps an **exact** model id to `(input, output, cache_write, cache_read)`
-USD per 1M tokens. Matching is exact on purpose — substring matching mis-maps as
-model ids evolve. A model missing from the table costs `$0` and is surfaced in
-the response as `unpriced_models`, which the UI renders as an amber warning line.
+`RATES` maps an **exact** model id to
+`(input, output, cache_write_5m, cache_write_1h, cache_read)` USD per 1M tokens.
+Matching is exact on purpose — substring matching mis-maps as model ids evolve.
+A model missing from the table costs `$0` and is surfaced in the response as
+`unpriced_models`, which the UI renders as an amber warning line.
+
+Cache writes are billed by TTL: a 1-hour write costs **2x** input where a
+5-minute write costs 1.25x. `usage_cost()` splits
+`cache_creation_input_tokens` using the `usage.cache_creation` breakdown that
+transcripts carry, taking the 5-minute share as the remainder so an entry with
+no breakdown falls back to the cheaper rate instead of being dropped. Claude
+Code writes almost entirely 1-hour caches, so ignoring the split understates
+the total by roughly 12%.
 
 When a new model appears in that warning, add its id and published rates to
 `RATES`. The same table backs the CLI report and `scripts/sdd_token_cost.py`.
@@ -97,6 +106,11 @@ curl -H "Authorization: Bearer $TOKEN" \
 - Model colors come from `buildModelColorMap()`, which assigns theme-aware CSS
   custom properties (`--series-1` …) by **sorted model id**, so a model keeps the
   same color across charts and renders.
+- A day with no transcript activity is absent from `by_date`. `fillDateGaps()`
+  in `lib/monitor-types.ts` re-inserts it as an empty bar before the chart
+  renders, so bar position tracks the calendar rather than rank. The expansion
+  is capped at 400 days so one very old entry in the **All time** range cannot
+  produce thousands of bars.
 
 ### CLI equivalent
 
