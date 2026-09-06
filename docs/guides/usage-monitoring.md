@@ -97,6 +97,11 @@ curl -H "Authorization: Bearer $TOKEN" \
 - Model colors come from `buildModelColorMap()`, which assigns theme-aware CSS
   custom properties (`--series-1` …) by **sorted model id**, so a model keeps the
   same color across charts and renders.
+- A day with no transcript activity is absent from `by_date`. `fillDateGaps()`
+  in `lib/monitor-types.ts` re-inserts it as an empty bar before the chart
+  renders, so bar position tracks the calendar rather than rank. The expansion
+  is capped at 400 days so one very old entry in the **All time** range cannot
+  produce thousands of bars.
 
 ### CLI equivalent
 

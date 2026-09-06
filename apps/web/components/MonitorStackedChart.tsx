@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  fillDateGaps,
   MonitorDateEntry,
   MonitorMetric,
   monitorMetricValue,
@@ -41,7 +42,10 @@ function formatDateTick(isoDate: string): string {
 export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
   if (byDate.length === 0) return null
 
-  const dayTotals = byDate.map((d) =>
+  // Days with no activity are absent from the response; re-insert them as
+  // empty bars so bar position tracks elapsed time rather than rank.
+  const days = fillDateGaps(byDate)
+  const dayTotals = days.map((d) =>
     d.models.reduce((sum, m) => sum + monitorMetricValue(m, metric), 0),
   )
   const { niceMax, ticks } = niceScale(Math.max(...dayTotals, 0))
@@ -78,7 +82,7 @@ export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
           )}
 
           <div className="absolute inset-0 flex items-end gap-1 px-1">
-            {byDate.map((day, i) => (
+            {days.map((day, i) => (
               <div
                 key={day.date}
                 data-testid="monitor-stack-bar"
@@ -117,7 +121,7 @@ export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
             "All time" range). Anchored top-right so the rotation reads back
             toward its bar instead of drifting into the next one. */}
         <div className="flex gap-1 px-1 pb-6 pt-2" aria-hidden>
-          {byDate.map((day) => (
+          {days.map((day) => (
             <div key={day.date} className="min-w-0 flex-1">
               <span
                 data-testid="monitor-stack-date-label"
