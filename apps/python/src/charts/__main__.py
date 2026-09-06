@@ -13,9 +13,11 @@ import sys
 from pathlib import Path
 
 from src.charts.price_comparison import generate_price_comparison
+from src.constants import CHART_OUTPUT_DIR
 
-# Default output directory: apps/python/output/charts (output/ is git-ignored).
-_DEFAULT_OUTPUT_DIR = Path(__file__).parents[2] / "output" / "charts"
+# apps/python/output/charts (output/ is git-ignored). Shared with the briefing's
+# chart step so both write to one place.
+_DEFAULT_OUTPUT_DIR = CHART_OUTPUT_DIR
 
 
 def main(argv: list[str]) -> int:

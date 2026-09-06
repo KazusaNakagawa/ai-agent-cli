@@ -31,14 +31,53 @@ def test_normalize_rebases_each_column_to_100():
     assert out.iloc[2]["NVDA"] == pytest.approx(110.0)  # 110/100*100
 
 
-def test_normalize_drops_columns_with_unusable_first_value():
+def test_normalize_drops_only_columns_with_no_usable_baseline():
+    """A leading NaN is a late start, not unusable data.
+
+    A column is dropped when it has no value at all, or when its baseline is
+    zero and the rebase would divide by it.
+    """
     idx = pd.to_datetime(["2026-01-01", "2026-01-02"])
     df = pd.DataFrame(
-        {"OK": [5.0, 6.0], "ZERO": [0.0, 1.0], "NAN": [float("nan"), 2.0]},
+        {
+            "OK": [5.0, 6.0],
+            "ZERO": [0.0, 1.0],
+            "LATE": [float("nan"), 2.0],
+            "EMPTY": [float("nan"), float("nan")],
+        },
         index=idx,
     )
     out = normalize_to_index(df)
-    assert list(out.columns) == ["OK"]
+    assert list(out.columns) == ["OK", "LATE"]
+    # LATE is rebased on its own first traded value, not on the frame's first row.
+    assert out.iloc[1]["LATE"] == pytest.approx(100.0)
+
+
+def test_normalize_keeps_every_ticker_across_two_exchanges():
+    """Regression: a mixed JP/US portfolio lost all of its US holdings.
+
+    yfinance returns the union of both calendars, so a window opening on a
+    Tokyo-only session leaves every US column NaN in row 0. Keying the rebase
+    on that row dropped all six US tickers and charted the lone JP one.
+    """
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-05"])
+    df = pd.DataFrame(
+        {"PLTR": [float("nan"), 100.0, 110.0], "4676.T": [3000.0, float("nan"), 3300.0]},
+        index=idx,
+    )
+    out = normalize_to_index(df)
+    assert list(out.columns) == ["PLTR", "4676.T"]
+    assert out.iloc[2]["PLTR"] == pytest.approx(110.0)
+    assert out.iloc[2]["4676.T"] == pytest.approx(110.0)
+
+
+def test_normalize_forward_fills_across_a_foreign_session():
+    """The other market's holiday must not break the line into dashes."""
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-05"])
+    df = pd.DataFrame({"A": [10.0, float("nan"), 12.0]}, index=idx)
+    out = normalize_to_index(df)
+    assert out["A"].isna().sum() == 0
+    assert out.iloc[1]["A"] == pytest.approx(100.0)  # carried, not interpolated
 
 
 def test_render_writes_a_nonempty_png(tmp_path: Path):
@@ -47,6 +86,147 @@ def test_render_writes_a_nonempty_png(tmp_path: Path):
     assert result == out_path
     assert out_path.exists()
     assert out_path.stat().st_size > 0
+
+
+@pytest.fixture(autouse=True)
+def _clear_font_cache():
+    """_cjk_font_name is lru_cached; a test that patches the candidate list
+    would otherwise be decided by whichever test ran first.
+
+    getattr: tests that monkeypatch _cjk_font_name itself replace it with a
+    plain function, which carries no cache to clear.
+    """
+    def _clear():
+        clear = getattr(pc_module._cjk_font_name, "cache_clear", None)
+        if clear is not None:
+            clear()
+
+    _clear()
+    yield
+    _clear()
+
+
+class _CapturingAxes:
+    """Records the axes calls the assertions below care about."""
+
+    def __init__(self, real):
+        self._real = real
+        self.yscale = None
+        self.title = None
+        self.annotations = []
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def set_yscale(self, scale, *a, **k):
+        self.yscale = scale
+        return self._real.set_yscale(scale, *a, **k)
+
+    def set_title(self, label, *a, **k):
+        self.title = label
+        return self._real.set_title(label, *a, **k)
+
+    def annotate(self, text, *a, **k):
+        self.annotations.append(text)
+        return self._real.annotate(text, *a, **k)
+
+
+def _render_capturing(tmp_path, monkeypatch) -> _CapturingAxes:
+    """Render once, returning the recorder wrapped around the real axes."""
+    real_subplots = pc_module.plt.subplots
+    captured = {}
+
+    def _subplots(*a, **k):
+        fig, ax = real_subplots(*a, **k)
+        captured["ax"] = _CapturingAxes(ax)
+        return fig, captured["ax"]
+
+    monkeypatch.setattr(pc_module.plt, "subplots", _subplots)
+    render_price_comparison(_close_df(), tmp_path / "chart.png")
+    return captured["ax"]
+
+
+def test_render_uses_a_log_y_axis(tmp_path, monkeypatch):
+    """A portfolio's indexed returns span an order of magnitude; on a linear
+    axis every line but the leader collapses onto the baseline."""
+    assert _render_capturing(tmp_path, monkeypatch).yscale == "log"
+
+
+def test_render_labels_each_line_end_with_its_last_value(tmp_path, monkeypatch):
+    # 凡例ではなく線の終端にラベルを置く（色と銘柄の照合を読者にさせない）
+    texts = _render_capturing(tmp_path, monkeypatch).annotations
+    assert any("PLTR" in t and "120" in t for t in texts)  # 12/10*100
+    assert any("NVDA" in t and "110" in t for t in texts)  # 110/100*100
+
+
+def test_title_is_japanese_when_a_cjk_font_is_available(tmp_path, monkeypatch):
+    monkeypatch.setattr(pc_module, "_cjk_font_name", lambda: "Hiragino Sans GB")
+    assert "リターン比較" in _render_capturing(tmp_path, monkeypatch).title
+
+
+def test_title_falls_back_to_english_without_a_cjk_font(tmp_path, monkeypatch):
+    """Linux CI ships no CJK face — a Japanese title there would render as a
+    row of tofu boxes, so the label language follows the font."""
+    monkeypatch.setattr(pc_module, "_cjk_font_name", lambda: None)
+    title = _render_capturing(tmp_path, monkeypatch).title
+    assert "Return comparison" in title
+    assert title.isascii()
+
+
+def test_cjk_font_name_is_none_when_no_candidate_exists(monkeypatch):
+    monkeypatch.setattr(pc_module, "_CJK_FONT_CANDIDATES", ("/nonexistent/font.ttc",))
+    assert pc_module._cjk_font_name() is None
+
+
+def test_render_drops_non_positive_values(tmp_path):
+    """A log axis cannot place a zero; it must be dropped rather than left for
+    matplotlib to clip silently."""
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"])
+    df = pd.DataFrame({"A": [10.0, 0.0, 12.0]}, index=idx)
+    out = render_price_comparison(df, tmp_path / "chart.png")
+    assert out.stat().st_size > 0
+
+
+def _rowless(tickers) -> pd.DataFrame:
+    """yfinance can answer with the requested ticker columns and no price rows."""
+    return pd.DataFrame({t: [] for t in tickers}, index=pd.to_datetime([]))
+
+
+def test_normalize_returns_empty_frame_for_a_rowless_input():
+    # There is no first row to rebase against, so every column drops out — and
+    # .iloc[0] on the empty column must not raise on the way there.
+    assert normalize_to_index(_rowless(["PLTR", "NVDA"])).columns.empty
+
+
+def test_render_raises_valueerror_for_a_rowless_input(tmp_path):
+    with pytest.raises(ValueError):
+        render_price_comparison(_rowless(["PLTR"]), tmp_path / "chart.png")
+
+
+def test_mask_cannot_empty_a_surviving_column(tmp_path):
+    """A kept column always has a positive value to draw.
+
+    Pins the reasoning behind the guard in render_price_comparison: rebasing
+    makes the first row exactly 100, so the non-positive mask can never empty a
+    column that normalize_to_index kept — later negatives only punch holes.
+    """
+    idx = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    out = normalize_to_index(pd.DataFrame({"A": [10.0, -5.0]}, index=idx))
+    assert out.iloc[0]["A"] == pytest.approx(100.0)
+    assert not out.mask(out <= 0).dropna(how="all").empty
+
+
+def test_generate_raises_valueerror_for_a_rowless_download(tmp_path, monkeypatch):
+    """The rowless case must surface as the documented ValueError, not the
+    IndexError that .iloc[0] on an empty column used to raise."""
+    tickers = ["PLTR", "NVDA"]
+    cols = pd.MultiIndex.from_product([["Close"], tickers])
+    rowless = pd.DataFrame(
+        {("Close", t): [] for t in tickers}, index=pd.to_datetime([]), columns=cols
+    )
+    monkeypatch.setattr(pc_module.yf, "download", lambda *a, **k: rowless)
+    with pytest.raises(ValueError):
+        generate_price_comparison(tickers, tmp_path)
 
 
 def _yf_multiindex(tickers, with_data=True):

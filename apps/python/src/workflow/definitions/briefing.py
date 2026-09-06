@@ -37,6 +37,10 @@ BRIEFING = Workflow(
         Step("fx", _handler("step_fx")),
         Step("stocks", _handler("step_stocks")),
         Step("generate", _handler("step_generate")),
+        # After the paid generate step so a chart failure cannot waste it, and
+        # before the deliveries that carry the PNG. best_effort: the briefing
+        # body ships with or without its illustration.
+        Step("chart", _handler("step_chart"), best_effort=True),
         # Ordered before every delivery: the local copy is the operator's
         # diagnostic fallback and must survive a Discord or Notion outage.
         Step("persist", _handler("step_persist")),
