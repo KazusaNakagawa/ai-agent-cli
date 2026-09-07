@@ -183,6 +183,7 @@ cd apps/web && npm run test:e2e         # Playwright
 
 | トピック | リンク |
 |---|---|
+| リポジトリ解説（公開ページ） | [kazusanakagawa.github.io/ai-agent-cli](https://kazusanakagawa.github.io/ai-agent-cli/) |
 | 設定（環境変数、設定スキーマ、プロンプト） | [docs/guides/configuration.md](docs/guides/configuration.md) |
 | 日次ブリーフィング（手動 `./bin/run.sh`、任意で launchd） | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
 | スケジュール実行（cron + pmset、代替手段） | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |

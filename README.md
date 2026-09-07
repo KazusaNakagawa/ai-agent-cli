@@ -183,6 +183,7 @@ Both suites run on push via GitHub Actions ([`pytest.yml`](.github/workflows/pyt
 
 | Topic | Link |
 |---|---|
+| Repository overview (rendered site) | [kazusanakagawa.github.io/ai-agent-cli](https://kazusanakagawa.github.io/ai-agent-cli/) |
 | Configuration (env vars, config schema, prompts) | [docs/guides/configuration.md](docs/guides/configuration.md) |
 | Daily briefing (manual `./bin/run.sh`; optional launchd) | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
 | Scheduled execution (cron + pmset, alternative) | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |
