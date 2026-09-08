@@ -43,6 +43,7 @@ bin/chat.sh   # Launch chat session
 | `apps/python/tests/config/briefing.json` | Fixture config for CI and local tests | Tracked |
 | `apps/python/config/self_agent_profile.md` | self-agent's persistent persona profile (personal data) | Ignored |
 | `apps/python/config/self_agent_profile.md.example` | Schema documentation and template | Tracked |
+| `apps/python/config/model_rates.json` | Per-model token pricing for the Monitor tab (no personal data) | Tracked |
 | `apps/python/config/holdings.json` | Portfolio positions for `bin/portfolio.sh` (personal data) | Ignored |
 | `apps/python/config/holdings.json.example` | Schema documentation and template | Tracked |
 | `apps/python/config/money_rules.json` | Categorization and transfer rules for `bin/money.sh` (personal data) | Ignored |
