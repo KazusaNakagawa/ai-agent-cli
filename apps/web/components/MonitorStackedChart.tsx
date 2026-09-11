@@ -36,6 +36,24 @@ function formatDateTick(isoDate: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
+// One tooltip per bar, listing every model that ran that day. Per-row dates
+// would be redundant — the x-axis already carries the date — so the date is a
+// single header line. Rows read top-of-stack first so the tooltip and the bar
+// can be scanned in the same direction.
+export function buildBarTooltip(day: MonitorDateEntry, metric: MonitorMetric): string {
+  const rows = day.models
+    .map((m) => ({ key: m.key, value: monitorMetricValue(m, metric) }))
+    .filter((r) => r.value > 0)
+    .reverse()
+  const lines = [formatDateTick(day.date)]
+  for (const row of rows) lines.push(`${row.key}: ${formatTick(row.value)}`)
+  if (rows.length > 1) {
+    const total = rows.reduce((sum, r) => sum + r.value, 0)
+    lines.push(`Total: ${formatTick(total)}`)
+  }
+  return lines.join("\n")
+}
+
 // Dependency-free stacked bar chart: one bar per day, one colored segment per
 // model. Mirrors the axis/gridline styling of UsageBarChart, plus an x-axis
 // date row so each bar can be identified at a glance.
@@ -90,7 +108,7 @@ export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
                 // distinguishable under color-vision deficiency.
                 className="flex min-w-0 flex-1 flex-col-reverse gap-y-0.5 overflow-hidden rounded-t"
                 style={{ height: `${(dayTotals[i] / niceMax) * 100}%` }}
-                title={`${day.date}: ${formatTick(dayTotals[i])}`}
+                title={buildBarTooltip(day, metric)}
               >
                 {day.models.map((m) => {
                   const value = monitorMetricValue(m, metric)
@@ -107,7 +125,6 @@ export function MonitorStackedChart({ byDate, metric, colorMap }: Props) {
                         height: `${share * 100}%`,
                         backgroundColor: colorMap[m.key],
                       }}
-                      title={`${m.key} — ${day.date}: ${formatTick(value)}`}
                     />
                   )
                 })}
