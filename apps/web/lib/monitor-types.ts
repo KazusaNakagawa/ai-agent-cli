@@ -6,6 +6,11 @@ export type MonitorBucket = {
   key: string
   tokens: number
   cost_usd: number
+  // Project buckets only: the real working directory behind the transcript
+  // directory name, and its home-abbreviated display form. Null when the
+  // transcripts never revealed a cwd — the key is then all we have.
+  path?: string | null
+  label?: string | null
 }
 
 export type MonitorDateEntry = {
@@ -59,6 +64,34 @@ export function sinceForRange(range: MonitorRange, now: Date = new Date()): stri
 
 export function monitorMetricValue(bucket: MonitorBucket, metric: MonitorMetric): number {
   return bucket[metric] ?? 0
+}
+
+// A day with no transcript activity is simply absent from `by_date`, so a
+// chart that lays the entries out edge to edge silently closes the gap and
+// stops being a time axis (Sep 5 sitting next to Sep 7 reads as consecutive).
+// Cap the expansion so an outlier-old first entry in the "All time" range
+// can't blow the bar count up to thousands.
+const MAX_FILLED_DAYS = 400
+
+/** Insert zero-valued entries for calendar days missing between first and last. */
+export function fillDateGaps(byDate: MonitorDateEntry[]): MonitorDateEntry[] {
+  if (byDate.length < 2) return byDate
+
+  const dayMs = 24 * 60 * 60 * 1000
+  const first = new Date(`${byDate[0].date}T00:00:00Z`)
+  const last = new Date(`${byDate[byDate.length - 1].date}T00:00:00Z`)
+  if (Number.isNaN(first.getTime()) || Number.isNaN(last.getTime())) return byDate
+
+  const span = Math.round((last.getTime() - first.getTime()) / dayMs) + 1
+  if (span <= byDate.length || span > MAX_FILLED_DAYS) return byDate
+
+  const present = new Map(byDate.map((d) => [d.date, d]))
+  const filled: MonitorDateEntry[] = []
+  for (let i = 0; i < span; i++) {
+    const date = new Date(first.getTime() + i * dayMs).toISOString().slice(0, 10)
+    filled.push(present.get(date) ?? { date, tokens: 0, cost_usd: 0, models: [] })
+  }
+  return filled
 }
 
 // Series colors are theme-aware CSS custom properties defined in

@@ -11,4 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "python"))
 
-from src.claude_rates import RATES, rate_for, usage_cost  # noqa: E402,F401
+from src.claude_rates import (  # noqa: E402,F401
+    RATES,
+    rate_for,
+    reset_unpriced_warnings,
+    usage_cost,
+)

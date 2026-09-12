@@ -46,6 +46,9 @@ class Report:
     # Per-date per-model splits for stacked/colored charts.
     by_date_model: dict[str, dict[str, Bucket]] = field(default_factory=dict)
     unpriced_models: set[str] = field(default_factory=set)
+    # Transcript directory name -> the real working directory it belongs to,
+    # recovered from the ``cwd`` field the transcripts carry.
+    project_paths: dict[str, str] = field(default_factory=dict)
 
     @property
     def total_tokens(self) -> int:
@@ -54,6 +57,23 @@ class Report:
     @property
     def total_cost(self) -> float:
         return sum(b.cost for b in self.by_project.values())
+
+
+def abbreviate_home(path: str, home: Path | None = None) -> str:
+    """Render an absolute path with ``~`` standing in for the home directory.
+
+    Paths outside home are returned unchanged, and the separator check keeps
+    a sibling directory sharing the prefix (``/Users/someone-else``) from
+    being rewritten.
+    """
+    if not path:
+        return path
+    root = str(home if home is not None else Path.home())
+    if path == root:
+        return "~"
+    if path.startswith(root + "/"):
+        return "~/" + path[len(root) + 1 :]
+    return path
 
 
 def _local_date(timestamp: str) -> str | None:
@@ -99,6 +119,10 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
                 except json.JSONDecodeError as e:
                     logger.warning("skipping malformed JSON at %s:%s: %s", path, lineno, e)
                     continue
+
+                cwd = d.get("cwd")
+                if isinstance(cwd, str) and cwd and project not in report.project_paths:
+                    report.project_paths[project] = cwd
 
                 msg = d.get("message")
                 if not (isinstance(msg, dict) and isinstance(msg.get("usage"), dict)):
