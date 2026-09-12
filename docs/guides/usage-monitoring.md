@@ -48,6 +48,15 @@ transcripts and the result lives only in memory.
 - `since` / `until` are inclusive `YYYY-MM-DD` filters applied to that local date.
 - Buckets are produced per project, per date, per model, and per (date, model)
   for the stacked chart.
+- The project bucket key is the transcript **directory name**
+  (`-Users-you-work-english-learn-app`), a lossy encoding of the path: `/`, `_`
+  and `.` all collapse to `-`, so it cannot be decoded back. The real directory
+  is read from the `cwd` field the transcript lines carry — first non-empty one
+  wins — and kept in `Report.project_paths`. Transcripts without a `cwd` simply
+  have no entry there.
+- `abbreviate_home()` renders a path with `~` standing in for the home
+  directory. A path outside home (`/home/node/…` from a container) is returned
+  unchanged.
 
 ### 2. Pricing — [`apps/python/src/claude_rates.py`](../../apps/python/src/claude_rates.py)
 
@@ -85,6 +94,9 @@ curl -H "Authorization: Bearer $TOKEN" \
 - Response: `total_tokens`, `total_cost_usd`, `by_project`, `by_date` (each with
   a nested `models` split), `by_model`, `unpriced_models`. Buckets are sorted by
   cost, descending.
+- Project buckets also carry `path` (absolute) and `label` (home-abbreviated).
+  Both are `null` when the transcripts revealed no `cwd`; the `key` stays the
+  bucket's identity either way.
 - **Cache**: scanning the whole transcript tree is expensive, so identical
   `(root, since, until)` queries are served from an in-process dict for **60
   seconds**, capped at 32 entries (oldest evicted). It is guarded by a lock
@@ -103,6 +115,8 @@ curl -H "Authorization: Bearer $TOKEN" \
 - The response is held in React `useState` for the life of the page. There is
   **no `localStorage`, no IndexedDB, and no client-side cache** — a reload
   re-fetches.
+- The **By project** list shows the `label` with the absolute `path` as its
+  tooltip, falling back to the raw directory key when both are `null`.
 - Model colors come from `buildModelColorMap()`, which assigns theme-aware CSS
   custom properties (`--series-1` …) by **sorted model id**, so a model keeps the
   same color across charts and renders.

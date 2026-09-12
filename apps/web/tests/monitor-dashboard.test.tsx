@@ -175,3 +175,33 @@ describe("services registration", () => {
     expect(monitor?.label).toBe("Monitor")
   })
 })
+
+describe("MonitorDashboard project paths", () => {
+  it("shows the home-abbreviated path and reveals the absolute one on hover", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        ...MONITOR,
+        by_project: [
+          {
+            key: "-Users-someone-work-english-learn-app",
+            tokens: 700,
+            cost_usd: 10,
+            path: "/Users/someone/work/english_learn_app",
+            label: "~/work/english_learn_app",
+          },
+          { key: "proj-b", tokens: 300, cost_usd: 2.34, path: null, label: null },
+        ],
+      }),
+    )
+    render(<MonitorDashboard />)
+
+    const list = await screen.findByTestId("monitor-by-project")
+    const named = within(list).getByText("~/work/english_learn_app")
+    expect(named).toHaveAttribute("title", "/Users/someone/work/english_learn_app")
+    expect(within(list).queryByText("-Users-someone-work-english-learn-app")).toBeNull()
+
+    // A project whose transcripts carried no cwd still renders, via its key.
+    const fallback = within(list).getByText("proj-b")
+    expect(fallback).toHaveAttribute("title", "proj-b")
+  })
+})
