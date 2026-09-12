@@ -173,8 +173,8 @@ export function MonitorDashboard() {
               <ul data-testid="monitor-by-project" className="space-y-1 text-sm">
                 {data.by_project.map((p) => (
                   <li key={p.key} className="flex items-center justify-between gap-2">
-                    <span className="truncate" title={p.key}>
-                      {p.key}
+                    <span className="truncate" title={p.path ?? p.key}>
+                      {p.label ?? p.key}
                     </span>
                     <span className="tabular-nums">
                       {formatValue(metric === "cost_usd" ? p.cost_usd : p.tokens)}
