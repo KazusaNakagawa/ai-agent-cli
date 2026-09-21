@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -56,4 +56,24 @@ test("a missing template fails loudly", () => {
   const home = mkdtempSync(join(tmpdir(), "bl-home-"))
   const empty = mkdtempSync(join(tmpdir(), "bl-ex-"))
   assert.throws(() => ensureHome(home, empty), /briefing\.json\.example/)
+})
+
+test("a regenerated token over a world-readable empty file ends up 0600", () => {
+  const home = mkdtempSync(join(tmpdir(), "bl-home-"))
+  const tokenPath = join(home, "session-token")
+  writeFileSync(tokenPath, "")
+  chmodSync(tokenPath, 0o644)
+  ensureHome(home, examples())
+  assert.equal(statSync(tokenPath).mode & 0o777, 0o600)
+})
+
+test("an existing token with loose permissions is tightened, not replaced", () => {
+  const home = mkdtempSync(join(tmpdir(), "bl-home-"))
+  const tokenPath = join(home, "session-token")
+  writeFileSync(tokenPath, "keep-me\n")
+  chmodSync(tokenPath, 0o644)
+  const result = ensureHome(home, examples())
+  assert.equal(readFileSync(tokenPath, "utf8"), "keep-me\n")
+  assert.equal(statSync(tokenPath).mode & 0o777, 0o600)
+  assert.deepEqual(result.created, ["config/briefing.json"])
 })

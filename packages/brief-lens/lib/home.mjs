@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto"
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 const DIRS = ["config", "output", "log", "input", "runtime"]
@@ -15,7 +15,9 @@ function hasToken(path) {
 
 /**
  * Create the data home layout, seed required configs from the shipped
- * templates, and make sure a session token exists. Never overwrites user files.
+ * templates, and make sure a session token exists (mode 0600). Never
+ * overwrites user files — except an empty or whitespace-only session-token,
+ * which carries no value and is regenerated.
  * Returns the home-relative paths it created.
  */
 export function ensureHome(home, exampleDir) {
@@ -38,5 +40,8 @@ export function ensureHome(home, exampleDir) {
     writeFileSync(tokenPath, randomBytes(32).toString("base64url") + "\n", { mode: 0o600 })
     created.push("session-token")
   }
+  // `mode` only applies when the file is created, so enforce it explicitly:
+  // an existing (regenerated or kept) token must not stay world-readable.
+  chmodSync(tokenPath, 0o600)
   return { created, tokenPath }
 }
