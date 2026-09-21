@@ -4,17 +4,14 @@ import { mkdir, writeFile } from "fs/promises"
 import { NextResponse } from "next/server"
 import path from "path"
 
+import { inputRoot } from "@/lib/storage"
+
 // Generic (non-image) file attachments. Images keep their own dedicated route
 // (/api/images/upload) so the Claude Vision flow is unaffected.
 const ALLOWED_EXTS = new Set(["pdf", "csv", "txt", "md"])
 const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
 
-// Resolve storage root relative to process.cwd() which is always apps/web/ root.
-// In Next.js, __dirname in production points to .next/server/, not source tree.
-const STORAGE_ROOT = path.resolve(
-  process.cwd(),
-  "../../apps/python/input/attachments"
-)
+const STORAGE_ROOT = path.join(inputRoot(), "attachments")
 
 export async function POST(req: Request) {
   // Reject oversized requests before buffering the body.

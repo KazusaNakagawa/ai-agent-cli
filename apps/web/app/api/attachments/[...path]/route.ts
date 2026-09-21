@@ -2,10 +2,9 @@ import { readFile } from "fs/promises"
 import { NextResponse } from "next/server"
 import path from "path"
 
-const STORAGE_ROOT = path.resolve(
-  process.cwd(),
-  "../../apps/python/input/attachments"
-)
+import { inputRoot } from "@/lib/storage"
+
+const STORAGE_ROOT = path.join(inputRoot(), "attachments")
 
 // Content types keyed by extension. Anything else falls back to a generic
 // download so the browser doesn't try to render unknown formats inline.
