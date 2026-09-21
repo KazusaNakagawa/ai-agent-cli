@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto"
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 const DIRS = ["config", "output", "log", "input", "runtime"]
@@ -36,6 +36,11 @@ export function ensureHome(home, exampleDir) {
   // Same shape as the backend's secrets.token_urlsafe(32), so either side can
   // create it. Written here first so the API and web proxy agree from boot.
   const tokenPath = join(home, "session-token")
+  // Writing or chmod-ing through a symlink would touch its target instead of
+  // the token, so refuse rather than follow one.
+  if (lstatSync(tokenPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    throw new Error(`${tokenPath} is a symlink — remove it and run again`)
+  }
   if (!hasToken(tokenPath)) {
     writeFileSync(tokenPath, randomBytes(32).toString("base64url") + "\n", { mode: 0o600 })
     created.push("session-token")

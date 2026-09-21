@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -76,4 +76,17 @@ test("an existing token with loose permissions is tightened, not replaced", () =
   assert.equal(readFileSync(tokenPath, "utf8"), "keep-me\n")
   assert.equal(statSync(tokenPath).mode & 0o777, 0o600)
   assert.deepEqual(result.created, ["config/briefing.json"])
+})
+
+test("a session-token symlink is refused and its target left untouched", () => {
+  const home = mkdtempSync(join(tmpdir(), "bl-home-"))
+  const target = join(mkdtempSync(join(tmpdir(), "bl-victim-")), "victim")
+  writeFileSync(target, "")
+  chmodSync(target, 0o644)
+  symlinkSync(target, join(home, "session-token"))
+
+  assert.throws(() => ensureHome(home, examples()), /symlink/)
+  assert.equal(readFileSync(target, "utf8"), "")
+  assert.equal(statSync(target).mode & 0o777, 0o644)
+  assert.ok(lstatSync(join(home, "session-token")).isSymbolicLink())
 })
