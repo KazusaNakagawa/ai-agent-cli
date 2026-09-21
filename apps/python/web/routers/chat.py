@@ -636,6 +636,19 @@ def _display_path(path: Path) -> str:
     return path.name
 
 
+def _skill_workdir() -> Path:
+    """Working directory for the ``/notion-import`` skill subprocess.
+
+    The skill writes ``output/<slug>_<date>.md`` relative to its cwd. In the
+    clone layout that is the repo root; with a relocated data home
+    (``BRIEF_LENS_HOME``) it must be the data home, or the file would land
+    inside the installed package instead of ``paths.OUTPUT_DIR``.
+    """
+    if paths.DATA_HOME != paths.APP_ROOT:
+        return paths.DATA_HOME
+    return REPO_ROOT
+
+
 def _with_local_note(detail: str, local_path: Path | None, local_error: str | None) -> str:
     """Append the local-mirror outcome to a Notion-failure ``detail`` string.
 
@@ -705,6 +718,8 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
             ),
         )
 
+    workdir = _skill_workdir()
+    workdir.mkdir(parents=True, exist_ok=True)
     cmd = [
         claude_path,
         "-p",
@@ -712,7 +727,7 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
         "--permission-mode", "bypassPermissions",
         "--output-format", "stream-json",
         "--verbose",
-        "--add-dir", str(REPO_ROOT),
+        "--add-dir", str(workdir),
         "--model", body.model,
     ]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
@@ -732,7 +747,7 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
             timeout=NOTION_IMPORT_TIMEOUT_SEC,
             stdin=subprocess.DEVNULL,
             env=env,
-            cwd=str(REPO_ROOT),
+            cwd=str(workdir),
         )
     except subprocess.TimeoutExpired:
         logger.error("notion-import skill timed out after %ds", NOTION_IMPORT_TIMEOUT_SEC)
