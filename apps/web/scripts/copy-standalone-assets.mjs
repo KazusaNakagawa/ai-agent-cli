@@ -2,8 +2,9 @@
 // standalone server can serve them. Next.js documents this as a manual step.
 import { cpSync, existsSync } from "node:fs"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 
-const root = new URL("..", import.meta.url).pathname
+const root = fileURLToPath(new URL("..", import.meta.url))
 const standalone = join(root, ".next", "standalone")
 
 if (!existsSync(join(standalone, "server.js"))) {
