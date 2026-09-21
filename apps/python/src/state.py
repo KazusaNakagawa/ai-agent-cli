@@ -12,7 +12,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-STATE_FILE = Path.home() / ".ai-agent" / "state.json"
+from src import paths
+
+STATE_FILE = paths.STATE_DIR / "state.json"
 ALLOWED_AUTH_MODES: tuple[str, ...] = ("cli", "api")
 
 

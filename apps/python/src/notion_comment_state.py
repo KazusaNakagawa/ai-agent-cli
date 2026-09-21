@@ -10,11 +10,12 @@ import os
 import tempfile
 from pathlib import Path
 
+from src import paths
 from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-STATE_FILE = Path.home() / ".ai-agent" / "ingested_notion_comments.json"
+STATE_FILE = paths.STATE_DIR / "ingested_notion_comments.json"
 
 
 def read_seen_ids() -> set[str]:

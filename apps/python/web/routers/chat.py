@@ -61,6 +61,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from src import paths
 from src import chat_job_store
 from src import config
 from src import credentials as cred_mod
@@ -81,7 +82,7 @@ from web.auth import require_bearer
 logger = get_logger(__name__)
 # apps/python/web/routers/chat.py → repo root is parents[3] (chat.py → routers → web → python → apps → repo).
 REPO_ROOT = Path(__file__).resolve().parents[4]
-IMAGES_ROOT = REPO_ROOT / "apps" / "python" / "input" / "images"
+IMAGES_ROOT = paths.INPUT_DIR / "images"
 NOTION_URL_RE = re.compile(r"https://www\.notion\.so/[A-Za-z0-9\-]+")
 NOTION_IMPORT_TIMEOUT_SEC = 120
 # Allow-list of model aliases the user can pick from the UI. Anything else
@@ -89,8 +90,7 @@ NOTION_IMPORT_TIMEOUT_SEC = 120
 # a claude subprocess pinned to an unintended model.
 ChatNotionImportModel = Literal["sonnet", "opus", "haiku"]
 
-PYTHON_APP = Path(__file__).resolve().parents[2]  # apps/python/
-BRIEFING_DIR = PYTHON_APP / "output" / "briefing"
+BRIEFING_DIR = paths.OUTPUT_DIR / "briefing"
 SESSIONS_DIR = BRIEFING_DIR / ".sessions"
 
 # Drop a completed chat job from the store this many seconds after its
@@ -628,10 +628,12 @@ def _display_path(path: Path) -> str:
     while keeping the absolute filesystem layout out of API payloads — the same
     reason ``/briefing/files`` identifies its artifacts by name only.
     """
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return path.name
+    for root in (REPO_ROOT, paths.DATA_HOME):
+        try:
+            return str(path.relative_to(root))
+        except ValueError:
+            continue
+    return path.name
 
 
 def _with_local_note(detail: str, local_path: Path | None, local_error: str | None) -> str:

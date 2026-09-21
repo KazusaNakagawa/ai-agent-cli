@@ -22,6 +22,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from src import paths
 from src.credentials import get_credential
 from src.logger import get_logger
 
@@ -31,9 +32,12 @@ logger = get_logger(__name__)
 # Since credentials.get_credential() prefers values already in the keychain,
 # .env acts as the fallback when a key is not registered in the keychain.
 load_dotenv(Path(__file__).parents[2] / ".env")
+# An npx install has no repo root, so its .env lives in the data home instead.
+if paths.DATA_HOME != paths.APP_ROOT:
+    load_dotenv(paths.DATA_HOME / ".env")
 
-CONFIG_PATH = Path(os.getenv("BRIEFING_CONFIG_PATH", str(Path(__file__).parents[1] / "config" / "briefing.json")))
-XSS_INTEL_CONFIG_PATH = Path(__file__).parents[1] / "config" / "xss_intel.json"
+CONFIG_PATH = Path(os.getenv("BRIEFING_CONFIG_PATH", str(paths.CONFIG_DIR / "briefing.json")))
+XSS_INTEL_CONFIG_PATH = paths.CONFIG_DIR / "xss_intel.json"
 
 
 class Conflict(BaseModel):
