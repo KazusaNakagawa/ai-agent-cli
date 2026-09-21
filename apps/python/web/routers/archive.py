@@ -6,16 +6,16 @@ non-zero exit the endpoint returns 500 with an excerpt of stderr.
 """
 import re
 import subprocess
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from src import paths
 from web.auth import require_bearer
 
 router = APIRouter(dependencies=[Depends(require_bearer)])
 
-ARCHIVE_SCRIPT = Path(__file__).parents[2] / "bin" / "archive.sh"
+ARCHIVE_SCRIPT = paths.BIN_DIR / "archive.sh"
 _MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 _STDERR_EXCERPT = 2000
 
