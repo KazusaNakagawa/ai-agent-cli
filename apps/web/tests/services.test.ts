@@ -1,3 +1,4 @@
+import { Activity } from "lucide-react"
 import { describe, expect, it } from "vitest"
 import { SERVICES, serviceForPath } from "@/lib/services"
 
@@ -24,7 +25,7 @@ describe("SERVICES", () => {
   it("monitor owns exactly one item routed to /monitor", () => {
     const monitor = SERVICES.find((s) => s.id === "monitor")!
     expect(monitor.items).toEqual([
-      { href: "/monitor", label: "Monitor", icon: "📈" },
+      { href: "/monitor", label: "Monitor", icon: Activity },
     ])
   })
 
