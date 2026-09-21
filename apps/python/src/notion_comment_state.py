@@ -1,4 +1,6 @@
-"""Read and write ``~/.ai-agent/ingested_notion_comments.json``.
+"""Read and write ``ingested_notion_comments.json`` under ``paths.STATE_DIR``.
+
+``paths.STATE_DIR`` is ``$BRIEF_LENS_HOME`` when set, else ``~/.ai-agent``.
 
 Tracks which Notion comment IDs have already been ingested into the
 judgment learning loop (#396), so a re-run of the weekly batch doesn't

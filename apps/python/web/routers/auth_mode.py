@@ -1,7 +1,7 @@
 """GET / PUT /api/auth/mode — CLI / API モード切替。
 
 GET は現在のモードを返す。PUT は ``Literal["cli", "api"]`` でバリデートして
-``~/.ai-agent/state.json`` に永続化する。他の state フィールド
+``paths.STATE_DIR / "state.json"`` に永続化する。他の state フィールド
 (``onboarded`` / ``migrated_from_env``) は read-modify-write でそのまま温存。
 """
 from typing import Literal

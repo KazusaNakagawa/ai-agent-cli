@@ -1,4 +1,6 @@
-"""Read and write ``~/.ai-agent/state.json``.
+"""Read and write ``state.json`` under ``paths.STATE_DIR``.
+
+``paths.STATE_DIR`` is ``$BRIEF_LENS_HOME`` when set, else ``~/.ai-agent``.
 
 Per-host non-sensitive runtime state. Credentials live in the Keychain
 (``src.credentials``) and user settings (portfolio, etc.) in
