@@ -1,4 +1,5 @@
 "use client"
+import { Mic, Square } from "lucide-react"
 import { useEffect, useState, useRef, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -111,7 +112,7 @@ export function ChatComposer({
               aria-pressed={listening}
               title={listening ? "音声入力停止" : "音声入力開始 (ja-JP)"}
             >
-              {listening ? "🛑" : "🎤"}
+              {listening ? <Square aria-hidden className="h-4 w-4" /> : <Mic aria-hidden className="h-4 w-4" />}
             </Button>
           )}
           {busy ? (

@@ -1,4 +1,5 @@
 "use client"
+import { Mic, Square } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -282,7 +283,7 @@ export function JournalScreen() {
                           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                       )}
                     >
-                      {listening ? "🛑" : "🎤"}
+                      {listening ? <Square aria-hidden className="h-4 w-4" /> : <Mic aria-hidden className="h-4 w-4" />}
                     </button>
                   )}
                   {brainstorming && (

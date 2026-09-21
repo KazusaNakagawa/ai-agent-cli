@@ -1,4 +1,14 @@
 "use client"
+import {
+  ChartLine,
+  FileCog,
+  KeyRound,
+  Mail,
+  Package,
+  Palette,
+  Settings,
+  type LucideIcon,
+} from "lucide-react"
 import { useState } from "react"
 
 import { AppearancePanel } from "@/components/AppearancePanel"
@@ -20,17 +30,17 @@ import { cn } from "@/lib/utils"
 type Section = {
   key: string
   label: string
-  icon: string
+  icon: LucideIcon
   render: () => React.ReactNode
 }
 
 const SECTIONS: Section[] = [
-  { key: "usage", label: "Usage", icon: "📈", render: () => <UsageDashboard /> },
-  { key: "appearance", label: "Appearance", icon: "🎨", render: () => <AppearancePanel /> },
-  { key: "config-file", label: "Config file", icon: "📁", render: () => <ConfigFilePanel /> },
-  { key: "export", label: "Export data", icon: "📦", render: () => <OutputExportPanel /> },
-  { key: "credentials", label: "Credentials", icon: "📨", render: () => <CredentialsPanel /> },
-  { key: "auth", label: "Auth", icon: "🔑", render: () => <AuthPanel /> },
+  { key: "usage", label: "Usage", icon: ChartLine, render: () => <UsageDashboard /> },
+  { key: "appearance", label: "Appearance", icon: Palette, render: () => <AppearancePanel /> },
+  { key: "config-file", label: "Config file", icon: FileCog, render: () => <ConfigFilePanel /> },
+  { key: "export", label: "Export data", icon: Package, render: () => <OutputExportPanel /> },
+  { key: "credentials", label: "Credentials", icon: Mail, render: () => <CredentialsPanel /> },
+  { key: "auth", label: "Auth", icon: KeyRound, render: () => <AuthPanel /> },
 ]
 
 export function SettingsModal() {
@@ -63,7 +73,7 @@ export function SettingsModal() {
           aria-label="Config"
           className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-base font-semibold transition-colors hover:bg-accent/50"
         >
-          <span aria-hidden>⚙️</span>
+          <Settings aria-hidden className="h-4 w-4 shrink-0" />
           <span data-sidebar-label>Config</span>
         </button>
       </DialogTrigger>
@@ -101,7 +111,7 @@ export function SettingsModal() {
                   : "hover:bg-accent/50",
               )}
             >
-              <span aria-hidden>{s.icon}</span>
+              <s.icon aria-hidden className="h-4 w-4 shrink-0" />
               <span>{s.label}</span>
             </button>
           ))}
