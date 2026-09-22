@@ -28,3 +28,57 @@ jobs:
       - name: Test
         working-directory: packages/brief-lens
         run: npm test
+
+  # Build the real tarball, install it like a user would, and boot it until
+  # both servers answer. Catches packaging gaps unit tests cannot see.
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Pack
+        working-directory: packages/brief-lens
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+
+      - name: Install the tarball
+        run: |
+          mkdir "$RUNNER_TEMP/app" && cd "$RUNNER_TEMP/app"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund "$RUNNER_TEMP"/brief-lens-*.tgz
+          ./node_modules/.bin/brief-lens --version
+
+      - name: Boot smoke test
+        run: |
+          # Booting never calls claude; a stub satisfies the pre-flight check.
+          mkdir -p "$RUNNER_TEMP/stub" && printf '#!/bin/sh\nexit 0\n' > "$RUNNER_TEMP/stub/claude"
+          chmod +x "$RUNNER_TEMP/stub/claude"
+          export PATH="$RUNNER_TEMP/stub:$PATH"
+          "$RUNNER_TEMP/app/node_modules/.bin/brief-lens" --home "$RUNNER_TEMP/home" \
+            --port 3900 --api-port 8900 --no-browser > "$RUNNER_TEMP/boot.log" 2>&1 &
+          pid=$!
+          for _ in $(seq 1 300); do
+            if curl -fsS http://127.0.0.1:3900/api/health >/dev/null 2>&1; then break; fi
+            kill -0 "$pid" 2>/dev/null || { cat "$RUNNER_TEMP/boot.log"; exit 1; }
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8900/api/health
+          curl -fsS -o /dev/null http://127.0.0.1:3900/
+          kill -INT "$pid"; wait "$pid" || true
+          test -s "$RUNNER_TEMP/home/session-token"
+          test -f "$RUNNER_TEMP/home/config/briefing.json"

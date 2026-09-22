@@ -5,14 +5,15 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const root = fileURLToPath(new URL("..", import.meta.url))
-const standalone = join(root, ".next", "standalone")
+const distDir = process.env.NEXT_DIST_DIR || ".next"
+const standalone = join(root, distDir, "standalone")
 
 if (!existsSync(join(standalone, "server.js"))) {
-  console.error("copy-standalone-assets: .next/standalone/server.js not found — run `next build` first")
+  console.error(`copy-standalone-assets: ${distDir}/standalone/server.js not found — run \`next build\` first`)
   process.exit(1)
 }
 
-cpSync(join(root, ".next", "static"), join(standalone, ".next", "static"), { recursive: true })
+cpSync(join(root, distDir, "static"), join(standalone, distDir, "static"), { recursive: true })
 if (existsSync(join(root, "public"))) {
   cpSync(join(root, "public"), join(standalone, "public"), { recursive: true })
 }

@@ -20,6 +20,15 @@
     "directory": "packages/brief-lens"
   },
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs",
     "test": "node --test test/*.test.mjs"
-  }
+  },
+  "files": [
+    "bin",
+    "lib",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
 }
