@@ -191,7 +191,7 @@ cd apps/web && npm run test:e2e         # Playwright
 cd packages/brief-lens && npm test      # npx ランチャー（node:test）
 ```
 
-GitHub Actions が `dev` 向けのすべての Pull Request で実行する（[`pytest.yml`](.github/workflows/pytest.yml)、[`web.yml`](.github/workflows/web.yml)、[`launcher.yml`](.github/workflows/launcher.yml) — 最後のものは npm の tarball を作ってインストールし、起動まで確認する）。テストは `apps/python/tests/config/briefing.json` を読み込む。`conftest.py` が `src.config` の import より前に `BRIEFING_CONFIG_PATH` を固定するため、実行に個人設定は一切不要。
+GitHub Actions は `dev` 向けのすべての Pull Request で 3 つのワークフローを起動する。[`pytest.yml`](.github/workflows/pytest.yml) と [`web.yml`](.github/workflows/web.yml) は、それぞれ `apps/python/`・`apps/web/`（またはワークフロー自身）に変更があるときだけテストを実行する。[`launcher.yml`](.github/workflows/launcher.yml) は常に実行され、npm の tarball を作ってインストールし、起動まで確認する。テストは `apps/python/tests/config/briefing.json` を読み込む。`conftest.py` が `src.config` の import より前に `BRIEFING_CONFIG_PATH` を固定するため、実行に個人設定は一切不要。
 
 ---
 

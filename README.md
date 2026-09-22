@@ -191,7 +191,7 @@ cd apps/web && npm run test:e2e         # Playwright
 cd packages/brief-lens && npm test      # npx launcher (node:test)
 ```
 
-GitHub Actions runs them on every pull request to `dev` ([`pytest.yml`](.github/workflows/pytest.yml), [`web.yml`](.github/workflows/web.yml), [`launcher.yml`](.github/workflows/launcher.yml) — the last also packs the npm tarball, installs it and boots it). Tests load `apps/python/tests/config/briefing.json` — `conftest.py` pins `BRIEFING_CONFIG_PATH` before any `src.config` import, so no personal config is ever needed to run them.
+GitHub Actions starts all three workflows on every pull request to `dev`. [`pytest.yml`](.github/workflows/pytest.yml) and [`web.yml`](.github/workflows/web.yml) run their tests only when `apps/python/` or `apps/web/` (or the workflow itself) changed; [`launcher.yml`](.github/workflows/launcher.yml) always runs, and also packs the npm tarball, installs it and boots it. Tests load `apps/python/tests/config/briefing.json` — `conftest.py` pins `BRIEFING_CONFIG_PATH` before any `src.config` import, so no personal config is ever needed to run them.
 
 ---
 
