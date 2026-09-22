@@ -1,5 +1,8 @@
 # npx distribution (`npx brief-lens`)
 
+> **Status: implemented** (#485–#488). User-facing docs: [docs/guides/npx-quickstart.md](../guides/npx-quickstart.md).
+> This note keeps the original design rationale; the guide is the source of truth for current behavior.
+
 Goal: let a new user start the Web UI with a single command, without cloning the repo,
 in the same spirit as `npx mulmoterminal`.
 

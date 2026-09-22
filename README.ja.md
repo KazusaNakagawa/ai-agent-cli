@@ -92,6 +92,18 @@ apps/web/                         # Next.js UI — ブリーフィング閲覧�
 
 ## セットアップ
 
+### npx でクイックスタート
+
+Web UI だけなら clone 不要です。Node.js 18 以上、[uv](https://github.com/astral-sh/uv)、ログイン済みの [Claude Code CLI](https://claude.ai/code) が必要です。
+
+```bash
+npx brief-lens            # 初回は ~/.brief-lens と Python バックエンドを自動セットアップ
+```
+
+データは checkout とは別の `~/.brief-lens/` に保存されます。オプション、アップグレード、リリース手順は [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md) を参照。
+
+### ソースから
+
 **前提:** Python 3.11〜3.13（すべて CI で実行）、[uv](https://github.com/astral-sh/uv)、認証済みの [Claude Code CLI](https://claude.ai/code)、Discord Bot、Notion インテグレーション。
 
 ```bash
@@ -189,6 +201,7 @@ cd apps/web && npm run test:e2e         # Playwright
 | スケジュール実行（cron + pmset、代替手段） | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |
 | ブリーフィングのアーカイブ（月次 zip → rclone で Google Drive） | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | テストと依存関係の管理 | [docs/guides/testing.md](docs/guides/testing.md) |
+| npx でクイックスタート（`npx brief-lens`、データホーム、リリース手順） | [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md) |
 | Web UI のセットアップ | [docs/guides/web-ui-setup.md](docs/guides/web-ui-setup.md) |
 | 使用量モニタリング（Monitor タブ、Settings > Usage、コスト試算） | [docs/guides/usage-monitoring.md](docs/guides/usage-monitoring.md) |
 | ブリーフィング評価パイプライン | [docs/features/evaluation.md](docs/features/evaluation.md) |
