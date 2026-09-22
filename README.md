@@ -94,7 +94,7 @@ This is why **manual execution is the maintainer's current schedule** rather tha
 
 ### Quick start with npx
 
-Just the Web UI, no clone: needs Node.js 18+, [uv](https://github.com/astral-sh/uv) and a logged-in [Claude Code CLI](https://claude.ai/code).
+Just the Web UI, no clone: needs macOS or Linux, Node.js 18+, [uv](https://github.com/astral-sh/uv) and a logged-in [Claude Code CLI](https://claude.ai/code) on a paid Claude plan (Pro/Max).
 
 ```bash
 npx brief-lens            # first run sets up ~/.brief-lens and the Python backend
