@@ -24,7 +24,7 @@ The interesting problem here is not calling an LLM — it is making a non-determ
 
 ![Briefing viewer](docs/screenshots/briefing-viewer.png)
 
-<sub>The Web UI's briefing viewer — searchable archive on the left, rendered brief with a generated table of contents on the right. Every entry is one unattended 05:00 run.</sub>
+<sub>The Web UI's briefing viewer — searchable archive on the left, rendered brief with a generated table of contents on the right. Every entry is one daily briefing run (see the precondition below for why they are currently started by hand).</sub>
 
 ---
 
@@ -52,6 +52,7 @@ apps/python/
   config/briefing.json            # Portfolio, watch sectors, geopolitical risks
 
 apps/web/                         # Next.js UI — briefing viewer, chat, journal, usage monitor
+packages/brief-lens/              # `npx brief-lens` launcher — bootstraps ~/.brief-lens, runs API + Web UI
 ```
 
 **Key design decisions**
@@ -184,12 +185,13 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 ## Tests
 
 ```bash
-cd apps/python && .venv/bin/pytest -v   # 1,308 cases / 87 files
+cd apps/python && .venv/bin/pytest -v   # 1,341 cases / 89 files
 cd apps/web && npm test                 # vitest (unit + component)
 cd apps/web && npm run test:e2e         # Playwright
+cd packages/brief-lens && npm test      # npx launcher (node:test)
 ```
 
-Both suites run on push via GitHub Actions ([`pytest.yml`](.github/workflows/pytest.yml), [`web.yml`](.github/workflows/web.yml)). Tests load `apps/python/tests/config/briefing.json` — `conftest.py` pins `BRIEFING_CONFIG_PATH` before any `src.config` import, so no personal config is ever needed to run them.
+GitHub Actions starts all three workflows on every pull request to `dev`. [`pytest.yml`](.github/workflows/pytest.yml) and [`web.yml`](.github/workflows/web.yml) run their tests only when `apps/python/` or `apps/web/` (or the workflow itself) changed; [`launcher.yml`](.github/workflows/launcher.yml) always runs, and also packs the npm tarball, installs it and boots it. Tests load `apps/python/tests/config/briefing.json` — `conftest.py` pins `BRIEFING_CONFIG_PATH` before any `src.config` import, so no personal config is ever needed to run them.
 
 ---
 
