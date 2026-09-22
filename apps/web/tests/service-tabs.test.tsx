@@ -38,7 +38,7 @@ describe("ServiceTabs", () => {
       ).toBe(tab)
       expect(tab).not.toHaveAttribute("aria-label")
       expect(tab).not.toHaveAttribute("title")
-      expect(tab).toHaveTextContent(service.icon)
+      expect(tab.querySelector("svg")).toBeInTheDocument()
 
       // The label must only appear inside the sr-only span, not as visible text.
       const srOnly = tab.querySelector("span.sr-only")

@@ -53,3 +53,46 @@ def test_set_rejects_unknown_key():
 def test_delete_rejects_unknown_key():
     with pytest.raises(ValueError):
         credentials.delete_credential("HACKER_KEY")
+
+
+# --- keychain service per install (#488) ---
+
+
+def test_service_name_is_ai_agent_in_the_clone_layout(monkeypatch):
+    from src import paths
+
+    monkeypatch.setattr(paths, "DATA_HOME", paths.APP_ROOT)
+    assert credentials.service_name() == "ai-agent"
+
+
+def test_service_name_is_separate_for_a_relocated_install(monkeypatch, tmp_path):
+    """An npx install must not read the clone's keychain items: macOS would
+    prompt for every item because its python binary is not on their ACL."""
+    from src import paths
+
+    monkeypatch.setattr(paths, "DATA_HOME", tmp_path)
+    assert credentials.service_name() == "brief-lens"
+
+
+def test_reads_and_writes_use_the_resolved_service(monkeypatch, tmp_path):
+    from src import paths
+
+    calls = []
+
+    class _Spy:
+        def get_password(self, service, name):
+            calls.append(("get", service))
+            return None
+
+        def set_password(self, service, name, value):
+            calls.append(("set", service))
+
+        def delete_password(self, service, name):
+            calls.append(("delete", service))
+
+    monkeypatch.setattr(credentials, "_backend", _Spy())
+    monkeypatch.setattr(paths, "DATA_HOME", tmp_path)
+    credentials.get_credential("DISCORD_TOKEN")
+    credentials.set_credential("DISCORD_TOKEN", "x")
+    credentials.delete_credential("DISCORD_TOKEN")
+    assert calls == [("get", "brief-lens"), ("set", "brief-lens"), ("delete", "brief-lens")]

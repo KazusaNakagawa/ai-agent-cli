@@ -4,18 +4,19 @@ Invokes ``apps/python/bin/archive.sh`` via subprocess. The target month is
 optional and defaults to the previous month (decided by the script). On a
 non-zero exit the endpoint returns 500 with an excerpt of stderr.
 """
+import os
 import re
 import subprocess
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from src import paths
 from web.auth import require_bearer
 
 router = APIRouter(dependencies=[Depends(require_bearer)])
 
-ARCHIVE_SCRIPT = Path(__file__).parents[2] / "bin" / "archive.sh"
+ARCHIVE_SCRIPT = paths.BIN_DIR / "archive.sh"
 _MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 _STDERR_EXCERPT = 2000
 
@@ -42,7 +43,14 @@ def post_archive(
     # No command injection: args are passed as a list (no shell=True), the only
     # dynamic value (month) is regex-validated to ^\d{4}-\d{2}$ above, and the
     # binary path is a fixed constant.
-    result = subprocess.run(cmd, capture_output=True, text=True)  # noqa: S603
+    # archive.sh defaults to repo-relative dirs; pass the resolved data-home
+    # dirs so a relocated install (BRIEF_LENS_HOME) archives the right files.
+    env = {
+        **os.environ,
+        "ARCHIVE_BRIEFING_DIR": str(paths.OUTPUT_DIR / "briefing"),
+        "ARCHIVE_OUTPUT_DIR": str(paths.OUTPUT_DIR / "archive"),
+    }
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)  # noqa: S603
     if result.returncode != 0:
         excerpt = result.stderr.strip()[-_STDERR_EXCERPT:]
         raise HTTPException(

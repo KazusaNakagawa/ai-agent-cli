@@ -92,6 +92,18 @@ This is why **manual execution is the maintainer's current schedule** rather tha
 
 ## Setup
 
+### Quick start with npx
+
+Just the Web UI, no clone: needs macOS or Linux, Node.js 18+, [uv](https://github.com/astral-sh/uv) and a logged-in [Claude Code CLI](https://claude.ai/code) on a paid Claude plan (Pro/Max).
+
+```bash
+npx brief-lens            # first run sets up ~/.brief-lens and the Python backend
+```
+
+Data lives in `~/.brief-lens/`, separate from a checkout. Options, upgrade and release steps: [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md).
+
+### From source
+
 **Prerequisites:** Python 3.11–3.13 (every version runs in CI), [uv](https://github.com/astral-sh/uv), [Claude Code CLI](https://claude.ai/code) authenticated, Discord Bot, Notion integration.
 
 ```bash
@@ -189,6 +201,7 @@ Both suites run on push via GitHub Actions ([`pytest.yml`](.github/workflows/pyt
 | Scheduled execution (cron + pmset, alternative) | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |
 | Briefing archive (monthly zip → Google Drive via rclone) | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | Testing & dependency management | [docs/guides/testing.md](docs/guides/testing.md) |
+| Quick start with npx (`npx brief-lens`, data home, releasing) | [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md) |
 | Web UI setup | [docs/guides/web-ui-setup.md](docs/guides/web-ui-setup.md) |
 | Usage monitoring (Monitor tab, Settings > Usage, cost estimates) | [docs/guides/usage-monitoring.md](docs/guides/usage-monitoring.md) |
 | Briefing evaluation pipeline | [docs/features/evaluation.md](docs/features/evaluation.md) |
