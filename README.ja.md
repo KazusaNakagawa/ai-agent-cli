@@ -24,7 +24,7 @@ Bloomberg や NewsPicks が見せるのは生のデータ。このエージェ�
 
 ![ブリーフィングビューア](docs/screenshots/briefing-viewer.png)
 
-<sub>Web UI のブリーフィングビューア。左が検索可能なアーカイブ、右が目次付きでレンダリングされた本文。一覧の各エントリが、無人で実行された 1 回分の朝 5 時のランに対応する。</sub>
+<sub>Web UI のブリーフィングビューア。左が検索可能なアーカイブ、右が目次付きでレンダリングされた本文。一覧の各エントリが 1 回分の日次ブリーフィングに対応する（現在は手動で起動している。理由は下の前提条件を参照）。</sub>
 
 ---
 
@@ -52,6 +52,7 @@ apps/python/
   config/briefing.json            # ポートフォリオ、ウォッチセクター、地政学リスク
 
 apps/web/                         # Next.js UI — ブリーフィング閲覧、チャット、ジャーナル、使用量モニター
+packages/brief-lens/              # `npx brief-lens` ランチャー — ~/.brief-lens を準備し API と Web UI を起動
 ```
 
 **主要な設計判断**
@@ -184,12 +185,13 @@ cd apps/python
 ## テスト
 
 ```bash
-cd apps/python && .venv/bin/pytest -v   # 1,308 ケース / 87 ファイル
+cd apps/python && .venv/bin/pytest -v   # 1,341 ケース / 89 ファイル
 cd apps/web && npm test                 # vitest（ユニット + コンポーネント）
 cd apps/web && npm run test:e2e         # Playwright
+cd packages/brief-lens && npm test      # npx ランチャー（node:test）
 ```
 
-両スイートとも push 時に GitHub Actions で実行される（[`pytest.yml`](.github/workflows/pytest.yml)、[`web.yml`](.github/workflows/web.yml)）。テストは `apps/python/tests/config/briefing.json` を読み込む。`conftest.py` が `src.config` の import より前に `BRIEFING_CONFIG_PATH` を固定するため、実行に個人設定は一切不要。
+GitHub Actions が `dev` 向けのすべての Pull Request で実行する（[`pytest.yml`](.github/workflows/pytest.yml)、[`web.yml`](.github/workflows/web.yml)、[`launcher.yml`](.github/workflows/launcher.yml) — 最後のものは npm の tarball を作ってインストールし、起動まで確認する）。テストは `apps/python/tests/config/briefing.json` を読み込む。`conftest.py` が `src.config` の import より前に `BRIEFING_CONFIG_PATH` を固定するため、実行に個人設定は一切不要。
 
 ---
 
