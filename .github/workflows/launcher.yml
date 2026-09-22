@@ -1,0 +1,30 @@
+name: launcher
+
+# Unit tests for the `npx brief-lens` launcher (packages/brief-lens). The job
+# is named `launcher` so its status context stays distinct from `web` and
+# `test` (see #447). No dependencies to install, so it is cheap to run always.
+on:
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  launcher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        node-version: ["18", "24"]
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Test
+        working-directory: packages/brief-lens
+        run: npm test

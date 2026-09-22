@@ -1,0 +1,25 @@
+{
+  "name": "brief-lens",
+  "version": "0.1.0",
+  "description": "Personal market-intelligence briefing agent — local Web UI driven by the Claude Code CLI",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "brief-lens": "bin/brief-lens.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KazusaNakagawa/ai-agent-cli.git",
+    "directory": "packages/brief-lens"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
