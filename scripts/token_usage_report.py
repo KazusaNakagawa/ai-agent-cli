@@ -85,6 +85,13 @@ def main(argv: list[str] | None = None) -> None:
             "  Unpriced models (excluded from cost): "
             + ", ".join(sorted(report.unpriced_models))
         )
+    # Approximate on purpose, and worth saying so next to the number rather
+    # than leaving "estimate" to imply it.
+    print(
+        "  Rough guide only: rates are hand-maintained from published pricing,\n"
+        "  server-side tool use (web search) is not counted, and cache writes with\n"
+        "  no recorded TTL fall back to the cheaper 5-minute rate."
+    )
 
 
 if __name__ == "__main__":

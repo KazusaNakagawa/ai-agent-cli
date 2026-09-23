@@ -180,7 +180,7 @@ def test_cli_output_contains_tables_and_estimate_label(projects_root: Path, caps
 def test_rates_shared_with_sdd_script():
     import sdd_token_cost
 
-    assert sdd_token_cost.RATES is RATES
+    assert sdd_token_cost.claude_rates.RATES is RATES
 
 
 # --- cache-write TTL pricing ---
