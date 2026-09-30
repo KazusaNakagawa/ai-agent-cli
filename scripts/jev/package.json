@@ -1,0 +1,9 @@
+{
+  "name": "jev-experiments",
+  "private": true,
+  "type": "module",
+  "description": "Ad hoc experiments against typesafe-ai/jev via Vercel AI Gateway",
+  "dependencies": {
+    "ai": "^7.0.123"
+  }
+}
