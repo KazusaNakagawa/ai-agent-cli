@@ -12,6 +12,7 @@ Usage (from repo root):
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import sys
@@ -23,8 +24,11 @@ CAP = 20_000  # characters of follow-up text kept per claim
 SEED = 42
 
 REPO = Path(__file__).resolve().parents[2]
-EVAL = REPO / "apps/python/output/eval"
-BRIEF = REPO / "apps/python/output/briefing"
+# Mirrors apps/python/src/paths.resolve_data_home(): BRIEF_LENS_HOME wins when set.
+_home = os.environ.get("BRIEF_LENS_HOME", "").strip()
+DATA_HOME = Path(_home).expanduser().resolve() if _home else REPO / "apps/python"
+EVAL = DATA_HOME / "output/eval"
+BRIEF = DATA_HOME / "output/briefing"
 OUT = Path(__file__).resolve().parent / "job.json"
 
 _BRIEFING_RE = re.compile(r"^briefing_(\d{4}-\d{2}-\d{2})\.md$")
@@ -42,6 +46,9 @@ def followup_dates(base: str, horizon: int, all_dates: list[str]) -> list[str]:
 
 def main() -> None:
     sample_size = int(sys.argv[1]) if len(sys.argv) > 1 else 20
+    for d in (EVAL, BRIEF):
+        if not d.is_dir():
+            sys.exit(f"missing {d}: run the briefing and evaluator first, or set BRIEF_LENS_HOME")
     all_dates = briefing_dates()
     bodies: dict[str, str] = {}
 
@@ -77,6 +84,9 @@ def main() -> None:
                 "baseline_verdict": score["verdict"],
                 "baseline_confidence": score["confidence"],
             })
+
+    if not rows:
+        sys.exit(f"no eligible claims under {EVAL} (need scored, resolved claims with follow-up briefings in {BRIEF})")
 
     random.seed(SEED)
     sample = random.sample(rows, min(sample_size, len(rows)))
