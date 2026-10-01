@@ -25,6 +25,8 @@ a card on file alone is not enough.
 | `try-jev.mjs` | Smoke test. One news item, one question of each answer type. |
 | `make_job.py` | Builds `job.json` from `apps/python/output/eval/` and the follow-up briefings (fixed seed, reproducible). |
 | `compare.mjs` | Runs the eval-judge verdict question against a `job.json` sample and compares with the baseline verdicts produced by `run_claude`. |
+| `make_money_job.py` | Builds `money-job.json` from the household ledger: one row per distinct description, with names, branches and account numbers redacted. |
+| `money.mjs` | Classifies every `money-job.json` row in a single request (one `choice` question per row) and scores against the rule categories. |
 
 `compare.mjs` expects `job.json` in this directory: an array of claims carrying
 `theme`, `direction`, `targets`, `horizon_days`, `type`, `followups` and

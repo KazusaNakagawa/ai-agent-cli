@@ -56,3 +56,4 @@ scripts/jev/node_modules
 # Jev experiment data (contains briefing bodies and personal claims)
 scripts/jev/job.json
 scripts/jev/*result*.json
+scripts/jev/money-*.json
