@@ -1,5 +1,5 @@
 // Classify household-ledger descriptions with typesafe-ai/jev.
-// Reads money-job.json, writes money-result.json.
+// Reads money-job.json, writes results/money-<timestamp>.json.
 //
 // All descriptions go into one request as separate choice questions over one
 // shared state, so the run costs a single call and does not hit the upstream
@@ -7,7 +7,8 @@
 //
 // Usage: node money.mjs
 import { experimental_evaluate as evaluate } from 'ai';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { saveResult } from './results.mjs';
 
 const dir = new URL('.', import.meta.url).pathname;
 const items = JSON.parse(readFileSync(dir + 'money-job.json', 'utf-8'));
@@ -53,7 +54,7 @@ const results = items.map((it, i) => {
   const top = Math.max(...Object.values(a.probabilities));
   return { ...it, jev: a.choice, p: Number(top.toFixed(2)), probabilities: a.probabilities };
 });
-writeFileSync(dir + 'money-result.json', JSON.stringify({ latency_ms: latency, usage: r.usage, results }, null, 2));
+saveResult('money', { latency_ms: latency, usage: r.usage, results });
 
 const labeled = results.filter((x) => x.expected);
 const agree = labeled.filter((x) => x.jev === x.expected);

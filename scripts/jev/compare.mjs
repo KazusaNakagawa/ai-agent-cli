@@ -1,12 +1,13 @@
 // Compare typesafe-ai/jev against the current eval-judge baseline (run_claude).
-// Reads job.json, asks Jev the same verdict question, writes compare-result.json.
+// Reads job.json, asks Jev the same verdict question, writes results/compare-<timestamp>.json.
 //
 // Jev's upstream rejects bursts with a 429 ("No access to this model at this
 // time"), so calls are paced and retried well beyond the SDK default.
 //
 // Usage: node compare.mjs [limit] [delaySeconds]
 import { experimental_evaluate as evaluate } from 'ai';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { saveResult } from './results.mjs';
 
 const dir = new URL('.', import.meta.url).pathname;
 const limit = Number(process.argv[2] ?? 20);
@@ -74,7 +75,7 @@ for (const [i, c] of claims.entries()) {
 }
 process.stdout.write('\n');
 
-writeFileSync(dir + 'compare-result.json', JSON.stringify(results, null, 2));
+saveResult('compare', { limit, delay_seconds: delayMs / 1000, results });
 
 const ok = results.filter((r) => !r.error);
 const agree = ok.filter((r) => r.jev === r.baseline);

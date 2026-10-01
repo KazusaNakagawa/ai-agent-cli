@@ -1,6 +1,8 @@
 // One-shot smoke test for typesafe-ai/jev through Vercel AI Gateway.
 // Requires AI_GATEWAY_API_KEY in the environment. Run: node try-jev.mjs
+// Writes results/try-jev-<timestamp>.json.
 import { experimental_evaluate as evaluate } from 'ai';
+import { saveResult } from './results.mjs';
 
 if (!process.env.AI_GATEWAY_API_KEY) {
   console.error('AI_GATEWAY_API_KEY is not set in this shell.');
@@ -56,3 +58,4 @@ console.log(JSON.stringify(result.answers, null, 2));
 console.log(`\nlatency: ${elapsed}ms`);
 console.log('usage:', JSON.stringify(result.usage));
 if (result.warnings?.length) console.log('warnings:', JSON.stringify(result.warnings));
+saveResult('try-jev', { latency_ms: elapsed, answers: result.answers, usage: result.usage, warnings: result.warnings ?? [] });
