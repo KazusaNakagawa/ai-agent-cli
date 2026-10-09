@@ -93,9 +93,10 @@ def test_unknown_model_still_costs_zero_and_is_reported(tmp_path):
 # --- boundary ---
 
 
-def test_synthetic_pseudo_model_is_not_reported_as_unpriced(tmp_path):
+def test_synthetic_pseudo_model_is_not_reported_as_unpriced(tmp_path, caplog):
     # Claude Code writes zero-usage "<synthetic>" messages; they are not a
-    # real model and must not trip the unpriced warning.
+    # real model and must not trip the unpriced warning, but the dashboard
+    # still lists (and labels) them in the per-model breakdown.
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "s.jsonl").write_text(
@@ -112,8 +113,11 @@ def test_synthetic_pseudo_model_is_not_reported_as_unpriced(tmp_path):
         )
         + "\n"
     )
-    report = usage_monitor.aggregate(tmp_path)
+    with caplog.at_level(logging.WARNING, logger="src.claude_rates"):
+        report = usage_monitor.aggregate(tmp_path)
     assert report.unpriced_models == set()
+    assert report.by_model["<synthetic>"].cost == 0
+    assert "no rate table entry" not in caplog.text
 
 
 def test_zero_usage_costs_zero_for_priced_model():

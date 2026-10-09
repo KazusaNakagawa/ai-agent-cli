@@ -32,8 +32,9 @@ USAGE_KEYS = (
 )
 
 # Claude Code writes zero-usage placeholder messages (e.g. for interrupted
-# turns) under this model id. It is not a billable model, so skip it rather
-# than reporting it as unpriced.
+# turns) under this model id. It is not a billable model: it stays in the
+# per-model breakdown (the UI labels it) but is never priced or reported as
+# unpriced.
 SYNTHETIC_MODEL = "<synthetic>"
 
 
@@ -146,16 +147,16 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
                 if (since and date < since) or (until and date > until):
                     continue
 
-                model = msg.get("model", "unknown")
-                if model == SYNTHETIC_MODEL:
-                    continue
-
                 counted += 1
                 usage = msg["usage"]
+                model = msg.get("model", "unknown")
                 tokens = sum(usage.get(k, 0) for k in USAGE_KEYS)
-                cost = usage_cost(usage, model)
-                if model not in RATES:
-                    report.unpriced_models.add(model)
+                if model == SYNTHETIC_MODEL:
+                    cost = 0.0
+                else:
+                    cost = usage_cost(usage, model)
+                    if model not in RATES:
+                        report.unpriced_models.add(model)
 
                 date_models = report.by_date_model.setdefault(date, {})
                 for bucket_map, key in (

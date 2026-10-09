@@ -65,8 +65,8 @@ transcripts and the result lives only in memory.
 Matching is exact on purpose — substring matching mis-maps as model ids evolve.
 A model missing from the table costs `$0` and is surfaced in the response as
 `unpriced_models`, which the UI renders as an amber warning line. Claude Code's
-zero-usage `<synthetic>` placeholder messages are skipped entirely, so they
-never appear there.
+zero-usage `<synthetic>` placeholder is the one exception: it still appears in
+the per-model breakdown but is never priced, so it is not listed there.
 
 Cache writes are billed by TTL: a 1-hour write costs **2x** input where a
 5-minute write costs 1.25x. `usage_cost()` splits
