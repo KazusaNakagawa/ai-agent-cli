@@ -98,12 +98,12 @@ def test_rates_load_in_declared_field_order(tmp_path):
 
 def test_cache_multipliers_hold_for_every_model_without_published_overrides():
     # 5-minute write is 1.25x input and 1-hour write is 2x input on every
-    # current model; only claude-fable-5-1 publishes a non-standard cache read.
+    # current model; a few publish a non-standard cache read multiplier.
+    read_overrides = {"claude-fable-5-1": 0.025, "claude-opus-5-5": 0.05, "claude-sonnet-5-5": 0.05}
     for model, (inp, _, cw5m, cw1h, cr) in claude_rates.RATES.items():
         assert cw5m == pytest.approx(inp * 1.25), model
         assert cw1h == pytest.approx(inp * 2.0), model
-        if model != "claude-fable-5-1":
-            assert cr == pytest.approx(inp * 0.1), model
+        assert cr == pytest.approx(inp * read_overrides.get(model, 0.1)), model
 
 
 # --- failure ---
