@@ -123,6 +123,18 @@ def test_non_finite_rates_are_rejected(tmp_path, literal):
         claude_rates.load_rates(path)
 
 
+def test_an_integer_too_large_for_a_float_is_a_value_error(tmp_path):
+    # json parses this as an int; converting it to float overflows.
+    path = tmp_path / "r.json"
+    fields = ", ".join(
+        f'"{name}": {"1" + "0" * 400 if name == "output" else 1}' for name in claude_rates.RATE_FIELDS
+    )
+    path.write_text('{"rates": {"m": {%s}}}' % fields)
+
+    with pytest.raises(ValueError, match="non-finite"):
+        claude_rates.load_rates(path)
+
+
 def test_missing_file_names_the_path(tmp_path):
     with pytest.raises(FileNotFoundError, match="model_rates.json"):
         claude_rates.load_rates(tmp_path / "model_rates.json")

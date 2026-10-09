@@ -67,11 +67,16 @@ def load_rates(path: Path) -> dict[str, tuple[float, float, float, float, float]
             value = fields[name]
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(f"{path}: {model!r} has a non-numeric {name!r} rate")
-            if not math.isfinite(value):
+            try:
+                rate = float(value)
+            except OverflowError:
+                # A JSON integer can exceed the float range.
+                rate = math.inf
+            if not math.isfinite(rate):
                 raise ValueError(f"{path}: {model!r} has a non-finite {name!r} rate")
-            if value < 0:
+            if rate < 0:
                 raise ValueError(f"{path}: {model!r} has a negative {name!r} rate")
-            values.append(float(value))
+            values.append(rate)
         table[model] = tuple(values)  # type: ignore[assignment]
     return table
 
