@@ -12,6 +12,17 @@ All costs on both screens are **API-equivalent estimates**. Usage runs on a
 Claude Pro/Max subscription, so the dollar figures are a "what this would have
 cost on the API" yardstick, not a bill.
 
+Treat them as a rough guide — good enough to see scale and spot a spike, not
+good enough to reconcile against anything. Three known gaps, surfaced in the UI
+under *Why the numbers are approximate* and printed by the CLI report:
+
+- **Rates are hand-maintained** from published pricing. There is no pricing API,
+  so an upstream change lands here late — see [Drift detection](#2b-drift-detection--appspythonsrcrate_checkpy).
+- **Server-side tool use is not counted.** Web search bills `$0.01` per request
+  on top of tokens and never reaches the total.
+- **Cache writes with no recorded TTL** fall back to the cheaper 5-minute rate,
+  so those entries read low.
+
 ## Monitor: where the data comes from
 
 Nothing is stored locally for the Monitor tab. Each request re-scans the
@@ -48,25 +59,35 @@ transcripts and the result lives only in memory.
 - `since` / `until` are inclusive `YYYY-MM-DD` filters applied to that local date.
 - Buckets are produced per project, per date, per model, and per (date, model)
   for the stacked chart.
-- The project bucket key is the transcript **directory name**
-  (`-Users-you-work-english-learn-app`), a lossy encoding of the path: `/`, `_`
-  and `.` all collapse to `-`, so it cannot be decoded back. The real directory
-  is read from the `cwd` field the transcript lines carry — first non-empty one
-  wins — and kept in `Report.project_paths`. Transcripts without a `cwd` simply
-  have no entry there.
-- `abbreviate_home()` renders a path with `~` standing in for the home
-  directory. A path outside home (`/home/node/…` from a container) is returned
-  unchanged.
 
 ### 2. Pricing — [`apps/python/src/claude_rates.py`](../../apps/python/src/claude_rates.py)
 
-`RATES` maps an **exact** model id to
+The rates live in [`apps/python/src/model_rates.json`](../../apps/python/src/model_rates.json)
+— tracked in git, and under `src/` rather than `config/` because the npm build
+ships only `*.example` templates from `config/` — and `claude_rates.RATES`
+loads them into a dict of **exact** model id →
 `(input, output, cache_write_5m, cache_write_1h, cache_read)` USD per 1M tokens.
 Matching is exact on purpose — substring matching mis-maps as model ids evolve.
-A model missing from the table costs `$0` and is surfaced in the response as
-`unpriced_models`, which the UI renders as an amber warning line. Claude Code's
-zero-usage `<synthetic>` placeholder is the one exception: it still appears in
-the per-model breakdown but is never priced, so it is not listed there.
+Every field is required per model: a partially specified model is rejected
+rather than defaulted, because a silent `0` for one component is the failure the
+file exists to prevent. The table is read on **first use, not at import**
+(module-level `__getattr__`, mirroring `src.config.CONFIG`) — loading eagerly
+made a typo in the JSON raise during the import of anything that touched the
+module, including the checker whose job is to diagnose that file. Reach it
+through the module (`claude_rates.RATES`); a `from src.claude_rates import
+RATES` at module scope resolves it at import time and gives the eager behaviour
+back. A model missing from the table costs `$0` and is
+surfaced in the response as `unpriced_models`, which the UI renders as an amber
+warning line. Claude Code's zero-usage `<synthetic>` placeholder is the one
+exception: it still appears in the per-model breakdown but is never priced, so
+it is not listed there.
+
+**Rates cannot be fetched automatically.** The Models API
+(`client.models.list()` / `.retrieve()`) returns `id`, `display_name`,
+`created_at`, `max_input_tokens`, `max_tokens` and `capabilities` — there is no
+price field, and no other pricing endpoint exists. The table is therefore
+hand-maintained, and [`src/rate_check.py`](../../apps/python/src/rate_check.py)
+is what stops that from failing silently.
 
 Cache writes are billed by TTL: a 1-hour write costs **2x** input where a
 5-minute write costs 1.25x. `usage_cost()` splits
@@ -78,8 +99,57 @@ the total by roughly 12%.
 
 When a new model appears in that warning, add its id and published rates from
 the [pricing doc](https://platform.claude.com/docs/en/about-claude/pricing.md)
-to `RATES` — check the cache-hit footnotes, since some models (Fable 5.1,
-Opus/Sonnet 5.5) price reads below the standard 0.1x. The same table backs the CLI report and `scripts/sdd_token_cost.py`.
+to `model_rates.json` — check the cache-hit footnotes, since some models
+(Fable 5.1, Opus/Sonnet 5.5) price reads below the standard 0.1x. The same table backs the CLI report and
+`scripts/sdd_token_cost.py`.
+
+### 2b. Drift detection — [`apps/python/src/rate_check.py`](../../apps/python/src/rate_check.py)
+
+```bash
+python3 scripts/check_model_rates.py                       # default transcript root and table
+python3 scripts/check_model_rates.py --transcripts /path --rates /path/rates.json
+python3 scripts/check_model_rates.py --check-upstream      # also diff against the pricing doc
+bin/workflow.sh run model-rates                            # the daily gate (last step of bin/run.sh)
+```
+
+`scripts/check_model_rates.py` is a thin wrapper over `src.rate_check`, which
+the `model-rates` workflow imports directly. The script exits non-zero on either
+of two findings; the workflow **fails** on an unpriced model, so a new model
+breaks the next morning's `bin/run.sh`, and only **warns** on drift, since that
+can be a price change mid-flight that needs a human to read the pricing doc:
+
+- **Unpriced models** — a model id appears in transcript `message.usage`
+  entries with no entry in the table. This is the failure that let
+  `claude-opus-5` report `$0` for three weeks. `<synthetic>` is exempt: it is a
+  CLI-internal message, not a model call.
+- **Rate drift** — Claude Code writes `{"type": "cost-state"}` records carrying
+  a per-model `modelUsage` breakdown and the `costUSD` it charged. Recomputing
+  that from the table and comparing catches a published price change, a new
+  cache tier, or a typo in the config.
+
+The comparison **brackets** rather than equates. `modelUsage` reports one
+combined `cacheCreationInputTokens` with no 5-minute/1-hour split, and the two
+TTLs are priced differently, so the real cost can land anywhere between an
+all-5m and an all-1h reading. A record outside that bracket is drift; one
+inside it is consistent with some split.
+
+That bracket is also the blind spot, and worth knowing before trusting a pass:
+on a write-heavy record the spread is wide, so a rate error smaller than it goes
+unseen. Records with few or no cache writes are where the check has teeth —
+there the bracket collapses to a point and a cent of error shows. Records using
+web search are skipped entirely: those bill `$0.01` per request on top of
+tokens, which the table does not model.
+
+`--check-upstream` diffs the table against the
+[pricing doc](https://platform.claude.com/docs/en/about-claude/pricing.md) and
+prints `changed` / `not in table` / `not in pricing doc` lines. It never writes
+the table and never changes the exit code — the doc is a web page, not an API
+contract. Models priced in tiers by prompt length (Claude Haiku 5.5) are listed
+as `tiered, not modelled`: one rate tuple cannot express them.
+
+Reconciliation in tests runs against `scripts/tests/fixtures/cost_state.jsonl`,
+real records checked into the repo, so CI does not depend on the operator's
+local transcripts.
 
 ### 3. API — `GET /api/usage/monitor`
 
@@ -98,9 +168,6 @@ curl -H "Authorization: Bearer $TOKEN" \
 - Response: `total_tokens`, `total_cost_usd`, `by_project`, `by_date` (each with
   a nested `models` split), `by_model`, `unpriced_models`. Buckets are sorted by
   cost, descending.
-- Project buckets also carry `path` (absolute) and `label` (home-abbreviated).
-  Both are `null` when the transcripts revealed no `cwd`; the `key` stays the
-  bucket's identity either way.
 - **Cache**: scanning the whole transcript tree is expensive, so identical
   `(root, since, until)` queries are served from an in-process dict for **60
   seconds**, capped at 32 entries (oldest evicted). It is guarded by a lock
@@ -119,8 +186,6 @@ curl -H "Authorization: Bearer $TOKEN" \
 - The response is held in React `useState` for the life of the page. There is
   **no `localStorage`, no IndexedDB, and no client-side cache** — a reload
   re-fetches.
-- The **By project** list shows the `label` with the absolute `path` as its
-  tooltip, falling back to the raw directory key when both are `null`.
 - Model colors come from `buildModelColorMap()`, which assigns theme-aware CSS
   custom properties (`--series-1` …) by **sorted model id**, so a model keeps the
   same color across charts and renders.
@@ -161,7 +226,8 @@ python3 scripts/token_usage_report.py /path/to/other/projects  # alternate trans
 | Symptom | Cause / fix |
 |---|---|
 | `No transcript usage found for this range.` | No `message.usage` lines in `~/.claude/projects` for those dates. Widen the range to **All time** to confirm the root is being found at all. |
-| `Unpriced models (excluded from cost): …` | The model id is missing from `RATES`. Add it to `apps/python/src/claude_rates.py` with its published rates. |
+| `Unpriced models (excluded from cost): …` | The model id is missing from the rate table. Add it to `apps/python/src/model_rates.json` with its published rates, then re-run `scripts/check_model_rates.py`. |
+| `model-rates` workflow failed in `bin/run.sh` | Same cause, caught by the daily gate — the error names the missing ids. |
 | `<synthetic>` appears as a model | CLI-internal messages, not real model calls. Shown for completeness and labelled as such in the UI. |
 | Monitor and Settings > Usage disagree | Expected — different data sources (all Claude Code traffic vs. this app's runs). Neither is wrong. |
 | A change in usage does not show up | The API caches identical queries for 60 seconds. Wait, or switch range and back. |

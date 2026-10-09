@@ -87,8 +87,13 @@ describe("MonitorDashboard", () => {
     // Project and model breakdowns.
     expect(screen.getByTestId("monitor-by-project")).toHaveTextContent("proj-a")
     expect(screen.getByTestId("monitor-by-model")).toHaveTextContent("claude-sonnet-5")
-    // API-equivalent estimate disclaimer.
+    // Accuracy caveat: the headline disclaimer plus the collapsed detail that
+    // says which known gaps make the figures approximate.
     expect(screen.getByText(/API-equivalent/i)).toBeInTheDocument()
+    const note = screen.getByTestId("monitor-accuracy-note")
+    expect(note).toHaveTextContent(/maintained by hand/i)
+    expect(note).toHaveTextContent(/web search/i)
+    expect(note).toHaveTextContent(/5-minute rate/i)
   })
 
   it("flags unpriced models", async () => {
