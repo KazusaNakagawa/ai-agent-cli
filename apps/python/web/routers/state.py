@@ -1,4 +1,4 @@
-"""GET / PUT /api/state — ``~/.ai-agent/state.json`` の読み書き。
+"""GET / PUT /api/state — ``paths.STATE_DIR / "state.json"`` の読み書き。
 
 ``auth_mode`` 専用の ``/api/auth/mode`` と違い、こちらは state.json 全体を返す
 / 部分更新できる汎用エンドポイント。オンボーディングウィザードが

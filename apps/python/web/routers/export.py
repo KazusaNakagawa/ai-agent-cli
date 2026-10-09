@@ -14,13 +14,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
+from src import paths
 from web.auth import require_bearer
 
 router = APIRouter(dependencies=[Depends(require_bearer)])
 
-_BASE = Path(__file__).parents[2]
-OUTPUT_DIR = _BASE / "output"
-INPUT_DIR = _BASE / "input"
+OUTPUT_DIR = paths.OUTPUT_DIR
+INPUT_DIR = paths.INPUT_DIR
 
 # Names skipped anywhere in the tree: macOS cruft + internal session state.
 _EXCLUDED_NAMES = {".DS_Store", ".sessions"}

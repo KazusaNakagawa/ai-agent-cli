@@ -5,12 +5,13 @@ Swagger UI (``/docs``) の右上に "Authorize" ボタンが出る。トーク�
 ペーストすれば protected な全エンドポイントで自動付与される。
 """
 import secrets
-from pathlib import Path
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-TOKEN_FILE = Path.home() / ".ai-agent" / "session-token"
+from src import paths
+
+TOKEN_FILE = paths.TOKEN_FILE
 _token_cache: str | None = None
 
 # ``auto_error=False`` so we return our own 401 message instead of FastAPI's

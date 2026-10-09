@@ -1,4 +1,5 @@
 "use client"
+import { ImageIcon, Paperclip } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { uploadImage } from "@/lib/imageUpload"
 import { uploadFile } from "@/lib/fileUpload"
@@ -116,7 +117,8 @@ export function AttachMenu({ onAttachImage, onInsertFile, disabled }: Props) {
             }}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-accent"
           >
-            🖼 Insert image
+            <ImageIcon aria-hidden className="h-4 w-4" />
+            Insert image
           </button>
           <button
             type="button"
@@ -127,7 +129,8 @@ export function AttachMenu({ onAttachImage, onInsertFile, disabled }: Props) {
             }}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-accent"
           >
-            📎 Attach file
+            <Paperclip aria-hidden className="h-4 w-4" />
+            Attach file
           </button>
         </div>
       )}

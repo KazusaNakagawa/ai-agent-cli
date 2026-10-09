@@ -61,6 +61,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from src import paths
 from src import chat_job_store
 from src import config
 from src import credentials as cred_mod
@@ -81,7 +82,7 @@ from web.auth import require_bearer
 logger = get_logger(__name__)
 # apps/python/web/routers/chat.py → repo root is parents[3] (chat.py → routers → web → python → apps → repo).
 REPO_ROOT = Path(__file__).resolve().parents[4]
-IMAGES_ROOT = REPO_ROOT / "apps" / "python" / "input" / "images"
+IMAGES_ROOT = paths.INPUT_DIR / "images"
 NOTION_URL_RE = re.compile(r"https://www\.notion\.so/[A-Za-z0-9\-]+")
 NOTION_IMPORT_TIMEOUT_SEC = 120
 # Allow-list of model aliases the user can pick from the UI. Anything else
@@ -89,8 +90,7 @@ NOTION_IMPORT_TIMEOUT_SEC = 120
 # a claude subprocess pinned to an unintended model.
 ChatNotionImportModel = Literal["sonnet", "opus", "haiku"]
 
-PYTHON_APP = Path(__file__).resolve().parents[2]  # apps/python/
-BRIEFING_DIR = PYTHON_APP / "output" / "briefing"
+BRIEFING_DIR = paths.OUTPUT_DIR / "briefing"
 SESSIONS_DIR = BRIEFING_DIR / ".sessions"
 
 # Drop a completed chat job from the store this many seconds after its
@@ -628,10 +628,25 @@ def _display_path(path: Path) -> str:
     while keeping the absolute filesystem layout out of API payloads — the same
     reason ``/briefing/files`` identifies its artifacts by name only.
     """
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return path.name
+    for root in (REPO_ROOT, paths.DATA_HOME):
+        try:
+            return str(path.relative_to(root))
+        except ValueError:
+            continue
+    return path.name
+
+
+def _skill_workdir() -> Path:
+    """Working directory for the ``/notion-import`` skill subprocess.
+
+    The skill writes ``output/<slug>_<date>.md`` relative to its cwd. In the
+    clone layout that is the repo root; with a relocated data home
+    (``BRIEF_LENS_HOME``) it must be the data home, or the file would land
+    inside the installed package instead of ``paths.OUTPUT_DIR``.
+    """
+    if paths.DATA_HOME != paths.APP_ROOT:
+        return paths.DATA_HOME
+    return REPO_ROOT
 
 
 def _with_local_note(detail: str, local_path: Path | None, local_error: str | None) -> str:
@@ -703,6 +718,8 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
             ),
         )
 
+    workdir = _skill_workdir()
+    workdir.mkdir(parents=True, exist_ok=True)
     cmd = [
         claude_path,
         "-p",
@@ -710,7 +727,7 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
         "--permission-mode", "bypassPermissions",
         "--output-format", "stream-json",
         "--verbose",
-        "--add-dir", str(REPO_ROOT),
+        "--add-dir", str(workdir),
         "--model", body.model,
     ]
     env = build_env(auth_mode=state_mod.read_state().auth_mode)
@@ -730,7 +747,7 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
             timeout=NOTION_IMPORT_TIMEOUT_SEC,
             stdin=subprocess.DEVNULL,
             env=env,
-            cwd=str(REPO_ROOT),
+            cwd=str(workdir),
         )
     except subprocess.TimeoutExpired:
         logger.error("notion-import skill timed out after %ds", NOTION_IMPORT_TIMEOUT_SEC)

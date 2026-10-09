@@ -12,12 +12,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from src import paths
 from src.constants import LOG_RETENTION_DAYS, USAGE_LOG_ROTATION_ENABLED
 from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-USAGE_DIR = Path(__file__).parents[1] / "log" / "usage"
+USAGE_DIR = paths.LOG_DIR / "usage"
 
 
 USAGE_FILE_GLOB = "*-usage.jsonl"

@@ -4,15 +4,12 @@ import { mkdir, writeFile } from "fs/promises"
 import { NextResponse } from "next/server"
 import path from "path"
 
+import { inputRoot } from "@/lib/storage"
+
 const ALLOWED_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp"])
 const MAX_BYTES = 5 * 1024 * 1024 // 5 MB
 
-// Resolve storage root relative to process.cwd() which is always apps/web/ root
-// In Next.js, __dirname in production points to .next/server/, not source tree
-const STORAGE_ROOT = path.resolve(
-  process.cwd(),
-  "../../apps/python/input/images"
-)
+const STORAGE_ROOT = path.join(inputRoot(), "images")
 
 export async function POST(req: Request) {
   // Reject oversized requests before buffering the body

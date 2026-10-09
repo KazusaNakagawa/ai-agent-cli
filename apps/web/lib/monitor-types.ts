@@ -6,6 +6,11 @@ export type MonitorBucket = {
   key: string
   tokens: number
   cost_usd: number
+  // Project buckets only: the real working directory behind the transcript
+  // directory name, and its home-abbreviated display form. Null when the
+  // transcripts never revealed a cwd — the key is then all we have.
+  path?: string | null
+  label?: string | null
 }
 
 export type MonitorDateEntry = {

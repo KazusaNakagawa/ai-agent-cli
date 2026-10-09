@@ -149,7 +149,7 @@ export function Sidebar() {
                     : "hover:bg-accent/50",
                 )}
               >
-                <span aria-hidden>{item.icon}</span>
+                <item.icon aria-hidden className="h-4 w-4 shrink-0" />
                 <span data-sidebar-label>{item.label}</span>
                 {showRunDot && (
                   <span

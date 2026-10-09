@@ -173,3 +173,87 @@ async def test_monitor_missing_root_returns_zeros(authed_client, tmp_path, monke
     assert data["total_tokens"] == 0
     assert data["by_project"] == []
     assert data["by_date"] == []
+
+
+# --- project paths (#481) ---
+
+
+@pytest.fixture
+def transcripts_with_cwd(tmp_path, monkeypatch):
+    """Two projects whose transcripts carry a real ``cwd``, one outside home."""
+    from pathlib import Path
+
+    home = tmp_path / "home" / "someone"
+    home.mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    root = tmp_path / "projects"
+    encoded = root / "-Users-someone-work-english-learn-app"
+    encoded.mkdir(parents=True)
+    (encoded / "s1.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-07-10T03:00:00.000Z",
+                "cwd": f"{home}/work/english_learn_app",
+                "message": {
+                    "id": "c1",
+                    "model": "claude-sonnet-5",
+                    "usage": {"input_tokens": 100, "output_tokens": 10},
+                },
+            }
+        )
+        + "\n"
+    )
+    container = root / "-home-node-mulmoclaude"
+    container.mkdir(parents=True)
+    (container / "s2.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-07-10T03:00:00.000Z",
+                "cwd": "/home/node/mulmoclaude",
+                "message": {
+                    "id": "c2",
+                    "model": "claude-sonnet-5",
+                    "usage": {"input_tokens": 10, "output_tokens": 1},
+                },
+            }
+        )
+        + "\n"
+    )
+    monkeypatch.setattr(usage_monitor, "DEFAULT_ROOT", root)
+    return root
+
+
+@pytest.mark.anyio
+async def test_monitor_project_buckets_carry_real_paths(authed_client, transcripts_with_cwd):
+    resp = await authed_client.get("/api/usage/monitor")
+    assert resp.status_code == 200
+    projects = {p["key"]: p for p in resp.json()["by_project"]}
+
+    app = projects["-Users-someone-work-english-learn-app"]
+    assert app["label"] == "~/work/english_learn_app"
+    assert app["path"].endswith("/work/english_learn_app")
+    assert app["path"].startswith("/")
+
+    # A path outside home stays absolute rather than being rewritten.
+    container = projects["-home-node-mulmoclaude"]
+    assert container["label"] == "/home/node/mulmoclaude"
+    assert container["path"] == "/home/node/mulmoclaude"
+
+
+@pytest.mark.anyio
+async def test_monitor_project_without_cwd_has_no_path(authed_client, transcripts_root):
+    resp = await authed_client.get("/api/usage/monitor")
+    assert resp.status_code == 200
+    projects = {p["key"]: p for p in resp.json()["by_project"]}
+    assert projects["proj-a"]["path"] is None
+    assert projects["proj-a"]["label"] is None
+
+
+@pytest.mark.anyio
+async def test_monitor_date_and_model_buckets_have_no_path(authed_client, transcripts_with_cwd):
+    data = (await authed_client.get("/api/usage/monitor")).json()
+    assert all(m["path"] is None for m in data["by_model"])
+    assert all(m["path"] is None for d in data["by_date"] for m in d["models"])

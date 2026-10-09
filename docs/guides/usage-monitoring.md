@@ -77,7 +77,9 @@ through the module (`claude_rates.RATES`); a `from src.claude_rates import
 RATES` at module scope resolves it at import time and gives the eager behaviour
 back. A model missing from the table costs `$0` and is
 surfaced in the response as `unpriced_models`, which the UI renders as an amber
-warning line.
+warning line. Claude Code's zero-usage `<synthetic>` placeholder is the one
+exception: it still appears in the per-model breakdown but is never priced, so
+it is not listed there.
 
 **Rates cannot be fetched automatically.** The Models API
 (`client.models.list()` / `.retrieve()`) returns `id`, `display_name`,
@@ -94,8 +96,10 @@ no breakdown falls back to the cheaper rate instead of being dropped. Claude
 Code writes almost entirely 1-hour caches, so ignoring the split understates
 the total by roughly 12%.
 
-When a new model appears in that warning, add its id and published rates to
-`model_rates.json`. The same table backs the CLI report and
+When a new model appears in that warning, add its id and published rates from
+the [pricing doc](https://platform.claude.com/docs/en/about-claude/pricing.md)
+to `model_rates.json` — check the cache-hit footnotes, since some models
+(Fable 5.1, Opus/Sonnet 5.5) price reads below the standard 0.1x. The same table backs the CLI report and
 `scripts/sdd_token_cost.py`.
 
 ### 2b. Drift detection — [`scripts/check_model_rates.py`](../../scripts/check_model_rates.py)

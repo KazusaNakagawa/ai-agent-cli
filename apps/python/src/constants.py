@@ -1,5 +1,6 @@
 import re
-from pathlib import Path
+
+from src import paths
 
 # Claude model
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
@@ -45,7 +46,7 @@ WEEKLY_WINDOW_DAYS = 7
 WEEKLY_RECAP_WEEKDAY = 5
 
 # Output directory for MD output
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+OUTPUT_DIR = paths.OUTPUT_DIR
 BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
 # Salvaged text from claude CLI calls that ultimately failed (see run_claude)
 PARTIAL_OUTPUT_DIR = OUTPUT_DIR / "partial"

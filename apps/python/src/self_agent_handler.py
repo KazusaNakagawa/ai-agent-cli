@@ -7,6 +7,7 @@ from __future__ import annotations
 import pathlib
 import time
 
+from src import paths
 from src.config import CONFIG
 from src.fetcher.judgment_log import fetch_new_entries, write_watermark
 from src.generator.self_profile import generate_self_profile_update
@@ -16,8 +17,8 @@ from src.utils import is_configured
 
 logger = get_logger(__name__)
 
-OUTPUT_DIR = pathlib.Path(__file__).resolve().parent.parent / "output" / "self_agent"
-PROFILE_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "self_agent_profile.md"
+OUTPUT_DIR = paths.OUTPUT_DIR / "self_agent"
+PROFILE_PATH = paths.CONFIG_DIR / "self_agent_profile.md"
 
 
 def _load_profile(path: pathlib.Path) -> str | None:

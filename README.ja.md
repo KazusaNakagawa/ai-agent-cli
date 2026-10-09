@@ -10,6 +10,8 @@
 | **エージェント層** | Claude Code CLI（subprocess + WebSearch）、プロンプトの並列オーケストレーション、オプトインのローカル LLM モード（Ollama + Chroma） |
 | **運用** | launchd/cron スケジューリング、デグレードモード配信、スリープ復帰後の再実行、使用量・コスト監視 |
 
+> **投資助言ではありません。** ブリーフィングは LLM が Web 検索結果をもとに生成するもので、誤り・欠落・古い情報を含む場合があります。本ソフトウェアの出力は、いかなる有価証券の売買を推奨するものでもありません。情報は各自で確認し、投資判断はご自身の責任で行ってください。本ソフトウェアは現状のまま提供され、いかなる保証もありません（[ライセンス](#ライセンス)を参照）。
+
 ---
 
 ## コンセプト
@@ -22,7 +24,7 @@ Bloomberg や NewsPicks が見せるのは生のデータ。このエージェ�
 
 ![ブリーフィングビューア](docs/screenshots/briefing-viewer.png)
 
-<sub>Web UI のブリーフィングビューア。左が検索可能なアーカイブ、右が目次付きでレンダリングされた本文。一覧の各エントリが、無人で実行された 1 回分の朝 5 時のランに対応する。</sub>
+<sub>Web UI のブリーフィングビューア。左が検索可能なアーカイブ、右が目次付きでレンダリングされた本文。一覧の各エントリが 1 回分の日次ブリーフィングに対応する（現在は手動で起動している。理由は下の前提条件を参照）。</sub>
 
 ---
 
@@ -50,6 +52,7 @@ apps/python/
   config/briefing.json            # ポートフォリオ、ウォッチセクター、地政学リスク
 
 apps/web/                         # Next.js UI — ブリーフィング閲覧、チャット、ジャーナル、使用量モニター
+packages/brief-lens/              # `npx brief-lens` ランチャー — ~/.brief-lens を準備し API と Web UI を起動
 ```
 
 **主要な設計判断**
@@ -91,6 +94,18 @@ apps/web/                         # Next.js UI — ブリーフィング閲覧�
 ---
 
 ## セットアップ
+
+### npx でクイックスタート
+
+Web UI だけなら clone 不要です。macOS または Linux、Node.js 18 以上、[uv](https://github.com/astral-sh/uv)、有料の Claude プラン（Pro/Max）でログイン済みの [Claude Code CLI](https://claude.ai/code) が必要です。
+
+```bash
+npx brief-lens            # 初回は ~/.brief-lens と Python バックエンドを自動セットアップ
+```
+
+データは checkout とは別の `~/.brief-lens/` に保存されます。オプション、アップグレード、リリース手順は [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md) を参照。
+
+### ソースから
 
 **前提:** Python 3.11〜3.13（すべて CI で実行）、[uv](https://github.com/astral-sh/uv)、認証済みの [Claude Code CLI](https://claude.ai/code)、Discord Bot、Notion インテグレーション。
 
@@ -170,12 +185,13 @@ cd apps/python
 ## テスト
 
 ```bash
-cd apps/python && .venv/bin/pytest -v   # 1,308 ケース / 87 ファイル
+cd apps/python && .venv/bin/pytest -v   # 1,341 ケース / 89 ファイル
 cd apps/web && npm test                 # vitest（ユニット + コンポーネント）
 cd apps/web && npm run test:e2e         # Playwright
+cd packages/brief-lens && npm test      # npx ランチャー（node:test）
 ```
 
-両スイートとも push 時に GitHub Actions で実行される（[`pytest.yml`](.github/workflows/pytest.yml)、[`web.yml`](.github/workflows/web.yml)）。テストは `apps/python/tests/config/briefing.json` を読み込む。`conftest.py` が `src.config` の import より前に `BRIEFING_CONFIG_PATH` を固定するため、実行に個人設定は一切不要。
+GitHub Actions は `dev` 向けのすべての Pull Request で 3 つのワークフローを起動する。[`pytest.yml`](.github/workflows/pytest.yml) と [`web.yml`](.github/workflows/web.yml) は、それぞれ `apps/python/`・`apps/web/`（またはワークフロー自身）に変更があるときだけテストを実行する。[`launcher.yml`](.github/workflows/launcher.yml) は常に実行され、npm の tarball を作ってインストールし、起動まで確認する。テストは `apps/python/tests/config/briefing.json` を読み込む。`conftest.py` が `src.config` の import より前に `BRIEFING_CONFIG_PATH` を固定するため、実行に個人設定は一切不要。
 
 ---
 
@@ -183,11 +199,13 @@ cd apps/web && npm run test:e2e         # Playwright
 
 | トピック | リンク |
 |---|---|
+| リポジトリ解説（公開ページ） | [kazusanakagawa.github.io/ai-agent-cli](https://kazusanakagawa.github.io/ai-agent-cli/) |
 | 設定（環境変数、設定スキーマ、プロンプト） | [docs/guides/configuration.md](docs/guides/configuration.md) |
 | 日次ブリーフィング（手動 `./bin/run.sh`、任意で launchd） | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
 | スケジュール実行（cron + pmset、代替手段） | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |
 | ブリーフィングのアーカイブ（月次 zip → rclone で Google Drive） | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | テストと依存関係の管理 | [docs/guides/testing.md](docs/guides/testing.md) |
+| npx でクイックスタート（`npx brief-lens`、データホーム、リリース手順） | [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md) |
 | Web UI のセットアップ | [docs/guides/web-ui-setup.md](docs/guides/web-ui-setup.md) |
 | 使用量モニタリング（Monitor タブ、Settings > Usage、コスト試算） | [docs/guides/usage-monitoring.md](docs/guides/usage-monitoring.md) |
 | ブリーフィング評価パイプライン | [docs/features/evaluation.md](docs/features/evaluation.md) |

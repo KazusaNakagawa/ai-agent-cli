@@ -8,8 +8,9 @@ from web.routers import archive as archive_router
 
 
 def _fake_run(returncode=0, stdout="", stderr=""):
-    def _run(cmd, capture_output, text):  # noqa: ANN001 - mirror subprocess.run
+    def _run(cmd, capture_output, text, env=None):  # noqa: ANN001 - mirror subprocess.run
         _run.cmd = cmd
+        _run.env = env
         return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr=stderr)
 
     return _run
@@ -55,3 +56,19 @@ async def test_archive_failure_returns_500_with_stderr(authed_client, monkeypatc
     response = await authed_client.post("/api/archive")
     assert response.status_code == 500
     assert "rclone not found" in response.json()["detail"]
+
+
+async def test_archive_points_the_script_at_the_data_home(authed_client, monkeypatch):
+    """archive.sh defaults to repo-relative dirs, so the router passes the
+    resolved data-home dirs explicitly (npx installs have no repo)."""
+    from src import paths
+
+    fake = _fake_run(returncode=0, stdout="ok")
+    monkeypatch.setattr(subprocess, "run", fake)
+
+    response = await authed_client.post("/api/archive")
+    assert response.status_code == 200
+    assert fake.env["ARCHIVE_BRIEFING_DIR"] == str(paths.OUTPUT_DIR / "briefing")
+    assert fake.env["ARCHIVE_OUTPUT_DIR"] == str(paths.OUTPUT_DIR / "archive")
+    # The rest of the environment (PATH for rclone, etc.) is inherited.
+    assert "PATH" in fake.env

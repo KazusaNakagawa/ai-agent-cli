@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { JournalScreen } from "@/components/screens/JournalScreen"
@@ -81,7 +81,7 @@ describe("JournalScreen voice input", () => {
     // Initial state: not listening.
     expect(micButton).toHaveAttribute("aria-pressed", "false")
     expect(micButton).toHaveAttribute("aria-label", "音声入力開始")
-    expect(within(micButton).getByText("🎤")).toBeInTheDocument()
+    expect(micButton.querySelector("svg.lucide-mic")).toBeInTheDocument()
 
     fireEvent.click(micButton)
 
@@ -89,7 +89,7 @@ describe("JournalScreen voice input", () => {
     // before we assert the toggled-on state below.
     expect(micButton).toHaveAttribute("aria-pressed", "true")
     expect(micButton).toHaveAttribute("aria-label", "音声入力停止")
-    expect(within(micButton).getByText("🛑")).toBeInTheDocument()
+    expect(micButton.querySelector("svg.lucide-square")).toBeInTheDocument()
 
     const textarea = screen.getByPlaceholderText(
       /what should i focus on/i,
@@ -101,6 +101,6 @@ describe("JournalScreen voice input", () => {
 
     expect(micButton).toHaveAttribute("aria-pressed", "false")
     expect(micButton).toHaveAttribute("aria-label", "音声入力開始")
-    expect(within(micButton).getByText("🎤")).toBeInTheDocument()
+    expect(micButton.querySelector("svg.lucide-mic")).toBeInTheDocument()
   })
 })

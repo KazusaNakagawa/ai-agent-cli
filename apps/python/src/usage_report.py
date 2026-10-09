@@ -6,9 +6,10 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from src import paths
 from src.usage_logger import USAGE_FILE_GLOB, parse_usage_file_date
 
-USAGE_DIR = Path(__file__).parents[1] / "log" / "usage"
+USAGE_DIR = paths.LOG_DIR / "usage"
 
 
 def _iter_records(usage_dir: Path, days: int | None):

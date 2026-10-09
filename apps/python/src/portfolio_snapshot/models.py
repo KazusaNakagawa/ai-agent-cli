@@ -9,9 +9,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-HOLDINGS_PATH = Path(__file__).parents[2] / "config" / "holdings.json"
-EXAMPLE_PATH = HOLDINGS_PATH.with_name("holdings.json.example")
-OUTPUT_DIR = Path(__file__).parents[2] / "output" / "portfolio"
+from src import paths
+
+HOLDINGS_PATH = paths.CONFIG_DIR / "holdings.json"
+EXAMPLE_PATH = paths.EXAMPLE_CONFIG_DIR / "holdings.json.example"
+OUTPUT_DIR = paths.OUTPUT_DIR / "portfolio"
 
 # Bucket keys are free-form in the holdings file; these are the ones with a
 # label (and, for high_risk, a rule) attached.

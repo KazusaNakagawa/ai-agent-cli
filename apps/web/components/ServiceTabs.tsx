@@ -24,13 +24,13 @@ export function ServiceTabs() {
             data-testid={`service-tab-${service.id}`}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "rounded-md px-3 py-1.5 text-lg transition-colors",
+              "flex items-center rounded-md px-3 py-1.5 transition-colors",
               active
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50",
             )}
           >
-            {service.icon}
+            <service.icon aria-hidden className="h-4 w-4" />
             <span className="sr-only">{service.label}</span>
           </Link>
         )

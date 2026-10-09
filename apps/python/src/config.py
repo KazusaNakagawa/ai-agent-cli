@@ -22,18 +22,32 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from src import paths
 from src.credentials import get_credential
 from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Load the repo-root .env first (two levels up from apps/python/).
+def dotenv_files() -> list[Path]:
+    """Return the .env files to load, in order.
+
+    Clone layout: the repo-root .env (one level above apps/python/). With a
+    relocated data home (``BRIEF_LENS_HOME``) only the data-home .env is used —
+    load_dotenv never overrides a variable that is already set, so also
+    loading the repo file first would silently shadow the data-home values.
+    """
+    if paths.DATA_HOME != paths.APP_ROOT:
+        return [paths.DATA_HOME / ".env"]
+    return [paths.APP_ROOT.parent / ".env"]
+
+
 # Since credentials.get_credential() prefers values already in the keychain,
 # .env acts as the fallback when a key is not registered in the keychain.
-load_dotenv(Path(__file__).parents[2] / ".env")
+for _env_file in dotenv_files():
+    load_dotenv(_env_file)
 
-CONFIG_PATH = Path(os.getenv("BRIEFING_CONFIG_PATH", str(Path(__file__).parents[1] / "config" / "briefing.json")))
-XSS_INTEL_CONFIG_PATH = Path(__file__).parents[1] / "config" / "xss_intel.json"
+CONFIG_PATH = Path(os.getenv("BRIEFING_CONFIG_PATH", str(paths.CONFIG_DIR / "briefing.json")))
+XSS_INTEL_CONFIG_PATH = paths.CONFIG_DIR / "xss_intel.json"
 
 
 class Conflict(BaseModel):
