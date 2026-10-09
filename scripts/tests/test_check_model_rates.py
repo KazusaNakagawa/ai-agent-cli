@@ -176,7 +176,7 @@ def test_an_error_larger_than_the_bracket_is_still_caught_with_cache_writes(
 
 
 def test_real_cost_state_fixtures_reconcile_against_the_shipped_table():
-    # Guards the shipped config/model_rates.json against records Claude Code
+    # Guards the shipped src/model_rates.json against records Claude Code
     # actually wrote, so the table cannot drift unnoticed.
     from src.claude_rates import RATES_PATH
 

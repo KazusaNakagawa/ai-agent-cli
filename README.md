@@ -126,12 +126,13 @@ See [docs/guides/configuration.md](docs/guides/configuration.md) for all environ
 ## Run
 
 ```bash
-bin/run.sh             # daily briefing, then the weekly recap (a no-op except on Fridays)
+bin/run.sh             # daily briefing, the weekly recap (a no-op except on Fridays), then the model-rate check
 
 # Workflows — one entry point for every declared pipeline
 bin/workflow.sh                   # list what is registered
 bin/workflow.sh run briefing      # daily briefing
 bin/workflow.sh run weekly        # weekly recap; skipped unless it is Friday, --force overrides
+bin/workflow.sh run model-rates   # fail if a Claude model in the transcripts has no rate
 
 # Interactive Q&A on today's briefing
 bin/chat.sh            # new or resumed session
@@ -164,7 +165,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 
 | Script | Purpose |
 |---|---|
-| `run.sh` | Run the daily briefing, then the weekly recap (which acts only on Fridays) — **manual execution is the active schedule** on the maintainer machine; see [launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active). See [Architecture](#architecture) for the disabled XSS intel agent |
+| `run.sh` | Run the daily briefing, then the weekly recap (which acts only on Fridays), then the model-rate check — **manual execution is the active schedule** on the maintainer machine; see [launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active). See [Architecture](#architecture) for the disabled XSS intel agent |
 | `workflow.sh` | The one entry point for declared workflows: `workflow.sh` lists them, `workflow.sh run <id>` runs one (`--force`, `--dry-run`). Prefer it over the per-process scripts — see [workflow-runner.md](docs/features/workflow-runner.md) |
 | `chat.sh` | Interactive Q&A on a briefing session |
 | `serve.sh` | Launch the full Web UI — FastAPI + Next.js; `API_PORT` / `WEB_PORT` overridable |

@@ -3,8 +3,10 @@
 Used by src.usage_monitor, scripts/token_usage_report.py, and
 scripts/sdd_token_cost.py so the rates are maintained in one place.
 
-The rates themselves live in ``config/model_rates.json`` rather than in this
-module. There is no pricing API to fetch them from — the Models API returns
+The rates themselves live in ``model_rates.json`` next to this module. It
+sits under ``src/`` rather than ``config/`` because the npm build copies
+``src/`` wholesale but only ``*.example`` templates from ``config/`` (which
+otherwise holds personal data), so a table in ``config/`` would not ship. There is no pricing API to fetch them from — the Models API returns
 ids, context windows and capabilities but no prices — so the table is
 hand-maintained, and ``scripts/check_model_rates.py`` is what catches a model
 that has appeared in transcripts without one. See
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 RATES_PATH = Path(
     os.getenv(
-        "MODEL_RATES_PATH", str(Path(__file__).parents[1] / "config" / "model_rates.json")
+        "MODEL_RATES_PATH", str(Path(__file__).with_name("model_rates.json"))
     )
 )
 

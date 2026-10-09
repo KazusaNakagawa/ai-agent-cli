@@ -1,4 +1,4 @@
-"""Tests for loading the rate table out of config/model_rates.json.
+"""Tests for loading the rate table out of src/model_rates.json.
 
 The table used to be a literal in claude_rates.py, which is how claude-opus-5
 went unpriced for three weeks with only an amber line in the UI to say so.
