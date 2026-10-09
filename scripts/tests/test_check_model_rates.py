@@ -298,3 +298,25 @@ def test_an_unreadable_rate_file_is_a_diagnostic_not_a_traceback(transcripts, tm
     # an OSError that is not FileNotFoundError.
     assert cmr.main(["--transcripts", str(transcripts), "--rates", str(tmp_path)]) == 1
     assert "Rate table cannot be read" in capsys.readouterr().out
+
+
+def test_non_object_records_are_skipped_not_fatal(transcripts, rates_file, capsys):
+    # Valid JSON that is not an object, or a modelUsage entry that is not one,
+    # must not abort the scan before the finding that follows it.
+    _write(
+        transcripts / "p" / "s.jsonl",
+        [
+            "[1, 2, 3]",
+            '"just a string"',
+            json.dumps({"type": "cost-state", "modelUsage": ["not", "a", "dict"]}),
+            json.dumps({"type": "cost-state", "modelUsage": {"claude-opus-5": "oops"}}),
+            _usage_line("claude-future-9"),
+        ],
+    )
+
+    assert cmr.main(
+        ["--transcripts", str(transcripts), "--rates", str(rates_file({"claude-opus-5": OPUS_5}))]
+    ) == 1
+    out = capsys.readouterr().out
+    assert "claude-future-9" in out
+    assert "skipped 4 unparseable line(s)" in out

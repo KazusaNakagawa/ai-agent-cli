@@ -80,8 +80,13 @@ def _iter_records(root: Path, skipped: dict[str, int]):
                 if not line:
                     continue
                 try:
-                    yield json.loads(line)
+                    record = json.loads(line)
                 except json.JSONDecodeError:
+                    skipped["lines"] += 1
+                    continue
+                if isinstance(record, dict):
+                    yield record
+                else:
                     skipped["lines"] += 1
 
 
@@ -128,7 +133,14 @@ def check(
         if record.get("type") != "cost-state":
             continue
 
-        for model, usage in (record.get("modelUsage") or {}).items():
+        model_usage = record.get("modelUsage") or {}
+        if not isinstance(model_usage, dict):
+            skipped["lines"] += 1
+            continue
+        for model, usage in model_usage.items():
+            if not isinstance(usage, dict):
+                skipped["lines"] += 1
+                continue
             actual = usage.get("costUSD") or 0
             if not actual:
                 continue
