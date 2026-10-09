@@ -31,6 +31,11 @@ USAGE_KEYS = (
     "cache_read_input_tokens",
 )
 
+# Claude Code writes zero-usage placeholder messages (e.g. for interrupted
+# turns) under this model id. It is not a billable model, so skip it rather
+# than reporting it as unpriced.
+SYNTHETIC_MODEL = "<synthetic>"
+
 
 @dataclass
 class Bucket:
@@ -141,9 +146,12 @@ def aggregate(root: Path, since: str | None = None, until: str | None = None) ->
                 if (since and date < since) or (until and date > until):
                     continue
 
+                model = msg.get("model", "unknown")
+                if model == SYNTHETIC_MODEL:
+                    continue
+
                 counted += 1
                 usage = msg["usage"]
-                model = msg.get("model", "unknown")
                 tokens = sum(usage.get(k, 0) for k in USAGE_KEYS)
                 cost = usage_cost(usage, model)
                 if model not in RATES:
