@@ -239,18 +239,21 @@ def test_a_cost_state_row_for_an_unpriced_model_is_not_double_reported(
     assert capsys.readouterr().out.count("claude-future-9") == 1
 
 
-def test_a_zero_cost_row_is_ignored(transcripts, rates_file):
+def test_a_zero_cost_row_is_ignored(transcripts, rates_file, capsys):
     # Claude Code writes cost-state records before any billed call happens.
+    # Non-zero tokens make the bracket non-zero, so reconciling this row
+    # instead of skipping it would report drift.
     _write(
         transcripts / "p" / "s.jsonl",
         [_cost_state_line({"claude-opus-5": {
-            "inputTokens": 0, "outputTokens": 0, "cacheReadInputTokens": 0,
+            "inputTokens": 1000, "outputTokens": 1000, "cacheReadInputTokens": 0,
             "cacheCreationInputTokens": 0, "webSearchRequests": 0, "costUSD": 0}})],
     )
 
     assert cmr.main(
         ["--transcripts", str(transcripts), "--rates", str(rates_file({"claude-opus-5": OPUS_5}))]
     ) == 0
+    assert "0 cost record(s) reconciled" in capsys.readouterr().out
 
 
 def test_an_absent_transcript_root_is_not_a_failure(tmp_path, rates_file, capsys):
@@ -262,12 +265,36 @@ def test_an_absent_transcript_root_is_not_a_failure(tmp_path, rates_file, capsys
     assert "no transcripts" in capsys.readouterr().out.lower()
 
 
-def test_malformed_lines_do_not_stop_the_scan(transcripts, rates_file):
+def test_malformed_lines_do_not_stop_the_scan(transcripts, rates_file, capsys):
+    # The finding sits after the bad line: stopping at the first malformed
+    # line would miss it and pass.
     _write(
         transcripts / "p" / "s.jsonl",
-        ["not json {{{", _usage_line("claude-opus-5"), ""],
+        ["not json {{{", _usage_line("claude-future-9"), ""],
+    )
+
+    assert cmr.main(
+        ["--transcripts", str(transcripts), "--rates", str(rates_file({"claude-opus-5": OPUS_5}))]
+    ) == 1
+    assert "claude-future-9" in capsys.readouterr().out
+
+
+def test_skipped_lines_are_reported_without_failing(transcripts, rates_file, capsys):
+    # A transcript Claude Code is still writing can end in a partial line, so
+    # an unparseable line is reported, not treated as a failure.
+    _write(
+        transcripts / "p" / "s.jsonl",
+        ["not json {{{", '{"truncated": ', _usage_line("claude-opus-5")],
     )
 
     assert cmr.main(
         ["--transcripts", str(transcripts), "--rates", str(rates_file({"claude-opus-5": OPUS_5}))]
     ) == 0
+    assert "skipped 2 unparseable line(s)" in capsys.readouterr().out
+
+
+def test_an_unreadable_rate_file_is_a_diagnostic_not_a_traceback(transcripts, tmp_path, capsys):
+    # A directory where the file should be: read_text raises IsADirectoryError,
+    # an OSError that is not FileNotFoundError.
+    assert cmr.main(["--transcripts", str(transcripts), "--rates", str(tmp_path)]) == 1
+    assert "Rate table cannot be read" in capsys.readouterr().out

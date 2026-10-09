@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from pathlib import Path
 
@@ -40,8 +41,13 @@ def load_rates(path: Path) -> dict[str, tuple[float, float, float, float, float]
     rather than defaulted, because a silent 0 for one component is exactly the
     failure this file exists to prevent.
     """
+    def _reject_constant(name: str):
+        # json accepts NaN/Infinity by default; a non-finite rate turns every
+        # cost into NaN and every drift comparison false.
+        raise ValueError(f"{path}: non-finite value {name} is not a valid rate")
+
     try:
-        raw = json.loads(path.read_text())
+        raw = json.loads(path.read_text(), parse_constant=_reject_constant)
     except FileNotFoundError:
         raise FileNotFoundError(f"model rate table not found: {path}") from None
     except json.JSONDecodeError as e:
@@ -61,6 +67,8 @@ def load_rates(path: Path) -> dict[str, tuple[float, float, float, float, float]
             value = fields[name]
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(f"{path}: {model!r} has a non-numeric {name!r} rate")
+            if not math.isfinite(value):
+                raise ValueError(f"{path}: {model!r} has a non-finite {name!r} rate")
             if value < 0:
                 raise ValueError(f"{path}: {model!r} has a negative {name!r} rate")
             values.append(float(value))

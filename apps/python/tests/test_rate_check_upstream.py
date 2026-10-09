@@ -74,6 +74,29 @@ def test_parse_pricing_table_without_a_table_raises():
         rate_check.parse_pricing_table("# Pricing\n\nNo table here.\n")
 
 
+def test_a_price_cell_without_a_dollar_amount_is_a_value_error():
+    doc = PRICING.read_text().replace("| $5 / MTok | $6.25 / MTok |", "| Contact sales | $6.25 / MTok |", 1)
+    with pytest.raises(ValueError, match="no price"):
+        rate_check.parse_pricing_table(doc)
+
+
+def test_a_reshaped_doc_is_advisory_too(tmp_path, monkeypatch, capsys):
+    doc = PRICING.read_text().replace("| $5 / MTok | $6.25 / MTok |", "| Contact sales | $6.25 / MTok |", 1)
+    monkeypatch.setattr(rate_check, "fetch_pricing_doc", lambda: doc)
+    assert rate_check.main(["--transcripts", str(tmp_path), "--check-upstream"]) == 0
+    assert "could not check" in capsys.readouterr().out
+
+
+def test_a_tiered_model_with_a_single_local_rate_is_still_reported():
+    # A scalar entry cannot express prompt-length pricing, so having one is
+    # exactly when the report matters.
+    upstream, tiered = rate_check.parse_pricing_table(PRICING.read_text())
+    local = {"claude-haiku-5-5": (0.10, 0.50, 0.125, 0.20, 0.01)}
+    text = "\n".join(rate_check.diff_upstream(local, upstream, tiered))
+    assert "tiered, not modelled: claude-haiku-5-5 (table has a single rate)" in text
+    assert "not in pricing doc: claude-haiku-5-5" not in text
+
+
 def test_an_unreachable_doc_does_not_change_the_exit_code(tmp_path, monkeypatch, capsys):
     def _offline():
         raise OSError("network down")

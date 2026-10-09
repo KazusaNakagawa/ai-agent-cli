@@ -58,14 +58,21 @@ ABS_TOLERANCE_USD = 1e-6
 REL_TOLERANCE = 0.005
 
 
-def _iter_records(root: Path):
-    """Yield parsed JSON objects from every transcript under root."""
+def _iter_records(root: Path, skipped: dict[str, int]):
+    """Yield parsed JSON objects from every transcript under root.
+
+    Unreadable files and unparseable lines are counted in ``skipped`` rather
+    than raised: a transcript Claude Code is still writing can end in a partial
+    line, and failing the daily run on that would be noise. The counts are
+    printed so a scan that skipped something never reads as a clean one.
+    """
     if not root.is_dir():
         return
     for path in sorted(root.rglob("*.jsonl")):
         try:
             f = open(path)
         except OSError:
+            skipped["files"] += 1
             continue
         with f:
             for line in f:
@@ -75,7 +82,7 @@ def _iter_records(root: Path):
                 try:
                     yield json.loads(line)
                 except json.JSONDecodeError:
-                    continue
+                    skipped["lines"] += 1
 
 
 def _token_cost_bracket(usage: dict, rate: tuple[float, ...]) -> tuple[float, float]:
@@ -109,8 +116,9 @@ def check(
     per_model_total: dict[str, int] = {}
     reconciled = 0
     skipped_web_search = 0
+    skipped = {"files": 0, "lines": 0}
 
-    for record in _iter_records(root):
+    for record in _iter_records(root, skipped):
         message = record.get("message")
         if isinstance(message, dict) and isinstance(message.get("usage"), dict):
             model = message.get("model", "unknown")
@@ -141,6 +149,10 @@ def check(
             if actual < low - tolerance or actual > high + tolerance:
                 offenders.setdefault(model, []).append((actual, low, high))
 
+    if skipped["files"]:
+        print(f"  skipped {skipped['files']} unreadable transcript file(s)")
+    if skipped["lines"]:
+        print(f"  skipped {skipped['lines']} unparseable line(s) (e.g. a session still being written)")
     if skipped_web_search:
         print(f"  skipped {skipped_web_search} record(s) using web search (billed per request)")
     drift = [
@@ -186,8 +198,13 @@ def parse_pricing_table(markdown: str) -> tuple[dict[str, tuple[float, ...]], se
             break
         name, base_in, cw5m, cw1h, read, out = [c.strip() for c in line.strip().strip("|").split("|")][:6]
         # Same order as RATE_FIELDS; the doc's columns put output last.
-        prices = tuple(float(_PRICE.search(c).group(1)) for c in (base_in, out, cw5m, cw1h, read))
-        rows.setdefault(display_name_to_id(name), []).append(prices)
+        prices = []
+        for cell in (base_in, out, cw5m, cw1h, read):
+            match = _PRICE.search(cell)
+            if match is None:
+                raise ValueError(f"no price in pricing table cell {cell!r} for {name!r}")
+            prices.append(float(match.group(1)))
+        rows.setdefault(display_name_to_id(name), []).append(tuple(prices))
 
     rates = {model: found[0] for model, found in rows.items() if len(found) == 1}
     tiered = {model for model, found in rows.items() if len(found) > 1}
@@ -207,9 +224,12 @@ def diff_upstream(
     lines = []
     for model, rate in sorted(local.items()):
         family = _DATED_ID.sub("", model)
+        if family in tiered:
+            # One rate tuple cannot express prompt-length pricing.
+            lines.append(f"tiered, not modelled: {model} (table has a single rate)")
+            continue
         if family not in upstream:
-            if family not in tiered:
-                lines.append(f"not in pricing doc: {model}")
+            lines.append(f"not in pricing doc: {model}")
             continue
         changes = [
             f"{field} {old:g} -> {new:g}"
@@ -269,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:
     # same treatment as any other finding rather than a traceback.
     try:
         rates = load_rates(args.rates)
-    except (FileNotFoundError, ValueError) as e:
+    except (OSError, ValueError) as e:
         print(f"Rate table cannot be read: {e}")
         return 1
 

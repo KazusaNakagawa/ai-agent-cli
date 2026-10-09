@@ -22,6 +22,12 @@ class UnpricedModelError(RuntimeError):
 def check_rates(ctx: StepContext) -> dict[str, Any]:
     from src import claude_rates, rate_check
 
+    if not rate_check.DEFAULT_TRANSCRIPTS.is_dir():
+        # Not a failure (a fresh machine has nothing to check), but a wrong
+        # root would otherwise pass silently every morning.
+        ctx.logger.warning(
+            "no transcripts found at %s — model rates not checked", rate_check.DEFAULT_TRANSCRIPTS
+        )
     unpriced, drift, reconciled = rate_check.check(
         rate_check.DEFAULT_TRANSCRIPTS, claude_rates.RATES
     )

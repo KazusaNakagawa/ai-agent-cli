@@ -109,6 +109,20 @@ def test_cache_multipliers_hold_for_every_model_without_published_overrides():
 # --- failure ---
 
 
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+def test_non_finite_rates_are_rejected(tmp_path, literal):
+    # Python's json accepts these non-standard constants; a NaN rate would make
+    # every cost NaN and every drift comparison false, so a bad table would pass.
+    path = tmp_path / "r.json"
+    fields = ", ".join(
+        f'"{name}": {literal if name == "output" else 1}' for name in claude_rates.RATE_FIELDS
+    )
+    path.write_text('{"rates": {"m": {%s}}}' % fields)
+
+    with pytest.raises(ValueError, match="non-finite|not valid JSON"):
+        claude_rates.load_rates(path)
+
+
 def test_missing_file_names_the_path(tmp_path):
     with pytest.raises(FileNotFoundError, match="model_rates.json"):
         claude_rates.load_rates(tmp_path / "model_rates.json")

@@ -76,10 +76,13 @@ def test_only_warns_on_drift(transcripts, monkeypatch, caplog):
 # --- boundary ---
 
 
-def test_an_empty_transcript_root_passes(tmp_path, monkeypatch):
+def test_a_missing_transcript_root_passes_with_a_warning(tmp_path, monkeypatch, caplog):
+    # Nothing to check is not a failure (a fresh machine), but a wrong root
+    # would otherwise pass silently forever, so it is said out loud.
     monkeypatch.setattr(rate_check, "DEFAULT_TRANSCRIPTS", tmp_path / "missing")
     record = run_workflow(registry.get("model-rates"))
     assert record.results["check"] == {"reconciled": 0, "drift": 0}
+    assert "no transcripts found" in caplog.text
 
 
 def test_rate_table_ships_under_src():
