@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 # USD per 1M tokens:
 #   (input, output, cache_write_5m, cache_write_1h, cache_read)
-# Source: published Anthropic API pricing as of 2026-09.
+# Source: published Anthropic API pricing as of 2026-10
+# (https://platform.claude.com/docs/en/about-claude/pricing.md).
 # Cache rates follow the standard multipliers on the input rate — 5-minute
 # write 1.25x, 1-hour write 2x, read 0.1x — unless a model publishes its own,
-# as Claude Fable 5.1 does for reads.
+# as Claude Fable 5.1 (0.025x) and Opus/Sonnet 5.5 (0.05x) do for reads.
 # Keyed by exact model id; add new ids here as models are released rather
 # than relying on substring matching, which can mis-map as model names
 # evolve (e.g. a future id containing "claude-sonnet-5" as a substring but
@@ -23,10 +24,12 @@ logger = logging.getLogger(__name__)
 RATES = {
     "claude-fable-5-1": (10.00, 50.00, 12.50, 20.00, 0.25),
     "claude-fable-5": (10.00, 50.00, 12.50, 20.00, 1.00),
+    "claude-opus-5-5": (4.00, 20.00, 5.00, 8.00, 0.20),
     "claude-opus-5": (5.00, 25.00, 6.25, 10.00, 0.50),
     "claude-opus-4-8": (5.00, 25.00, 6.25, 10.00, 0.50),
     "claude-opus-4-7": (5.00, 25.00, 6.25, 10.00, 0.50),
     "claude-opus-4-6": (5.00, 25.00, 6.25, 10.00, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00, 2.50, 4.00, 0.10),
     "claude-sonnet-5": (2.00, 10.00, 2.50, 4.00, 0.20),
     "claude-sonnet-4-6": (3.00, 15.00, 3.75, 6.00, 0.30),
     "claude-haiku-4-5": (1.00, 5.00, 1.25, 2.00, 0.10),

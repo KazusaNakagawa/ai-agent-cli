@@ -64,7 +64,9 @@ transcripts and the result lives only in memory.
 `(input, output, cache_write_5m, cache_write_1h, cache_read)` USD per 1M tokens.
 Matching is exact on purpose — substring matching mis-maps as model ids evolve.
 A model missing from the table costs `$0` and is surfaced in the response as
-`unpriced_models`, which the UI renders as an amber warning line.
+`unpriced_models`, which the UI renders as an amber warning line. Claude Code's
+zero-usage `<synthetic>` placeholder is the one exception: it still appears in
+the per-model breakdown but is never priced, so it is not listed there.
 
 Cache writes are billed by TTL: a 1-hour write costs **2x** input where a
 5-minute write costs 1.25x. `usage_cost()` splits
@@ -74,8 +76,10 @@ no breakdown falls back to the cheaper rate instead of being dropped. Claude
 Code writes almost entirely 1-hour caches, so ignoring the split understates
 the total by roughly 12%.
 
-When a new model appears in that warning, add its id and published rates to
-`RATES`. The same table backs the CLI report and `scripts/sdd_token_cost.py`.
+When a new model appears in that warning, add its id and published rates from
+the [pricing doc](https://platform.claude.com/docs/en/about-claude/pricing.md)
+to `RATES` — check the cache-hit footnotes, since some models (Fable 5.1,
+Opus/Sonnet 5.5) price reads below the standard 0.1x. The same table backs the CLI report and `scripts/sdd_token_cost.py`.
 
 ### 3. API — `GET /api/usage/monitor`
 
