@@ -6,6 +6,7 @@ briefing.json
 self_agent_profile.md
 holdings.json
 money_rules.json
+data/
 *.bk
 
 # Claude Code
@@ -50,3 +51,10 @@ apps/python/.chroma_db/
 # Dependencies / build caches (never commit)
 /node_modules
 apps/*/node_modules
+scripts/jev/node_modules
+
+# Jev experiment data (contains briefing bodies and personal claims)
+scripts/jev/job.json
+scripts/jev/*result*.json
+scripts/jev/money-*.json
+scripts/jev/results/
