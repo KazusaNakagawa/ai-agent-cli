@@ -9,6 +9,7 @@ from src.generator.briefscript_schema import (
     HoldingNote,
     HoldingsSection,
     Source,
+    holdings_json_schema,
     parse_holdings_section,
 )
 
@@ -111,17 +112,94 @@ def test_non_http_source_url_rejected():
         Source(id="s1", title="t", url="javascript:alert(1)")
 
 
-def test_validation_without_holdings_context_rejected():
-    # Ticker membership cannot be checked without the configured holdings.
-    with pytest.raises(ValidationError, match="holdings"):
-        HoldingsSection.model_validate(_payload())
+def test_validation_without_context_skips_only_ticker_membership():
+    # A cached section must re-validate on its own; reference checks still run.
+    data = _payload()
+    data["holdings"][1]["ticker"] = "NOTHELD"
+    assert HoldingsSection.model_validate(data).holdings[1].ticker == "NOTHELD"
+    data["holdings"][0]["claims"][0]["source_ids"] = ["s9"]
+    with pytest.raises(ValidationError, match="s9"):
+        HoldingsSection.model_validate(data)
+
+
+def test_str_holdings_rejected():
+    with pytest.raises(TypeError, match="not a str"):
+        parse_holdings_section(_payload(), holdings="TICKER1")
+
+
+def test_confirmed_claim_without_source_rejected():
+    with pytest.raises(ValidationError, match="confirmed"):
+        Claim(text="x", confidence="confirmed")
+
+
+def test_all_reference_errors_reported_at_once():
+    data = _payload()
+    data["holdings"][0]["claims"][0]["source_ids"] = ["s9"]
+    data["holdings"][1]["ticker"] = "NOTHELD"
+    with pytest.raises(ValidationError) as exc:
+        parse_holdings_section(data, holdings=HOLDINGS)
+    assert "s9" in str(exc.value) and "NOTHELD" in str(exc.value)
+
+
+def test_ticker_matched_case_insensitively_and_canonicalized():
+    data = _payload()
+    data["holdings"][0]["ticker"] = " ticker1 "
+    section = parse_holdings_section(data, holdings=HOLDINGS)
+    assert section.holdings[0].ticker == "TICKER1"
+
+
+def test_case_variant_duplicate_ticker_rejected():
+    data = _payload()
+    data["holdings"][1]["ticker"] = "ticker1"
+    with pytest.raises(ValidationError, match="duplicate ticker"):
+        parse_holdings_section(data, holdings=HOLDINGS)
+
+
+def test_ticker_with_missing_suffix_rejected():
+    with pytest.raises(ValidationError, match="7203"):
+        parse_holdings_section(
+            _payload(holdings=[{"ticker": "7203",
+                                "claims": [{"text": "x", "confidence": "unknown"}]}]),
+            holdings=["7203.T"],
+        )
+
+
+def test_repeated_source_id_in_claim_deduped():
+    claim = Claim(text="x", confidence="confirmed", source_ids=["s1", "s1"])
+    assert claim.source_ids == ["s1"]
+
+
+def test_uncited_sources_dropped():
+    data = _payload()
+    data["sources"].append({"id": "s2", "title": "unused", "url": "https://example.com/u"})
+    section = parse_holdings_section(data, holdings=HOLDINGS)
+    assert [s.id for s in section.sources] == ["s1"]
+
+
+def test_url_markup_in_path_is_percent_encoded():
+    # HttpUrl escapes rather than rejects, which is what keeps the href safe.
+    source = Source(id="s1", title="t", url='https://example.com/a"><script>')
+    assert str(source.url) == "https://example.com/a%22%3E%3Cscript%3E"
+
+
+def test_json_schema_pins_ticker_enum():
+    schema = holdings_json_schema(HOLDINGS)
+    assert schema["$defs"]["HoldingNote"]["properties"]["ticker"]["enum"] == HOLDINGS
+    assert "price" not in schema["$defs"]["HoldingNote"]["properties"]
 
 
 # --- boundary ---
 
 def test_empty_claim_text_rejected():
     with pytest.raises(ValidationError):
-        Claim(text="", confidence="confirmed")
+        Claim(text="", confidence="inferred")
+
+
+def test_whitespace_only_strings_rejected():
+    with pytest.raises(ValidationError):
+        Claim(text="   ", confidence="inferred")
+    with pytest.raises(ValidationError):
+        Source(id=" ", title="t", url="https://example.com")
 
 
 def test_note_without_claims_rejected():
@@ -140,9 +218,20 @@ def test_claim_source_ids_default_empty():
 
 # --- fixture ---
 
-def test_briefing_fixture_validates():
-    data = json.loads((FIXTURES / "holdings_2026-10-24.json").read_text(encoding="utf-8"))
-    holdings = [h["ticker"] for h in data["holdings"]]
-    section = parse_holdings_section(data, holdings=holdings)
-    assert len(section.holdings) == 6
-    assert any(c.confidence == "unknown" for h in section.holdings for c in h.claims)
+def _sample() -> dict:
+    return json.loads((FIXTURES / "holdings_sample.json").read_text(encoding="utf-8"))
+
+
+def test_sample_fixture_validates_against_configured_tickers():
+    from src.config import CONFIG
+
+    section = parse_holdings_section(_sample(), holdings=CONFIG.portfolio.tickers)
+    assert [h.ticker for h in section.holdings] == ["TICKER1", "TICKER2"]
+    assert {c.confidence for h in section.holdings for c in h.claims} == {
+        "confirmed", "inferred", "unknown",
+    }
+
+
+def test_sample_fixture_rejected_when_a_ticker_is_not_configured():
+    with pytest.raises(ValidationError, match="TICKER2"):
+        parse_holdings_section(_sample(), holdings=["TICKER1"])

@@ -1,0 +1,25 @@
+{
+  "holdings": [
+    {
+      "ticker": "TICKER1",
+      "claims": [
+        {"text": "ドル建てではほぼ横ばいで、円建ての下落はほぼ為替によるものです。", "confidence": "inferred", "source_ids": []},
+        {"text": "来週の決算では、新製品の売上寄与と通期ガイダンスが焦点です。", "confidence": "confirmed", "source_ids": ["s1"]},
+        {"text": "決算前後は大きめの値動きを想定しておくと良いです。", "confidence": "inferred", "source_ids": ["s1"]}
+      ],
+      "next_event": "決算（来週）"
+    },
+    {
+      "ticker": "TICKER2",
+      "claims": [
+        {"text": "今日の下落理由は特定できませんでした。", "confidence": "unknown", "source_ids": []},
+        {"text": "前四半期に利益率の低下が報じられています。", "confidence": "confirmed", "source_ids": ["s2"]},
+        {"text": "ポートフォリオ内の比率が大きすぎないか確認しておくと安心です。", "confidence": "inferred", "source_ids": []}
+      ]
+    }
+  ],
+  "sources": [
+    {"id": "s1", "title": "TICKER1 earnings preview", "url": "https://example.com/ticker1-earnings-preview"},
+    {"id": "s2", "title": "TICKER2 quarterly results", "url": "https://example.com/ticker2-quarterly-results"}
+  ]
+}
