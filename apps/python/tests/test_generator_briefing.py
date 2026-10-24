@@ -17,6 +17,7 @@ from src.generator.briefing import (
     looks_like_briefing,
     merge_recovered_sectors,
 )
+from src.generator.briefscript_render import splice_holdings
 
 
 def _make_config(**overrides):
@@ -358,3 +359,141 @@ class TestGenerateSectors:
 
         assert "防衛" in prompts[0]
         assert "RTX" in prompts[0]
+
+
+class TestBriefScriptHoldings:
+    """Holdings generated as BriefScript and spliced into the main body (#506)."""
+
+    _MAIN = (
+        "### 今日のサマリー（1文）\n\nサマリー。\n\n---\n\n"
+        "### 自分への示唆\n\n#### PLTR：旧見出し\n- 旧本文（Markdown フォールバック）\n\n---\n\n"
+        "### 参考記事\n\n- [a](https://example.com)\n"
+    )
+
+    def _config(self):
+        return _make_config(portfolio=PortfolioConfig(tickers=["PLTR", "NVDA"], themes=["AI"]))
+
+    @staticmethod
+    def _quotes():
+        from src.fetcher.stocks import StockQuote
+
+        return {
+            "PLTR": StockQuote("PLTR", 196.75, 197.14, -0.2),
+            "NVDA": StockQuote("NVDA", 100.0, 99.0, 1.0),
+        }
+
+    @staticmethod
+    def _payload(ticker="PLTR", source_ids=("s1",)):
+        import json
+
+        return json.dumps({
+            "holdings": [{"ticker": ticker, "claims": [
+                {"text": "決算が予想を上回った。", "confidence": "confirmed",
+                 "source_ids": list(source_ids)},
+            ]}],
+            "sources": [{"id": "s1", "title": "t", "url": "https://example.com/s1"}],
+        })
+
+    def _run(self, holdings_responses, quotes="default", fx_change_pct=-0.9):
+        calls = {"holdings": [], "kwargs": None}
+        responses = iter(holdings_responses)
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                return self._MAIN
+            if label == "セクタースイープ":
+                return "セクター結果"
+            calls["holdings"].append(prompt)
+            calls["kwargs"] = kwargs
+            item = next(responses)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        quotes = self._quotes() if quotes == "default" else quotes
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            out = generate_briefing("PLTR: ↓0.2%", self._config(), "fx",
+                                    quotes=quotes, fx_change_pct=fx_change_pct)
+        return out, calls
+
+    def test_valid_briefscript_replaces_markdown_holdings(self):
+        out, calls = self._run([self._payload()])
+        assert "#### PLTR：ドル建て ↓0.2% / 円建て ↓1.1%（$196.75）" in out
+        assert "- 決算が予想を上回った。" in out
+        assert "旧本文" not in out
+        # NVDA was configured but not returned: still listed, with real figures.
+        assert "#### NVDA：ドル建て ↑1.0% / 円建て ↑0.1%（$100.00）" in out
+        assert "### 参考記事" in out and "セクター結果" in out
+        assert looks_like_briefing(out)
+
+    def test_call_uses_schema_with_tickers_pinned_and_bounded_retries(self):
+        _, calls = self._run([self._payload()])
+        schema = calls["kwargs"]["json_schema"]
+        assert schema["$defs"]["HoldingNote"]["properties"]["ticker"]["enum"] == ["PLTR", "NVDA"]
+        assert calls["kwargs"]["max_attempts"] == RETRY_MAX_ATTEMPTS_BRIEFING
+
+    def test_validation_failure_retries_once_with_the_error(self):
+        out, calls = self._run([self._payload(source_ids=("s9",)), self._payload()])
+        assert len(calls["holdings"]) == 2
+        assert "s9" in calls["holdings"][1]
+        assert "#### PLTR：ドル建て" in out
+
+    def test_exhausted_validation_falls_back_to_markdown(self):
+        bad = self._payload(ticker="TSLA")
+        with patch("src.generator.briefing.logger") as log:
+            out, calls = self._run([bad, bad])
+        assert len(calls["holdings"]) == 2
+        assert "旧本文（Markdown フォールバック）" in out
+        assert any("falling back" in c.args[0] for c in log.warning.call_args_list)
+        assert out.startswith(self._MAIN)
+
+    def test_non_json_output_falls_back_to_markdown(self):
+        out, _ = self._run(["not json", "still not json"])
+        assert "旧本文（Markdown フォールバック）" in out
+
+    def test_cli_failure_falls_back_without_validation_retry(self):
+        out, calls = self._run([RuntimeError("claude CLI timed out (保有銘柄示唆)")])
+        assert len(calls["holdings"]) == 1
+        assert "旧本文（Markdown フォールバック）" in out
+
+    def test_no_quotes_skips_briefscript_call(self):
+        out, calls = self._run([], quotes=None)
+        assert calls["holdings"] == []
+        assert "旧本文（Markdown フォールバック）" in out
+
+    def test_main_without_holdings_heading_is_left_unchanged(self):
+        holdings_calls = []
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "保有銘柄示唆":
+                holdings_calls.append(label)
+                return self._payload()
+            return {"メイン分析": "### 今日のサマリー（1文）\n\n本文。",
+                    "セクタースイープ": "セクター結果"}[label]
+
+        with (
+            patch("src.generator.briefing.run_claude", side_effect=mock),
+            patch("src.generator.briefing.splice_holdings", wraps=splice_holdings) as splice,
+        ):
+            out = generate_briefing("x", self._config(), quotes=self._quotes())
+        # The BriefScript path ran and rendered; only the splice found nothing.
+        assert holdings_calls == ["保有銘柄示唆"]
+        splice.assert_called_once()
+        assert "#### PLTR：" in splice.call_args.args[1]
+        assert out.startswith("### 今日のサマリー（1文）\n\n本文。")
+        assert "#### PLTR" not in out
+
+    def test_padded_and_duplicate_config_tickers_are_normalised(self):
+        captured = {}
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "保有銘柄示唆":
+                captured["schema"] = kwargs["json_schema"]
+                return self._payload()
+            return self._MAIN if label == "メイン分析" else "セクター結果"
+
+        config = _make_config(portfolio=PortfolioConfig(tickers=[" PLTR ", "PLTR", "NVDA"], themes=["AI"]))
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            out = generate_briefing("x", config, quotes=self._quotes(), fx_change_pct=-0.9)
+        assert captured["schema"]["$defs"]["HoldingNote"]["properties"]["ticker"]["enum"] == ["PLTR", "NVDA"]
+        assert out.count("#### PLTR：") == 1

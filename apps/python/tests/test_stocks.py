@@ -243,3 +243,25 @@ class TestFetchStockMovesWithFx:
         with patch("src.fetcher.stocks.yf.Ticker", side_effect=Exception("API down")):
             result = fetch_stock_moves(["PLTR"], fx_change_pct=0.8)
         assert "Stock fetch error" in result
+
+
+class TestFetchStockSnapshot:
+    """One fetch feeds both the prompt text and the rendered headings (#506)."""
+
+    def test_returns_text_and_quotes_from_a_single_fetch(self):
+        from src.fetcher.stocks import StockQuote, fetch_stock_snapshot
+
+        quotes = {"PLTR": StockQuote("PLTR", 196.75, 197.14, -0.2, "USD")}
+        with patch("src.fetcher.stocks.fetch_stock_quotes", return_value=quotes) as m:
+            text, got = fetch_stock_snapshot(["PLTR"], fx_change_pct=-0.9)
+        m.assert_called_once_with(["PLTR"])
+        assert got is quotes
+        assert text.startswith("PLTR: ドル建て ↓0.2% / 円建て ↓1.1%")
+
+    def test_text_matches_fetch_stock_moves(self):
+        from src.fetcher.stocks import StockQuote, fetch_stock_moves, fetch_stock_snapshot
+
+        quotes = {"PLTR": StockQuote("PLTR", 10.0, 9.0, 11.1, "USD"),
+                  "BAD": StockQuote("BAD", error="Stock fetch error (x)")}
+        with patch("src.fetcher.stocks.fetch_stock_quotes", return_value=quotes):
+            assert fetch_stock_snapshot(["PLTR", "BAD"])[0] == fetch_stock_moves(["PLTR", "BAD"])

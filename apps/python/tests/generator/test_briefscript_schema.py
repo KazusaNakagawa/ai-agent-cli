@@ -235,3 +235,11 @@ def test_sample_fixture_validates_against_configured_tickers():
 def test_sample_fixture_rejected_when_a_ticker_is_not_configured():
     with pytest.raises(ValidationError, match="TICKER2"):
         parse_holdings_section(_sample(), holdings=["TICKER1"])
+
+
+def test_more_than_three_claims_rejected():
+    claims = [{"text": f"c{i}", "confidence": "inferred"} for i in range(4)]
+    with pytest.raises(ValidationError):
+        HoldingNote(ticker="TICKER1", claims=claims)
+    schema = holdings_json_schema(HOLDINGS)
+    assert schema["$defs"]["HoldingNote"]["properties"]["claims"]["maxItems"] == 3

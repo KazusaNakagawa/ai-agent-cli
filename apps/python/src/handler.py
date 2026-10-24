@@ -21,7 +21,7 @@ from src.constants import (
     CHART_OUTPUT_DIR,
 )
 from src.fetcher.fx import fetch_fx_context
-from src.fetcher.stocks import fetch_stock_moves
+from src.fetcher.stocks import StockQuote, fetch_stock_snapshot
 from src.generator.briefing import generate_briefing, is_degraded_briefing, looks_like_briefing
 from src.local_llm.briefing_index import index_briefings
 from src.local_llm.config import load_config as load_local_llm_config
@@ -89,16 +89,19 @@ def step_fx(ctx) -> tuple[str, float | None]:
     return fetch_fx_context(CONFIG)
 
 
-def step_stocks(ctx) -> str:
+def step_stocks(ctx) -> tuple[str, dict[str, StockQuote]]:
+    """Prompt text plus the quotes it was built from, so the holdings headings
+    show the very figures the model was given (#506)."""
     logger.info("fetching stock moves...")
     _, fx_change_pct = ctx.results["fx"]
-    return fetch_stock_moves(CONFIG.portfolio.tickers, fx_change_pct)
+    return fetch_stock_snapshot(CONFIG.portfolio.tickers, fx_change_pct)
 
 
 def step_generate(ctx) -> str:
     logger.info("generating briefing (WebSearch)...")
-    fx, _ = ctx.results["fx"]
-    briefing = generate_briefing(ctx.results["stocks"], CONFIG, fx)
+    fx, fx_change_pct = ctx.results["fx"]
+    stocks, quotes = ctx.results["stocks"]
+    briefing = generate_briefing(stocks, CONFIG, fx, quotes=quotes, fx_change_pct=fx_change_pct)
     logger.debug("briefing generated (length=%d)", len(briefing))
 
     if not looks_like_briefing(briefing):

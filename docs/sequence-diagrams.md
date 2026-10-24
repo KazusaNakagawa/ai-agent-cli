@@ -13,8 +13,11 @@
 
 ## 1. 日次ブリーフィング（バッチ実行）
 
-`bin/run.sh` → `python -m src.handler` の一本道。claude CLI 2 本を並列実行し、
+`bin/run.sh` → `python -m src.handler` の一本道。claude CLI を最大 3 本並列実行し、
 メイン分析が落ちたときだけ全体を失敗させる（セクタースイープは劣化継続）。
+3 本目の保有銘柄示唆は `--json-schema` で BriefScript を受け取り、検証してレンダリングした
+Markdown でメイン分析の「自分への示唆」を差し替える。失敗時はメイン分析の Markdown をそのまま使う。
+WebSearch 付きの呼び出しが 1 本増える分、1 回の実行コストも増える。
 
 エントリポイント: `apps/python/src/handler.py:29` (`lambda_handler`)
 
@@ -39,9 +42,9 @@ sequenceDiagram
     alt 当日 MD が既にある
         H-->>Sh: skipped
     else 実行する
-        H->>YF: fetch_stock_moves
-        YF-->>H: 前日比
-        H->>G: generate_briefing
+        H->>YF: fetch_stock_snapshot
+        YF-->>H: 前日比テキスト + quotes
+        H->>G: generate_briefing(stocks, quotes)
 
         par メイン分析
             G->>CLI: run_claude(main)
@@ -49,6 +52,14 @@ sequenceDiagram
         and セクタースイープ
             G->>CLI: run_claude(sectors)
             CLI-->>G: 本文 + usage
+        and 保有銘柄示唆（quotes があるとき）
+            G->>CLI: run_claude(holdings, json_schema)
+            CLI-->>G: BriefScript JSON + usage
+            Note over G: Pydantic 検証（失敗時は 1 回だけ再生成）→ quotes で見出しを描画
+        end
+
+        opt 保有銘柄示唆が成功
+            Note over G: splice_holdings でメイン分析の「自分への示唆」を差し替え
         end
 
         alt メイン失敗
