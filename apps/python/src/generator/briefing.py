@@ -1,9 +1,22 @@
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
+
+from pydantic import ValidationError
+
 from src.claude_runner import run_claude
 from src.config import BriefingConfig
-from src.constants import RETRY_MAX_ATTEMPTS_BRIEFING, TIMEOUT_BRIEFING_MAIN, TIMEOUT_BRIEFING_SECTORS
+from src.constants import (
+    BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS,
+    RETRY_MAX_ATTEMPTS_BRIEFING,
+    TIMEOUT_BRIEFING_HOLDINGS,
+    TIMEOUT_BRIEFING_MAIN,
+    TIMEOUT_BRIEFING_SECTORS,
+)
+from src.fetcher.stocks import StockQuote
+from src.generator.briefscript_render import render_holdings_markdown, splice_holdings
+from src.generator.briefscript_schema import holdings_json_schema, parse_holdings_section
 from src.generator.prompt import render
 from src.logger import get_logger
 from src.prompt_safety import neutralize_user_text
@@ -185,12 +198,75 @@ def merge_recovered_sectors(body: str, sectors: str) -> str:
     return body[:marker] + f"{SECTORS_HEADING}\n\n" + sectors
 
 
-def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
+class BriefScriptError(RuntimeError):
+    """The holdings BriefScript never validated; callers keep the Markdown."""
+
+
+def generate_holdings(
+    stocks: str,
+    config: BriefingConfig,
+    quotes: dict[str, StockQuote],
+    fx_change_pct: float | None = None,
+) -> str:
+    """Generate the holdings section as BriefScript and render it to Markdown.
+
+    Output that fails validation is retried once with the error appended, so
+    the model can correct exactly what was wrong (#504). A CLI failure is not
+    retried here — run_claude already spent its transient-error budget.
+    """
+    tickers = config.portfolio.tickers
+    base_prompt = render("briefing_holdings", tickers=join_safe(tickers, sep=", "), stocks=stocks)
+    schema = holdings_json_schema(tickers)
+    prompt = base_prompt
+    last_error = ""
+    for attempt in range(1, BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS + 1):
+        raw = run_claude(
+            prompt, "保有銘柄示唆", TIMEOUT_BRIEFING_HOLDINGS,
+            max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING, json_schema=schema,
+        )
+        try:
+            section = parse_holdings_section(json.loads(raw), holdings=tickers)
+        except (json.JSONDecodeError, ValidationError) as e:
+            last_error = str(e)
+            logger.warning(
+                "holdings BriefScript failed validation (attempt %d/%d): %s",
+                attempt, BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS, _truncate_error(last_error),
+            )
+            prompt = (
+                f"{base_prompt}\n\n## 前回の出力のエラー\n"
+                f"前回の出力は次の検証エラーで却下されました。直して出力し直してください。\n{last_error}"
+            )
+            continue
+        return render_holdings_markdown(section, quotes, tickers, fx_change_pct)
+    raise BriefScriptError(f"holdings BriefScript invalid after retries: {_truncate_error(last_error)}")
+
+
+def _apply_holdings(main_text: str, holdings_md: str | None) -> str:
+    if holdings_md is None:
+        return main_text
+    spliced = splice_holdings(main_text, holdings_md)
+    if spliced is None:
+        logger.warning("main analysis has no holdings section — keeping it as generated")
+        return main_text
+    return spliced
+
+
+def generate_briefing(
+    stocks: str,
+    config: BriefingConfig,
+    fx: str = "",
+    quotes: dict[str, StockQuote] | None = None,
+    fx_change_pct: float | None = None,
+) -> str:
     """Generate the briefing by running the main analysis and sector sweep in parallel.
 
     ``fx`` is the pre-rendered exchange-rate block. It defaults to empty so a
     failed FX fetch (or no configured pair) degrades to the previous USD-only
     briefing rather than blocking the run.
+
+    With ``quotes``, a third parallel call writes the holdings section as
+    BriefScript (#506); its rendering replaces the main analysis' own holdings
+    Markdown, which stays in place as the fallback if that call fails.
     """
     tickers = join_safe(config.portfolio.tickers, sep=", ")
     themes = join_safe(config.portfolio.themes, sep=", ")
@@ -205,7 +281,7 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
         fx=fx or "(為替の取得なし。為替セクションは省略してよい)",
         few_shot=load_briefing_few_shot(),
     )
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(
                 run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN,
@@ -213,6 +289,10 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
             ): "main",
             executor.submit(generate_sectors, stocks, config): "sectors",
         }
+        if quotes:
+            futures[executor.submit(
+                generate_holdings, stocks, config, quotes, fx_change_pct,
+            )] = "holdings"
         results: dict[str, str] = {}
         errors: dict[str, str] = {}
         for future in as_completed(futures):
@@ -220,7 +300,10 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
             try:
                 results[key] = future.result()
             except Exception as e:
-                logger.error("claude CLI failed [%s]: %s", key, e)
+                if key == "holdings":
+                    logger.warning("holdings BriefScript failed, falling back to Markdown: %s", e)
+                else:
+                    logger.error("claude CLI failed [%s]: %s", key, e)
                 errors[key] = str(e)
 
     if "main" in errors:
@@ -239,7 +322,7 @@ def generate_briefing(stocks: str, config: BriefingConfig, fx: str = "") -> str:
 
     assert "main" in results, "main result missing despite no error recorded"
 
-    main_text = results["main"]
+    main_text = _apply_holdings(results["main"], results.get("holdings"))
 
     if "sectors" in errors:
         logger.warning("sector sweep failed (main analysis succeeded): %s", errors["sectors"])

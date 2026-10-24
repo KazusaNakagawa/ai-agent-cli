@@ -841,3 +841,32 @@ class TestRunClaudeStreaming:
         files = list(tmp_path.glob("*.md"))
         assert len(files) == 1
         assert "### 見出し" in files[0].read_text(encoding="utf-8")
+
+
+class TestRunClaudeJsonSchema:
+    """``json_schema`` turns on the CLI's schema-enforced output (#504)."""
+
+    def _run(self, stdout, **kwargs):
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner._stream_claude", return_value=_make_result(stdout=stdout)) as m:
+                with patch("src.claude_runner.log_usage_from_result", return_value=True):
+                    result = run_claude("prompt", "test", **kwargs)
+        return result, m.call_args[0][0]
+
+    def test_schema_flag_appended_and_structured_output_returned(self):
+        schema = {"type": "object"}
+        stdout = json.dumps({"result": "ignored text", "structured_output": {"a": 1}})
+        result, cmd = self._run(stdout, json_schema=schema)
+        assert cmd[cmd.index("--json-schema") + 1] == json.dumps(schema)
+        assert json.loads(result) == {"a": 1}
+
+    def test_missing_structured_output_falls_back_to_result(self):
+        stdout = json.dumps({"result": '{"a": 2}'})
+        result, _ = self._run(stdout, json_schema={"type": "object"})
+        assert json.loads(result) == {"a": 2}
+
+    def test_no_schema_leaves_command_and_result_unchanged(self):
+        stdout = json.dumps({"result": "text", "structured_output": {"a": 1}})
+        result, cmd = self._run(stdout)
+        assert "--json-schema" not in cmd
+        assert result == "text"

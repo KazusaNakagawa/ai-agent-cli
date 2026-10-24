@@ -157,12 +157,16 @@ def _log_api_errors(state: StreamState, label: str) -> None:
     )
 
 
-def _parse_and_log_usage(stdout: str, label: str) -> str:
+def _parse_and_log_usage(stdout: str, label: str, structured: bool = False) -> str:
     """Parse ``--output-format json`` stdout, record usage, and return the text result.
 
     If the output is not JSON or lacks a ``result`` field, log a warning and
     return the raw stdout as-is (skipping the usage log) — usage measurement must
     not break the main task.
+
+    With ``structured`` (a ``--json-schema`` call), the schema-validated
+    ``structured_output`` object is returned re-serialized as JSON; ``result``
+    carries the same JSON as text and is used when that field is absent.
     """
     try:
         parsed = json.loads(stdout)
@@ -177,6 +181,8 @@ def _parse_and_log_usage(stdout: str, label: str) -> str:
         # Calls without usage can happen in normal operation, so keep this at debug (avoid noise).
         logger.debug("no usage in claude CLI output, skipping usage log [%s]", label)
 
+    if structured and parsed.get("structured_output") is not None:
+        return json.dumps(parsed["structured_output"], ensure_ascii=False)
     return result_text.strip() if isinstance(result_text, str) else str(result_text)
 
 
@@ -274,6 +280,7 @@ def run_claude(
     label: str,
     timeout: int = TIMEOUT_CLAUDE_DEFAULT,
     max_attempts: int = RETRY_MAX_ATTEMPTS,
+    json_schema: dict | None = None,
 ) -> str:
     """Invoke the claude CLI as a subprocess and return the result.
 
@@ -291,6 +298,9 @@ def run_claude(
     user-facing path should pass a shorter explicit ``timeout`` — every current
     consumer is an offline batch job (briefing, weekly recap, evaluator, wordset,
     self-agent profile, XSS intel).
+
+    ``json_schema`` passes ``--json-schema`` so the CLI enforces the output
+    shape (#504); the return value is then that object serialized as JSON.
     """
     if max_attempts < 1:
         raise ValueError(f"max_attempts must be >= 1 (got {max_attempts})")
@@ -319,6 +329,8 @@ def run_claude(
         "--disable-slash-commands",
         "--strict-mcp-config",
     ]
+    if json_schema is not None:
+        cmd += ["--json-schema", json.dumps(json_schema)]
 
     last_returncode = 0
     last_detail = ""
@@ -337,7 +349,7 @@ def run_claude(
 
         if result.returncode == 0:
             logger.info("claude CLI done: %s (%d chars)", label, len(result.stdout))
-            return _parse_and_log_usage(result.stdout, label)
+            return _parse_and_log_usage(result.stdout, label, structured=json_schema is not None)
 
         logger.error(
             "claude CLI error [%s] rc=%d attempt=%d/%d\nstdout=%s\nstderr=%s",

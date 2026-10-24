@@ -14,6 +14,7 @@ DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 TIMEOUT_CLAUDE_DEFAULT = 900
 TIMEOUT_BRIEFING_MAIN = TIMEOUT_CLAUDE_DEFAULT
 TIMEOUT_BRIEFING_SECTORS = TIMEOUT_CLAUDE_DEFAULT
+TIMEOUT_BRIEFING_HOLDINGS = TIMEOUT_CLAUDE_DEFAULT
 TIMEOUT_WEEKLY_SUMMARY = TIMEOUT_CLAUDE_DEFAULT
 
 # Claude CLI retry policy (5xx transient errors only)
@@ -26,6 +27,10 @@ RETRY_BACKOFF_FACTOR = 3.0  # 5s -> 15s -> 45s
 # attempt observed), so the module default of 3 would triple worst-case token
 # spend on a string of transient errors.
 RETRY_MAX_ATTEMPTS_BRIEFING = 2
+# BriefScript holdings (#504): attempts for output that parses but fails the
+# Pydantic cross-field checks. The retry prompt carries the validation error.
+# Separate from RETRY_MAX_ATTEMPTS_BRIEFING, which covers transient API errors.
+BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS = 2
 
 # Log retention
 LOG_RETENTION_DAYS = 7
