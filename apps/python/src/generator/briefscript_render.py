@@ -31,6 +31,8 @@ _SOURCES_HEADING = "**出典**"
 # End of the holdings section: a ``---`` rule or an H3. CommonMark allows up to
 # three leading spaces on both; four or more is an indented code block.
 _SECTION_BOUNDARY = re.compile(r"^ {0,3}(?:---\s*$|### )")
+# Opening/closing code fence; boundaries inside a fence are content, not structure.
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
 def _arrow(pct: float) -> str:
@@ -116,6 +118,21 @@ def _link_text(title: str) -> str:
     return _plain(title).replace("[", "［").replace("]", "］")
 
 
+def _section_end(lines: list[str], begin: int) -> int:
+    """Index of the first boundary line at or after ``begin``, skipping fences."""
+    fence: str | None = None
+    for i in range(begin, len(lines)):
+        m = _FENCE.match(lines[i])
+        if fence is None:
+            if m:
+                fence = m[1]
+            elif _SECTION_BOUNDARY.match(lines[i]):
+                return i
+        elif m and m[1][0] == fence[0] and len(m[1]) >= len(fence):
+            fence = None
+    return len(lines)
+
+
 def splice_holdings(body: str, holdings_md: str) -> str | None:
     """Replace the body of the holdings section, or return None if it is absent.
 
@@ -127,11 +144,7 @@ def splice_holdings(body: str, holdings_md: str) -> str | None:
         start = next(i for i, line in enumerate(lines) if line.strip() == HOLDINGS_HEADING)
     except StopIteration:
         return None
-    end = next(
-        (i for i in range(start + 1, len(lines))
-         if _SECTION_BOUNDARY.match(lines[i])),
-        len(lines),
-    )
+    end = _section_end(lines, start + 1)
     tail = lines[end:]
     replaced = [*lines[: start + 1], "", holdings_md, ""]
     return "\n".join(replaced + tail) if tail else "\n".join(replaced[:-1]) + "\n"

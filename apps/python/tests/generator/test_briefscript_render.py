@@ -195,3 +195,22 @@ def test_splice_does_not_stop_at_an_indented_code_line():
     body = f"{HOLDINGS_HEADING}\n\n#### OLD\n    ### not a heading\n\n---\n\n後続\n"
     out = splice_holdings(body, "#### NEW")
     assert "not a heading" not in out and "後続" in out
+
+
+def test_splice_ignores_boundaries_inside_fenced_code():
+    body = (
+        f"{HOLDINGS_HEADING}\n\n#### OLD\n```\n### fenced heading\n---\n```\n- 旧本文\n\n"
+        "---\n\n### 参考記事\n"
+    )
+    out = splice_holdings(body, "#### NEW")
+    assert "fenced heading" not in out and "旧本文" not in out
+    assert "### 参考記事" in out
+
+
+def test_splice_tilde_fence_and_unclosed_fence():
+    body = f"{HOLDINGS_HEADING}\n\n~~~\n### inside\n~~~\n- 旧本文\n\n### 次\n"
+    out = splice_holdings(body, "#### NEW")
+    assert "inside" not in out and "### 次" in out
+    # An unclosed fence swallows the rest, as CommonMark renders it.
+    body = f"{HOLDINGS_HEADING}\n\n```\n### inside\n"
+    assert splice_holdings(body, "#### NEW").rstrip().endswith("#### NEW")
