@@ -17,6 +17,7 @@ from src.generator.briefing import (
     looks_like_briefing,
     merge_recovered_sectors,
 )
+from src.generator.briefscript_render import splice_holdings
 
 
 def _make_config(**overrides):
@@ -461,12 +462,24 @@ class TestBriefScriptHoldings:
         assert "旧本文（Markdown フォールバック）" in out
 
     def test_main_without_holdings_heading_is_left_unchanged(self):
-        def mock(prompt, label, timeout, **kwargs):
-            return {"メイン分析": "### 今日のサマリー（1文）\n\n本文。",
-                    "セクタースイープ": "セクター結果"}.get(label) or self._payload()
+        holdings_calls = []
 
-        with patch("src.generator.briefing.run_claude", side_effect=mock):
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "保有銘柄示唆":
+                holdings_calls.append(label)
+                return self._payload()
+            return {"メイン分析": "### 今日のサマリー（1文）\n\n本文。",
+                    "セクタースイープ": "セクター結果"}[label]
+
+        with (
+            patch("src.generator.briefing.run_claude", side_effect=mock),
+            patch("src.generator.briefing.splice_holdings", wraps=splice_holdings) as splice,
+        ):
             out = generate_briefing("x", self._config(), quotes=self._quotes())
+        # The BriefScript path ran and rendered; only the splice found nothing.
+        assert holdings_calls == ["保有銘柄示唆"]
+        splice.assert_called_once()
+        assert "#### PLTR：" in splice.call_args.args[1]
         assert out.startswith("### 今日のサマリー（1文）\n\n本文。")
         assert "#### PLTR" not in out
 

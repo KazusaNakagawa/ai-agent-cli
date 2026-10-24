@@ -166,9 +166,32 @@ def test_source_title_cannot_break_its_link():
     data["sources"][0]["title"] = "a](https://evil.example) [b"
     md = render_holdings_markdown(_section(data), QUOTES, TICKERS)
     assert "](https://evil.example)" not in md
+    # The source is still listed, with its title escaped and its own URL.
+    assert (
+        "- ［1］[a］(https://evil.example) ［b](https://example.com/ticker1-earnings-preview)"
+        in md.splitlines()
+    )
 
 
 def test_duplicate_and_padded_configured_tickers_render_once():
     md = render_holdings_markdown(_section(), QUOTES, [" TICKER1 ", "TICKER1", "TICKER2"])
     assert md.count("#### TICKER1：") == 1
     assert "#### TICKER1：ドル建て ↓0.2%（$100.00）" in md
+
+
+def test_splice_stops_at_an_indented_h3():
+    # CommonMark allows up to three leading spaces before a heading.
+    body = (
+        f"{HOLDINGS_HEADING}\n\n#### OLD\n- 旧本文\n\n"
+        "   ### 参考記事\n\n- [a](https://example.com)\n\n---\n\n後続\n"
+    )
+    out = splice_holdings(body, "#### NEW")
+    assert "旧本文" not in out
+    assert "   ### 参考記事" in out and "- [a](https://example.com)" in out
+
+
+def test_splice_does_not_stop_at_an_indented_code_line():
+    # Four spaces is an indented code block, not a heading boundary.
+    body = f"{HOLDINGS_HEADING}\n\n#### OLD\n    ### not a heading\n\n---\n\n後続\n"
+    out = splice_holdings(body, "#### NEW")
+    assert "not a heading" not in out and "後続" in out

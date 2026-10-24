@@ -226,8 +226,8 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 | `_preflight()` (L21) | `preflight` | `preamble=True` |
 | `BRIEFING_SKIP_IF_EXISTS` + `_is_degraded_md` (L51) | `Workflow.guard` | `force` で無視 |
 | `fetch_fx_context` (L63) | `fx` | — |
-| `fetch_stock_moves` (L66) | `stocks` | — |
-| `generate_briefing` + `looks_like_briefing` (L69-79) | `generate` | 内部の2並列は generator 側に残す |
+| `fetch_stock_moves` (L66) | `stocks` | 現在は `fetch_stock_snapshot` でテキストと quotes を返す（#506） |
+| `generate_briefing` + `looks_like_briefing` (L69-79) | `generate` | 内部の並列（メイン・セクター・保有銘柄示唆の最大 3 本、#506）は generator 側に残す |
 | `save_briefing_md` (L87) | `persist` | 配信ステップより必ず前。`OSError` を自身で捕捉し `md_written` を bool で返す |
 | `index_briefings` (L104) | `index` | ステップ自身が例外を握り潰す, `skip_if=lambda ctx: not ctx.results["persist"]` |
 | `send_to_discord` (L110) | `deliver_discord` | `skip_if=` 認証情報未設定 |

@@ -28,6 +28,10 @@ _MENTION = re.compile(r"@(everyone|here)\b|<([@#][!&]?)(\d+)>")
 
 _SOURCES_HEADING = "**出典**"
 
+# End of the holdings section: a ``---`` rule or an H3. CommonMark allows up to
+# three leading spaces on both; four or more is an indented code block.
+_SECTION_BOUNDARY = re.compile(r"^ {0,3}(?:---\s*$|### )")
+
 
 def _arrow(pct: float) -> str:
     # Same convention as the fetcher's text block: zero counts as down.
@@ -125,7 +129,7 @@ def splice_holdings(body: str, holdings_md: str) -> str | None:
         return None
     end = next(
         (i for i in range(start + 1, len(lines))
-         if lines[i].strip() == "---" or lines[i].startswith("### ")),
+         if _SECTION_BOUNDARY.match(lines[i])),
         len(lines),
     )
     tail = lines[end:]
