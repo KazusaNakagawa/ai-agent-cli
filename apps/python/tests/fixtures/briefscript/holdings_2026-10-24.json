@@ -1,0 +1,59 @@
+{
+  "holdings": [
+    {
+      "ticker": "TICKER1",
+      "claims": [
+        {"text": "ドル建てではほぼ横ばいで、円建ての下落はほぼ為替によるものです。", "confidence": "inferred", "source_ids": []},
+        {"text": "11/2 決算は 9 期連続の予想上回りで期待値が高く、会社ガイダンスの Q3 売上に対する上振れ幅と通期ガイダンスが焦点です。", "confidence": "confirmed", "source_ids": ["s2"]},
+        {"text": "決算前後は ±10% 級の値動きを想定しておくと良いです。", "confidence": "inferred", "source_ids": ["s2"]}
+      ],
+      "next_event": "11/2 決算"
+    },
+    {
+      "ticker": "TICKER2",
+      "claims": [
+        {"text": "ドル建てでは唯一の上昇でしたが、円高で円建てではマイナスに転じました。", "confidence": "confirmed", "source_ids": []},
+        {"text": "10/28（予定）の決算では、クラウド事業の伸びと AI 設備投資の水準が焦点です。AI 企業の IPO の話題が AI 投資の配分論議に波及する可能性もあります。", "confidence": "inferred", "source_ids": []}
+      ],
+      "next_event": "10/28 決算（予定）"
+    },
+    {
+      "ticker": "TICKER3",
+      "claims": [
+        {"text": "10/28（予定）の決算を前にした調整です。", "confidence": "inferred", "source_ids": ["s5"]},
+        {"text": "IPO を控えた AI 企業の主要出資者なので、IPO 価格が高く決まれば保有株の含み益として評価される余地があります。決算と IPO の 2 つの材料が同時期に重なっています。", "confidence": "inferred", "source_ids": []}
+      ],
+      "next_event": "10/28 決算（予定）"
+    },
+    {
+      "ticker": "TICKER4",
+      "claims": [
+        {"text": "10/29 決算の市場予想は EPS 0.66 ドル、想定される株価変動は ±8.5%。", "confidence": "confirmed", "source_ids": ["s3"]},
+        {"text": "10 月初旬の水準から下げており、通期売上ガイダンスを維持できるかが反発の条件です。", "confidence": "inferred", "source_ids": ["s3"]}
+      ],
+      "next_event": "10/29 決算"
+    },
+    {
+      "ticker": "TICKER5",
+      "claims": [
+        {"text": "Q3 は EPS が予想を上回り、受注/売上比率（book-to-bill）1.5 倍、EPS ガイダンス引き上げとファンダメンタルズは堅調です。", "confidence": "confirmed", "source_ids": ["s1"]},
+        {"text": "足元の軟調は利益確定によるもので、中東情勢の長期化は引き続き下支えになります。", "confidence": "inferred", "source_ids": []}
+      ]
+    },
+    {
+      "ticker": "TICKER6",
+      "claims": [
+        {"text": "今日の下落理由は特定できませんでした。", "confidence": "unknown", "source_ids": []},
+        {"text": "背景には、粗利率の悪化、規制当局による提訴、主力事業の戦略転換があります。", "confidence": "confirmed", "source_ids": ["s4"]},
+        {"text": "年初来でマイナス圏、1 年レンジの値幅が非常に大きい銘柄です。ポートフォリオ内の比率が大きすぎないか確認しておくと安心です。", "confidence": "inferred", "source_ids": []}
+      ]
+    }
+  ],
+  "sources": [
+    {"id": "s1", "title": "TICKER5 Q3 2026 Earnings Release", "url": "https://example.com/ticker5-q3-earnings"},
+    {"id": "s2", "title": "TICKER1: Nine Straight Beats Set High Bar for Q3 Results", "url": "https://example.com/ticker1-earnings-preview"},
+    {"id": "s3", "title": "Is Wall Street Bullish or Bearish on TICKER4?", "url": "https://example.com/ticker4-analyst-view"},
+    {"id": "s4", "title": "Why Did TICKER6 Stock Collapse in Early 2026?", "url": "https://example.com/ticker6-collapse"},
+    {"id": "s5", "title": "TICKER3 earnings date (Q3 2026)", "url": "https://example.com/ticker3-earnings-date"}
+  ]
+}
