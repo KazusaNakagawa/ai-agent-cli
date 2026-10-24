@@ -438,50 +438,92 @@ class TestBriefScriptHoldings:
         assert "s9" in calls["holdings"][1]
         assert "#### PLTR：ドル建て" in out
 
-    def test_exhausted_validation_falls_back_to_markdown(self):
+    _FALLBACK_NOTE = "- 〔未確認〕本日の示唆は生成できませんでした。"
+
+    def _assert_quote_only_fallback(self, out):
+        # #511: the main analysis no longer writes holdings, so the fallback is
+        # the quote-derived headings plus an explicit note, not its Markdown.
+        assert "旧本文" not in out
+        assert "#### PLTR：ドル建て ↓0.2% / 円建て ↓1.1%（$196.75）" in out
+        assert "#### NVDA：ドル建て ↑1.0% / 円建て ↑0.1%（$100.00）" in out
+        assert out.count(self._FALLBACK_NOTE) == 2
+
+    def test_exhausted_validation_falls_back_to_quote_only_headings(self):
         bad = self._payload(ticker="TSLA")
         with patch("src.generator.briefing.logger") as log:
             out, calls = self._run([bad, bad])
         assert len(calls["holdings"]) == 2
-        assert "旧本文（Markdown フォールバック）" in out
+        self._assert_quote_only_fallback(out)
         assert any("falling back" in c.args[0] for c in log.warning.call_args_list)
-        assert out.startswith(self._MAIN)
+        assert "### 参考記事" in out
 
-    def test_non_json_output_falls_back_to_markdown(self):
+    def test_non_json_output_falls_back_to_quote_only_headings(self):
         out, _ = self._run(["not json", "still not json"])
-        assert "旧本文（Markdown フォールバック）" in out
+        self._assert_quote_only_fallback(out)
 
     def test_cli_failure_falls_back_without_validation_retry(self):
         out, calls = self._run([RuntimeError("claude CLI timed out (保有銘柄示唆)")])
         assert len(calls["holdings"]) == 1
-        assert "旧本文（Markdown フォールバック）" in out
+        self._assert_quote_only_fallback(out)
 
-    def test_no_quotes_skips_briefscript_call(self):
+    def test_no_quotes_skips_briefscript_call_and_keeps_main_markdown(self):
         out, calls = self._run([], quotes=None)
         assert calls["holdings"] == []
         assert "旧本文（Markdown フォールバック）" in out
 
-    def test_main_without_holdings_heading_is_left_unchanged(self):
-        holdings_calls = []
+    def _main_prompt(self, quotes):
+        captured = {}
 
         def mock(prompt, label, timeout, **kwargs):
-            if label == "保有銘柄示唆":
-                holdings_calls.append(label)
-                return self._payload()
-            return {"メイン分析": "### 今日のサマリー（1文）\n\n本文。",
-                    "セクタースイープ": "セクター結果"}[label]
+            if label == "メイン分析":
+                captured["prompt"] = prompt
+                return self._MAIN
+            return self._payload() if label == "保有銘柄示唆" else "セクター結果"
 
-        with (
-            patch("src.generator.briefing.run_claude", side_effect=mock),
-            patch("src.generator.briefing.splice_holdings", wraps=splice_holdings) as splice,
-        ):
-            out = generate_briefing("x", self._config(), quotes=self._quotes())
-        # The BriefScript path ran and rendered; only the splice found nothing.
-        assert holdings_calls == ["保有銘柄示唆"]
-        splice.assert_called_once()
-        assert "#### PLTR：" in splice.call_args.args[1]
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            generate_briefing("x", self._config(), quotes=quotes)
+        return captured["prompt"]
+
+    def test_briefscript_mode_main_prompt_drops_holdings_body_and_research(self):
+        prompt = self._main_prompt(self._quotes())
+        assert "保有者として今日意識すべきこと" not in prompt
+        assert "保有・注目銘柄の最新ニュース" not in prompt
+        assert "銘柄別示唆" not in prompt and "示唆を書くとき" not in prompt
+        assert "この見出しの 1 行だけを出力し" in prompt
+        assert "PLTR, NVDA" in prompt
+        # The few-shot's holdings body is replaced too, or it would model the old output.
+        assert "規制の本命銘柄" not in prompt
+        assert "### 今日のサマリー（1文）" in prompt
+
+    def test_markdown_mode_main_prompt_keeps_holdings_format(self):
+        prompt = self._main_prompt(None)
+        assert "保有者として今日意識すべきこと" in prompt
+        assert "保有・注目銘柄の最新ニュース: PLTR, NVDA" in prompt
+        assert "示唆を書くときは円建てを基準にし" in prompt
+        assert "（$123.53）" in prompt
+        assert "規制の本命銘柄" in prompt
+
+    def _run_with_main(self, main):
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "保有銘柄示唆":
+                return self._payload()
+            return {"メイン分析": main, "セクタースイープ": "セクター結果"}[label]
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            return generate_briefing("x", self._config(), quotes=self._quotes(), fx_change_pct=-0.9)
+
+    def test_missing_heading_inserts_section_before_references(self):
+        out = self._run_with_main(
+            "### 今日のサマリー（1文）\n\n本文。\n\n---\n\n### 参考記事\n\n- [a](https://example.com)\n"
+        )
+        assert out.index("本文。") < out.index("### 自分への示唆") < out.index("#### PLTR：")
+        assert out.index("#### PLTR：") < out.index("### 参考記事")
+        assert out.count("### 自分への示唆") == 1
+
+    def test_missing_heading_and_references_appends_section(self):
+        out = self._run_with_main("### 今日のサマリー（1文）\n\n本文。")
         assert out.startswith("### 今日のサマリー（1文）\n\n本文。")
-        assert "#### PLTR" not in out
+        assert out.index("### 自分への示唆") < out.index("#### PLTR：") < out.index("セクター結果")
 
     def test_padded_and_duplicate_config_tickers_are_normalised(self):
         captured = {}

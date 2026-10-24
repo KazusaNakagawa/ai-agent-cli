@@ -20,6 +20,8 @@ _CONFIDENCE_MARKERS = {"confirmed": "", "inferred": "〔推測〕", "unknown": "
 
 # Bullet for a configured holding the LLM returned nothing for.
 _MISSING_NOTE = "〔未確認〕今日の材料は確認できませんでした。"
+# Bullet for every holding when the BriefScript call failed outright.
+_FAILED_NOTE = "〔未確認〕本日の示唆は生成できませんでした。"
 
 _LEADING_HASHES = re.compile(r"^\s*#+\s*")
 _MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
@@ -85,6 +87,7 @@ def render_holdings_markdown(
     quotes: dict[str, StockQuote],
     tickers: list[str],
     fx_change_pct: float | None = None,
+    missing_note: str = _MISSING_NOTE,
 ) -> str:
     """Render one ``####`` block per configured ticker, in configured order.
 
@@ -103,7 +106,7 @@ def render_holdings_markdown(
     for ticker in tickers:
         note = notes.get(ticker)
         if note is None:
-            bullets = [f"- {_MISSING_NOTE}"]
+            bullets = [f"- {missing_note}"]
         else:
             bullets = [_bullet(c, numbers) for c in note.claims]
             if note.next_event:
@@ -118,6 +121,17 @@ def render_holdings_markdown(
         ]
         blocks.append("\n".join([_SOURCES_HEADING, *listed]))
     return "\n\n".join(blocks)
+
+
+def render_holdings_fallback(
+    quotes: dict[str, StockQuote],
+    tickers: list[str],
+    fx_change_pct: float | None = None,
+) -> str:
+    """Quote-derived headings only, for when the BriefScript call failed."""
+    return render_holdings_markdown(
+        HoldingsSection(holdings=[]), quotes, tickers, fx_change_pct, missing_note=_FAILED_NOTE,
+    )
 
 
 def _link_text(title: str) -> str:

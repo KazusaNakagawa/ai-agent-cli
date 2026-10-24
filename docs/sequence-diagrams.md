@@ -16,8 +16,9 @@
 `bin/run.sh` → `python -m src.handler` の一本道。claude CLI を最大 3 本並列実行し、
 メイン分析が落ちたときだけ全体を失敗させる（セクタースイープは劣化継続）。
 3 本目の保有銘柄示唆は `--json-schema` で BriefScript を受け取り、検証してレンダリングした
-Markdown でメイン分析の「自分への示唆」を差し替える。失敗時はメイン分析の Markdown をそのまま使う。
-WebSearch 付きの呼び出しが 1 本増える分、1 回の実行コストも増える。
+Markdown でメイン分析の「自分への示唆」を差し替える。このときメイン分析は見出しだけを書き、
+保有銘柄の個別ニュースも調べない（#511、二重生成の回避）。保有銘柄示唆が失敗したときは、
+株価データから作った見出しに「〔未確認〕本日の示唆は生成できませんでした。」を添えて出す。
 
 エントリポイント: `apps/python/src/handler.py:29` (`lambda_handler`)
 
@@ -58,8 +59,10 @@ sequenceDiagram
             Note over G: Pydantic 検証（失敗時は 1 回だけ再生成）→ quotes で見出しを描画
         end
 
-        opt 保有銘柄示唆が成功
+        alt 保有銘柄示唆が成功
             Note over G: splice_holdings でメイン分析の「自分への示唆」を差し替え
+        else 保有銘柄示唆が失敗
+            Note over G: quotes だけの見出し + 〔未確認〕注記を差し込み
         end
 
         alt メイン失敗

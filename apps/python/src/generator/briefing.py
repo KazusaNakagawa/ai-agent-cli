@@ -15,7 +15,12 @@ from src.constants import (
     TIMEOUT_BRIEFING_SECTORS,
 )
 from src.fetcher.stocks import StockQuote
-from src.generator.briefscript_render import render_holdings_markdown, splice_holdings
+from src.generator.briefscript_render import (
+    HOLDINGS_HEADING,
+    render_holdings_fallback,
+    render_holdings_markdown,
+    splice_holdings,
+)
 from src.generator.briefscript_schema import holdings_json_schema, parse_holdings_section
 from src.generator.prompt import render
 from src.logger import get_logger
@@ -243,14 +248,55 @@ def generate_holdings(
     raise BriefScriptError(f"holdings BriefScript invalid after retries: {_truncate_error(last_error)}")
 
 
+_REFERENCES_HEADING = "### 参考記事"
+
+
 def _apply_holdings(main_text: str, holdings_md: str | None) -> str:
+    """Put the rendered holdings into the main body.
+
+    In BriefScript mode the main analysis writes only the heading (#511), so a
+    missing heading is not a reason to drop the section: it goes in before
+    the references, or at the end when those are missing too.
+    """
     if holdings_md is None:
         return main_text
     spliced = splice_holdings(main_text, holdings_md)
-    if spliced is None:
-        logger.warning("main analysis has no holdings section — keeping it as generated")
-        return main_text
-    return spliced
+    if spliced is not None:
+        return spliced
+    logger.warning("main analysis has no holdings heading — inserting the section")
+    section = f"{HOLDINGS_HEADING}\n\n{holdings_md}\n\n---\n\n"
+    at = main_text.find(f"\n{_REFERENCES_HEADING}")
+    if at == -1:
+        return f"{main_text.rstrip()}\n\n---\n\n{section.rstrip()}"
+    return main_text[: at + 1] + section + main_text[at + 1:]
+
+
+def _main_prompt_holdings_parts(tickers: str, briefscript: bool) -> dict[str, str]:
+    """Prompt pieces that differ between the two holdings modes.
+
+    With BriefScript the holdings are researched and written by their own call,
+    so the main analysis is told to skip both — that is the duplicate spend
+    #511 removes. The few-shot's holdings body is swapped for the same
+    instruction, or the example would keep modelling the old section.
+    """
+    # Literal template names only (see test_prompt's render call-site guard).
+    few_shot = load_briefing_few_shot()
+    if briefscript:
+        holdings_format = render("briefing_holdings_format_briefscript")
+        research = render("briefing_ticker_research_briefscript", tickers=tickers)
+        guidance = render("briefing_holdings_guidance_briefscript")
+        body = holdings_format.split("\n", 1)[1].strip()
+        few_shot = splice_holdings(few_shot, body) or few_shot
+    else:
+        holdings_format = render("briefing_holdings_format_markdown")
+        research = render("briefing_ticker_research_markdown", tickers=tickers)
+        guidance = render("briefing_holdings_guidance_markdown")
+    return {
+        "ticker_research": research.rstrip("\n"),
+        "holdings_guidance": guidance.rstrip("\n"),
+        "holdings_format": holdings_format.rstrip("\n"),
+        "few_shot": few_shot,
+    }
 
 
 def generate_briefing(
@@ -267,8 +313,8 @@ def generate_briefing(
     briefing rather than blocking the run.
 
     With ``quotes``, a third parallel call writes the holdings section as
-    BriefScript (#506); its rendering replaces the main analysis' own holdings
-    Markdown, which stays in place as the fallback if that call fails.
+    BriefScript (#506) and the main analysis skips it (#511). If that call
+    fails, the section falls back to quote-derived headings with a note.
     """
     tickers = join_safe(config.portfolio.tickers, sep=", ")
     themes = join_safe(config.portfolio.themes, sep=", ")
@@ -281,7 +327,7 @@ def generate_briefing(
         watch_events=build_watch_events_context(config),
         stocks=stocks,
         fx=fx or "(為替の取得なし。為替セクションは省略してよい)",
-        few_shot=load_briefing_few_shot(),
+        **_main_prompt_holdings_parts(tickers, briefscript=bool(quotes)),
     )
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
@@ -324,7 +370,12 @@ def generate_briefing(
 
     assert "main" in results, "main result missing despite no error recorded"
 
-    main_text = _apply_holdings(results["main"], results.get("holdings"))
+    holdings_md = results.get("holdings")
+    if quotes and holdings_md is None:
+        # The main analysis was told not to write holdings, so its section is
+        # empty: show the real figures and say the commentary is missing.
+        holdings_md = render_holdings_fallback(quotes, config.portfolio.tickers, fx_change_pct)
+    main_text = _apply_holdings(results["main"], holdings_md)
 
     if "sectors" in errors:
         logger.warning("sector sweep failed (main analysis succeeded): %s", errors["sectors"])
