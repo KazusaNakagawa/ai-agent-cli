@@ -284,13 +284,16 @@ def _main_prompt_holdings_parts(tickers: str, briefscript: bool) -> dict[str, st
     if briefscript:
         holdings_format = render("briefing_holdings_format_briefscript")
         research = render("briefing_ticker_research_briefscript", tickers=tickers)
+        guidance = render("briefing_holdings_guidance_briefscript")
         body = holdings_format.split("\n", 1)[1].strip()
         few_shot = splice_holdings(few_shot, body) or few_shot
     else:
         holdings_format = render("briefing_holdings_format_markdown")
         research = render("briefing_ticker_research_markdown", tickers=tickers)
+        guidance = render("briefing_holdings_guidance_markdown")
     return {
         "ticker_research": research.rstrip("\n"),
+        "holdings_guidance": guidance.rstrip("\n"),
         "holdings_format": holdings_format.rstrip("\n"),
         "few_shot": few_shot,
     }

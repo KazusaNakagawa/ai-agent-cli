@@ -488,6 +488,7 @@ class TestBriefScriptHoldings:
         prompt = self._main_prompt(self._quotes())
         assert "保有者として今日意識すべきこと" not in prompt
         assert "保有・注目銘柄の最新ニュース" not in prompt
+        assert "銘柄別示唆" not in prompt and "示唆を書くとき" not in prompt
         assert "この見出しの 1 行だけを出力し" in prompt
         assert "PLTR, NVDA" in prompt
         # The few-shot's holdings body is replaced too, or it would model the old output.
@@ -498,6 +499,7 @@ class TestBriefScriptHoldings:
         prompt = self._main_prompt(None)
         assert "保有者として今日意識すべきこと" in prompt
         assert "保有・注目銘柄の最新ニュース: PLTR, NVDA" in prompt
+        assert "示唆を書くときは円建てを基準にし" in prompt
         assert "（$123.53）" in prompt
         assert "規制の本命銘柄" in prompt
 

@@ -51,11 +51,12 @@ class TestExistingTemplates:
             few_shot="FEWSHOT",
             ticker_research="RSCH",
             holdings_format="HLD",
+            holdings_guidance="GDN",
         )
-        for marker in ("THM", "GEO", "EVT", "STK", "FX", "FEWSHOT", "RSCH", "HLD"):
+        for marker in ("THM", "GEO", "EVT", "STK", "FX", "FEWSHOT", "RSCH", "HLD", "GDN"):
             assert marker in out
         for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$fx",
-                            "$few_shot", "$ticker_research", "$holdings_format"):
+                            "$few_shot", "$ticker_research", "$holdings_format", "$holdings_guidance"):
             assert placeholder not in out
 
     def test_briefing_literal_dollar_amount_survives_rendering(self):
@@ -87,6 +88,7 @@ class TestExistingTemplates:
             few_shot="INSIDE $themes NOT REPLACED",
             ticker_research="RSCH",
             holdings_format="HLD",
+            holdings_guidance="GDN",
         )
         assert "INSIDE $themes NOT REPLACED" in out
 
