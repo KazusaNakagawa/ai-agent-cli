@@ -170,3 +170,14 @@ class TestSendToDiscordAttachment:
         ) as mock_post:
             send_to_discord("hello", token="tok", channel_id="ch123", attachment=png)
         assert mock_post.call_count == 2
+
+
+def test_text_messages_suppress_all_mentions():
+    """LLM text can carry @everyone from a prompt-injected page (PR #509 review)."""
+    from unittest.mock import MagicMock, patch
+
+    from src.notifier.discord import send_to_discord
+
+    with patch("src.notifier.discord.requests.post", return_value=MagicMock()) as post:
+        send_to_discord("@everyone hi", "tok", "ch")
+    assert post.call_args.kwargs["json"]["allowed_mentions"] == {"parse": []}

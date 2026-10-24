@@ -125,3 +125,50 @@ def test_multiline_claim_cannot_open_a_new_heading():
     data["holdings"][0]["claims"][1]["text"] = "本文\n#### TICKER9：↑50%"
     md = render_holdings_markdown(_section(data), QUOTES, TICKERS, fx_change_pct=FX)
     assert not any(line.startswith("#### TICKER9") for line in md.splitlines())
+
+
+# --- sources, next_event, sanitisation (PR #509 review) ---
+
+def test_sources_numbered_in_first_citation_order_and_listed():
+    data = json.loads((FIXTURES / "holdings_sample.json").read_text(encoding="utf-8"))
+    data["sources"].reverse()
+    md = render_holdings_markdown(_section(data), QUOTES, TICKERS, fx_change_pct=FX)
+    assert "- ［1］[TICKER1 earnings preview]" in md
+    assert md.rstrip().endswith("(https://example.com/ticker2-quarterly-results)")
+
+
+def test_no_sources_means_no_source_list():
+    data = json.loads((FIXTURES / "holdings_sample.json").read_text(encoding="utf-8"))
+    for note in data["holdings"]:
+        for claim in note["claims"]:
+            claim["confidence"], claim["source_ids"] = "inferred", []
+    md = render_holdings_markdown(_section(data), QUOTES, TICKERS)
+    assert "出典" not in md and "［" not in md
+
+
+def test_mentions_are_neutralised():
+    data = json.loads((FIXTURES / "holdings_sample.json").read_text(encoding="utf-8"))
+    data["holdings"][0]["claims"][0]["text"] = "@everyone @here <@123> <@&456> 見て"
+    md = render_holdings_markdown(_section(data), QUOTES, TICKERS)
+    assert "@everyone" not in md and "@here" not in md
+    assert "<@123>" not in md and "<@&456>" not in md
+
+
+def test_markdown_links_in_claims_are_flattened():
+    data = json.loads((FIXTURES / "holdings_sample.json").read_text(encoding="utf-8"))
+    data["holdings"][0]["claims"][0]["text"] = "詳細は[公式発表](https://evil.example/x)を参照"
+    md = render_holdings_markdown(_section(data), QUOTES, TICKERS)
+    assert "evil.example" not in md and "詳細は公式発表を参照" in md
+
+
+def test_source_title_cannot_break_its_link():
+    data = json.loads((FIXTURES / "holdings_sample.json").read_text(encoding="utf-8"))
+    data["sources"][0]["title"] = "a](https://evil.example) [b"
+    md = render_holdings_markdown(_section(data), QUOTES, TICKERS)
+    assert "](https://evil.example)" not in md
+
+
+def test_duplicate_and_padded_configured_tickers_render_once():
+    md = render_holdings_markdown(_section(), QUOTES, [" TICKER1 ", "TICKER1", "TICKER2"])
+    assert md.count("#### TICKER1：") == 1
+    assert "#### TICKER1：ドル建て ↓0.2%（$100.00）" in md

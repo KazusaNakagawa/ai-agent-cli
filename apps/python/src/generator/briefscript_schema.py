@@ -62,7 +62,8 @@ class HoldingNote(BaseModel):
     model_config = _STRICT
 
     ticker: str = Field(min_length=1)
-    claims: list[Claim] = Field(min_length=1)
+    # Matches the prompt's 1-3 claims; also emitted as maxItems for --json-schema.
+    claims: list[Claim] = Field(min_length=1, max_length=3)
     next_event: str | None = None
 
 

@@ -214,7 +214,9 @@ def generate_holdings(
     the model can correct exactly what was wrong (#504). A CLI failure is not
     retried here — run_claude already spent its transient-error budget.
     """
-    tickers = config.portfolio.tickers
+    # Trimmed and de-duplicated once, so the prompt, the schema enum, validation
+    # and the quote lookup all agree (quotes are keyed by the trimmed form).
+    tickers = list(dict.fromkeys(t.strip() for t in config.portfolio.tickers if t.strip()))
     base_prompt = render("briefing_holdings", tickers=join_safe(tickers, sep=", "), stocks=stocks)
     schema = holdings_json_schema(tickers)
     prompt = base_prompt

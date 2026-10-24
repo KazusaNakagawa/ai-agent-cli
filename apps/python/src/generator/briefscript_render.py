@@ -2,7 +2,9 @@
 
 Every figure in a heading comes from fetcher quotes; the LLM's claims are only
 ever rendered as bullet text, so nothing it writes can stand in for a price or
-a move.
+a move. Claim and source text is model output informed by arbitrary web pages,
+so it is flattened before it reaches Discord / Notion: no headings, links or
+mentions survive from it.
 """
 from __future__ import annotations
 
@@ -20,6 +22,11 @@ _CONFIDENCE_MARKERS = {"confirmed": "", "inferred": "〔推測〕", "unknown": "
 _MISSING_NOTE = "〔未確認〕今日の材料は確認できませんでした。"
 
 _LEADING_HASHES = re.compile(r"^\s*#+\s*")
+_MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+# @everyone / @here and Discord's <@id>, <@!id>, <@&role>, <#channel> forms.
+_MENTION = re.compile(r"@(everyone|here)\b|<([@#][!&]?)(\d+)>")
+
+_SOURCES_HEADING = "**出典**"
 
 
 def _arrow(pct: float) -> str:
@@ -40,11 +47,24 @@ def _heading(ticker: str, quote: StockQuote | None, fx_change_pct: float | None)
     return f"#### {ticker}：ドル建て {move} / 円建て {_arrow(jpy)}{abs(jpy):.1f}%{price}"
 
 
-def _bullet(claim: Claim) -> str:
-    # One line, no leading heading marks: claim text must stay inside its bullet.
-    text = " ".join(claim.text.split())
+def _plain(text: str) -> str:
+    """One line of inert text: no heading marks, links or live mentions."""
+    text = " ".join(text.split())
     text = _LEADING_HASHES.sub("", text)
-    return f"- {_CONFIDENCE_MARKERS[claim.confidence]}{text}"
+    text = _MD_LINK.sub(r"\1", text)
+    # A full-width ＠ reads the same but Discord does not resolve it.
+    return _MENTION.sub(
+        lambda m: f"＠{m[1]}" if m[1] else f"{m[2].replace('@', '＠')}{m[3]}", text,
+    )
+
+
+def _bullet(claim: Claim, numbers: dict[str, int]) -> str:
+    refs = "".join(f"［{numbers[sid]}］" for sid in claim.source_ids)
+    return f"- {_CONFIDENCE_MARKERS[claim.confidence]}{_plain(claim.text)}{refs}"
+
+
+def _unique(tickers: list[str]) -> list[str]:
+    return list(dict.fromkeys(t.strip() for t in tickers if t.strip()))
 
 
 def render_holdings_markdown(
@@ -53,14 +73,43 @@ def render_holdings_markdown(
     tickers: list[str],
     fx_change_pct: float | None = None,
 ) -> str:
-    """Render one ``####`` block per configured ticker, in configured order."""
+    """Render one ``####`` block per configured ticker, in configured order.
+
+    Cited sources are numbered in order of first citation, marked ［n］ on
+    the claims that cite them, and listed after the last holding.
+    """
     notes = {note.ticker: note for note in section.holdings}
+    tickers = _unique(tickers)
+    numbers: dict[str, int] = {}
+    for ticker in tickers:
+        for claim in notes[ticker].claims if ticker in notes else ():
+            for sid in claim.source_ids:
+                numbers.setdefault(sid, len(numbers) + 1)
+
     blocks = []
     for ticker in tickers:
         note = notes.get(ticker)
-        bullets = [_bullet(c) for c in note.claims] if note else [f"- {_MISSING_NOTE}"]
+        if note is None:
+            bullets = [f"- {_MISSING_NOTE}"]
+        else:
+            bullets = [_bullet(c, numbers) for c in note.claims]
+            if note.next_event:
+                bullets.append(f"- 次の予定：{_plain(note.next_event)}")
         blocks.append("\n".join([_heading(ticker, quotes.get(ticker), fx_change_pct), *bullets]))
+
+    by_id = {source.id: source for source in section.sources}
+    if numbers:
+        listed = [
+            f"- ［{n}］[{_link_text(by_id[sid].title)}]({by_id[sid].url})"
+            for sid, n in sorted(numbers.items(), key=lambda kv: kv[1])
+        ]
+        blocks.append("\n".join([_SOURCES_HEADING, *listed]))
     return "\n\n".join(blocks)
+
+
+def _link_text(title: str) -> str:
+    # Brackets would let a title close its own link and open another.
+    return _plain(title).replace("[", "［").replace("]", "］")
 
 
 def splice_holdings(body: str, holdings_md: str) -> str | None:

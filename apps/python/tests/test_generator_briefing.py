@@ -467,4 +467,20 @@ class TestBriefScriptHoldings:
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
             out = generate_briefing("x", self._config(), quotes=self._quotes())
+        assert out.startswith("### 今日のサマリー（1文）\n\n本文。")
         assert "#### PLTR" not in out
+
+    def test_padded_and_duplicate_config_tickers_are_normalised(self):
+        captured = {}
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "保有銘柄示唆":
+                captured["schema"] = kwargs["json_schema"]
+                return self._payload()
+            return self._MAIN if label == "メイン分析" else "セクター結果"
+
+        config = _make_config(portfolio=PortfolioConfig(tickers=[" PLTR ", "PLTR", "NVDA"], themes=["AI"]))
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            out = generate_briefing("x", config, quotes=self._quotes(), fx_change_pct=-0.9)
+        assert captured["schema"]["$defs"]["HoldingNote"]["properties"]["ticker"]["enum"] == ["PLTR", "NVDA"]
+        assert out.count("#### PLTR：") == 1

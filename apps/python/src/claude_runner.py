@@ -214,7 +214,9 @@ def _save_partial_output(label: str, raw_output: str | None) -> None:
     if text is None:
         return
     safe_label = label.replace("/", "_").strip() or "unknown"
-    filename = f"{safe_label}_{datetime.now():%Y%m%d-%H%M%S}.md"
+    # Microseconds keep two runs failing in the same second from overwriting
+    # each other's diagnostic.
+    filename = f"{safe_label}_{datetime.now():%Y%m%d-%H%M%S-%f}.md"
     try:
         path = write_md_file(PARTIAL_OUTPUT_DIR, filename, text)
         logger.warning("saved partial output before failing [%s]: %s", label, path)
