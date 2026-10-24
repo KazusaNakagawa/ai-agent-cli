@@ -49,10 +49,13 @@ class TestExistingTemplates:
             stocks="STK",
             fx="FX",
             few_shot="FEWSHOT",
+            ticker_research="RSCH",
+            holdings_format="HLD",
         )
-        for marker in ("THM", "TKR", "GEO", "EVT", "STK", "FX", "FEWSHOT"):
+        for marker in ("THM", "GEO", "EVT", "STK", "FX", "FEWSHOT", "RSCH", "HLD"):
             assert marker in out
-        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$fx", "$few_shot"):
+        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$fx",
+                            "$few_shot", "$ticker_research", "$holdings_format"):
             assert placeholder not in out
 
     def test_briefing_literal_dollar_amount_survives_rendering(self):
@@ -62,16 +65,8 @@ class TestExistingTemplates:
         ValueError, so the escape is required — not a typo. Guards against it
         being "corrected" to a single `$`, which breaks every briefing run.
         """
-        out = render(
-            "briefing",
-            themes="THM",
-            tickers="TKR",
-            geopolitical="GEO",
-            watch_events="EVT",
-            stocks="STK",
-            fx="FX",
-            few_shot="FEWSHOT",
-        )
+        # The amount lives in the Markdown-mode holdings format since #511.
+        out = render("briefing_holdings_format_markdown")
         assert "$123.53" in out
         assert "$$123.53" not in out
 
@@ -90,6 +85,8 @@ class TestExistingTemplates:
             stocks="STK",
             fx="FX",
             few_shot="INSIDE $themes NOT REPLACED",
+            ticker_research="RSCH",
+            holdings_format="HLD",
         )
         assert "INSIDE $themes NOT REPLACED" in out
 
