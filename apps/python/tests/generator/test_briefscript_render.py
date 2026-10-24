@@ -168,7 +168,7 @@ def test_source_title_cannot_break_its_link():
     assert "](https://evil.example)" not in md
     # The source is still listed, with its title escaped and its own URL.
     assert (
-        "- ［1］[a］(https://evil.example) ［b](https://example.com/ticker1-earnings-preview)"
+        "- ［1］[a］(（URL 省略） ［b](https://example.com/ticker1-earnings-preview)"
         in md.splitlines()
     )
 
@@ -214,3 +214,20 @@ def test_splice_tilde_fence_and_unclosed_fence():
     # An unclosed fence swallows the rest, as CommonMark renders it.
     body = f"{HOLDINGS_HEADING}\n\n```\n### inside\n"
     assert splice_holdings(body, "#### NEW").rstrip().endswith("#### NEW")
+
+
+def test_bare_urls_autolinks_and_reference_links_are_removed():
+    data = json.loads((FIXTURES / "holdings_sample.json").read_text(encoding="utf-8"))
+    data["holdings"][0]["claims"][0]["text"] = (
+        "見て https://evil.example/a と <https://evil.example/b> と [ここ][r1] を"
+    )
+    md = render_holdings_markdown(_section(data), QUOTES, TICKERS)
+    line = next(l for l in md.splitlines() if l.startswith("- 〔推測〕見て"))
+    assert "evil.example" not in line and "[r1]" not in line
+    assert line == "- 〔推測〕見て （URL 省略） と （URL 省略） と ここ を"
+
+
+def test_quote_with_missing_fields_renders_as_failed():
+    quotes = dict(QUOTES, TICKER1=StockQuote("TICKER1", last_price=None, change_pct=None))
+    md = render_holdings_markdown(_section(), quotes, TICKERS, fx_change_pct=FX)
+    assert "#### TICKER1：株価取得失敗" in md

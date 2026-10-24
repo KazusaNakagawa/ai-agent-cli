@@ -23,6 +23,10 @@ _MISSING_NOTE = "〔未確認〕今日の材料は確認できませんでした
 
 _LEADING_HASHES = re.compile(r"^\s*#+\s*")
 _MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+_REF_LINK = re.compile(r"\[([^\]]*)\]\[[^\]]*\]")
+# Autolinks (<https://...>) and bare URLs; Discord and Notion make both clickable.
+_URL = re.compile(r"<https?://[^>\s]*>|https?://\S+")
+_URL_PLACEHOLDER = "（URL 省略）"
 # @everyone / @here and Discord's <@id>, <@!id>, <@&role>, <#channel> forms.
 _MENTION = re.compile(r"@(everyone|here)\b|<([@#][!&]?)(\d+)>")
 
@@ -41,7 +45,7 @@ def _arrow(pct: float) -> str:
 
 
 def _heading(ticker: str, quote: StockQuote | None, fx_change_pct: float | None) -> str:
-    if quote is None or quote.error:
+    if quote is None or quote.error or quote.last_price is None or quote.change_pct is None:
         return f"#### {ticker}：株価取得失敗"
     price = f"（{_currency_symbol(quote.currency)}{quote.last_price:.2f}）"
     move = f"{_arrow(quote.change_pct)}{abs(quote.change_pct):.1f}%"
@@ -58,6 +62,9 @@ def _plain(text: str) -> str:
     text = " ".join(text.split())
     text = _LEADING_HASHES.sub("", text)
     text = _MD_LINK.sub(r"\1", text)
+    text = _REF_LINK.sub(r"\1", text)
+    # Claims cite sources by id; a URL in the text would bypass the source list.
+    text = _URL.sub(_URL_PLACEHOLDER, text)
     # A full-width ＠ reads the same but Discord does not resolve it.
     return _MENTION.sub(
         lambda m: f"＠{m[1]}" if m[1] else f"{m[2].replace('@', '＠')}{m[3]}", text,
