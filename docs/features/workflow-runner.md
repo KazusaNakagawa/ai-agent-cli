@@ -231,7 +231,7 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 | `save_briefing_md` (L87) | `persist` | 配信ステップより必ず前。`OSError` を自身で捕捉し `md_written` を bool で返す。IR の JSON も並べて保存するが、その失敗は `md_written` に影響しない（#513） |
 | `index_briefings` (L104) | `index` | ステップ自身が例外を握り潰す, `skip_if=lambda ctx: not ctx.results["persist"]` |
 | `send_to_discord` (L110) | `deliver_discord` | `skip_if=` 認証情報未設定 |
-| `send_to_notion` (L119) | `deliver_notion` | `skip_if=` 認証情報未設定 |
+| `send_to_notion` (L119) | `deliver_notion` | `skip_if=` 認証情報未設定。本文は `render_document_notion` で IR から組んだブロックを渡す（#516） |
 
 **移植で挙動を変えない。** 現状 Discord / Notion 送信は best-effort ではなく例外が伝播するので、`best_effort=False` のまま移植する。ここを変えるかどうかは別 issue で判断する。
 

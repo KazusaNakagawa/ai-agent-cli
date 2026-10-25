@@ -34,6 +34,29 @@ class TestSendToNotionMissingCredentials:
         assert result == ""
 
 
+class TestSendToNotionPrebuiltBlocks:
+    def test_blocks_replace_the_markdown_conversion(self, mock_notion):
+        blocks = [{"object": "block", "type": "divider", "divider": {}}]
+        send_to_notion("# ignored", api_key="key", database_id="db-id", blocks=blocks)
+
+        _, kwargs = mock_notion.pages.create.call_args
+        assert kwargs["children"] == blocks
+
+    def test_more_than_100_blocks_are_appended_in_batches(self, mock_notion):
+        blocks = [{"object": "block", "type": "divider", "divider": {}}] * 250
+        send_to_notion("x", api_key="key", database_id="db-id", blocks=blocks)
+
+        assert len(mock_notion.pages.create.call_args.kwargs["children"]) == 100
+        appended = [c.kwargs["children"] for c in mock_notion.blocks.children.append.call_args_list]
+        assert [len(batch) for batch in appended] == [100, 50]
+
+    def test_without_blocks_the_text_is_converted(self, mock_notion):
+        send_to_notion("## 見出し", api_key="key", database_id="db-id")
+
+        _, kwargs = mock_notion.pages.create.call_args
+        assert kwargs["children"] == _markdown_to_blocks("## 見出し")
+
+
 class TestSendToNotionTags:
     def test_no_tags_omits_tags_property(self, mock_notion):
         send_to_notion("hello", api_key="key", database_id="db-id", tags=None)

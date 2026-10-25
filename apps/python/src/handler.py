@@ -28,6 +28,7 @@ from src.generator.briefing import (
     is_degraded_briefing,
     looks_like_briefing_document,
 )
+from src.generator.briefscript_notion import render_document_notion
 from src.generator.briefscript_render import render_document_markdown
 from src.generator.briefscript_schema import BriefingDocument
 from src.local_llm.briefing_index import index_briefings
@@ -35,6 +36,7 @@ from src.local_llm.config import load_config as load_local_llm_config
 from src.metrics.briefing import extract_briefing_metrics
 from src.notifier.discord import send_to_discord
 from src.notifier.local_md import save_briefing_document, save_briefing_md
+from src.notifier.markdown import markdown_to_notion_blocks
 from src.notifier.notion import send_to_notion
 from src.logger import get_logger
 from src.utils import is_configured as _is_configured
@@ -228,16 +230,24 @@ def skip_notion(ctx) -> bool:
 def step_deliver_notion(ctx) -> str | None:
     logger.info("creating Notion page...")
     briefing = _briefing_md(ctx)
-    notion_text = briefing + f"\n\n---\nModel: {get_model()}"
+    footer = f"---\nModel: {get_model()}"
+    notion_text = f"{briefing}\n\n{footer}"
     metrics = extract_briefing_metrics(briefing, CONFIG.portfolio.tickers)
-    page_url = send_to_notion(
-        notion_text,
-        CONFIG.notion_api_key,
-        CONFIG.notion_database_id,
+    page = dict(
         title=f"マーケットブリーフィング — {date.today().strftime('%Y-%m-%d')}",
         tags=["agent"],
         extra_properties=metrics,
     )
+    # Built from the IR (#516), so confidence and sources are native blocks.
+    blocks = render_document_notion(ctx.results["generate"]) + markdown_to_notion_blocks(footer)
+    page_url = send_to_notion(
+        notion_text, CONFIG.notion_api_key, CONFIG.notion_database_id, blocks=blocks, **page,
+    )
+    if not page_url:
+        # The IR blocks are newer than the Markdown conversion; if Notion
+        # rejects them, today's page must still exist.
+        logger.warning("Notion page from IR blocks failed — retrying with the Markdown conversion")
+        page_url = send_to_notion(notion_text, CONFIG.notion_api_key, CONFIG.notion_database_id, **page)
     if page_url:
         logger.info("Notion ページ: %s", page_url)
     return page_url

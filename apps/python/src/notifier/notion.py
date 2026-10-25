@@ -113,15 +113,22 @@ def send_to_notion(
     title: str | None = None,
     tags: list[str] | None = None,
     extra_properties: dict | None = None,
+    blocks: list[dict] | None = None,
 ) -> str:
-    """Post the report as a new page in the Notion database. Return the created page URL."""
+    """Post the report as a new page in the Notion database. Return the created page URL.
+
+    ``blocks``, when given, is the page body built by the caller (the
+    briefing renders its IR directly, #516); otherwise ``text`` is converted
+    from Markdown.
+    """
     if not api_key or not database_id:
         logger.error("NOTION_API_KEY or NOTION_DATABASE_ID unset")
         return ""
 
     notion = Client(auth=api_key)
     page_title = title or f"Report — {date.today().strftime('%Y-%m-%d')}"
-    blocks = markdown_to_notion_blocks(text)
+    if blocks is None:
+        blocks = markdown_to_notion_blocks(text)
 
     response = _create_page(notion, database_id, page_title, blocks, tags, extra_properties)
     if not response:
