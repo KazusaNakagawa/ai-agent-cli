@@ -386,8 +386,9 @@ class TestDeliverNotionFallback:
         assert url == "https://notion.so/p"
         first, second = notion.call_args_list
         assert "blocks" in first.kwargs and "blocks" not in second.kwargs
-        # Strict, so a rejected batch past the first 100 also triggers the retry.
-        assert first.kwargs["strict"] is True and "strict" not in second.kwargs
+        # Strict on both, so a rejected batch past the first 100 triggers the
+        # retry and a truncated retry is not reported as delivered.
+        assert first.kwargs["strict"] is True and second.kwargs["strict"] is True
         assert second.args[0] == first.args[0]
         assert second.kwargs["title"] == first.kwargs["title"]
 

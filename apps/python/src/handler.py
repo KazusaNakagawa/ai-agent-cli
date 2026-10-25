@@ -247,9 +247,12 @@ def step_deliver_notion(ctx) -> str | None:
     if not page_url:
         # The IR blocks are newer than the Markdown conversion; if Notion
         # rejects any of them, today's page must still exist in full. strict
-        # makes a rejected batch past the first 100 fail the call too.
+        # makes a rejected batch past the first 100 fail the call too — on the
+        # retry as well, so a truncated page is never reported as delivered.
         logger.warning("Notion page from IR blocks failed — retrying with the Markdown conversion")
-        page_url = send_to_notion(notion_text, CONFIG.notion_api_key, CONFIG.notion_database_id, **page)
+        page_url = send_to_notion(
+            notion_text, CONFIG.notion_api_key, CONFIG.notion_database_id, strict=True, **page,
+        )
     if page_url:
         logger.info("Notion ページ: %s", page_url)
     return page_url
