@@ -53,6 +53,7 @@ class TestSpeechStep:
         assert result["audio"] == str(tmp_path / "briefing_2026-10-25.m4a")
         cmd = run.call_args.args[0]
         assert cmd[0] == "/usr/bin/say" and cmd[-2:] == ["-v", "Kyoko"]
+        assert "--data-format=aac" in cmd
 
     def test_max_chars_trims_the_script(self, tmp_path):
         result = _run_step(tmp_path, SpeechConfig(max_chars=40))

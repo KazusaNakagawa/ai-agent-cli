@@ -35,7 +35,8 @@ def synthesize_audio(script: Path, voice: str | None = None) -> Path | None:
         logger.warning("%r not found — skipping the briefing audio", _ENGINE)
         return None
     out = script.with_suffix(".m4a")
-    cmd = [engine, "-f", str(script), "-o", str(out), "--file-format=m4af"]
+    # Without --data-format the .m4a holds raw PCM, about ten times the size.
+    cmd = [engine, "-f", str(script), "-o", str(out), "--file-format=m4af", "--data-format=aac"]
     if voice:
         cmd += ["-v", voice]
     try:
