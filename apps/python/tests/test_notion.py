@@ -50,6 +50,32 @@ class TestSendToNotionPrebuiltBlocks:
         appended = [c.kwargs["children"] for c in mock_notion.blocks.children.append.call_args_list]
         assert [len(batch) for batch in appended] == [100, 50]
 
+    def test_strict_append_failure_archives_the_partial_page(self, mock_notion):
+        mock_notion.blocks.children.append.side_effect = [None, Exception("rejected")]
+        blocks = [{"object": "block", "type": "divider", "divider": {}}] * 250
+
+        url = send_to_notion("x", api_key="key", database_id="db-id", blocks=blocks, strict=True)
+
+        assert url == ""
+        mock_notion.pages.update.assert_called_once_with("page-id", archived=True)
+
+    def test_strict_success_returns_the_url(self, mock_notion):
+        blocks = [{"object": "block", "type": "divider", "divider": {}}] * 250
+
+        url = send_to_notion("x", api_key="key", database_id="db-id", blocks=blocks, strict=True)
+
+        assert url == "https://notion.so/page-1"
+        mock_notion.pages.update.assert_not_called()
+
+    def test_non_strict_append_failure_keeps_the_partial_page(self, mock_notion):
+        mock_notion.blocks.children.append.side_effect = Exception("rejected")
+        blocks = [{"object": "block", "type": "divider", "divider": {}}] * 150
+
+        url = send_to_notion("x", api_key="key", database_id="db-id", blocks=blocks)
+
+        assert url == "https://notion.so/page-1"
+        mock_notion.pages.update.assert_not_called()
+
     def test_without_blocks_the_text_is_converted(self, mock_notion):
         send_to_notion("## 見出し", api_key="key", database_id="db-id")
 

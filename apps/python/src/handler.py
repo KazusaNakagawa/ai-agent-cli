@@ -241,11 +241,13 @@ def step_deliver_notion(ctx) -> str | None:
     # Built from the IR (#516), so confidence and sources are native blocks.
     blocks = render_document_notion(ctx.results["generate"]) + markdown_to_notion_blocks(footer)
     page_url = send_to_notion(
-        notion_text, CONFIG.notion_api_key, CONFIG.notion_database_id, blocks=blocks, **page,
+        notion_text, CONFIG.notion_api_key, CONFIG.notion_database_id,
+        blocks=blocks, strict=True, **page,
     )
     if not page_url:
         # The IR blocks are newer than the Markdown conversion; if Notion
-        # rejects them, today's page must still exist.
+        # rejects any of them, today's page must still exist in full. strict
+        # makes a rejected batch past the first 100 fail the call too.
         logger.warning("Notion page from IR blocks failed — retrying with the Markdown conversion")
         page_url = send_to_notion(notion_text, CONFIG.notion_api_key, CONFIG.notion_database_id, **page)
     if page_url:
