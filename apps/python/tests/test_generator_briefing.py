@@ -539,3 +539,61 @@ class TestBriefScriptHoldings:
             out = generate_briefing("x", config, quotes=self._quotes(), fx_change_pct=-0.9)
         assert captured["schema"]["$defs"]["HoldingNote"]["properties"]["ticker"]["enum"] == ["PLTR", "NVDA"]
         assert out.count("#### PLTR：") == 1
+
+
+class TestBriefingDocument:
+    """generate_briefing_document returns the IR that generate_briefing renders (#513)."""
+
+    _MAIN = TestBriefScriptHoldings._MAIN
+
+    def _run(self, holdings, quotes=True, sectors_fail=False):
+        from src.generator.briefing import generate_briefing_document
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                return self._MAIN
+            if label == "セクタースイープ":
+                if sectors_fail:
+                    raise RuntimeError("sec boom")
+                return "セクター結果"
+            if isinstance(holdings, Exception):
+                raise holdings
+            return holdings
+
+        config = _make_config(portfolio=PortfolioConfig(tickers=[" PLTR ", "NVDA"], themes=["AI"]))
+        q = TestBriefScriptHoldings._quotes() if quotes else None
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            return generate_briefing_document("x", config, quotes=q, fx_change_pct=-0.9)
+
+    def test_holdings_are_a_structured_block_between_markdown(self):
+        doc = self._run(TestBriefScriptHoldings._payload())
+        kinds = [s.kind for s in doc.sections]
+        assert kinds[:3] == ["markdown", "holdings", "markdown"]
+        block = doc.sections[1]
+        assert block.tickers == ["PLTR", "NVDA"]
+        assert block.content.holdings[0].claims[0].text == "決算が予想を上回った。"
+        assert {q.ticker for q in doc.market.quotes} == {"PLTR", "NVDA"}
+        assert doc.market.fx_change_pct == -0.9
+
+    def test_failed_holdings_call_leaves_an_empty_block(self):
+        doc = self._run(RuntimeError("boom"))
+        assert doc.sections[1].kind == "holdings" and doc.sections[1].content is None
+
+    def test_no_quotes_means_no_holdings_block(self):
+        doc = self._run(None, quotes=False)
+        assert all(s.kind == "markdown" for s in doc.sections)
+        assert doc.market.quotes == []
+
+    def test_sectors_failure_still_marks_the_rendered_body_degraded(self):
+        from src.generator.briefscript_render import render_document_markdown
+
+        doc = self._run(TestBriefScriptHoldings._payload(), sectors_fail=True)
+        assert is_degraded_briefing(render_document_markdown(doc))
+
+    def test_document_json_round_trip_renders_the_same_briefing(self):
+        from src.generator.briefscript_render import render_document_markdown
+        from src.generator.briefscript_schema import BriefingDocument
+
+        doc = self._run(TestBriefScriptHoldings._payload())
+        again = BriefingDocument.model_validate_json(doc.model_dump_json())
+        assert render_document_markdown(again) == render_document_markdown(doc)

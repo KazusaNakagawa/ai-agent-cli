@@ -19,6 +19,9 @@
 Markdown でメイン分析の「自分への示唆」を差し替える。このときメイン分析は見出しだけを書き、
 保有銘柄の個別ニュースも調べない（#511、二重生成の回避）。保有銘柄示唆が失敗したときは、
 株価データから作った見出しに「〔未確認〕本日の示唆は生成できませんでした。」を添えて出す。
+generator の戻り値は `BriefingDocument`（IR、#513）で、株価スナップショットとセクションの並びを持つ。
+保有銘柄以外のセクションは今のところ Markdown のまま `MarkdownSection` に入る。
+各配信先はこの IR を `render_document_markdown` で Markdown にしてから送る。
 
 エントリポイント: `apps/python/src/handler.py:29` (`lambda_handler`)
 
@@ -60,20 +63,21 @@ sequenceDiagram
         end
 
         alt 保有銘柄示唆が成功
-            Note over G: splice_holdings でメイン分析の「自分への示唆」を差し替え
+            Note over G: split_holdings で本文を分け、間に HoldingsBlock を置く
         else 保有銘柄示唆が失敗
-            Note over G: quotes だけの見出し + 〔未確認〕注記を差し込み
+            Note over G: content なしの HoldingsBlock（描画時に quotes だけの見出し + 〔未確認〕注記）
         end
 
         alt メイン失敗
             G-->>H: RuntimeError
         else セクターのみ失敗
-            G-->>H: 本文 + 失敗注記
+            G-->>H: BriefingDocument（本文 + 失敗注記）
         else 両方成功
-            G-->>H: 本文 + セクター動向
+            G-->>H: BriefingDocument（本文 + セクター動向）
         end
 
-        Note over H: looks_like_briefing で体裁検査
+        Note over H: render_document_markdown → looks_like_briefing で体裁検査
+        H->>MD: save_briefing_document（briefing_<date>.json）
         H->>MD: save_briefing_md
         Note over H: index_briefings は best-effort
 

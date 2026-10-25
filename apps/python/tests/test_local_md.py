@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from src.notifier.local_md import save_briefing_md, write_md_file
+from src.notifier.local_md import save_briefing_document, save_briefing_md, write_md_file
 
 
 class TestSaveBriefingMd:
@@ -165,3 +165,41 @@ class TestWriteMdFile:
         write_md_file(tmp_path, "out.md", "text")
 
         assert called is False
+
+
+class TestSaveBriefingDocument:
+    @staticmethod
+    def _doc(day: date):
+        from src.generator.briefscript_schema import BriefingDocument, MarkdownSection
+
+        return BriefingDocument(date=day, sections=[MarkdownSection(text="### 本文\n")])
+
+    def test_writes_json_named_by_document_date(self, tmp_path):
+        """Verifies: the IR lands as briefing_<doc date>.json and re-validates."""
+        from src.generator.briefscript_schema import BriefingDocument
+
+        path = save_briefing_document(self._doc(date(2026, 10, 24)), tmp_path, retention_days=7)
+        assert path == tmp_path / "briefing_2026-10-24.json"
+        again = BriefingDocument.model_validate_json(path.read_text(encoding="utf-8"))
+        assert again.sections[0].text == "### 本文\n"
+
+    def test_rotation_prunes_json_only(self, tmp_path):
+        """Verifies: JSON rotation keeps the newest N and leaves MD files to their own rotation."""
+        (tmp_path / "briefing_2026-10-01.md").write_text("md")
+        for d in (20, 21, 22):
+            save_briefing_document(self._doc(date(2026, 10, d)), tmp_path, retention_days=2)
+        assert sorted(p.name for p in tmp_path.glob("*.json")) == [
+            "briefing_2026-10-21.json", "briefing_2026-10-22.json",
+        ]
+        assert (tmp_path / "briefing_2026-10-01.md").exists()
+
+    def test_rotation_disabled_keeps_everything(self, tmp_path):
+        for d in (20, 21, 22):
+            save_briefing_document(
+                self._doc(date(2026, 10, d)), tmp_path, retention_days=1, rotation_enabled=False,
+            )
+        assert len(list(tmp_path.glob("*.json"))) == 3
+
+    def test_invalid_retention_rejected(self, tmp_path):
+        with pytest.raises(ValueError):
+            save_briefing_document(self._doc(date(2026, 10, 24)), tmp_path, retention_days=0)

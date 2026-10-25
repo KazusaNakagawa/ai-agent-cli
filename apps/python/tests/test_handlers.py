@@ -1,9 +1,12 @@
+from contextlib import ExitStack
+from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from tests.conftest import HIJACKED_SKILL_COMPLETION_REPORT
+from src.generator.briefscript_schema import BriefingDocument, MarkdownSection
 from src.handler import lambda_handler as briefing_handler
 from src.xss_handler import lambda_handler as xss_handler
 
@@ -19,9 +22,14 @@ def _notion_mock():
     return m
 
 
-# A generate_briefing() mock return value must pass looks_like_briefing()
+# A generate_briefing_document() mock that renders to text must pass looks_like_briefing()
 # (heading + minimum length, #409) or the handler raises before delivery.
 _VALID_BRIEFING = "### ブリーフィング本文\n\n" + "本文です。" * 40
+
+
+def _doc(text: str) -> BriefingDocument:
+    """A generate_briefing_document() return value that renders to ``text``."""
+    return BriefingDocument(date=date.today(), sections=[MarkdownSection(text=text)])
 
 
 def _full_config_mock():
@@ -76,7 +84,7 @@ class TestBriefingHandler:
     def test_success_returns_200(self, tmp_path):
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.notifier.notion.Client", return_value=_notion_mock()),
@@ -96,7 +104,7 @@ class TestBriefingHandler:
         with (
             patch("src.handler.fetch_fx_context", return_value=("fx block", -0.9)),
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", quotes)) as snap,
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING) as gen,
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)) as gen,
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
@@ -121,7 +129,7 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
@@ -139,6 +147,40 @@ class TestBriefingHandler:
         assert len(md_files) == 1
         assert md_files[0].read_text(encoding="utf-8") == _VALID_BRIEFING
 
+    def _run_persist(self, tmp_path, *extra):
+        with (
+            patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.index_briefings"),
+            patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
+            patch("src.handler.BRIEFING_SKIP_IF_EXISTS", False),
+            ExitStack() as stack,
+        ):
+            for p in extra:
+                stack.enter_context(p)
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = mock_cfg.discord_channel_id = ""
+            mock_cfg.notion_api_key = mock_cfg.notion_database_id = ""
+            return briefing_handler()
+
+    def test_briefing_ir_json_written_beside_the_md(self, tmp_path):
+        """Verifies: the IR is persisted so renderers can re-run offline (#513)."""
+        from src.generator.briefscript_render import render_document_markdown
+
+        self._run_persist(tmp_path)
+        (json_file,) = (tmp_path / "ir").glob("briefing_*.json")
+        doc = BriefingDocument.model_validate_json(json_file.read_text(encoding="utf-8"))
+        assert render_document_markdown(doc) == _VALID_BRIEFING
+
+    def test_ir_json_failure_does_not_block_the_md(self, tmp_path):
+        """Verifies: the JSON is secondary — an OSError writing it still leaves the MD."""
+        result = self._run_persist(
+            tmp_path, patch("src.handler.save_briefing_document", side_effect=OSError("disk full")),
+        )
+        assert result["md_written"] is True
+        assert len(list(tmp_path.glob("briefing_*.md"))) == 1
+
     def test_md_written_even_when_discord_raises(self, tmp_path):
         """Verifies: when send_to_discord raises, the local MD file is still
         written before the exception propagates.
@@ -148,7 +190,7 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord", side_effect=RuntimeError("discord down")),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
@@ -175,11 +217,12 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
             patch("src.handler.save_briefing_md", side_effect=OSError("disk full")),
+            patch("src.handler.save_briefing_document"),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = "tok"
@@ -201,7 +244,7 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.notifier.notion.Client", return_value=_notion_mock()),
@@ -226,7 +269,7 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG", _no_api_config_mock()) as mock_cfg,
             patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
             patch("src.handler.generate_price_comparison", return_value=stub_chart) as mock_chart,
@@ -247,7 +290,7 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.notifier.notion.Client", return_value=_notion_mock()),
@@ -279,11 +322,12 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
             patch("src.handler.save_briefing_md", side_effect=ValueError("bug")),
+            patch("src.handler.save_briefing_document"),
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
             mock_cfg.discord_token = "tok"
@@ -297,7 +341,7 @@ class TestBriefingHandler:
         briefing_text = _VALID_BRIEFING
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=briefing_text),
+            patch("src.handler.generate_briefing_document", return_value=_doc(briefing_text)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
@@ -315,7 +359,7 @@ class TestBriefingHandler:
 
     @pytest.mark.usefixtures("disable_skip_guard")
     def test_hijacked_briefing_shape_raises_and_skips_delivery(self, tmp_path):
-        """Verifies: when generate_briefing() returns text that doesn't look
+        """Verifies: when generate_briefing_document() renders text that doesn't look
         like a real briefing body (e.g. a skill self-firing mid-run and
         returning its own short completion report instead, #409), the
         handler raises before writing the local MD or delivering to
@@ -323,7 +367,7 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=HIJACKED_SKILL_COMPLETION_REPORT),
+            patch("src.handler.generate_briefing_document", return_value=_doc(HIJACKED_SKILL_COMPLETION_REPORT)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.save_briefing_md") as mock_save,
             patch("src.handler.send_to_discord") as mock_discord,
@@ -351,7 +395,7 @@ class TestBriefingHandler:
     def test_briefing_failure_propagates(self):
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", side_effect=RuntimeError("claude error")),
+            patch("src.handler.generate_briefing_document", side_effect=RuntimeError("claude error")),
             patch("src.handler.send_to_discord"),
         ):
             with pytest.raises(RuntimeError, match="claude error"):
@@ -360,7 +404,7 @@ class TestBriefingHandler:
     def test_no_credentials_writes_md_and_skips_notifiers(self, tmp_path):
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.handler.send_to_notion") as mock_notion,
@@ -383,7 +427,7 @@ class TestBriefingHandler:
     def test_discord_only_writes_md_for_missing_notion(self, tmp_path):
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.handler.send_to_notion") as mock_notion,
@@ -406,7 +450,7 @@ class TestBriefingHandler:
         with (
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.fetch_stock_snapshot") as mock_stocks,
-            patch("src.handler.generate_briefing") as mock_gen,
+            patch("src.handler.generate_briefing_document") as mock_gen,
         ):
             mock_cfg.discord_token = "tok"
             mock_cfg.discord_channel_id = "ch"
@@ -420,14 +464,14 @@ class TestBriefingHandler:
         mock_gen.assert_not_called()
 
     def test_skips_when_md_exists_today(self, tmp_path):
-        """Second run on the same day exits early without calling generate_briefing."""
+        """Second run on the same day exits early without calling generate_briefing_document."""
         from datetime import date
         today_md = tmp_path / f"briefing_{date.today().strftime('%Y-%m-%d')}.md"
         today_md.write_text("existing briefing")
 
         with (
             patch("src.handler.fetch_stock_snapshot") as mock_stocks,
-            patch("src.handler.generate_briefing") as mock_gen,
+            patch("src.handler.generate_briefing_document") as mock_gen,
             patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
             patch("src.handler.BRIEFING_SKIP_IF_EXISTS", True),
         ):
@@ -456,7 +500,7 @@ class TestBriefingHandler:
 
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING) as mock_gen,
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)) as mock_gen,
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
@@ -482,7 +526,7 @@ class TestBriefingHandler:
 
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
@@ -507,7 +551,7 @@ class TestBriefingHandler:
 
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
@@ -536,9 +580,10 @@ class TestBriefingHandler:
 
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.save_briefing_md", side_effect=fake_save),
+            patch("src.handler.save_briefing_document"),
             patch("src.handler.BRIEFING_MD_ROTATION_ENABLED", False),
             patch("src.handler.BRIEFING_OUTPUT_DIR", tmp_path),
         ):
@@ -557,7 +602,7 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
@@ -583,7 +628,7 @@ class TestBriefingHandler:
 
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord") as mock_discord,
             patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
@@ -610,11 +655,12 @@ class TestBriefingHandler:
         """
         with (
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.send_to_discord"),
             patch("src.handler.send_to_notion", return_value="https://notion.so/p"),
             patch("src.handler.save_briefing_md", side_effect=OSError("disk full")),
+            patch("src.handler.save_briefing_document"),
             patch("src.handler.index_briefings") as mock_index,
         ):
             mock_cfg.portfolio.tickers = ["PLTR"]
@@ -631,7 +677,7 @@ class TestBriefingHandler:
         with (
             patch("src.handler.CONFIG") as mock_cfg,
             patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
-            patch("src.handler.generate_briefing", return_value=_VALID_BRIEFING),
+            patch("src.handler.generate_briefing_document", return_value=_doc(_VALID_BRIEFING)),
             patch("src.handler.get_model", return_value="claude-sonnet-4-6"),
             patch("src.handler.send_to_notion"),
             patch("src.handler.BRIEFING_OUTPUT_DIR", Path("/tmp")),
