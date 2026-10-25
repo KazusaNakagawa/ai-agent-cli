@@ -192,9 +192,18 @@ def splice_holdings(body: str, holdings_md: str) -> str | None:
 def snapshot_market(
     quotes: dict[str, StockQuote] | None, fx_change_pct: float | None,
 ) -> MarketSnapshot:
-    """Freeze fetcher quotes into the document, so it re-renders offline."""
+    """Freeze fetcher quotes into the document, so it re-renders offline.
+
+    Only the snapshot's own fields are copied: the document is built after
+    every claude call has been paid for, so a field added to ``StockQuote``
+    must not turn into a ValidationError that loses the whole run.
+    """
+    fields = QuoteSnapshot.model_fields
     return MarketSnapshot(
-        quotes=[QuoteSnapshot(**dataclasses.asdict(q)) for q in (quotes or {}).values()],
+        quotes=[
+            QuoteSnapshot(**{k: v for k, v in dataclasses.asdict(q).items() if k in fields})
+            for q in (quotes or {}).values()
+        ],
         fx_change_pct=fx_change_pct,
     )
 

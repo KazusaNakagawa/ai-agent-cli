@@ -297,3 +297,24 @@ def test_split_holdings_rejoins_to_splice():
     assert head + "X" + tail == splice_holdings(_BODY, "X")
     assert head.endswith(f"{HOLDINGS_HEADING}\n\n") and tail.startswith("\n\n---")
     assert split_holdings("### 今日のサマリー（1文）\n") is None
+
+
+def test_quote_snapshot_mirrors_stock_quote_fields():
+    # A field added to StockQuote should be stored too; this flags the drift.
+    import dataclasses
+
+    from src.generator.briefscript_schema import QuoteSnapshot
+
+    assert {f.name for f in dataclasses.fields(StockQuote)} == set(QuoteSnapshot.model_fields)
+
+
+def test_snapshot_drops_fields_it_does_not_know():
+    # Drift must cost the extra field, not the paid run (PR #520 review).
+    import dataclasses
+
+    @dataclasses.dataclass(frozen=True)
+    class FutureQuote(StockQuote):
+        market_state: str = "CLOSED"
+
+    snap = snapshot_market({"TICKER1": FutureQuote("TICKER1", 100.0, 100.2, -0.2)}, FX)
+    assert snap.quotes[0].ticker == "TICKER1" and snap.quotes[0].change_pct == -0.2
