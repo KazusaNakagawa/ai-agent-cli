@@ -289,6 +289,11 @@
   "journal_chat": {
     "trusted_write_dirs": ["~/work/zenn-docs"]
   },
+  "speech": {
+    "audio": false,
+    "voice": "Kyoko",
+    "max_chars": 3000
+  },
   "watch_events": [
     {
       "name": "SpaceX IPO",

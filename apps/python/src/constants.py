@@ -58,6 +58,11 @@ BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
 BRIEFING_IR_SUBDIR = "ir"
 # Salvaged text from claude CLI calls that ultimately failed (see run_claude)
 PARTIAL_OUTPUT_DIR = OUTPUT_DIR / "partial"
+# Spoken briefing script and optional audio (#517). Outside BRIEFING_OUTPUT_DIR
+# so the briefing RAG index does not read the same content twice.
+SPEECH_OUTPUT_DIR = OUTPUT_DIR / "speech"
+# Upper bound for one ``say`` run; a full briefing takes well under a minute.
+TIMEOUT_SPEECH_AUDIO = 300
 # Portfolio comparison charts (bin/chart.sh and the briefing's chart step)
 CHART_OUTPUT_DIR = OUTPUT_DIR / "charts"
 

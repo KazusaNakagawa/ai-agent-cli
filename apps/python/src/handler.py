@@ -20,6 +20,7 @@ from src.constants import (
     BRIEFING_OUTPUT_DIR,
     BRIEFING_SKIP_IF_EXISTS,
     CHART_OUTPUT_DIR,
+    SPEECH_OUTPUT_DIR,
 )
 from src.fetcher.fx import fetch_fx_context
 from src.fetcher.stocks import StockQuote, fetch_stock_snapshot
@@ -31,6 +32,7 @@ from src.generator.briefing import (
 from src.generator.briefscript_notion import render_document_notion
 from src.generator.briefscript_render import render_document_markdown
 from src.generator.briefscript_schema import BriefingDocument
+from src.generator.briefscript_speech import render_document_speech
 from src.local_llm.briefing_index import index_briefings
 from src.local_llm.config import load_config as load_local_llm_config
 from src.metrics.briefing import extract_briefing_metrics
@@ -38,6 +40,7 @@ from src.notifier.discord import send_to_discord
 from src.notifier.local_md import save_briefing_document, save_briefing_md
 from src.notifier.markdown import markdown_to_notion_blocks
 from src.notifier.notion import send_to_notion
+from src.notifier.speech import save_speech_script, synthesize_audio
 from src.logger import get_logger
 from src.utils import is_configured as _is_configured
 from src.workflow.registry import get as get_workflow
@@ -256,6 +259,27 @@ def step_deliver_notion(ctx) -> str | None:
     if page_url:
         logger.info("Notion ページ: %s", page_url)
     return page_url
+
+
+def step_speech(ctx) -> dict[str, str | None]:
+    """Write the spoken script and, with ``speech.audio`` on, its audio (#517).
+
+    Last, after every delivery: ``say`` can take tens of seconds and the
+    listenable version is an extra. A failed write is logged and swallowed,
+    like ``step_index``, so the warning names the speech output; a missing
+    or failing TTS engine is handled inside ``synthesize_audio``.
+    """
+    doc = ctx.results["generate"]
+    speech = CONFIG.speech
+    try:
+        script = save_speech_script(
+            render_document_speech(doc, max_chars=speech.max_chars), SPEECH_OUTPUT_DIR, doc.date,
+        )
+    except OSError as exc:
+        logger.warning("speech script write failed: %s — continuing", exc)
+        return {"script": None, "audio": None}
+    audio = synthesize_audio(script, speech.voice) if speech.audio else None
+    return {"script": str(script), "audio": str(audio) if audio else None}
 
 
 # --- entry point ------------------------------------------------------------
