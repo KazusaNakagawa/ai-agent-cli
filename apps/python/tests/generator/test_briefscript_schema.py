@@ -304,3 +304,85 @@ def test_document_minimal_and_failed_holdings():
         _doc_payload(sections=[{"kind": "holdings", "tickers": HOLDINGS}])
     )
     assert doc.sections[0].content is None
+
+
+# --- sectors (#514) ---
+
+from src.generator.briefscript_schema import (  # noqa: E402
+    SectorNote,
+    parse_sectors_section,
+    sectors_json_schema,
+)
+
+SECTORS = ["AI・クラウド", "防衛"]
+
+
+def _sectors(**overrides) -> dict:
+    data = {
+        "sectors": [
+            {"sector": "AI・クラウド", "claims": [
+                {"text": "投資が拡大。", "confidence": "confirmed", "source_ids": ["s1"]},
+            ], "related_tickers": ["MSFT"]},
+            {"sector": "防衛", "claims": []},
+        ],
+        "sources": [{"id": "s1", "title": "t", "url": "https://example.com/s1"}],
+    }
+    data.update(overrides)
+    return data
+
+
+def test_sectors_payload_parses_with_quiet_sector():
+    section = parse_sectors_section(_sectors(), sectors=SECTORS)
+    assert [n.sector for n in section.sectors] == SECTORS
+    assert section.sectors[1].claims == []
+
+
+def test_sector_name_whitespace_is_canonicalised():
+    data = _sectors()
+    data["sectors"][1]["sector"] = "防衛 "
+    section = parse_sectors_section(data, sectors=[" AI・クラウド", "防衛"])
+    assert [n.sector for n in section.sectors] == SECTORS
+
+
+def test_unknown_and_duplicate_sectors_rejected_together():
+    data = _sectors()
+    data["sectors"].append({"sector": "宇宙", "claims": []})
+    data["sectors"].append({"sector": "防衛", "claims": []})
+    with pytest.raises(ValidationError) as exc:
+        parse_sectors_section(data, sectors=SECTORS)
+    assert "宇宙" in str(exc.value) and "duplicate sector" in str(exc.value)
+
+
+def test_sector_unknown_source_rejected_and_uncited_dropped():
+    data = _sectors()
+    data["sectors"][0]["claims"][0]["source_ids"] = ["s9"]
+    with pytest.raises(ValidationError, match="s9"):
+        parse_sectors_section(data, sectors=SECTORS)
+    data = _sectors()
+    data["sources"].append({"id": "s2", "title": "u", "url": "https://example.com/u"})
+    assert [s.id for s in parse_sectors_section(data, sectors=SECTORS).sources] == ["s1"]
+
+
+def test_sector_bounds():
+    with pytest.raises(ValidationError):
+        SectorNote(sector="x", claims=[{"text": f"c{i}", "confidence": "inferred"} for i in range(4)])
+    with pytest.raises(ValidationError):
+        SectorNote(sector="x", related_tickers=[f"T{i}" for i in range(6)])
+    with pytest.raises(ValidationError):
+        SectorNote(sector=" ")
+
+
+def test_sectors_schema_pins_names_and_rejects_str():
+    schema = sectors_json_schema(SECTORS)
+    assert schema["$defs"]["SectorNote"]["properties"]["sector"]["enum"] == SECTORS
+    with pytest.raises(TypeError):
+        sectors_json_schema("防衛")
+    with pytest.raises(TypeError):
+        parse_sectors_section(_sectors(), sectors="防衛")
+
+
+def test_document_accepts_a_sectors_block():
+    doc = BriefingDocument.model_validate(_doc_payload(sections=[
+        {"kind": "sectors", "sectors": SECTORS, "content": _sectors()},
+    ]))
+    assert doc.sections[0].content.sectors[0].sector == "AI・クラウド"

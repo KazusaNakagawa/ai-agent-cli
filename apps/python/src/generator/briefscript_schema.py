@@ -1,9 +1,9 @@
 """Pydantic models for BriefScript, the IR between the LLM and briefing renderers.
 
 ``BriefingDocument`` is the whole briefing: the fetcher's market snapshot plus
-an ordered list of sections. Only the holdings ("自分への示唆") section is
-structured so far; the rest travel as ``MarkdownSection`` passthroughs until
-they are migrated (#513). The LLM writes claims; it never writes prices or
+an ordered list of sections. The holdings ("自分への示唆") and sector sweep
+(#514) sections are structured; the rest travel as ``MarkdownSection``
+passthroughs until they are migrated (#513). The LLM writes claims; it never writes prices or
 change figures — those are not claim fields and are injected from the
 snapshot at render time.
 
@@ -79,42 +79,83 @@ class HoldingsSection(BaseModel):
 
     @model_validator(mode="after")
     def _check_references(self, info: ValidationInfo) -> HoldingsSection:
-        # Collect every problem and raise once, so a retry prompt can fix
-        # them all in a single extra claude CLI call.
-        errors: list[str] = []
-        canonical = _canonical_tickers((info.context or {}).get("holdings"))
-
-        source_ids: set[str] = set()
-        for source in self.sources:
-            if source.id in source_ids:
-                errors.append(f"duplicate source id: {source.id}")
-            source_ids.add(source.id)
-
-        seen: set[str] = set()
-        cited: set[str] = set()
-        for note in self.holdings:
-            if canonical is not None:
-                configured = canonical.get(note.ticker.upper())
-                if configured is None:
-                    errors.append(f"ticker is not a configured holding: {note.ticker}")
-                else:
-                    note.ticker = configured
-            if note.ticker in seen:
-                errors.append(f"duplicate ticker: {note.ticker}")
-            seen.add(note.ticker)
-            for claim in note.claims:
-                cited.update(claim.source_ids)
-                unknown = [sid for sid in claim.source_ids if sid not in source_ids]
-                if unknown:
-                    errors.append(
-                        f"{note.ticker}: claim cites unknown source id(s): {', '.join(unknown)}"
-                    )
-
-        if errors:
-            raise ValueError("; ".join(errors))
-        # Uncited sources would only clutter the rendered source list.
-        self.sources = [s for s in self.sources if s.id in cited]
+        self.sources = _check_notes(
+            self.holdings, "ticker", "ticker", self.sources,
+            _canonical_names((info.context or {}).get("holdings"), "holdings", upper=True),
+        )
         return self
+
+
+class SectorNote(BaseModel):
+    model_config = _STRICT
+
+    sector: str = Field(min_length=1)
+    # Empty means no material move today; the renderer says so.
+    claims: list[Claim] = Field(default_factory=list, max_length=3)
+    related_tickers: list[str] = Field(default_factory=list, max_length=5)
+
+
+class SectorsSection(BaseModel):
+    model_config = _STRICT
+
+    sectors: list[SectorNote]
+    sources: list[Source] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_references(self, info: ValidationInfo) -> SectorsSection:
+        self.sources = _check_notes(
+            self.sectors, "sector", "sector", self.sources,
+            _canonical_names((info.context or {}).get("sectors"), "sectors", upper=False),
+        )
+        return self
+
+
+def _check_notes(
+    notes: list[Any],
+    field: str,
+    noun: str,
+    sources: list[Source],
+    canonical: dict[str, str] | None,
+) -> list[Source]:
+    """Shared cross-field checks; returns the sources that are actually cited.
+
+    Every problem is collected and raised once, so a retry prompt can fix
+    them all in a single extra claude CLI call. With ``canonical`` (the
+    configured names), each note's name is matched and rewritten to the
+    configured spelling.
+    """
+    errors: list[str] = []
+    source_ids: set[str] = set()
+    for source in sources:
+        if source.id in source_ids:
+            errors.append(f"duplicate source id: {source.id}")
+        source_ids.add(source.id)
+
+    seen: set[str] = set()
+    cited: set[str] = set()
+    for note in notes:
+        name = getattr(note, field)
+        if canonical is not None:
+            configured = canonical.get(_fold(name, upper=noun == "ticker"))
+            if configured is None:
+                kind = "configured holding" if noun == "ticker" else "configured watch sector"
+                errors.append(f"{noun} is not a {kind}: {name}")
+            else:
+                name = configured
+                setattr(note, field, configured)
+        if name in seen:
+            errors.append(f"duplicate {noun}: {name}")
+        seen.add(name)
+        for claim in note.claims:
+            cited.update(claim.source_ids)
+            unknown = [sid for sid in claim.source_ids if sid not in source_ids]
+            if unknown:
+                errors.append(f"{name}: claim cites unknown source id(s): {', '.join(unknown)}")
+
+    if errors:
+        raise ValueError("; ".join(errors))
+    # Uncited sources would only clutter the rendered source list.
+    return [s for s in sources if s.id in cited]
 
 
 # Envelope models carry text verbatim: stripping a passthrough section would
@@ -163,7 +204,19 @@ class HoldingsBlock(BaseModel):
     content: HoldingsSection | None = None
 
 
-Section = Annotated[Union[MarkdownSection, HoldingsBlock], Field(discriminator="kind")]
+class SectorsBlock(BaseModel):
+    """The sector sweep body, listing every configured watch sector."""
+
+    model_config = _ENVELOPE
+
+    kind: Literal["sectors"] = "sectors"
+    sectors: list[str]
+    content: SectorsSection
+
+
+Section = Annotated[
+    Union[MarkdownSection, HoldingsBlock, SectorsBlock], Field(discriminator="kind"),
+]
 
 
 class BriefingDocument(BaseModel):
@@ -175,13 +228,20 @@ class BriefingDocument(BaseModel):
     sections: list[Section] = Field(default_factory=list)
 
 
-def _canonical_tickers(holdings: Any) -> dict[str, str] | None:
-    """Map upper-cased ticker → configured spelling, or None when not given."""
-    if holdings is None:
+def _fold(name: str, *, upper: bool) -> str:
+    # Tickers compare case-insensitively; sector names (often Japanese) only
+    # ignore surrounding and repeated whitespace.
+    name = " ".join(name.split())
+    return name.upper() if upper else name
+
+
+def _canonical_names(names: Any, what: str, *, upper: bool) -> dict[str, str] | None:
+    """Map folded name → configured spelling, or None when not given."""
+    if names is None:
         return None
-    if isinstance(holdings, str):
-        raise TypeError("holdings must be a list of tickers, not a str")
-    return {t.strip().upper(): t.strip() for t in holdings}
+    if isinstance(names, str):
+        raise TypeError(f"{what} must be a list of names, not a str")
+    return {_fold(n, upper=upper): " ".join(n.split()) for n in names}
 
 
 def parse_holdings_section(data: Any, holdings: list[str]) -> HoldingsSection:
@@ -190,14 +250,29 @@ def parse_holdings_section(data: Any, holdings: list[str]) -> HoldingsSection:
     Tickers are matched case-insensitively and rewritten to the configured
     spelling; anything else (e.g. a missing exchange suffix) is rejected.
     """
-    _canonical_tickers(holdings)
+    _canonical_names(holdings, "holdings", upper=True)
     return HoldingsSection.model_validate(data, context={"holdings": holdings})
+
+
+def parse_sectors_section(data: Any, sectors: list[str]) -> SectorsSection:
+    """Validate an LLM payload against the configured watch ``sectors``."""
+    _canonical_names(sectors, "sectors", upper=False)
+    return SectorsSection.model_validate(data, context={"sectors": sectors})
+
+
+def _pinned_schema(model: type[BaseModel], note: str, field: str, names: list[str]) -> dict[str, Any]:
+    if isinstance(names, str):
+        raise TypeError(f"{field} names must be a list, not a str")
+    schema = copy.deepcopy(model.model_json_schema())
+    schema["$defs"][note]["properties"][field]["enum"] = list(names)
+    return schema
 
 
 def holdings_json_schema(holdings: list[str]) -> dict[str, Any]:
     """JSON Schema for ``--json-schema`` with ``ticker`` pinned to ``holdings``."""
-    if isinstance(holdings, str):
-        raise TypeError("holdings must be a list of tickers, not a str")
-    schema = copy.deepcopy(HoldingsSection.model_json_schema())
-    schema["$defs"]["HoldingNote"]["properties"]["ticker"]["enum"] = list(holdings)
-    return schema
+    return _pinned_schema(HoldingsSection, "HoldingNote", "ticker", holdings)
+
+
+def sectors_json_schema(sectors: list[str]) -> dict[str, Any]:
+    """JSON Schema for ``--json-schema`` with ``sector`` pinned to ``sectors``."""
+    return _pinned_schema(SectorsSection, "SectorNote", "sector", sectors)

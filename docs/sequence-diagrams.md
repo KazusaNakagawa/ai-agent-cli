@@ -20,7 +20,9 @@ Markdown でメイン分析の「自分への示唆」を差し替える。こ�
 保有銘柄の個別ニュースも調べない（#511、二重生成の回避）。保有銘柄示唆が失敗したときは、
 株価データから作った見出しに「〔未確認〕本日の示唆は生成できませんでした。」を添えて出す。
 generator の戻り値は `BriefingDocument`（IR、#513）で、株価スナップショットとセクションの並びを持つ。
-保有銘柄以外のセクションは今のところ Markdown のまま `MarkdownSection` に入る。
+セクタースイープも `--json-schema` で受け取り、監視セクター名を enum で固定して検証する（#514）。
+検証が 2 回とも通らなければセクター失敗として扱い、従来どおりリカバリ対象の失敗注記を残す。
+保有銘柄・セクター以外のセクションは今のところ Markdown のまま `MarkdownSection` に入る。
 各配信先はこの IR を `render_document_markdown` で Markdown にしてから送る。
 
 エントリポイント: `apps/python/src/handler.py:29` (`lambda_handler`)
@@ -54,8 +56,8 @@ sequenceDiagram
             G->>CLI: run_claude(main)
             CLI-->>G: 本文 + usage
         and セクタースイープ
-            G->>CLI: run_claude(sectors)
-            CLI-->>G: 本文 + usage
+            G->>CLI: run_claude(sectors, json_schema)
+            CLI-->>G: BriefScript JSON + usage
         and 保有銘柄示唆（quotes があるとき）
             G->>CLI: run_claude(holdings, json_schema)
             CLI-->>G: BriefScript JSON + usage
