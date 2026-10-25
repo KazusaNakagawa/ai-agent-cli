@@ -1,4 +1,4 @@
-"""Render a validated BriefScript holdings section to the briefing's Markdown.
+"""Render validated BriefScript sections to the briefing's Markdown.
 
 Every figure in a heading comes from fetcher quotes; the LLM's claims are only
 ever rendered as bullet text, so nothing it writes can stand in for a price or
@@ -19,9 +19,13 @@ from src.generator.briefscript_schema import (
     HoldingsSection,
     MarketSnapshot,
     QuoteSnapshot,
+    SectorsBlock,
+    SectorsSection,
+    Source,
 )
 
 HOLDINGS_HEADING = "### 自分への示唆"
+SECTORS_SECTION_HEADING = "### 今日のセクター動向（全セクター）"
 
 # Markers that keep a non-confirmed claim from reading as fact.
 _CONFIDENCE_MARKERS = {"confirmed": "", "inferred": "〔推測〕", "unknown": "〔未確認〕"}
@@ -30,6 +34,10 @@ _CONFIDENCE_MARKERS = {"confirmed": "", "inferred": "〔推測〕", "unknown": "
 _MISSING_NOTE = "〔未確認〕今日の材料は確認できませんでした。"
 # Bullet for every holding when the BriefScript call failed outright.
 _FAILED_NOTE = "〔未確認〕本日の示唆は生成できませんでした。"
+# Bullet for a sector with no claims: the model found no material move.
+_QUIET_SECTOR_NOTE = "動き限定的"
+# Bullet for a configured sector the LLM returned nothing for.
+_MISSING_SECTOR_NOTE = "〔未確認〕今日の動きは確認できませんでした。"
 
 _LEADING_HASHES = re.compile(r"^\s*#+\s*")
 _MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
@@ -90,6 +98,26 @@ def _unique(tickers: list[str]) -> list[str]:
     return list(dict.fromkeys(t.strip() for t in tickers if t.strip()))
 
 
+def _number_sources(claims) -> dict[str, int]:
+    """Number source ids in order of first citation."""
+    numbers: dict[str, int] = {}
+    for claim in claims:
+        for sid in claim.source_ids:
+            numbers.setdefault(sid, len(numbers) + 1)
+    return numbers
+
+
+def _source_list(numbers: dict[str, int], sources: list[Source]) -> list[str]:
+    if not numbers:
+        return []
+    by_id = {source.id: source for source in sources}
+    listed = [
+        f"- ［{n}］[{_link_text(by_id[sid].title)}]({by_id[sid].url})"
+        for sid, n in sorted(numbers.items(), key=lambda kv: kv[1])
+    ]
+    return ["\n".join([_SOURCES_HEADING, *listed])]
+
+
 def render_holdings_markdown(
     section: HoldingsSection,
     quotes: dict[str, StockQuote],
@@ -104,11 +132,7 @@ def render_holdings_markdown(
     """
     notes = {note.ticker: note for note in section.holdings}
     tickers = _unique(tickers)
-    numbers: dict[str, int] = {}
-    for ticker in tickers:
-        for claim in notes[ticker].claims if ticker in notes else ():
-            for sid in claim.source_ids:
-                numbers.setdefault(sid, len(numbers) + 1)
+    numbers = _number_sources(c for t in tickers if t in notes for c in notes[t].claims)
 
     blocks = []
     for ticker in tickers:
@@ -120,15 +144,33 @@ def render_holdings_markdown(
             if note.next_event:
                 bullets.append(f"- 次の予定：{_plain(note.next_event)}")
         blocks.append("\n".join([_heading(ticker, quotes.get(ticker), fx_change_pct), *bullets]))
+    return "\n\n".join(blocks + _source_list(numbers, section.sources))
 
-    by_id = {source.id: source for source in section.sources}
-    if numbers:
-        listed = [
-            f"- ［{n}］[{_link_text(by_id[sid].title)}]({by_id[sid].url})"
-            for sid, n in sorted(numbers.items(), key=lambda kv: kv[1])
-        ]
-        blocks.append("\n".join([_SOURCES_HEADING, *listed]))
-    return "\n\n".join(blocks)
+
+def render_sectors_markdown(section: SectorsSection, sectors: list[str]) -> str:
+    """The sector sweep: every configured sector once, in configured order.
+
+    Sector names are the configured spelling, so nothing the model writes
+    becomes a heading.
+    """
+    notes = {note.sector: note for note in section.sectors}
+    sectors = list(dict.fromkeys(" ".join(s.split()) for s in sectors if s.strip()))
+    numbers = _number_sources(c for s in sectors if s in notes for c in notes[s].claims)
+
+    blocks = [SECTORS_SECTION_HEADING]
+    for sector in sectors:
+        note = notes.get(sector)
+        if note is None:
+            bullets = [f"- {_MISSING_SECTOR_NOTE}"]
+        elif not note.claims:
+            bullets = [f"- {_QUIET_SECTOR_NOTE}"]
+        else:
+            bullets = [_bullet(c, numbers) for c in note.claims]
+        tickers = [t for t in (_plain(x) for x in (note.related_tickers if note else ())) if t]
+        if tickers:
+            bullets.append(f"- 関連銘柄：{', '.join(tickers)}")
+        blocks.append("\n".join([f"#### {_plain(sector)}", *bullets]))
+    return "\n\n".join(blocks + _source_list(numbers, section.sources))
 
 
 def render_holdings_fallback(
@@ -221,6 +263,8 @@ def render_document_markdown(doc: BriefingDocument) -> str:
     for section in doc.sections:
         if isinstance(section, HoldingsBlock):
             parts.append(_render_holdings_block(section, doc.market))
+        elif isinstance(section, SectorsBlock):
+            parts.append(render_sectors_markdown(section.content, section.sectors))
         else:
             parts.append(section.text)
     return "".join(parts)

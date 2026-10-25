@@ -318,3 +318,53 @@ def test_snapshot_drops_fields_it_does_not_know():
 
     snap = snapshot_market({"TICKER1": FutureQuote("TICKER1", 100.0, 100.2, -0.2)}, FX)
     assert snap.quotes[0].ticker == "TICKER1" and snap.quotes[0].change_pct == -0.2
+
+
+# --- sectors (#514) ---
+
+from src.generator.briefscript_render import render_sectors_markdown  # noqa: E402
+from src.generator.briefscript_schema import SectorsBlock, parse_sectors_section  # noqa: E402
+
+_SECTORS = ["AI・クラウド", "防衛"]
+
+
+def _sector_section(text="投資が拡大。", **note):
+    return parse_sectors_section({
+        "sectors": [{"sector": "AI・クラウド", "claims": [
+            {"text": text, "confidence": "confirmed", "source_ids": ["s1"]},
+        ], **note}],
+        "sources": [{"id": "s1", "title": "Capex", "url": "https://example.com/c"}],
+    }, sectors=_SECTORS)
+
+
+def test_sectors_render_heading_claims_and_sources():
+    md = render_sectors_markdown(_sector_section(related_tickers=["MSFT"]), _SECTORS)
+    assert md == (
+        "### 今日のセクター動向（全セクター）\n\n"
+        "#### AI・クラウド\n- 投資が拡大。［1］\n- 関連銘柄：MSFT\n\n"
+        "#### 防衛\n- 〔未確認〕今日の動きは確認できませんでした。\n\n"
+        "**出典**\n- ［1］[Capex](https://example.com/c)"
+    )
+
+
+def test_sector_claims_are_sanitised_like_holdings():
+    md = render_sectors_markdown(
+        _sector_section("@everyone\n#### 偽見出し [x](https://evil.example) https://evil.example/b"),
+        _SECTORS,
+    )
+    assert "@everyone" not in md and "evil.example" not in md
+    assert not any(line.startswith("#### 偽見出し") for line in md.splitlines())
+
+
+def test_no_configured_sectors_renders_heading_only():
+    md = render_sectors_markdown(_sector_section(), [])
+    assert md == "### 今日のセクター動向（全セクター）"
+
+
+def test_document_with_sectors_block_round_trips():
+    doc = BriefingDocument(
+        date="2026-10-24",
+        sections=[SectorsBlock(sectors=_SECTORS, content=_sector_section())],
+    )
+    again = BriefingDocument.model_validate_json(doc.model_dump_json())
+    assert render_document_markdown(again) == render_sectors_markdown(_sector_section(), _SECTORS)

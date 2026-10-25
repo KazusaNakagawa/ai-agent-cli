@@ -19,6 +19,7 @@ from src.fetcher.stocks import StockQuote
 from src.generator.briefscript_render import (
     HOLDINGS_HEADING,
     render_document_markdown,
+    render_sectors_markdown,
     snapshot_market,
     splice_holdings,
     split_holdings,
@@ -29,8 +30,12 @@ from src.generator.briefscript_schema import (
     HoldingsSection,
     MarkdownSection,
     Section,
+    SectorsBlock,
+    SectorsSection,
     holdings_json_schema,
     parse_holdings_section,
+    parse_sectors_section,
+    sectors_json_schema,
 )
 from src.generator.prompt import render
 from src.logger import get_logger
@@ -181,22 +186,36 @@ def _truncate_error(detail: str) -> str:
     return detail[:_ERROR_NOTE_MAX_LENGTH] + "…(truncated)"
 
 
-def generate_sectors(stocks: str, config: BriefingConfig) -> str:
-    """Run the sector sweep on its own and return its body.
+def _watch_sector_names(config: BriefingConfig) -> list[str]:
+    # Normalised once, so the schema enum, validation and rendering agree.
+    return list(dict.fromkeys(
+        " ".join(s.sector.split()) for s in config.watch_sectors if s.sector.strip()
+    ))
 
-    Split out of generate_briefing so the wake-up recovery job (#432) can redo
-    just this half after a sleep-severed run, without paying for a second main
-    analysis.
-    """
+
+def generate_sectors_section(stocks: str, config: BriefingConfig) -> SectorsSection:
+    """Run the sector sweep as validated BriefScript (#514)."""
+    sectors = _watch_sector_names(config)
     prompt = render(
         "briefing_sectors",
         watch_sectors=build_watch_sectors_context(config),
         stocks=stocks,
     )
-    return run_claude(
-        prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS,
-        max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
+    return _generate_validated(
+        prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS, sectors_json_schema(sectors),
+        lambda data: parse_sectors_section(data, sectors=sectors),
     )
+
+
+def generate_sectors(stocks: str, config: BriefingConfig) -> str:
+    """Run the sector sweep on its own and return its rendered body.
+
+    Split out of generate_briefing so the wake-up recovery job (#432) can redo
+    just this half after a sleep-severed run, without paying for a second main
+    analysis.
+    """
+    section = generate_sectors_section(stocks, config)
+    return render_sectors_markdown(section, _watch_sector_names(config))
 
 
 def merge_recovered_sectors(body: str, sectors: str) -> str:
@@ -214,7 +233,7 @@ def merge_recovered_sectors(body: str, sectors: str) -> str:
 
 
 class BriefScriptError(RuntimeError):
-    """The holdings BriefScript never validated; callers keep the Markdown."""
+    """A BriefScript section never validated; callers fall back per section."""
 
 
 def _holding_tickers(config: BriefingConfig) -> list[str]:
@@ -223,37 +242,43 @@ def _holding_tickers(config: BriefingConfig) -> list[str]:
     return list(dict.fromkeys(t.strip() for t in config.portfolio.tickers if t.strip()))
 
 
-def generate_holdings(stocks: str, config: BriefingConfig) -> HoldingsSection:
-    """Generate the holdings section as validated BriefScript.
+def _generate_validated(prompt: str, label: str, timeout: int, schema: dict, parse):
+    """Call claude with ``--json-schema`` and validate, retrying once on bad output.
 
-    Output that fails validation is retried once with the error appended, so
-    the model can correct exactly what was wrong (#504). A CLI failure is not
+    Output that fails validation is retried with the error appended, so the
+    model can correct exactly what was wrong (#504). A CLI failure is not
     retried here — run_claude already spent its transient-error budget.
     """
-    tickers = _holding_tickers(config)
-    base_prompt = render("briefing_holdings", tickers=join_safe(tickers, sep=", "), stocks=stocks)
-    schema = holdings_json_schema(tickers)
-    prompt = base_prompt
+    base_prompt = prompt
     last_error = ""
     for attempt in range(1, BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS + 1):
         raw = run_claude(
-            prompt, "保有銘柄示唆", TIMEOUT_BRIEFING_HOLDINGS,
+            prompt, label, timeout,
             max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING, json_schema=schema,
         )
         try:
-            return parse_holdings_section(json.loads(raw), holdings=tickers)
+            return parse(json.loads(raw))
         except (json.JSONDecodeError, ValidationError) as e:
             last_error = str(e)
             logger.warning(
-                "holdings BriefScript failed validation (attempt %d/%d): %s",
-                attempt, BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS, _truncate_error(last_error),
+                "%s BriefScript failed validation (attempt %d/%d): %s",
+                label, attempt, BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS, _truncate_error(last_error),
             )
             prompt = (
                 f"{base_prompt}\n\n## 前回の出力のエラー\n"
                 f"前回の出力は次の検証エラーで却下されました。直して出力し直してください。\n{last_error}"
             )
-            continue
-    raise BriefScriptError(f"holdings BriefScript invalid after retries: {_truncate_error(last_error)}")
+    raise BriefScriptError(f"{label} BriefScript invalid after retries: {_truncate_error(last_error)}")
+
+
+def generate_holdings(stocks: str, config: BriefingConfig) -> HoldingsSection:
+    """Generate the holdings section as validated BriefScript."""
+    tickers = _holding_tickers(config)
+    prompt = render("briefing_holdings", tickers=join_safe(tickers, sep=", "), stocks=stocks)
+    return _generate_validated(
+        prompt, "保有銘柄示唆", TIMEOUT_BRIEFING_HOLDINGS, holdings_json_schema(tickers),
+        lambda data: parse_holdings_section(data, holdings=tickers),
+    )
 
 
 _REFERENCES_HEADING = "### 参考記事"
@@ -314,6 +339,10 @@ def _main_prompt_holdings_parts(tickers: str, briefscript: bool) -> dict[str, st
     }
 
 
+def _sectors_block(section: SectorsSection, config: BriefingConfig) -> SectorsBlock:
+    return SectorsBlock(sectors=_watch_sector_names(config), content=section)
+
+
 def generate_briefing_document(
     stocks: str,
     config: BriefingConfig,
@@ -354,7 +383,7 @@ def generate_briefing_document(
                 run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN,
                 max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
             ): "main",
-            executor.submit(generate_sectors, stocks, config): "sectors",
+            executor.submit(generate_sectors_section, stocks, config): "sectors",
         }
         if quotes:
             futures[executor.submit(generate_holdings, stocks, config)] = "holdings"
@@ -388,7 +417,7 @@ def generate_briefing_document(
                 text=f"{MAIN_FAILED_NOTICE}\n{_truncate_error(errors['main'])}\n\n---\n\n"
                 f"{SECTORS_HEADING}\n\n",
             ),
-            MarkdownSection(text=results["sectors"]),
+            _sectors_block(results["sectors"], config),
         ]
         return doc
 
@@ -412,7 +441,7 @@ def generate_briefing_document(
 
     doc.sections += [
         MarkdownSection(text=f"\n\n---\n\n{SECTORS_HEADING}\n\n"),
-        MarkdownSection(text=results["sectors"]),
+        _sectors_block(results["sectors"], config),
     ]
     return doc
 
