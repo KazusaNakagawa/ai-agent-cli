@@ -233,6 +233,7 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 | `send_to_discord` (L110) | `deliver_discord` | `skip_if=` 認証情報未設定 |
 | `send_to_notion` (L119) | `deliver_notion` | `skip_if=` 認証情報未設定。本文は `render_document_notion` で IR から組んだブロックを渡す（#516） |
 | （新規、#517） | `speech` | 最後に実行。`render_document_speech` で読み上げ原稿を `output/speech/` に書き、`speech.audio` が有効なら `say` で `.m4a` も作る。書き込み失敗も TTS の欠落・失敗もステップ自身が警告して握り潰す |
+| （新規、#518） | `slides` | `render_document_slides` で Marp の Markdown を `output/slides/briefing_<date>.slides.md` に書く。1 枚あたりの主張数は `slides.max_claims`。書き込み失敗はステップ自身が警告して握り潰す。PDF / PPTX への変換はパイプラインでは行わず、必要なときに `npx @marp-team/marp-cli <file> --pdf`（または `--pptx`）で変換する |
 
 **移植で挙動を変えない。** 現状 Discord / Notion 送信は best-effort ではなく例外が伝播するので、`best_effort=False` のまま移植する。ここを変えるかどうかは別 issue で判断する。
 

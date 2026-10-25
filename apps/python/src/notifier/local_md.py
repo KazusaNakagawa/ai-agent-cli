@@ -92,3 +92,12 @@ def _prune_old(
             logger.info("deleted old MD: %s", stale.name)
         except FileNotFoundError:
             pass
+
+
+def save_slides(deck: str, output_dir: Path, day: date) -> Path:
+    """Write the Marp deck as ``briefing_YYYY-MM-DD.slides.md`` (#518)."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"briefing_{day.strftime('%Y-%m-%d')}.slides.md"
+    path.write_text(deck, encoding="utf-8")
+    logger.info("slide deck written: %s", path)
+    return path

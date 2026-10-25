@@ -160,6 +160,15 @@ class SpeechConfig(BaseModel):
     max_chars: int | None = Field(default=None, ge=1)
 
 
+class SlidesConfig(BaseModel):
+    """Marp slide deck settings (#518)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Claims per slide; a story is cut there, geopolitics / sectors continue.
+    max_claims: int = Field(default=3, ge=1)
+
+
 class BriefingFileConfig(BaseModel):
     """The part expressed in ``briefing.json``. Contains no credentials.
 
@@ -182,6 +191,7 @@ class BriefingFileConfig(BaseModel):
     obsidian: ObsidianConfig | None = None
     journal_chat: JournalChatConfig = Field(default_factory=JournalChatConfig)
     speech: SpeechConfig = Field(default_factory=SpeechConfig)
+    slides: SlidesConfig = Field(default_factory=SlidesConfig)
 
 
 class BriefingConfig(BriefingFileConfig):
