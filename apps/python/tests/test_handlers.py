@@ -64,6 +64,18 @@ def stub_chart(tmp_path):
         yield png
 
 
+@pytest.fixture(autouse=True)
+def stub_speech():
+    """Keep the briefing's speech step off the real output dir and ``say``.
+
+    Pipeline tests here patch ``CONFIG`` with a MagicMock, whose truthy
+    ``speech.audio`` would otherwise start a real TTS run. The step itself is
+    covered in ``test_speech_step.py``.
+    """
+    with patch("src.handler.step_speech", return_value={"script": None, "audio": None}) as stub:
+        yield stub
+
+
 # ---------------------------------------------------------------------------
 # Briefing handler
 # ---------------------------------------------------------------------------
