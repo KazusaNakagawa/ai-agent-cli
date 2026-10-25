@@ -39,8 +39,12 @@ def _resolve_title_prop(notion: Client, database_id: str, sample_title: str) -> 
 # Public API
 # ---------------------------------------------------------------------------
 
-def _append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
-    """Append blocks to an existing page, batching at the Notion 100-block limit."""
+def _append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> bool:
+    """Append blocks to an existing page, batching at the Notion 100-block limit.
+
+    A failed batch is logged and skipped. Return True only if every batch landed.
+    """
+    ok = True
     for i in range(0, len(blocks), 100):
         try:
             notion.blocks.children.append(
@@ -49,6 +53,8 @@ def _append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
             )
         except Exception:
             logger.exception("failed to append Notion blocks (page_id=%s, index=%d)", page_id, i)
+            ok = False
+    return ok
 
 
 def _create_page(
@@ -58,8 +64,13 @@ def _create_page(
     blocks: list[dict],
     tags: list[str] | None = None,
     extra_properties: dict | None = None,
+    strict: bool = False,
 ) -> dict | None:
-    """Create a page with title/blocks in a Notion database. Return the created page, or None on failure."""
+    """Create a page with title/blocks in a Notion database. Return the created page, or None on failure.
+
+    With ``strict``, a page missing any appended batch counts as a failure:
+    it is archived and None is returned, so the caller can retry cleanly.
+    """
     # Get the title property key via databases.retrieve. On failure, try name candidates in order.
     title_prop_name: str | None = None
     try:
@@ -102,7 +113,13 @@ def _create_page(
         logger.exception("failed to create Notion page (database_id=%s, title=%s)", database_id, title)
         return None
 
-    _append_blocks(notion, response["id"], remaining)
+    if not _append_blocks(notion, response["id"], remaining) and strict:
+        logger.error("Notion page incomplete — archiving it (page_id=%s)", response["id"])
+        try:
+            notion.pages.update(response["id"], archived=True)
+        except Exception:
+            logger.exception("failed to archive incomplete Notion page (page_id=%s)", response["id"])
+        return None
     return response
 
 
@@ -113,17 +130,26 @@ def send_to_notion(
     title: str | None = None,
     tags: list[str] | None = None,
     extra_properties: dict | None = None,
+    blocks: list[dict] | None = None,
+    strict: bool = False,
 ) -> str:
-    """Post the report as a new page in the Notion database. Return the created page URL."""
+    """Post the report as a new page in the Notion database. Return the created page URL.
+
+    ``blocks``, when given, is the page body built by the caller (the
+    briefing renders its IR directly, #516); otherwise ``text`` is converted
+    from Markdown. ``strict`` returns "" (and archives the partial page) when
+    any block batch is rejected, instead of keeping a truncated page.
+    """
     if not api_key or not database_id:
         logger.error("NOTION_API_KEY or NOTION_DATABASE_ID unset")
         return ""
 
     notion = Client(auth=api_key)
     page_title = title or f"Report — {date.today().strftime('%Y-%m-%d')}"
-    blocks = markdown_to_notion_blocks(text)
+    if blocks is None:
+        blocks = markdown_to_notion_blocks(text)
 
-    response = _create_page(notion, database_id, page_title, blocks, tags, extra_properties)
+    response = _create_page(notion, database_id, page_title, blocks, tags, extra_properties, strict)
     if not response:
         return ""
 

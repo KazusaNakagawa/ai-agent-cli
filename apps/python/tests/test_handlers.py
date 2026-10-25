@@ -356,6 +356,49 @@ class TestBriefingHandler:
             briefing_handler()
         expected_text = briefing_text + "\n\n---\nModel: claude-haiku-4-5-20251001"
         assert mock_notion.call_args[0][0] == expected_text
+        # The page body is built from the IR (#516); a Markdown-only document
+        # converts to the same blocks the text would.
+        from src.notifier.markdown import markdown_to_notion_blocks
+
+        assert mock_notion.call_args.kwargs["blocks"] == markdown_to_notion_blocks(expected_text)
+        assert mock_notion.call_count == 1
+
+
+class TestDeliverNotionFallback:
+    """step_deliver_notion retries with the Markdown conversion (#516)."""
+
+    def _run(self, results):
+        from src.handler import step_deliver_notion
+
+        ctx = MagicMock()
+        ctx.results = {"generate": _doc(_VALID_BRIEFING)}
+        with (
+            patch("src.handler.CONFIG") as cfg,
+            patch("src.handler.send_to_notion", side_effect=results) as notion,
+            patch("src.handler.get_model", return_value="m"),
+        ):
+            cfg.portfolio.tickers = ["PLTR"]
+            url = step_deliver_notion(ctx)
+        return url, notion
+
+    def test_rejected_ir_blocks_fall_back_to_markdown(self):
+        url, notion = self._run(["", "https://notion.so/p"])
+        assert url == "https://notion.so/p"
+        first, second = notion.call_args_list
+        assert "blocks" in first.kwargs and "blocks" not in second.kwargs
+        # Strict on both, so a rejected batch past the first 100 triggers the
+        # retry and a truncated retry is not reported as delivered.
+        assert first.kwargs["strict"] is True and second.kwargs["strict"] is True
+        assert second.args[0] == first.args[0]
+        assert second.kwargs["title"] == first.kwargs["title"]
+
+    def test_success_does_not_retry(self):
+        url, notion = self._run(["https://notion.so/p"])
+        assert url == "https://notion.so/p" and notion.call_count == 1
+
+    def test_both_failing_returns_empty(self):
+        url, notion = self._run(["", ""])
+        assert url == "" and notion.call_count == 2
 
     @pytest.mark.usefixtures("disable_skip_guard")
     def test_hijacked_briefing_shape_raises_and_skips_delivery(self, tmp_path):

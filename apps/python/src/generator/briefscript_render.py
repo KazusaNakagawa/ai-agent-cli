@@ -193,18 +193,25 @@ def _cell(text: str) -> str:
     return _plain(text).replace("|", "｜")
 
 
-def _render_references(section: MainSection, numbers: dict[str, int]) -> str:
+def reference_groups(section: MainSection, numbers: dict[str, int]) -> list[tuple[str, list[Source]]]:
+    """(category, sources in number order); cited but ungrouped sources go last."""
     by_id = {source.id: source for source in section.sources}
     groups = [(g.category, g.source_ids) for g in section.references]
     grouped = {sid for _, ids in groups for sid in ids}
     ungrouped = [sid for sid in numbers if sid not in grouped]
     if ungrouped:
         groups.append((_UNGROUPED_CATEGORY, ungrouped))
+    return [
+        (category, [by_id[sid] for sid in sorted(ids, key=numbers.__getitem__)])
+        for category, ids in groups
+    ]
+
+
+def _render_references(section: MainSection, numbers: dict[str, int]) -> str:
     blocks = [REFERENCES_HEADING]
-    for category, ids in groups:
+    for category, sources in reference_groups(section, numbers):
         listed = [
-            f"- ［{numbers[sid]}］[{_link_text(by_id[sid].title)}]({by_id[sid].url})"
-            for sid in sorted(ids, key=numbers.__getitem__)
+            f"- ［{numbers[s.id]}］[{_link_text(s.title)}]({s.url})" for s in sources
         ]
         blocks.append("\n".join([f"#### {_plain(category)}", *listed]))
     return "\n\n".join(blocks)

@@ -25,7 +25,10 @@ quotes があるときはメイン分析も `--json-schema` で受け取り（#5
 `MainBlock` に入れる。為替の数値は fetcher のブロックをそのまま描画し、LLM はコメントだけを書く。
 メイン分析の検証が 2 回とも通らなければメイン失敗として扱い、セクター動向のみの劣化版を出す。
 quotes がないときのメイン分析は従来の Markdown プロンプトで、`MarkdownSection` に入る。
-各配信先はこの IR を `render_document_markdown` で Markdown にしてから送る。
+Discord とローカル MD はこの IR を `render_document_markdown` で Markdown にしてから送る。
+Notion は `render_document_notion` で IR から直接ブロックを作り（#516）、確信度を色付きラベル、
+［n］を出典へのリンク、地政学をテーブル、サマリーをコールアウトにする。`MarkdownSection` だけは
+従来の `markdown_to_notion_blocks` で変換する。
 
 エントリポイント: `apps/python/src/handler.py:29` (`lambda_handler`)
 
@@ -91,7 +94,8 @@ sequenceDiagram
             H->>DC: send_to_discord
         end
         opt Notion 設定済み
-            H->>NT: send_to_notion + metrics
+            Note over H: render_document_notion で IR から直接ブロックを作る（#516）
+            H->>NT: send_to_notion(blocks) + metrics
             NT-->>H: page_url
         end
         H-->>Sh: 200 Briefing sent
