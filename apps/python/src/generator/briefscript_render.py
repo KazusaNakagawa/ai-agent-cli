@@ -17,6 +17,8 @@ from src.generator.briefscript_schema import (
     Claim,
     HoldingsBlock,
     HoldingsSection,
+    MainBlock,
+    MainSection,
     MarketSnapshot,
     QuoteSnapshot,
     SectorsBlock,
@@ -25,6 +27,15 @@ from src.generator.briefscript_schema import (
 )
 
 HOLDINGS_HEADING = "### 自分への示唆"
+SUMMARY_HEADING = "### 今日のサマリー（1文）"
+STORIES_HEADING = "### なぜ動いたか（ストーリー）"
+GEOPOLITICS_HEADING = "### 地政学と株式の因果関係"
+FX_HEADING = "### 為替"
+REFERENCES_HEADING = "### 参考記事"
+_GEOPOLITICS_TABLE_HEAD = "| 地政学リスク | 今日の影響 | 関連銘柄・セクター |\n|---|---|---|"
+# Cited sources that the model put in no reference group.
+_UNGROUPED_CATEGORY = "その他"
+_RULE = "\n\n---\n\n"
 SECTORS_SECTION_HEADING = "### 今日のセクター動向（全セクター）"
 
 # Markers that keep a non-confirmed claim from reading as fact.
@@ -173,6 +184,64 @@ def render_sectors_markdown(section: SectorsSection, sectors: list[str]) -> str:
     return "\n\n".join(blocks + _source_list(numbers, section.sources))
 
 
+def _cell(text: str) -> str:
+    # A pipe would split the table cell.
+    return _plain(text).replace("|", "｜")
+
+
+def _render_references(section: MainSection, numbers: dict[str, int]) -> str:
+    by_id = {source.id: source for source in section.sources}
+    groups = [(g.category, g.source_ids) for g in section.references]
+    grouped = {sid for _, ids in groups for sid in ids}
+    ungrouped = [sid for sid in numbers if sid not in grouped]
+    if ungrouped:
+        groups.append((_UNGROUPED_CATEGORY, ungrouped))
+    blocks = [REFERENCES_HEADING]
+    for category, ids in groups:
+        listed = [
+            f"- ［{numbers[sid]}］[{_link_text(by_id[sid].title)}]({by_id[sid].url})"
+            for sid in sorted(ids, key=numbers.__getitem__)
+        ]
+        blocks.append("\n".join([f"#### {_plain(category)}", *listed]))
+    return "\n\n".join(blocks)
+
+
+def render_main_markdown(block: MainBlock, market: MarketSnapshot) -> str:
+    """The main analysis in the layout the Markdown prompt used to produce.
+
+    The FX lines are the fetcher's block verbatim: the model only adds
+    commentary, so the rate shown is always the fetched one.
+    """
+    section = block.content
+    numbers = _number_sources(section.claims())
+    stories = [
+        "\n".join([f"#### {_plain(story.title)}", *(_bullet(c, numbers) for c in story.claims)])
+        for story in section.stories
+    ]
+    parts = [
+        f"{SUMMARY_HEADING}\n\n{_plain(section.summary)}",
+        "\n\n".join([STORIES_HEADING, *stories]),
+    ]
+    if section.geopolitics:
+        rows = [
+            f"| {_cell(row.risk)} | {_bullet(row.impact, numbers)[2:].replace('|', '｜')} "
+            f"| {_cell(', '.join(row.related))} |"
+            for row in section.geopolitics
+        ]
+        parts.append(f"{GEOPOLITICS_HEADING}\n\n{_GEOPOLITICS_TABLE_HEAD}\n" + "\n".join(rows))
+    # A blank line keeps the commentary from reading as part of the fetcher's list.
+    fx_blocks = [market.fx_context.strip()] if market.fx_context.strip() else []
+    if section.fx.claims:
+        fx_blocks.append("\n".join(_bullet(c, numbers) for c in section.fx.claims))
+    if fx_blocks:
+        parts.append(f"{FX_HEADING}\n\n" + "\n\n".join(fx_blocks))
+    if block.holdings is not None:
+        parts.append(f"{HOLDINGS_HEADING}\n\n" + _render_holdings_block(block.holdings, market))
+    if numbers:
+        parts.append(_render_references(section, numbers))
+    return _RULE.join(parts)
+
+
 def render_holdings_fallback(
     quotes: dict[str, StockQuote],
     tickers: list[str],
@@ -263,6 +332,8 @@ def render_document_markdown(doc: BriefingDocument) -> str:
     for section in doc.sections:
         if isinstance(section, HoldingsBlock):
             parts.append(_render_holdings_block(section, doc.market))
+        elif isinstance(section, MainBlock):
+            parts.append(render_main_markdown(section, doc.market))
         elif isinstance(section, SectorsBlock):
             parts.append(render_sectors_markdown(section.content, section.sectors))
         else:

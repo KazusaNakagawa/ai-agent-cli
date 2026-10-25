@@ -92,6 +92,14 @@ class TestExistingTemplates:
         )
         assert "INSIDE $themes NOT REPLACED" in out
 
+    def test_briefing_main_renders_all_placeholders(self):
+        markers = dict(themes="THM", geopolitical="GEO", watch_events="EVT", stocks="STK", fx="FX",
+                       few_shot="FEWSHOT", ticker_research="RSCH", holdings_guidance="GDN")
+        out = render("briefing_main", **markers)
+        for name, marker in markers.items():
+            assert marker in out
+            assert f"${name}" not in out
+
     def test_briefing_sectors_renders_all_placeholders(self):
         out = render("briefing_sectors", watch_sectors="SECT", stocks="STK")
         assert "SECT" in out

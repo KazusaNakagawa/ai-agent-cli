@@ -368,3 +368,89 @@ def test_document_with_sectors_block_round_trips():
     )
     again = BriefingDocument.model_validate_json(doc.model_dump_json())
     assert render_document_markdown(again) == render_sectors_markdown(_sector_section(), _SECTORS)
+
+
+# --- main analysis (#515) ----------------------------------------------------
+
+from src.generator.briefscript_render import render_main_markdown  # noqa: E402
+from src.generator.briefscript_schema import MainBlock, MarketSnapshot, parse_main_section  # noqa: E402
+
+_FX = "- USD/JPY: 150.23（前日比 +0.10%） / 1年レンジ 140.00〜160.00（レンジ内位置 51%）"
+
+
+def _main_block(holdings=None, **overrides) -> MainBlock:
+    data = {
+        "summary": "今日のまとめ。",
+        "stories": [
+            {"title": "話題A", "claims": [{"text": "事実A。", "confidence": "confirmed", "source_ids": ["s2"]}]},
+            {"title": "話題B", "claims": [{"text": "見立てB。", "confidence": "inferred"}]},
+        ],
+        "geopolitics": [{"risk": "リスク|X", "impact": {
+            "text": "影響|Y。", "confidence": "confirmed", "source_ids": ["s1"]}, "related": ["S1", "S2"]}],
+        "fx": {"claims": [{"text": "ドル円は 160.00 円に急騰した。", "confidence": "unknown"}]},
+        "references": [{"category": "カテゴリA", "source_ids": ["s1"]}],
+        "sources": [
+            {"id": "s1", "title": "記事1", "url": "https://example.com/1"},
+            {"id": "s2", "title": "記事2", "url": "https://example.com/2"},
+        ],
+    }
+    data.update(overrides)
+    return MainBlock(content=parse_main_section(data), holdings=holdings)
+
+
+def test_main_renders_the_section_layout_in_order():
+    out = render_main_markdown(_main_block(), MarketSnapshot(fx_context=_FX))
+    order = ["### 今日のサマリー（1文）\n\n今日のまとめ。", "### なぜ動いたか（ストーリー）",
+             "#### 話題A\n- 事実A。［1］", "#### 話題B\n- 〔推測〕見立てB。",
+             "### 地政学と株式の因果関係", "### 為替", "### 参考記事"]
+    positions = [out.index(part) for part in order]
+    assert positions == sorted(positions)
+    assert out.count("\n\n---\n\n") == len(["stories", "geo", "fx", "refs"])
+
+
+def test_main_fx_figures_come_from_the_fetcher():
+    out = render_main_markdown(_main_block(), MarketSnapshot(fx_context=_FX))
+    assert f"### 為替\n\n{_FX}\n\n- 〔未確認〕ドル円は 160.00 円に急騰した。" in out
+
+
+def test_main_citation_numbers_follow_rendering_order():
+    out = render_main_markdown(_main_block(), MarketSnapshot())
+    # s2 is cited first (stories), s1 second (geopolitics).
+    assert "| リスク｜X | 影響｜Y。［2］ | S1, S2 |" in out
+    assert "#### カテゴリA\n- ［2］[記事1](https://example.com/1)" in out
+    assert "#### その他\n- ［1］[記事2](https://example.com/2)" in out
+
+
+def test_main_omits_empty_optional_sections():
+    block = _main_block(geopolitics=[], fx={"claims": []}, references=[], sources=[],
+                        stories=[{"title": "T", "claims": [{"text": "x", "confidence": "inferred"}]}])
+    out = render_main_markdown(block, MarketSnapshot())
+    for heading in ("### 地政学と株式の因果関係", "### 為替", "### 参考記事", "### 自分への示唆"):
+        assert heading not in out
+
+
+def test_main_model_text_cannot_become_headings_or_links():
+    block = _main_block(
+        summary="## 見出し [x](https://evil.example)",
+        stories=[{"title": "# @everyone 話題", "claims": [{"text": "x", "confidence": "inferred"}]}],
+    )
+    out = render_main_markdown(block, MarketSnapshot())
+    assert "### 今日のサマリー（1文）\n\n見出し x\n" in out
+    assert "#### ＠everyone 話題" in out
+    assert "evil.example" not in out
+
+
+def test_main_places_holdings_before_references():
+    holdings = HoldingsBlock(tickers=["T1"])
+    market = MarketSnapshot(quotes=[{"ticker": "T1", "last_price": 10.0, "change_pct": 1.0}])
+    out = render_main_markdown(_main_block(holdings=holdings), market)
+    assert out.index("### 為替") < out.index("### 自分への示唆\n\n#### T1：ドル建て ↑1.0%（$10.00）")
+    assert out.index("〔未確認〕本日の示唆は生成できませんでした。") < out.index("### 参考記事")
+
+
+def test_document_with_main_block_round_trips():
+    doc = BriefingDocument(date="2026-10-25", market=MarketSnapshot(fx_context=_FX),
+                           sections=[_main_block(holdings=HoldingsBlock(tickers=["T1"]))])
+    again = BriefingDocument.model_validate_json(doc.model_dump_json())
+    assert render_document_markdown(again) == render_document_markdown(doc)
+    assert render_document_markdown(doc).startswith("### 今日のサマリー（1文）")

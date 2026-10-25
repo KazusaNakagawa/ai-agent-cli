@@ -29,6 +29,23 @@ def _sectors_json(text: str = "セクター結果。", sector: str = "Tech") -> 
 
 
 _SECTORS_OK = _sectors_json()
+
+
+def _main_json(**overrides) -> str:
+    """A valid main-analysis payload (#515); ``overrides`` replace top-level fields."""
+    data = {
+        "summary": "今日のまとめ。",
+        "stories": [{"title": "話題A", "claims": [
+            {"text": "記事で確認した事実。", "confidence": "confirmed", "source_ids": ["s1"]},
+        ]}],
+        "references": [{"category": "カテゴリA", "source_ids": ["s1"]}],
+        "sources": [{"id": "s1", "title": "記事1", "url": "https://example.com/s1"}],
+    }
+    data.update(overrides)
+    return json.dumps(data, ensure_ascii=False)
+
+
+_MAIN_OK = _main_json()
 # Long enough that a sectors-only body clears looks_like_briefing.
 _SECTORS_LONG = _sectors_json("セクター本文。" * 40)
 
@@ -377,11 +394,16 @@ class TestGenerateSectors:
 class TestBriefScriptHoldings:
     """Holdings generated as BriefScript and spliced into the main body (#506)."""
 
-    _MAIN = (
+    # The no-quotes path still asks the main analysis for Markdown.
+    _MAIN_MD = (
         "### 今日のサマリー（1文）\n\nサマリー。\n\n---\n\n"
         "### 自分への示唆\n\n#### PLTR：旧見出し\n- 旧本文（Markdown フォールバック）\n\n---\n\n"
         "### 参考記事\n\n- [a](https://example.com)\n"
     )
+
+    @classmethod
+    def _main(cls, kwargs):
+        return _MAIN_OK if "json_schema" in kwargs else cls._MAIN_MD
 
     def _config(self):
         return _make_config(portfolio=PortfolioConfig(tickers=["PLTR", "NVDA"], themes=["AI"]))
@@ -413,7 +435,7 @@ class TestBriefScriptHoldings:
 
         def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
-                return self._MAIN
+                return self._main(kwargs)
             if label == "セクタースイープ":
                 return _SECTORS_OK
             calls["holdings"].append(prompt)
@@ -490,7 +512,7 @@ class TestBriefScriptHoldings:
         def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
                 captured["prompt"] = prompt
-                return self._MAIN
+                return self._main(kwargs)
             return self._payload() if label == "保有銘柄示唆" else _SECTORS_OK
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
@@ -502,7 +524,7 @@ class TestBriefScriptHoldings:
         assert "保有者として今日意識すべきこと" not in prompt
         assert "保有・注目銘柄の最新ニュース" not in prompt
         assert "銘柄別示唆" not in prompt and "示唆を書くとき" not in prompt
-        assert "この見出しの 1 行だけを出力し" in prompt
+        assert "保有銘柄の個別の示唆は書かない" in prompt
         assert "PLTR, NVDA" in prompt
         # The few-shot's holdings body is replaced too, or it would model the old output.
         assert "規制の本命銘柄" not in prompt
@@ -516,28 +538,6 @@ class TestBriefScriptHoldings:
         assert "（$123.53）" in prompt
         assert "規制の本命銘柄" in prompt
 
-    def _run_with_main(self, main):
-        def mock(prompt, label, timeout, **kwargs):
-            if label == "保有銘柄示唆":
-                return self._payload()
-            return {"メイン分析": main, "セクタースイープ": _SECTORS_OK}[label]
-
-        with patch("src.generator.briefing.run_claude", side_effect=mock):
-            return generate_briefing("x", self._config(), quotes=self._quotes(), fx_change_pct=-0.9)
-
-    def test_missing_heading_inserts_section_before_references(self):
-        out = self._run_with_main(
-            "### 今日のサマリー（1文）\n\n本文。\n\n---\n\n### 参考記事\n\n- [a](https://example.com)\n"
-        )
-        assert out.index("本文。") < out.index("### 自分への示唆") < out.index("#### PLTR：")
-        assert out.index("#### PLTR：") < out.index("### 参考記事")
-        assert out.count("### 自分への示唆") == 1
-
-    def test_missing_heading_and_references_appends_section(self):
-        out = self._run_with_main("### 今日のサマリー（1文）\n\n本文。")
-        assert out.startswith("### 今日のサマリー（1文）\n\n本文。")
-        assert out.index("### 自分への示唆") < out.index("#### PLTR：") < out.index("セクター結果")
-
     def test_padded_and_duplicate_config_tickers_are_normalised(self):
         captured = {}
 
@@ -545,7 +545,7 @@ class TestBriefScriptHoldings:
             if label == "保有銘柄示唆":
                 captured["schema"] = kwargs["json_schema"]
                 return self._payload()
-            return self._MAIN if label == "メイン分析" else _SECTORS_OK
+            return self._main(kwargs) if label == "メイン分析" else _SECTORS_OK
 
         config = _make_config(portfolio=PortfolioConfig(tickers=[" PLTR ", "PLTR", "NVDA"], themes=["AI"]))
         with patch("src.generator.briefing.run_claude", side_effect=mock):
@@ -557,14 +557,12 @@ class TestBriefScriptHoldings:
 class TestBriefingDocument:
     """generate_briefing_document returns the IR that generate_briefing renders (#513)."""
 
-    _MAIN = TestBriefScriptHoldings._MAIN
-
     def _run(self, holdings, quotes=True, sectors_fail=False):
         from src.generator.briefing import generate_briefing_document
 
         def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
-                return self._MAIN
+                return TestBriefScriptHoldings._main(kwargs)
             if label == "セクタースイープ":
                 if sectors_fail:
                     raise RuntimeError("sec boom")
@@ -578,11 +576,11 @@ class TestBriefingDocument:
         with patch("src.generator.briefing.run_claude", side_effect=mock):
             return generate_briefing_document("x", config, quotes=q, fx_change_pct=-0.9)
 
-    def test_holdings_are_a_structured_block_between_markdown(self):
+    def test_holdings_are_a_structured_block_inside_the_main_block(self):
         doc = self._run(TestBriefScriptHoldings._payload())
         kinds = [s.kind for s in doc.sections]
-        assert kinds[:3] == ["markdown", "holdings", "markdown"]
-        block = doc.sections[1]
+        assert kinds == ["main", "markdown", "sectors"]
+        block = doc.sections[0].holdings
         assert block.tickers == ["PLTR", "NVDA"]
         assert block.content.holdings[0].claims[0].text == "決算が予想を上回った。"
         assert {q.ticker for q in doc.market.quotes} == {"PLTR", "NVDA"}
@@ -590,11 +588,11 @@ class TestBriefingDocument:
 
     def test_failed_holdings_call_leaves_an_empty_block(self):
         doc = self._run(RuntimeError("boom"))
-        assert doc.sections[1].kind == "holdings" and doc.sections[1].content is None
+        assert doc.sections[0].holdings.content is None
 
     def test_no_quotes_means_no_holdings_block(self):
         doc = self._run(None, quotes=False)
-        assert "holdings" not in [s.kind for s in doc.sections]
+        assert [s.kind for s in doc.sections][0] == "markdown"
         assert doc.market.quotes == []
 
     def test_sectors_failure_still_marks_the_rendered_body_degraded(self):
@@ -691,3 +689,103 @@ class TestSectorsBriefScript:
     def test_cli_failure_is_not_validation_retried(self):
         out, calls = self._run([RuntimeError("claude CLI timed out (セクタースイープ)")])
         assert len(calls) == 1 and SECTORS_FAILED_NOTICE in out
+
+
+class TestMainBriefScript:
+    """The main analysis as validated BriefScript when quotes exist (#515)."""
+
+    _FX = "- USD/JPY: 150.23（前日比 +0.10%）"
+
+    def _run(self, main_responses, fx=_FX):
+        from src.generator.briefing import generate_briefing_document
+
+        calls = {"main": [], "kwargs": None}
+        responses = iter(main_responses)
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "セクタースイープ":
+                return _SECTORS_LONG
+            if label == "保有銘柄示唆":
+                return TestBriefScriptHoldings._payload()
+            calls["main"].append(prompt)
+            calls["kwargs"] = kwargs
+            calls["timeout"] = timeout
+            item = next(responses)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            doc = generate_briefing_document(
+                "x", TestBriefScriptHoldings()._config(), fx,
+                quotes=TestBriefScriptHoldings._quotes(), fx_change_pct=-0.9,
+            )
+        return doc, calls
+
+    def test_main_call_uses_the_json_prompt_and_schema(self):
+        from src.constants import TIMEOUT_BRIEFING_MAIN
+
+        doc, calls = self._run([_MAIN_OK])
+        assert "summary" in calls["kwargs"]["json_schema"]["properties"]
+        assert calls["kwargs"]["max_attempts"] == RETRY_MAX_ATTEMPTS_BRIEFING
+        assert "出力は指定された JSON スキーマに従うこと" in calls["main"][0]
+        assert self._FX in calls["main"][0]
+        assert doc.sections[0].kind == "main"
+        assert calls["timeout"] == TIMEOUT_BRIEFING_MAIN
+
+    def test_fx_shown_is_the_fetcher_value_even_if_the_model_writes_another(self):
+        from src.generator.briefscript_render import render_document_markdown
+
+        rogue_field = _main_json(fx={"rate": 160.0, "claims": []})
+        rogue_text = _main_json(fx={"claims": [{"text": "ドル円は 160.00 円。", "confidence": "inferred"}]})
+        doc, calls = self._run([rogue_field, rogue_text])
+        assert len(calls["main"]) == 2 and "rate" in calls["main"][1]
+        out = render_document_markdown(doc)
+        assert f"### 為替\n\n{self._FX}\n" in out
+        assert doc.market.fx_context == self._FX
+
+    def test_confirmed_claim_without_source_is_retried(self):
+        bare = _main_json(stories=[{"title": "T", "claims": [{"text": "x", "confidence": "confirmed"}]}])
+        doc, calls = self._run([bare, _MAIN_OK])
+        assert len(calls["main"]) == 2 and "must cite at least one source" in calls["main"][1]
+        assert doc.sections[0].content.sources[0].id == "s1"
+
+    def test_exhausted_validation_degrades_to_sectors_only(self):
+        from src.generator.briefing import MAIN_FAILED_NOTICE, looks_like_briefing_document
+        from src.generator.briefscript_render import render_document_markdown
+
+        doc, calls = self._run(["not json", "still not json"])
+        assert len(calls["main"]) == 2
+        out = render_document_markdown(doc)
+        assert out.startswith(MAIN_FAILED_NOTICE) and is_degraded_briefing(out)
+        assert "セクター本文" in out and looks_like_briefing_document(doc)
+
+    def test_layout_puts_holdings_and_references_inside_the_main_block(self):
+        from src.generator.briefscript_render import render_document_markdown
+
+        out = render_document_markdown(self._run([_MAIN_OK])[0])
+        order = ["### 今日のサマリー（1文）", "### 為替", "### 自分への示唆", "#### PLTR：ドル建て",
+                 "### 参考記事", "## セクター動向"]
+        positions = [out.index(part) for part in order]
+        assert positions == sorted(positions)
+
+
+class TestLooksLikeBriefingDocument:
+    def test_validated_main_block_passes_without_the_text_heuristic(self):
+        from src.generator.briefing import looks_like_briefing_document
+        from src.generator.briefscript_schema import BriefingDocument, MainBlock, parse_main_section
+
+        doc = BriefingDocument(date="2026-10-25", sections=[
+            MainBlock(content=parse_main_section(json.loads(_MAIN_OK))),
+        ])
+        assert looks_like_briefing_document(doc)
+
+    def test_markdown_body_still_uses_the_heuristic(self):
+        from src.generator.briefing import looks_like_briefing_document
+        from src.generator.briefscript_schema import BriefingDocument, MarkdownSection
+
+        def doc(text):
+            return BriefingDocument(date="2026-10-25", sections=[MarkdownSection(text=text)])
+
+        assert not looks_like_briefing_document(doc(HIJACKED_SKILL_COMPLETION_REPORT))
+        assert looks_like_briefing_document(doc("### 見出し\n\n" + "本文。" * 100))
