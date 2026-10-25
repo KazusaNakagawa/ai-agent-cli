@@ -17,23 +17,24 @@ from src.constants import (
 )
 from src.fetcher.stocks import StockQuote
 from src.generator.briefscript_render import (
-    HOLDINGS_HEADING,
     render_document_markdown,
     render_sectors_markdown,
     snapshot_market,
     splice_holdings,
-    split_holdings,
 )
 from src.generator.briefscript_schema import (
     BriefingDocument,
     HoldingsBlock,
     HoldingsSection,
+    MainBlock,
+    MainSection,
     MarkdownSection,
-    Section,
     SectorsBlock,
     SectorsSection,
     holdings_json_schema,
+    main_json_schema,
     parse_holdings_section,
+    parse_main_section,
     parse_sectors_section,
     sectors_json_schema,
 )
@@ -164,6 +165,18 @@ def looks_like_briefing(text: str) -> bool:
     return len(text) >= _MIN_BRIEFING_LENGTH and "### " in text[:_HEADING_SEARCH_WINDOW]
 
 
+def looks_like_briefing_document(doc: BriefingDocument) -> bool:
+    """``looks_like_briefing`` for the IR (#515).
+
+    A structured main analysis already passed schema validation, which a
+    hijacked skill report (#409) cannot; only Markdown bodies need the text
+    heuristic.
+    """
+    if any(isinstance(section, MainBlock) for section in doc.sections):
+        return True
+    return looks_like_briefing(render_document_markdown(doc))
+
+
 def is_degraded_briefing(text: str) -> bool:
     """True when ``text`` is a briefing whose main analysis or sector sweep failed.
 
@@ -281,34 +294,24 @@ def generate_holdings(stocks: str, config: BriefingConfig) -> HoldingsSection:
     )
 
 
-_REFERENCES_HEADING = "### 参考記事"
+def _conflict_names(config: BriefingConfig) -> list[str]:
+    # Normalised once, so the schema enum and validation agree.
+    return list(dict.fromkeys(
+        " ".join(c.name.split()) for c in config.geopolitical.conflicts if c.name.strip()
+    ))
 
 
-def _main_sections(main_text: str, holdings: HoldingsBlock | None) -> list[Section]:
-    """Put the holdings block into the main body.
+def generate_main_section(prompt: str, config: BriefingConfig) -> MainSection:
+    """Run the main analysis as validated BriefScript (#515)."""
+    conflicts = _conflict_names(config)
+    return _generate_validated(
+        prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN, main_json_schema(conflicts),
+        lambda data: parse_main_section(data, conflicts=conflicts),
+    )
 
-    In BriefScript mode the main analysis writes only the heading (#511), so a
-    missing heading is not a reason to drop the section: it goes in before
-    the references, or at the end when those are missing too.
-    """
-    if holdings is None:
-        return [MarkdownSection(text=main_text)]
-    parts = split_holdings(main_text)
-    if parts is None:
-        logger.warning("main analysis has no holdings heading — inserting the section")
-        at = main_text.find(f"\n{_REFERENCES_HEADING}")
-        if at == -1:
-            parts = (
-                f"{main_text.rstrip()}\n\n---\n\n{HOLDINGS_HEADING}\n\n",
-                "\n\n---",
-            )
-        else:
-            parts = (
-                main_text[: at + 1] + f"{HOLDINGS_HEADING}\n\n",
-                "\n\n---\n\n" + main_text[at + 1:],
-            )
-    head, tail = parts
-    return [MarkdownSection(text=head), holdings, MarkdownSection(text=tail)]
+
+# Stands in for the few-shot's holdings body in BriefScript mode.
+_FEW_SHOT_HOLDINGS_NOTE = "（保有銘柄ごとの示唆は別の処理が書く）"
 
 
 def _main_prompt_holdings_parts(tickers: str, briefscript: bool) -> dict[str, str]:
@@ -316,17 +319,16 @@ def _main_prompt_holdings_parts(tickers: str, briefscript: bool) -> dict[str, st
 
     With BriefScript the holdings are researched and written by their own call,
     so the main analysis is told to skip both — that is the duplicate spend
-    #511 removes. The few-shot's holdings body is swapped for the same
-    instruction, or the example would keep modelling the old section.
+    #511 removes. The few-shot's holdings body is swapped for a note, or the
+    example would keep modelling the old section.
     """
     # Literal template names only (see test_prompt's render call-site guard).
     few_shot = load_briefing_few_shot()
     if briefscript:
-        holdings_format = render("briefing_holdings_format_briefscript")
+        holdings_format = ""
         research = render("briefing_ticker_research_briefscript", tickers=tickers)
         guidance = render("briefing_holdings_guidance_briefscript")
-        body = holdings_format.split("\n", 1)[1].strip()
-        few_shot = splice_holdings(few_shot, body) or few_shot
+        few_shot = splice_holdings(few_shot, _FEW_SHOT_HOLDINGS_NOTE) or few_shot
     else:
         holdings_format = render("briefing_holdings_format_markdown")
         research = render("briefing_ticker_research_markdown", tickers=tickers)
@@ -355,37 +357,42 @@ def generate_briefing_document(
 
     ``fx`` is the pre-rendered exchange-rate block. It defaults to empty so a
     failed FX fetch (or no configured pair) degrades to the previous USD-only
-    briefing rather than blocking the run.
+    briefing rather than blocking the run. It is stored in the snapshot, so
+    the FX section shows the fetched figures, not the model's.
 
-    With ``quotes``, a third parallel call writes the holdings section as
-    BriefScript (#506) and the main analysis skips it (#511). If that call
-    fails, the section falls back to quote-derived headings with a note.
+    With ``quotes``, the briefing is BriefScript: the main analysis (#515),
+    the holdings (#506) and the sector sweep each return validated JSON. If
+    the holdings call fails, its section falls back to quote-derived headings
+    with a note. Without quotes the main analysis is the Markdown prompt.
 
-    The result is the whole briefing as IR (#513); sections not yet
-    structured are Markdown passthroughs.
+    The result is the whole briefing as IR (#513).
     """
+    briefscript = bool(quotes)
     tickers = join_safe(config.portfolio.tickers, sep=", ")
     themes = join_safe(config.portfolio.themes, sep=", ")
 
-    main_prompt = render(
-        "briefing",
+    main_parts = dict(
         tickers=tickers,
         themes=themes,
         geopolitical=build_geopolitical_context(config),
         watch_events=build_watch_events_context(config),
         stocks=stocks,
         fx=fx or "(為替の取得なし。為替セクションは省略してよい)",
-        **_main_prompt_holdings_parts(tickers, briefscript=bool(quotes)),
+        **_main_prompt_holdings_parts(tickers, briefscript=briefscript),
     )
     with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {
-            executor.submit(
-                run_claude, main_prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN,
+        if briefscript:
+            main = executor.submit(generate_main_section, render("briefing_main", **main_parts), config)
+        else:
+            main = executor.submit(
+                run_claude, render("briefing", **main_parts), "メイン分析", TIMEOUT_BRIEFING_MAIN,
                 max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
-            ): "main",
+            )
+        futures = {
+            main: "main",
             executor.submit(generate_sectors_section, stocks, config): "sectors",
         }
-        if quotes:
+        if briefscript:
             futures[executor.submit(generate_holdings, stocks, config)] = "holdings"
         results: dict = {}
         errors: dict[str, str] = {}
@@ -400,9 +407,9 @@ def generate_briefing_document(
                     logger.error("claude CLI failed [%s]: %s", key, e)
                 errors[key] = str(e)
 
-    doc = BriefingDocument(
-        date=today or date.today(), market=snapshot_market(quotes, fx_change_pct),
-    )
+    market = snapshot_market(quotes, fx_change_pct)
+    market.fx_context = fx
+    doc = BriefingDocument(date=today or date.today(), market=market)
 
     if "main" in errors:
         if "sectors" not in results:
@@ -423,12 +430,13 @@ def generate_briefing_document(
 
     assert "main" in results, "main result missing despite no error recorded"
 
-    holdings = None
-    if quotes:
-        # Without content the block renders quote-derived headings and a note:
-        # the main analysis was told not to write holdings (#511).
+    if briefscript:
+        # Without content the holdings block renders quote-derived headings
+        # and a note: the main analysis was told not to write holdings (#511).
         holdings = HoldingsBlock(tickers=_holding_tickers(config), content=results.get("holdings"))
-    doc.sections = _main_sections(results["main"], holdings)
+        doc.sections = [MainBlock(content=results["main"], holdings=holdings)]
+    else:
+        doc.sections = [MarkdownSection(text=results["main"])]
 
     if "sectors" in errors:
         logger.warning("sector sweep failed (main analysis succeeded): %s", errors["sectors"])

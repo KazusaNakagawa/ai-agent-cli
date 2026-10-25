@@ -26,7 +26,7 @@ from src.fetcher.stocks import StockQuote, fetch_stock_snapshot
 from src.generator.briefing import (
     generate_briefing_document,
     is_degraded_briefing,
-    looks_like_briefing,
+    looks_like_briefing_document,
 )
 from src.generator.briefscript_render import render_document_markdown
 from src.generator.briefscript_schema import BriefingDocument
@@ -118,7 +118,7 @@ def step_generate(ctx) -> BriefingDocument:
     briefing = render_document_markdown(doc)
     logger.debug("briefing generated (length=%d)", len(briefing))
 
-    if not looks_like_briefing(briefing):
+    if not looks_like_briefing_document(doc):
         # Do not include the raw briefing text here — it can carry
         # user-specific financial/portfolio data and this message may end up
         # in logs or a monitoring service (review feedback on #410).
