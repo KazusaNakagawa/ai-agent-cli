@@ -20,6 +20,7 @@ from src.constants import (
     BRIEFING_OUTPUT_DIR,
     BRIEFING_SKIP_IF_EXISTS,
     CHART_OUTPUT_DIR,
+    SLIDES_OUTPUT_DIR,
     SPEECH_OUTPUT_DIR,
 )
 from src.fetcher.fx import fetch_fx_context
@@ -32,12 +33,13 @@ from src.generator.briefing import (
 from src.generator.briefscript_notion import render_document_notion
 from src.generator.briefscript_render import render_document_markdown
 from src.generator.briefscript_schema import BriefingDocument
+from src.generator.briefscript_slides import render_document_slides
 from src.generator.briefscript_speech import render_document_speech
 from src.local_llm.briefing_index import index_briefings
 from src.local_llm.config import load_config as load_local_llm_config
 from src.metrics.briefing import extract_briefing_metrics
 from src.notifier.discord import send_to_discord
-from src.notifier.local_md import save_briefing_document, save_briefing_md
+from src.notifier.local_md import save_briefing_document, save_briefing_md, save_slides
 from src.notifier.markdown import markdown_to_notion_blocks
 from src.notifier.notion import send_to_notion
 from src.notifier.speech import save_speech_script, synthesize_audio
@@ -280,6 +282,21 @@ def step_speech(ctx) -> dict[str, str | None]:
         return {"script": None, "audio": None}
     audio = synthesize_audio(script, speech.voice) if speech.audio else None
     return {"script": str(script), "audio": str(audio) if audio else None}
+
+
+def step_slides(ctx) -> str | None:
+    """Write the Marp deck for weekly review (#518) and return its path.
+
+    Conversion to PDF / PPTX is left to the Marp CLI. A failed write is
+    logged and swallowed, like ``step_speech``: the deck is an extra.
+    """
+    doc = ctx.results["generate"]
+    try:
+        deck = render_document_slides(doc, max_claims=CONFIG.slides.max_claims)
+        return str(save_slides(deck, SLIDES_OUTPUT_DIR, doc.date))
+    except OSError as exc:
+        logger.warning("slide deck write failed: %s — continuing", exc)
+        return None
 
 
 # --- entry point ------------------------------------------------------------

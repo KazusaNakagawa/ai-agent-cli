@@ -52,6 +52,8 @@ BRIEFING = Workflow(
         # Last: the spoken version is an extra and ``say`` is slow. Absorbs
         # its own failures (see ``step_speech``).
         Step("speech", _handler("step_speech")),
+        # Local file only; absorbs its own write failure (see ``step_slides``).
+        Step("slides", _handler("step_slides")),
     ),
     guard=_handler("briefing_guard"),
 )

@@ -294,6 +294,9 @@
     "voice": "Kyoko",
     "max_chars": 3000
   },
+  "slides": {
+    "max_claims": 3
+  },
   "watch_events": [
     {
       "name": "SpaceX IPO",

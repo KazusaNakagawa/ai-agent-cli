@@ -76,6 +76,13 @@ def stub_speech():
         yield stub
 
 
+@pytest.fixture(autouse=True)
+def stub_slides():
+    """Keep the slides step off the real output dir; covered in ``test_slides_step.py``."""
+    with patch("src.handler.step_slides", return_value=None) as stub:
+        yield stub
+
+
 # ---------------------------------------------------------------------------
 # Briefing handler
 # ---------------------------------------------------------------------------
