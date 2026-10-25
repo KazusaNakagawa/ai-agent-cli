@@ -1,8 +1,11 @@
 """Pydantic models for BriefScript, the IR between the LLM and briefing renderers.
 
-Only the holdings ("自分への示唆") section is modelled so far. The LLM writes
-claims; it never writes prices or change figures — those are not fields here
-and are injected from fetcher data at render time.
+``BriefingDocument`` is the whole briefing: the fetcher's market snapshot plus
+an ordered list of sections. Only the holdings ("自分への示唆") section is
+structured so far; the rest travel as ``MarkdownSection`` passthroughs until
+they are migrated (#513). The LLM writes claims; it never writes prices or
+change figures — those are not claim fields and are injected from the
+snapshot at render time.
 
 Shape is enforced by the claude CLI's ``--json-schema`` (#504). The
 cross-field rules below run on every validation; ticker membership needs the
@@ -13,7 +16,8 @@ nested section can be re-validated on its own.
 from __future__ import annotations
 
 import copy
-from typing import Any, Literal
+import datetime as dt
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import (
     BaseModel,
@@ -111,6 +115,64 @@ class HoldingsSection(BaseModel):
         # Uncited sources would only clutter the rendered source list.
         self.sources = [s for s in self.sources if s.id in cited]
         return self
+
+
+# Envelope models carry text verbatim: stripping a passthrough section would
+# change the rendered Markdown.
+_ENVELOPE = ConfigDict(extra="forbid")
+
+
+class QuoteSnapshot(BaseModel):
+    """A fetcher quote as stored in the document, mirroring ``StockQuote``."""
+
+    model_config = _ENVELOPE
+
+    ticker: str
+    last_price: float | None = None
+    previous_close: float | None = None
+    change_pct: float | None = None
+    currency: str = "USD"
+    error: str | None = None
+
+
+class MarketSnapshot(BaseModel):
+    """The figures a renderer may print; nothing else may supply them."""
+
+    model_config = _ENVELOPE
+
+    quotes: list[QuoteSnapshot] = Field(default_factory=list)
+    fx_change_pct: float | None = None
+
+
+class MarkdownSection(BaseModel):
+    """Text not yet migrated to a structured section, rendered as-is."""
+
+    model_config = _ENVELOPE
+
+    kind: Literal["markdown"] = "markdown"
+    text: str
+
+
+class HoldingsBlock(BaseModel):
+    """The holdings section body; ``content`` is None when its call failed."""
+
+    model_config = _ENVELOPE
+
+    kind: Literal["holdings"] = "holdings"
+    tickers: list[str]
+    content: HoldingsSection | None = None
+
+
+Section = Annotated[Union[MarkdownSection, HoldingsBlock], Field(discriminator="kind")]
+
+
+class BriefingDocument(BaseModel):
+    model_config = _ENVELOPE
+
+    version: Literal[1] = 1
+    date: dt.date
+    market: MarketSnapshot = Field(default_factory=MarketSnapshot)
+    sections: list[Section] = Field(default_factory=list)
 
 
 def _canonical_tickers(holdings: Any) -> dict[str, str] | None:

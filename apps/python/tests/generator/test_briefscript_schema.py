@@ -243,3 +243,64 @@ def test_more_than_three_claims_rejected():
         HoldingNote(ticker="TICKER1", claims=claims)
     schema = holdings_json_schema(HOLDINGS)
     assert schema["$defs"]["HoldingNote"]["properties"]["claims"]["maxItems"] == 3
+
+
+# --- BriefingDocument envelope (#513) ---
+
+from src.generator.briefscript_schema import BriefingDocument  # noqa: E402
+
+
+def _doc_payload(**overrides) -> dict:
+    data = {
+        "date": "2026-10-24",
+        "market": {"quotes": [{"ticker": "TICKER1", "last_price": 1.0, "change_pct": 0.5}],
+                   "fx_change_pct": -0.9},
+        "sections": [
+            {"kind": "markdown", "text": "### 見出し\n\n"},
+            {"kind": "holdings", "tickers": HOLDINGS, "content": _payload()},
+        ],
+    }
+    data.update(overrides)
+    return data
+
+
+def test_document_parses_each_section_kind():
+    doc = BriefingDocument.model_validate(_doc_payload())
+    assert [s.kind for s in doc.sections] == ["markdown", "holdings"]
+    assert doc.sections[1].content.holdings[0].ticker == "TICKER1"
+    assert doc.version == 1
+
+
+def test_document_rejects_unknown_section_kind():
+    with pytest.raises(ValidationError):
+        BriefingDocument.model_validate(_doc_payload(sections=[{"kind": "slides", "text": "x"}]))
+
+
+def test_document_rejects_unknown_fields_and_versions():
+    with pytest.raises(ValidationError):
+        BriefingDocument.model_validate(_doc_payload(extra=1))
+    with pytest.raises(ValidationError):
+        BriefingDocument.model_validate(_doc_payload(version=2))
+
+
+def test_document_keeps_markdown_whitespace():
+    doc = BriefingDocument.model_validate(
+        _doc_payload(sections=[{"kind": "markdown", "text": "\n\n---\n\n"}])
+    )
+    assert doc.sections[0].text == "\n\n---\n\n"
+
+
+def test_document_holdings_content_is_still_cross_checked():
+    data = _doc_payload()
+    data["sections"][1]["content"]["holdings"][0]["claims"][0]["source_ids"] = ["s9"]
+    with pytest.raises(ValidationError, match="s9"):
+        BriefingDocument.model_validate(data)
+
+
+def test_document_minimal_and_failed_holdings():
+    doc = BriefingDocument.model_validate({"date": "2026-10-24"})
+    assert doc.sections == [] and doc.market.quotes == []
+    doc = BriefingDocument.model_validate(
+        _doc_payload(sections=[{"kind": "holdings", "tickers": HOLDINGS}])
+    )
+    assert doc.sections[0].content is None

@@ -231,3 +231,69 @@ def test_quote_with_missing_fields_renders_as_failed():
     quotes = dict(QUOTES, TICKER1=StockQuote("TICKER1", last_price=None, change_pct=None))
     md = render_holdings_markdown(_section(), quotes, TICKERS, fx_change_pct=FX)
     assert "#### TICKER1：株価取得失敗" in md
+
+
+# --- BriefingDocument (#513) ---
+
+from src.generator.briefscript_render import (  # noqa: E402
+    render_document_markdown,
+    snapshot_market,
+    split_holdings,
+)
+from src.generator.briefscript_schema import (  # noqa: E402
+    BriefingDocument,
+    HoldingsBlock,
+    MarkdownSection,
+)
+
+
+def _golden_doc() -> BriefingDocument:
+    return BriefingDocument.model_validate_json(
+        (FIXTURES / "briefing_document.json").read_text(encoding="utf-8")
+    )
+
+
+def test_document_renders_the_pre_ir_briefing_byte_for_byte():
+    # briefing_document.md was produced by the splice-based pipeline before #513.
+    expected = (FIXTURES / "briefing_document.md").read_text(encoding="utf-8")
+    assert render_document_markdown(_golden_doc()) == expected
+
+
+def test_document_survives_a_json_round_trip():
+    doc = _golden_doc()
+    again = BriefingDocument.model_validate_json(doc.model_dump_json())
+    assert render_document_markdown(again) == render_document_markdown(doc)
+
+
+def test_holdings_block_without_content_renders_the_failure_note():
+    doc = BriefingDocument(
+        date="2026-10-24", market=snapshot_market(QUOTES, FX),
+        sections=[HoldingsBlock(tickers=TICKERS)],
+    )
+    md = render_document_markdown(doc)
+    assert "#### TICKER1：ドル建て ↓0.2% / 円建て ↓1.1%（$100.00）" in md
+    assert md.count("〔未確認〕本日の示唆は生成できませんでした。") == 2
+
+
+def test_figures_come_from_the_stored_snapshot():
+    doc = _golden_doc()
+    doc.market.quotes[0].change_pct = 3.0
+    assert "#### TICKER1：ドル建て ↑3.0%" in render_document_markdown(doc)
+
+
+def test_empty_document_renders_empty_and_markdown_is_verbatim():
+    assert render_document_markdown(BriefingDocument(date="2026-10-24")) == ""
+    text = "  先頭の空白\n\n末尾の改行\n\n"
+    doc = BriefingDocument(date="2026-10-24", sections=[MarkdownSection(text=text)])
+    assert render_document_markdown(doc) == text
+
+
+def test_snapshot_without_quotes_is_empty():
+    assert snapshot_market(None, None).quotes == []
+
+
+def test_split_holdings_rejoins_to_splice():
+    head, tail = split_holdings(_BODY)
+    assert head + "X" + tail == splice_holdings(_BODY, "X")
+    assert head.endswith(f"{HOLDINGS_HEADING}\n\n") and tail.startswith("\n\n---")
+    assert split_holdings("### 今日のサマリー（1文）\n") is None

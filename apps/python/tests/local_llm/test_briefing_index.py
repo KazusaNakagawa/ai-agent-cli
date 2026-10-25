@@ -96,6 +96,8 @@ def test_index_briefings_indexes_briefing_dir_not_repo_root(tmp_path, collection
     _write(tmp_path / "src" / "unrelated.py", "x = 1\n")
     # Session id files (no extension) inside .sessions/ must be skipped.
     _write(briefing_dir / ".sessions" / "2026-07-01", "some-uuid")
+    # The BriefScript IR repeats the MD's content and must not be indexed (#513).
+    _write(briefing_dir / "ir" / "briefing_2026-07-01.json", '{"version": 1}')
 
     cfg = load_config(repo_root=tmp_path)
     stats = index_briefings(cfg, briefing_dir=briefing_dir)

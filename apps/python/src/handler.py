@@ -14,6 +14,7 @@ from src.claude_runner import get_model
 from src.config import CONFIG
 from src.constants import (
     BRIEFING_CHART_PERIOD,
+    BRIEFING_IR_SUBDIR,
     BRIEFING_MD_RETENTION_DAYS,
     BRIEFING_MD_ROTATION_ENABLED,
     BRIEFING_OUTPUT_DIR,
@@ -22,12 +23,18 @@ from src.constants import (
 )
 from src.fetcher.fx import fetch_fx_context
 from src.fetcher.stocks import StockQuote, fetch_stock_snapshot
-from src.generator.briefing import generate_briefing, is_degraded_briefing, looks_like_briefing
+from src.generator.briefing import (
+    generate_briefing_document,
+    is_degraded_briefing,
+    looks_like_briefing,
+)
+from src.generator.briefscript_render import render_document_markdown
+from src.generator.briefscript_schema import BriefingDocument
 from src.local_llm.briefing_index import index_briefings
 from src.local_llm.config import load_config as load_local_llm_config
 from src.metrics.briefing import extract_briefing_metrics
 from src.notifier.discord import send_to_discord
-from src.notifier.local_md import save_briefing_md
+from src.notifier.local_md import save_briefing_document, save_briefing_md
 from src.notifier.notion import send_to_notion
 from src.logger import get_logger
 from src.utils import is_configured as _is_configured
@@ -97,11 +104,18 @@ def step_stocks(ctx) -> tuple[str, dict[str, StockQuote]]:
     return fetch_stock_snapshot(CONFIG.portfolio.tickers, fx_change_pct)
 
 
-def step_generate(ctx) -> str:
+def _briefing_md(ctx) -> str:
+    """The generated document as the Markdown every delivery sends."""
+    return render_document_markdown(ctx.results["generate"])
+
+
+def step_generate(ctx) -> BriefingDocument:
+    """The briefing as IR (#513); deliveries render it on the way out."""
     logger.info("generating briefing (WebSearch)...")
     fx, fx_change_pct = ctx.results["fx"]
     stocks, quotes = ctx.results["stocks"]
-    briefing = generate_briefing(stocks, CONFIG, fx, quotes=quotes, fx_change_pct=fx_change_pct)
+    doc = generate_briefing_document(stocks, CONFIG, fx, quotes=quotes, fx_change_pct=fx_change_pct)
+    briefing = render_document_markdown(doc)
     logger.debug("briefing generated (length=%d)", len(briefing))
 
     if not looks_like_briefing(briefing):
@@ -111,7 +125,7 @@ def step_generate(ctx) -> str:
         raise RuntimeError(
             f"generated briefing does not look like a real briefing body (len={len(briefing)})"
         )
-    return briefing
+    return doc
 
 
 def step_persist(ctx) -> bool:
@@ -120,10 +134,24 @@ def step_persist(ctx) -> bool:
     Only ``OSError`` is absorbed — a blanket catch would hide real defects
     while still returning 200. ``best_effort`` on the step would do exactly
     that, which is why the tolerance lives here instead.
+
+    The IR JSON under ``ir/`` lets a renderer be re-run without another claude
+    call (#513). It is a secondary artifact: its failure does not change the
+    result, which reports the MD the index step reads.
     """
     try:
-        save_briefing_md(
+        save_briefing_document(
             ctx.results["generate"],
+            # Derived here, not a constant, so it follows BRIEFING_OUTPUT_DIR.
+            BRIEFING_OUTPUT_DIR / BRIEFING_IR_SUBDIR,
+            BRIEFING_MD_RETENTION_DAYS,
+            rotation_enabled=BRIEFING_MD_ROTATION_ENABLED,
+        )
+    except OSError as exc:
+        logger.warning("briefing IR JSON write failed: %s — continuing", exc)
+    try:
+        save_briefing_md(
+            _briefing_md(ctx),
             BRIEFING_OUTPUT_DIR,
             BRIEFING_MD_RETENTION_DAYS,
             rotation_enabled=BRIEFING_MD_ROTATION_ENABLED,
@@ -186,7 +214,7 @@ def step_deliver_discord(ctx) -> None:
     # .get(): a failed best-effort step records no result, so the delivery has
     # to tolerate the key being absent entirely.
     send_to_discord(
-        ctx.results["generate"],
+        _briefing_md(ctx),
         CONFIG.discord_token,
         CONFIG.discord_channel_id,
         attachment=ctx.results.get("chart"),
@@ -199,7 +227,7 @@ def skip_notion(ctx) -> bool:
 
 def step_deliver_notion(ctx) -> str | None:
     logger.info("creating Notion page...")
-    briefing = ctx.results["generate"]
+    briefing = _briefing_md(ctx)
     notion_text = briefing + f"\n\n---\nModel: {get_model()}"
     metrics = extract_briefing_metrics(briefing, CONFIG.portfolio.tickers)
     page_url = send_to_notion(

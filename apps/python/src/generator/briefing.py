@@ -1,5 +1,6 @@
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
@@ -17,11 +18,20 @@ from src.constants import (
 from src.fetcher.stocks import StockQuote
 from src.generator.briefscript_render import (
     HOLDINGS_HEADING,
-    render_holdings_fallback,
-    render_holdings_markdown,
+    render_document_markdown,
+    snapshot_market,
     splice_holdings,
+    split_holdings,
 )
-from src.generator.briefscript_schema import holdings_json_schema, parse_holdings_section
+from src.generator.briefscript_schema import (
+    BriefingDocument,
+    HoldingsBlock,
+    HoldingsSection,
+    MarkdownSection,
+    Section,
+    holdings_json_schema,
+    parse_holdings_section,
+)
 from src.generator.prompt import render
 from src.logger import get_logger
 from src.prompt_safety import neutralize_user_text
@@ -207,21 +217,20 @@ class BriefScriptError(RuntimeError):
     """The holdings BriefScript never validated; callers keep the Markdown."""
 
 
-def generate_holdings(
-    stocks: str,
-    config: BriefingConfig,
-    quotes: dict[str, StockQuote],
-    fx_change_pct: float | None = None,
-) -> str:
-    """Generate the holdings section as BriefScript and render it to Markdown.
+def _holding_tickers(config: BriefingConfig) -> list[str]:
+    # Trimmed and de-duplicated once, so the prompt, the schema enum, validation
+    # and the quote lookup all agree (quotes are keyed by the trimmed form).
+    return list(dict.fromkeys(t.strip() for t in config.portfolio.tickers if t.strip()))
+
+
+def generate_holdings(stocks: str, config: BriefingConfig) -> HoldingsSection:
+    """Generate the holdings section as validated BriefScript.
 
     Output that fails validation is retried once with the error appended, so
     the model can correct exactly what was wrong (#504). A CLI failure is not
     retried here — run_claude already spent its transient-error budget.
     """
-    # Trimmed and de-duplicated once, so the prompt, the schema enum, validation
-    # and the quote lookup all agree (quotes are keyed by the trimmed form).
-    tickers = list(dict.fromkeys(t.strip() for t in config.portfolio.tickers if t.strip()))
+    tickers = _holding_tickers(config)
     base_prompt = render("briefing_holdings", tickers=join_safe(tickers, sep=", "), stocks=stocks)
     schema = holdings_json_schema(tickers)
     prompt = base_prompt
@@ -232,7 +241,7 @@ def generate_holdings(
             max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING, json_schema=schema,
         )
         try:
-            section = parse_holdings_section(json.loads(raw), holdings=tickers)
+            return parse_holdings_section(json.loads(raw), holdings=tickers)
         except (json.JSONDecodeError, ValidationError) as e:
             last_error = str(e)
             logger.warning(
@@ -244,31 +253,37 @@ def generate_holdings(
                 f"前回の出力は次の検証エラーで却下されました。直して出力し直してください。\n{last_error}"
             )
             continue
-        return render_holdings_markdown(section, quotes, tickers, fx_change_pct)
     raise BriefScriptError(f"holdings BriefScript invalid after retries: {_truncate_error(last_error)}")
 
 
 _REFERENCES_HEADING = "### 参考記事"
 
 
-def _apply_holdings(main_text: str, holdings_md: str | None) -> str:
-    """Put the rendered holdings into the main body.
+def _main_sections(main_text: str, holdings: HoldingsBlock | None) -> list[Section]:
+    """Put the holdings block into the main body.
 
     In BriefScript mode the main analysis writes only the heading (#511), so a
     missing heading is not a reason to drop the section: it goes in before
     the references, or at the end when those are missing too.
     """
-    if holdings_md is None:
-        return main_text
-    spliced = splice_holdings(main_text, holdings_md)
-    if spliced is not None:
-        return spliced
-    logger.warning("main analysis has no holdings heading — inserting the section")
-    section = f"{HOLDINGS_HEADING}\n\n{holdings_md}\n\n---\n\n"
-    at = main_text.find(f"\n{_REFERENCES_HEADING}")
-    if at == -1:
-        return f"{main_text.rstrip()}\n\n---\n\n{section.rstrip()}"
-    return main_text[: at + 1] + section + main_text[at + 1:]
+    if holdings is None:
+        return [MarkdownSection(text=main_text)]
+    parts = split_holdings(main_text)
+    if parts is None:
+        logger.warning("main analysis has no holdings heading — inserting the section")
+        at = main_text.find(f"\n{_REFERENCES_HEADING}")
+        if at == -1:
+            parts = (
+                f"{main_text.rstrip()}\n\n---\n\n{HOLDINGS_HEADING}\n\n",
+                "\n\n---",
+            )
+        else:
+            parts = (
+                main_text[: at + 1] + f"{HOLDINGS_HEADING}\n\n",
+                "\n\n---\n\n" + main_text[at + 1:],
+            )
+    head, tail = parts
+    return [MarkdownSection(text=head), holdings, MarkdownSection(text=tail)]
 
 
 def _main_prompt_holdings_parts(tickers: str, briefscript: bool) -> dict[str, str]:
@@ -299,13 +314,14 @@ def _main_prompt_holdings_parts(tickers: str, briefscript: bool) -> dict[str, st
     }
 
 
-def generate_briefing(
+def generate_briefing_document(
     stocks: str,
     config: BriefingConfig,
     fx: str = "",
     quotes: dict[str, StockQuote] | None = None,
     fx_change_pct: float | None = None,
-) -> str:
+    today: date | None = None,
+) -> BriefingDocument:
     """Generate the briefing by running the main analysis and sector sweep in parallel.
 
     ``fx`` is the pre-rendered exchange-rate block. It defaults to empty so a
@@ -315,6 +331,9 @@ def generate_briefing(
     With ``quotes``, a third parallel call writes the holdings section as
     BriefScript (#506) and the main analysis skips it (#511). If that call
     fails, the section falls back to quote-derived headings with a note.
+
+    The result is the whole briefing as IR (#513); sections not yet
+    structured are Markdown passthroughs.
     """
     tickers = join_safe(config.portfolio.tickers, sep=", ")
     themes = join_safe(config.portfolio.themes, sep=", ")
@@ -338,10 +357,8 @@ def generate_briefing(
             executor.submit(generate_sectors, stocks, config): "sectors",
         }
         if quotes:
-            futures[executor.submit(
-                generate_holdings, stocks, config, quotes, fx_change_pct,
-            )] = "holdings"
-        results: dict[str, str] = {}
+            futures[executor.submit(generate_holdings, stocks, config)] = "holdings"
+        results: dict = {}
         errors: dict[str, str] = {}
         for future in as_completed(futures):
             key = futures[future]
@@ -354,6 +371,10 @@ def generate_briefing(
                     logger.error("claude CLI failed [%s]: %s", key, e)
                 errors[key] = str(e)
 
+    doc = BriefingDocument(
+        date=today or date.today(), market=snapshot_market(quotes, fx_change_pct),
+    )
+
     if "main" in errors:
         if "sectors" not in results:
             raise RuntimeError(f"briefing generation failed: main analysis\n{errors['main']}")
@@ -362,25 +383,40 @@ def generate_briefing(
             "sectors-only briefing: %s",
             errors["main"],
         )
-        return (
-            f"{MAIN_FAILED_NOTICE}\n"
-            f"{_truncate_error(errors['main'])}\n\n---\n\n"
-            f"{SECTORS_HEADING}\n\n" + results["sectors"]
-        )
+        doc.sections = [
+            MarkdownSection(
+                text=f"{MAIN_FAILED_NOTICE}\n{_truncate_error(errors['main'])}\n\n---\n\n"
+                f"{SECTORS_HEADING}\n\n",
+            ),
+            MarkdownSection(text=results["sectors"]),
+        ]
+        return doc
 
     assert "main" in results, "main result missing despite no error recorded"
 
-    holdings_md = results.get("holdings")
-    if quotes and holdings_md is None:
-        # The main analysis was told not to write holdings, so its section is
-        # empty: show the real figures and say the commentary is missing.
-        holdings_md = render_holdings_fallback(quotes, config.portfolio.tickers, fx_change_pct)
-    main_text = _apply_holdings(results["main"], holdings_md)
+    holdings = None
+    if quotes:
+        # Without content the block renders quote-derived headings and a note:
+        # the main analysis was told not to write holdings (#511).
+        holdings = HoldingsBlock(tickers=_holding_tickers(config), content=results.get("holdings"))
+    doc.sections = _main_sections(results["main"], holdings)
 
     if "sectors" in errors:
         logger.warning("sector sweep failed (main analysis succeeded): %s", errors["sectors"])
-        return main_text + f"\n\n---\n\n{SECTORS_FAILED_NOTICE}\n" + errors["sectors"]
+        doc.sections.append(
+            MarkdownSection(text=f"\n\n---\n\n{SECTORS_FAILED_NOTICE}\n" + errors["sectors"]),
+        )
+        return doc
 
     assert "sectors" in results, "sectors result missing despite no error recorded"
 
-    return main_text + f"\n\n---\n\n{SECTORS_HEADING}\n\n" + results["sectors"]
+    doc.sections += [
+        MarkdownSection(text=f"\n\n---\n\n{SECTORS_HEADING}\n\n"),
+        MarkdownSection(text=results["sectors"]),
+    ]
+    return doc
+
+
+def generate_briefing(*args, **kwargs) -> str:
+    """``generate_briefing_document`` rendered to the briefing Markdown."""
+    return render_document_markdown(generate_briefing_document(*args, **kwargs))

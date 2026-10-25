@@ -53,6 +53,9 @@ WEEKLY_RECAP_WEEKDAY = 5
 # Output directory for MD output
 OUTPUT_DIR = paths.OUTPUT_DIR
 BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
+# BriefScript IR of each briefing (#513). A subdirectory so the briefing RAG
+# index, which reads every allowlisted file under BRIEFING_OUTPUT_DIR, skips it.
+BRIEFING_IR_SUBDIR = "ir"
 # Salvaged text from claude CLI calls that ultimately failed (see run_claude)
 PARTIAL_OUTPUT_DIR = OUTPUT_DIR / "partial"
 # Portfolio comparison charts (bin/chart.sh and the briefing's chart step)

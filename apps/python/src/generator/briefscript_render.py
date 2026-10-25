@@ -8,10 +8,18 @@ mentions survive from it.
 """
 from __future__ import annotations
 
+import dataclasses
 import re
 
 from src.fetcher.stocks import StockQuote, _currency_symbol, to_jpy_change_pct
-from src.generator.briefscript_schema import Claim, HoldingsSection
+from src.generator.briefscript_schema import (
+    BriefingDocument,
+    Claim,
+    HoldingsBlock,
+    HoldingsSection,
+    MarketSnapshot,
+    QuoteSnapshot,
+)
 
 HOLDINGS_HEADING = "### 自分への示唆"
 
@@ -154,11 +162,12 @@ def _section_end(lines: list[str], begin: int) -> int:
     return len(lines)
 
 
-def splice_holdings(body: str, holdings_md: str) -> str | None:
-    """Replace the body of the holdings section, or return None if it is absent.
+def split_holdings(body: str) -> tuple[str, str] | None:
+    """Text before and after the holdings body, or None if the heading is absent.
 
     The section runs from its heading to the next ``---`` rule or ``### ``
-    heading, whichever comes first.
+    heading, whichever comes first. ``head`` ends with the heading and a blank
+    line; ``tail`` restores the spacing before whatever followed.
     """
     lines = body.split("\n")
     try:
@@ -166,6 +175,43 @@ def splice_holdings(body: str, holdings_md: str) -> str | None:
     except StopIteration:
         return None
     end = _section_end(lines, start + 1)
-    tail = lines[end:]
-    replaced = [*lines[: start + 1], "", holdings_md, ""]
-    return "\n".join(replaced + tail) if tail else "\n".join(replaced[:-1]) + "\n"
+    head = "\n".join(lines[: start + 1]) + "\n\n"
+    rest = lines[end:]
+    return head, "\n\n" + "\n".join(rest) if rest else "\n"
+
+
+def splice_holdings(body: str, holdings_md: str) -> str | None:
+    """Replace the body of the holdings section, or return None if it is absent."""
+    parts = split_holdings(body)
+    if parts is None:
+        return None
+    head, tail = parts
+    return head + holdings_md + tail
+
+
+def snapshot_market(
+    quotes: dict[str, StockQuote] | None, fx_change_pct: float | None,
+) -> MarketSnapshot:
+    """Freeze fetcher quotes into the document, so it re-renders offline."""
+    return MarketSnapshot(
+        quotes=[QuoteSnapshot(**dataclasses.asdict(q)) for q in (quotes or {}).values()],
+        fx_change_pct=fx_change_pct,
+    )
+
+
+def _render_holdings_block(block: HoldingsBlock, market: MarketSnapshot) -> str:
+    quotes = {q.ticker: StockQuote(**q.model_dump()) for q in market.quotes}
+    if block.content is None:
+        return render_holdings_fallback(quotes, block.tickers, market.fx_change_pct)
+    return render_holdings_markdown(block.content, quotes, block.tickers, market.fx_change_pct)
+
+
+def render_document_markdown(doc: BriefingDocument) -> str:
+    """The briefing Markdown that Discord, Notion and the local file receive."""
+    parts = []
+    for section in doc.sections:
+        if isinstance(section, HoldingsBlock):
+            parts.append(_render_holdings_block(section, doc.market))
+        else:
+            parts.append(section.text)
+    return "".join(parts)
