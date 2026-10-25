@@ -395,7 +395,7 @@ def _main_block(holdings=None, **overrides) -> MainBlock:
         ],
     }
     data.update(overrides)
-    return MainBlock(content=parse_main_section(data), holdings=holdings)
+    return MainBlock(content=parse_main_section(data, conflicts=["リスク|X"]), holdings=holdings)
 
 
 def test_main_renders_the_section_layout_in_order():
@@ -454,3 +454,16 @@ def test_document_with_main_block_round_trips():
     again = BriefingDocument.model_validate_json(doc.model_dump_json())
     assert render_document_markdown(again) == render_document_markdown(doc)
     assert render_document_markdown(doc).startswith("### 今日のサマリー（1文）")
+
+
+def test_main_holdings_sources_are_numbered_after_the_main_sources():
+    holdings = HoldingsBlock(tickers=["T1"], content=parse_holdings_section({
+        "holdings": [{"ticker": "T1", "claims": [
+            {"text": "保有の事実。", "confidence": "confirmed", "source_ids": ["h1"]}]}],
+        "sources": [{"id": "h1", "title": "保有記事", "url": "https://example.com/h1"}],
+    }, holdings=["T1"]))
+    out = render_main_markdown(_main_block(holdings=holdings), MarketSnapshot())
+    # The main section cites two sources, so the holdings one is ［3］.
+    assert "- 保有の事実。［3］" in out
+    assert "- ［3］[保有記事](https://example.com/h1)" in out
+    assert out.count("［1］") == 2  # one claim marker, one reference entry

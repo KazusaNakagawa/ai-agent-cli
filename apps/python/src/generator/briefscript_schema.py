@@ -179,7 +179,7 @@ class Story(BaseModel):
 
 
 class GeoImpact(BaseModel):
-    """One row of the geopolitics table: a risk and what it did to the market."""
+    """One row of the geopolitics table: a configured conflict and its market impact."""
 
     model_config = _STRICT
 
@@ -211,7 +211,8 @@ class MainSection(BaseModel):
 
     summary: str = Field(min_length=1)
     stories: list[Story] = Field(min_length=1, max_length=4)
-    geopolitics: list[GeoImpact] = Field(default_factory=list, max_length=6)
+    # At most one row per configured conflict; the schema pins and bounds it.
+    geopolitics: list[GeoImpact] = Field(default_factory=list)
     fx: FxNote = Field(default_factory=FxNote)
     references: list[ReferenceGroup] = Field(default_factory=list)
     sources: list[Source] = Field(default_factory=list)
@@ -225,13 +226,24 @@ class MainSection(BaseModel):
         ]
 
     @model_validator(mode="after")
-    def _check_references(self) -> MainSection:
+    def _check_references(self, info: ValidationInfo) -> MainSection:
         errors: list[str] = []
         source_ids = _index_sources(self.sources, errors)
         cited: set[str] = set()
         for story in self.stories:
             _check_citations(f"story {story.title}", story.claims, source_ids, cited, errors)
+        canonical = _canonical_names((info.context or {}).get("conflicts"), "conflicts", upper=False)
+        seen: set[str] = set()
         for row in self.geopolitics:
+            if canonical is not None:
+                configured = canonical.get(_fold(row.risk, upper=False))
+                if configured is None:
+                    errors.append(f"risk is not a configured geopolitical conflict: {row.risk}")
+                else:
+                    row.risk = configured
+            if row.risk in seen:
+                errors.append(f"duplicate risk: {row.risk}")
+            seen.add(row.risk)
             _check_citations(f"geopolitics {row.risk}", [row.impact], source_ids, cited, errors)
         _check_citations("fx", self.fx.claims, source_ids, cited, errors)
         for group in self.references:
@@ -387,11 +399,18 @@ def sectors_json_schema(sectors: list[str]) -> dict[str, Any]:
     return _pinned_schema(SectorsSection, "SectorNote", "sector", sectors)
 
 
-def parse_main_section(data: Any) -> MainSection:
-    """Validate the main analysis payload."""
-    return MainSection.model_validate(data)
+def parse_main_section(data: Any, conflicts: list[str]) -> MainSection:
+    """Validate the main analysis against the configured geopolitical ``conflicts``."""
+    _canonical_names(conflicts, "conflicts", upper=False)
+    return MainSection.model_validate(data, context={"conflicts": conflicts})
 
 
-def main_json_schema() -> dict[str, Any]:
-    """JSON Schema for the main analysis ``--json-schema`` call."""
-    return MainSection.model_json_schema()
+def main_json_schema(conflicts: list[str]) -> dict[str, Any]:
+    """JSON Schema for the main call: one geopolitics row per configured conflict at most."""
+    if isinstance(conflicts, str):
+        raise TypeError("conflicts must be a list, not a str")
+    schema = copy.deepcopy(MainSection.model_json_schema())
+    schema["properties"]["geopolitics"]["maxItems"] = len(conflicts)
+    if conflicts:
+        schema["$defs"]["GeoImpact"]["properties"]["risk"]["enum"] = list(conflicts)
+    return schema

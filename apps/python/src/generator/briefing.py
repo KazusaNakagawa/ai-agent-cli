@@ -294,10 +294,19 @@ def generate_holdings(stocks: str, config: BriefingConfig) -> HoldingsSection:
     )
 
 
-def generate_main_section(prompt: str) -> MainSection:
+def _conflict_names(config: BriefingConfig) -> list[str]:
+    # Normalised once, so the schema enum and validation agree.
+    return list(dict.fromkeys(
+        " ".join(c.name.split()) for c in config.geopolitical.conflicts if c.name.strip()
+    ))
+
+
+def generate_main_section(prompt: str, config: BriefingConfig) -> MainSection:
     """Run the main analysis as validated BriefScript (#515)."""
+    conflicts = _conflict_names(config)
     return _generate_validated(
-        prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN, main_json_schema(), parse_main_section,
+        prompt, "メイン分析", TIMEOUT_BRIEFING_MAIN, main_json_schema(conflicts),
+        lambda data: parse_main_section(data, conflicts=conflicts),
     )
 
 
@@ -373,7 +382,7 @@ def generate_briefing_document(
     )
     with ThreadPoolExecutor(max_workers=3) as executor:
         if briefscript:
-            main = executor.submit(generate_main_section, render("briefing_main", **main_parts))
+            main = executor.submit(generate_main_section, render("briefing_main", **main_parts), config)
         else:
             main = executor.submit(
                 run_claude, render("briefing", **main_parts), "メイン分析", TIMEOUT_BRIEFING_MAIN,

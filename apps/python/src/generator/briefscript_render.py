@@ -109,12 +109,12 @@ def _unique(tickers: list[str]) -> list[str]:
     return list(dict.fromkeys(t.strip() for t in tickers if t.strip()))
 
 
-def _number_sources(claims) -> dict[str, int]:
-    """Number source ids in order of first citation."""
+def _number_sources(claims, first: int = 1) -> dict[str, int]:
+    """Number source ids from ``first``, in order of first citation."""
     numbers: dict[str, int] = {}
     for claim in claims:
         for sid in claim.source_ids:
-            numbers.setdefault(sid, len(numbers) + 1)
+            numbers.setdefault(sid, len(numbers) + first)
     return numbers
 
 
@@ -135,15 +135,19 @@ def render_holdings_markdown(
     tickers: list[str],
     fx_change_pct: float | None = None,
     missing_note: str = _MISSING_NOTE,
+    first_number: int = 1,
 ) -> str:
     """Render one ``####`` block per configured ticker, in configured order.
 
-    Cited sources are numbered in order of first citation, marked ［n］ on
-    the claims that cite them, and listed after the last holding.
+    Cited sources are numbered from ``first_number`` in order of first
+    citation, marked ［n］ on the claims that cite them, and listed after the
+    last holding.
     """
     notes = {note.ticker: note for note in section.holdings}
     tickers = _unique(tickers)
-    numbers = _number_sources(c for t in tickers if t in notes for c in notes[t].claims)
+    numbers = _number_sources(
+        (c for t in tickers if t in notes for c in notes[t].claims), first_number,
+    )
 
     blocks = []
     for ticker in tickers:
@@ -236,7 +240,9 @@ def render_main_markdown(block: MainBlock, market: MarketSnapshot) -> str:
     if fx_blocks:
         parts.append(f"{FX_HEADING}\n\n" + "\n\n".join(fx_blocks))
     if block.holdings is not None:
-        parts.append(f"{HOLDINGS_HEADING}\n\n" + _render_holdings_block(block.holdings, market))
+        # Numbered after the main sources, so one ［n］ means one article here.
+        holdings = _render_holdings_block(block.holdings, market, first_number=len(numbers) + 1)
+        parts.append(f"{HOLDINGS_HEADING}\n\n{holdings}")
     if numbers:
         parts.append(_render_references(section, numbers))
     return _RULE.join(parts)
@@ -319,11 +325,13 @@ def snapshot_market(
     )
 
 
-def _render_holdings_block(block: HoldingsBlock, market: MarketSnapshot) -> str:
+def _render_holdings_block(block: HoldingsBlock, market: MarketSnapshot, first_number: int = 1) -> str:
     quotes = {q.ticker: StockQuote(**q.model_dump()) for q in market.quotes}
     if block.content is None:
         return render_holdings_fallback(quotes, block.tickers, market.fx_change_pct)
-    return render_holdings_markdown(block.content, quotes, block.tickers, market.fx_change_pct)
+    return render_holdings_markdown(
+        block.content, quotes, block.tickers, market.fx_change_pct, first_number=first_number,
+    )
 
 
 def render_document_markdown(doc: BriefingDocument) -> str:

@@ -770,13 +770,34 @@ class TestMainBriefScript:
         assert positions == sorted(positions)
 
 
+def test_main_schema_pins_geopolitics_to_configured_conflicts():
+    from src.generator.briefing import generate_briefing_document
+
+    captured = {}
+
+    def mock(prompt, label, timeout, **kwargs):
+        if label == "メイン分析":
+            captured["schema"] = kwargs["json_schema"]
+            return _MAIN_OK
+        return TestBriefScriptHoldings._payload() if label == "保有銘柄示唆" else _SECTORS_OK
+
+    conflicts = [Conflict(name=f" 紛争{i} ", affected_sectors=["S"]) for i in range(7)]
+    config = _make_config(geopolitical=GeopoliticalConfig(conflicts=conflicts))
+    with patch("src.generator.briefing.run_claude", side_effect=mock):
+        generate_briefing_document("x", config, quotes=TestBriefScriptHoldings._quotes())
+    assert captured["schema"]["properties"]["geopolitics"]["maxItems"] == 7
+    assert captured["schema"]["$defs"]["GeoImpact"]["properties"]["risk"]["enum"] == [
+        f"紛争{i}" for i in range(7)
+    ]
+
+
 class TestLooksLikeBriefingDocument:
     def test_validated_main_block_passes_without_the_text_heuristic(self):
         from src.generator.briefing import looks_like_briefing_document
         from src.generator.briefscript_schema import BriefingDocument, MainBlock, parse_main_section
 
         doc = BriefingDocument(date="2026-10-25", sections=[
-            MainBlock(content=parse_main_section(json.loads(_MAIN_OK))),
+            MainBlock(content=parse_main_section(json.loads(_MAIN_OK), conflicts=[])),
         ])
         assert looks_like_briefing_document(doc)
 

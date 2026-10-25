@@ -392,6 +392,12 @@ def test_document_accepts_a_sectors_block():
 
 from src.generator.briefscript_schema import MainSection, main_json_schema, parse_main_section  # noqa: E402
 
+CONFLICTS = ["リスクA", "リスクB"]
+
+
+def _parse_main(data):
+    return parse_main_section(data, conflicts=CONFLICTS)
+
 
 def _main(**overrides) -> dict:
     data = {
@@ -414,13 +420,13 @@ def _main(**overrides) -> dict:
 
 
 def test_main_payload_parses():
-    section = parse_main_section(_main())
+    section = _parse_main(_main())
     assert [c.text for c in section.claims()] == ["事実。", "見立て。", "影響。", "水準の意味。"]
     assert [s.id for s in section.sources] == ["s1", "s2"]
 
 
 def test_main_minimal_payload_parses():
-    section = parse_main_section(_main(geopolitics=[], fx={"claims": []}, references=[], sources=[],
+    section = _parse_main(_main(geopolitics=[], fx={"claims": []}, references=[], sources=[],
                                        stories=[{"title": "T", "claims": [{"text": "x", "confidence": "unknown"}]}]))
     assert section.geopolitics == [] and section.fx.claims == [] and section.references == []
 
@@ -436,13 +442,13 @@ def test_main_confirmed_claim_without_source_rejected(where):
     else:
         data["fx"]["claims"][0] = bare
     with pytest.raises(ValidationError, match="must cite at least one source"):
-        parse_main_section(data)
+        _parse_main(data)
 
 
 def test_main_fx_has_no_rate_field():
     with pytest.raises(ValidationError, match="extra"):
-        parse_main_section(_main(fx={"rate": 160.0, "claims": []}))
-    assert "rate" not in main_json_schema()["$defs"]["FxNote"]["properties"]
+        _parse_main(_main(fx={"rate": 160.0, "claims": []}))
+    assert "rate" not in main_json_schema(CONFLICTS)["$defs"]["FxNote"]["properties"]
 
 
 def test_main_reference_errors_reported_at_once():
@@ -450,7 +456,7 @@ def test_main_reference_errors_reported_at_once():
     data["stories"][0]["claims"][0]["source_ids"] = ["s9"]
     data["sources"].append({"id": "s1", "title": "dup", "url": "https://example.com/d"})
     with pytest.raises(ValidationError) as e:
-        parse_main_section(data)
+        _parse_main(data)
     msg = str(e.value)
     assert "s9" in msg and "s7" in msg and "duplicate source id: s1" in msg
 
@@ -462,7 +468,7 @@ def test_main_references_list_only_cited_sources():
         {"category": "C", "source_ids": ["s3"]},
     ])
     data["sources"].append({"id": "s3", "title": "uncited", "url": "https://example.com/3"})
-    section = parse_main_section(data)
+    section = _parse_main(data)
     assert [s.id for s in section.sources] == ["s1", "s2"]
     # s3 is uncited; s2 stays in its first group only; empty groups go.
     assert [(g.category, g.source_ids) for g in section.references] == [("A", ["s2"])]
@@ -470,15 +476,12 @@ def test_main_references_list_only_cited_sources():
 
 def test_main_bounds():
     story = {"title": "T", "claims": [{"text": "x", "confidence": "inferred"}]}
-    parse_main_section(_main(stories=[story] * 4))
+    _parse_main(_main(stories=[story] * 4))
     for bad in ([], [story] * 5, [{"title": "T", "claims": []}]):
         with pytest.raises(ValidationError):
-            parse_main_section(_main(stories=bad))
-    row = _main()["geopolitics"][0]
+            _parse_main(_main(stories=bad))
     with pytest.raises(ValidationError):
-        parse_main_section(_main(geopolitics=[row] * 7))
-    with pytest.raises(ValidationError):
-        parse_main_section(_main(summary=" "))
+        _parse_main(_main(summary=" "))
 
 
 def test_document_accepts_a_main_block_and_fx_context():
@@ -489,3 +492,26 @@ def test_document_accepts_a_main_block_and_fx_context():
     })
     assert isinstance(doc.sections[0].content, MainSection)
     assert doc.market.fx_context == "- USD/JPY: 150.00"
+
+
+def test_main_geopolitics_rows_are_configured_conflicts():
+    row = _main()["geopolitics"][0]
+    section = _parse_main(_main(geopolitics=[{**row, "risk": " リスクB "}]))
+    assert section.geopolitics[0].risk == "リスクB"
+    with pytest.raises(ValidationError) as e:
+        _parse_main(_main(geopolitics=[row, row, {**row, "risk": "未設定"}]))
+    assert "duplicate risk: リスクA" in str(e.value) and "未設定" in str(e.value)
+
+
+def test_main_geopolitics_bound_follows_the_config():
+    many = [f"紛争{i}" for i in range(8)]
+    rows = [{"risk": name, "impact": {"text": "x", "confidence": "inferred"}} for name in many]
+    assert len(parse_main_section(_main(geopolitics=rows), conflicts=many).geopolitics) == 8
+    schema = main_json_schema(many)
+    assert schema["properties"]["geopolitics"]["maxItems"] == 8
+    assert schema["$defs"]["GeoImpact"]["properties"]["risk"]["enum"] == many
+    empty = main_json_schema([])
+    assert empty["properties"]["geopolitics"]["maxItems"] == 0
+    assert "enum" not in empty["$defs"]["GeoImpact"]["properties"]["risk"]
+    with pytest.raises(TypeError):
+        main_json_schema("リスクA")
