@@ -181,6 +181,10 @@ class BriefingFileConfig(BaseModel):
     # Model ID passed to the claude CLI (optional). DEFAULT_MODEL if unset.
     # Precedence: CLAUDE_MODEL env > this config value > DEFAULT_MODEL (see claude_runner.get_model).
     model: str | None = None
+    # Passed as --fallback-model: the CLI switches to it when ``model`` is
+    # unavailable or overloaded. Comma-separated to try several in order.
+    # Precedence: CLAUDE_FALLBACK_MODEL env > this config value > none.
+    fallback_model: str | None = None
     portfolio: PortfolioConfig
     # Optional FX tracking. Default (no pairs) leaves the briefing USD-only.
     fx: FxConfig = Field(default_factory=FxConfig)

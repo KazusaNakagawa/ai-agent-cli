@@ -513,6 +513,12 @@ class TestGetModel:
         monkeypatch.setattr(claude_runner, "config_mod", fake_config_mod)
         assert claude_runner._config_model() == "claude-sonnet-4-6"
 
+    def test_config_fallback_model_reads_config_field(self, monkeypatch):
+        fake_config_mod = MagicMock()
+        fake_config_mod.CONFIG.fallback_model = " claude-backup-1 "
+        monkeypatch.setattr(claude_runner, "config_mod", fake_config_mod)
+        assert claude_runner._config_fallback_model() == "claude-backup-1"
+
     def test_config_model_returns_none_when_missing_file(self, monkeypatch):
         """briefing.json 未作成 (FileNotFoundError) は静かに None を返す。"""
         class _Missing:
@@ -536,6 +542,66 @@ class TestGetModel:
         with patch.object(claude_runner.logger, "warning") as mock_warn:
             assert claude_runner._config_model() is None
         mock_warn.assert_called_once()
+
+
+class TestFallbackModel:
+    @pytest.fixture(autouse=True)
+    def _pin_model(self, monkeypatch):
+        monkeypatch.delenv("CLAUDE_FALLBACK_MODEL", raising=False)
+        monkeypatch.setattr(claude_runner, "get_model", lambda: "claude-primary-1")
+        monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: None)
+
+    def _run(self, stdout=json.dumps({"result": "ok"})):
+        captured = {}
+
+        def fake_stream(cmd, env, timeout, label):
+            captured["cmd"] = cmd
+            return _make_result(stdout=stdout)
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner._stream_claude", side_effect=fake_stream):
+                with patch("src.claude_runner.log_usage_from_result", return_value=True):
+                    run_claude("prompt", "test")
+        return captured["cmd"]
+
+    def test_no_fallback_leaves_the_command_unchanged(self):
+        assert "--fallback-model" not in self._run()
+
+    def test_config_fallback_is_passed_to_the_cli(self, monkeypatch):
+        monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-backup-1")
+        cmd = self._run()
+        assert cmd[cmd.index("--fallback-model") + 1] == "claude-backup-1"
+
+    def test_env_overrides_config_and_accepts_a_list(self, monkeypatch):
+        monkeypatch.setenv("CLAUDE_FALLBACK_MODEL", " claude-a-1 , claude-b-1 ")
+        monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-backup-1")
+        cmd = self._run()
+        assert cmd[cmd.index("--fallback-model") + 1] == "claude-a-1,claude-b-1"
+
+    def test_a_fallback_equal_to_the_primary_is_dropped(self, monkeypatch):
+        monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-primary-1")
+        assert "--fallback-model" not in self._run()
+
+    def test_answering_on_the_fallback_logs_a_warning(self, monkeypatch, caplog):
+        monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-backup-1")
+        stdout = json.dumps({"result": "ok", "modelUsage": {"claude-backup-1": {"costUSD": 0.01}}})
+        self._run(stdout)
+        assert "fell back from claude-primary-1 to claude-backup-1 [test]" in caplog.text
+
+    def test_answering_on_the_primary_does_not_warn(self, monkeypatch, caplog):
+        # The CLI can also list internal helper models next to the primary.
+        monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-backup-1")
+        stdout = json.dumps(
+            {"result": "ok", "modelUsage": {"claude-primary-1": {}, "claude-backup-1": {}}}
+        )
+        self._run(stdout)
+        assert "fell back" not in caplog.text
+
+    def test_an_unrelated_model_in_usage_does_not_warn(self, monkeypatch, caplog):
+        # An alias primary never appears under its own name in modelUsage.
+        monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-backup-1")
+        self._run(json.dumps({"result": "ok", "modelUsage": {"claude-resolved-1": {}}}))
+        assert "fell back" not in caplog.text
 
 
 class TestBuildEnv:
