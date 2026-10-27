@@ -29,20 +29,22 @@ def check_rates(ctx: StepContext) -> dict[str, Any]:
             "no transcripts found at %s — model rates not checked", rate_check.DEFAULT_TRANSCRIPTS
         )
     unpriced, drift, reconciled = rate_check.check(
-        rate_check.DEFAULT_TRANSCRIPTS, claude_rates.RATES
+        rate_check.DEFAULT_TRANSCRIPTS,
+        claude_rates.RATES,
+        claude_rates.load_tiered(claude_rates.RATES_PATH),
     )
     for line in drift:
         ctx.logger.warning("model rate drift — %s", line)
     if unpriced:
         # Only looked up on failure, so a passing morning never touches the
-        # network. The lookup is advisory and cannot raise.
-        suggestions = "\n".join(
-            f"  {line}" for line in rate_check.suggest_from_upstream(unpriced)
-        )
+        # network. The lookup is advisory and cannot raise. Logged one line per
+        # entry so the exception (and the run record's error) stays one line.
+        for line in rate_check.suggest_from_upstream(unpriced):
+            ctx.logger.warning("suggested model_rates.json entry — %s", line)
         raise UnpricedModelError(
             f"no rate in {claude_rates.RATES_PATH.name} for: {', '.join(unpriced)} "
-            "— add the published rates, then re-run scripts/check_model_rates.py\n"
-            f"suggested entries from the pricing doc (check before pasting):\n{suggestions}"
+            "— add the published rates (suggested entries logged above), "
+            "then re-run scripts/check_model_rates.py"
         )
     return {"reconciled": reconciled, "drift": len(drift)}
 

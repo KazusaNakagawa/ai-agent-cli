@@ -3,6 +3,7 @@
 The pricing doc is a web page, not an API contract, so the diff is advisory:
 it prints, never writes the table, and never changes the exit code.
 """
+import http.client
 import json
 from pathlib import Path
 
@@ -60,23 +61,28 @@ def test_diff_upstream_reports_changes_and_gaps():
     assert "claude-haiku-4-5" not in text
 
 
+def _rows():
+    return rate_check.parse_pricing_rows(PRICING.read_text())
+
+
 def test_suggest_entries_formats_a_pasteable_entry():
-    [line] = rate_check.suggest_entries(["claude-opus-4-1"], PRICING.read_text())
+    [line] = rate_check.suggest_entries(["claude-opus-4-1"], _rows())
     assert line == (
         '"claude-opus-4-1": {"input": 15.0, "output": 75.0, "cache_write_5m": 18.75, '
         '"cache_write_1h": 30.0, "cache_read": 1.5}'
     )
 
 
-def test_suggest_entries_takes_the_cheapest_tier_and_says_so():
-    [line] = rate_check.suggest_entries(["claude-haiku-5-5"], PRICING.read_text())
+def test_suggest_entries_takes_the_lowest_input_tier_and_flags_it():
+    [line] = rate_check.suggest_entries(["claude-haiku-5-5"], _rows())
     assert line.startswith('"claude-haiku-5-5": {"input": 0.1, "output": 0.5,')
-    assert "cheapest of 2 prompt-length tiers" in line
+    assert '"cache_read": 0.01, "tiered": true}' in line
+    assert "lowest-input of 2 prompt-length tiers" in line
 
 
 def test_suggest_entries_maps_a_dated_id_to_its_family_and_reports_gaps():
     lines = rate_check.suggest_entries(
-        ["claude-haiku-4-5-20251001", "claude-future-9"], PRICING.read_text()
+        ["claude-haiku-4-5-20251001", "claude-future-9"], _rows()
     )
     assert lines[0].startswith('"claude-haiku-4-5-20251001": {"input": 1.0,')
     assert lines[1] == "claude-future-9: not in the pricing doc"
@@ -93,6 +99,20 @@ def test_main_suggests_entries_for_unpriced_models_with_the_flag(tmp_path, offli
     _write_usage(tmp_path, "claude-opus-4-1")
     assert rate_check.main(["--transcripts", str(tmp_path), "--check-upstream"]) == 1
     assert '"claude-opus-4-1": {"input": 15.0' in capsys.readouterr().out
+
+
+def test_main_says_why_there_are_no_suggestions_when_the_fetch_fails(
+    tmp_path, monkeypatch, capsys
+):
+    def _offline():
+        raise http.client.IncompleteRead(b"partial")
+
+    monkeypatch.setattr(rate_check, "fetch_pricing_doc", _offline)
+    _write_usage(tmp_path, "claude-opus-4-1")
+    assert rate_check.main(["--transcripts", str(tmp_path), "--check-upstream"]) == 1
+    out = capsys.readouterr().out
+    assert "could not check" in out
+    assert "No suggested entries: the pricing doc could not be read" in out
 
 
 def test_main_without_the_flag_points_at_it_instead_of_fetching(tmp_path, monkeypatch, capsys):
