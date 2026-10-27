@@ -34,6 +34,27 @@ describe("parseQaTranscript", () => {
   })
 })
 
+describe("role labels inside message bodies", () => {
+  it("round-trips a body line that equals a role label without splitting the turn", () => {
+    const question = `quote:\n${USER_LABEL}\nend`
+    const answer = `  ${AI_LABEL}  \nstill the answer\n${USER_LABEL}`
+    expect(parseQaTranscript(formatQaBlock(question, answer))?.turns).toEqual([
+      { question, answer: answer.trim() },
+    ])
+  })
+
+  it("escapes label-only body lines so raw Markdown still renders them literally", () => {
+    const block = formatQaBlock(USER_LABEL, AI_LABEL)
+    expect(block).toBe("**You:**\n\n\\*\\*You:\\*\\*\n\n**AI:**\n\n\\*\\*AI:\\*\\*")
+  })
+
+  it("leaves labels that share a line with other text untouched", () => {
+    const block = formatQaBlock(`${USER_LABEL} inline`, "a")
+    expect(block).toContain(`${USER_LABEL} inline`)
+    expect(parseQaTranscript(block)?.turns).toHaveLength(1)
+  })
+})
+
 describe("formatQaBlock", () => {
   it("labels the question and answer with their roles", () => {
     const block = formatQaBlock("What next?", "Focus on tests.")

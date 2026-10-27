@@ -2,6 +2,32 @@
 export const USER_LABEL = "**You:**"
 export const AI_LABEL = "**AI:**"
 
+// Backslash-escaped forms render identically in Markdown but are not matched
+// as turn boundaries, so a body line that is just a label survives a round trip.
+const ESCAPES: [label: string, escaped: string][] = [USER_LABEL, AI_LABEL].map((label) => [
+  label,
+  label.replaceAll("*", "\\*"),
+])
+
+function escapeLabels(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      const hit = ESCAPES.find(([label]) => line.trim() === label)
+      return hit ? line.replace(hit[0], hit[1]) : line
+    })
+    .join("\n")
+}
+
+function unescapeLabels(lines: string[]): string {
+  return lines
+    .map((line) => {
+      const hit = ESCAPES.find(([, escaped]) => line.trim() === escaped)
+      return hit ? line.replace(hit[1], hit[0]) : line
+    })
+    .join("\n")
+}
+
 /**
  * Format one brainstorm turn as role-labelled Markdown for journal storage.
  *
@@ -10,7 +36,7 @@ export const AI_LABEL = "**AI:**"
  * labels keep the transcript readable anywhere the raw Markdown is viewed.
  */
 export function formatQaBlock(question: string, answer: string): string {
-  return `${USER_LABEL}\n\n${question}\n\n${AI_LABEL}\n\n${answer}`
+  return `${USER_LABEL}\n\n${escapeLabels(question)}\n\n${AI_LABEL}\n\n${escapeLabels(answer)}`
 }
 
 export interface QaTurn {
@@ -37,8 +63,8 @@ export function parseQaTranscript(
     const end = n + 1 < userIdx.length ? userIdx[n + 1] : lines.length
     const block = lines.slice(start + 1, end)
     const aiAt = block.findIndex((l) => l.trim() === AI_LABEL)
-    const question = (aiAt === -1 ? block : block.slice(0, aiAt)).join("\n")
-    const answer = aiAt === -1 ? "" : block.slice(aiAt + 1).join("\n")
+    const question = unescapeLabels(aiAt === -1 ? block : block.slice(0, aiAt))
+    const answer = aiAt === -1 ? "" : unescapeLabels(block.slice(aiAt + 1))
     // Turns appended to an entry are separated by a `---` rule; drop it so it
     // doesn't render inside the answer bubble.
     return { question: question.trim(), answer: answer.trim().replace(/\n*-{3,}$/, "").trim() }
