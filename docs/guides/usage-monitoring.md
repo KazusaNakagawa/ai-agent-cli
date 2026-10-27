@@ -147,6 +147,15 @@ the table and never changes the exit code — the doc is a web page, not an API
 contract. Models priced in tiers by prompt length (Claude Haiku 5.5) are listed
 as `tiered, not modelled`: one rate tuple cannot express them.
 
+When a model is unpriced, the fix is a ready-to-paste entry rather than a trip
+to the pricing doc. The `model-rates` workflow looks the model up in the doc on
+failure only, and puts the entry in its error — which the app log
+(`log/<date>-app.log`) records along with the failing step. The script prints
+the same entries under `--check-upstream`. A tiered model gets its cheapest
+tier, flagged, so requests on a higher tier are under-counted. The table is
+still never written for you, and an unreachable doc only replaces the entries
+with a note: the run fails on the unpriced model either way.
+
 Reconciliation in tests runs against `scripts/tests/fixtures/cost_state.jsonl`,
 real records checked into the repo, so CI does not depend on the operator's
 local transcripts.

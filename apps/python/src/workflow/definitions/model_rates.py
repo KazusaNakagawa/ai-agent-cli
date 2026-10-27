@@ -34,9 +34,15 @@ def check_rates(ctx: StepContext) -> dict[str, Any]:
     for line in drift:
         ctx.logger.warning("model rate drift — %s", line)
     if unpriced:
+        # Only looked up on failure, so a passing morning never touches the
+        # network. The lookup is advisory and cannot raise.
+        suggestions = "\n".join(
+            f"  {line}" for line in rate_check.suggest_from_upstream(unpriced)
+        )
         raise UnpricedModelError(
             f"no rate in {claude_rates.RATES_PATH.name} for: {', '.join(unpriced)} "
-            "— add the published rates, then re-run scripts/check_model_rates.py"
+            "— add the published rates, then re-run scripts/check_model_rates.py\n"
+            f"suggested entries from the pricing doc (check before pasting):\n{suggestions}"
         )
     return {"reconciled": reconciled, "drift": len(drift)}
 

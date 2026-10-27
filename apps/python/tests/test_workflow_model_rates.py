@@ -16,6 +16,13 @@ from src.workflow.definitions.model_rates import UnpricedModelError
 from src.workflow.runner import run_workflow
 
 COST_STATES = Path(__file__).resolve().parents[3] / "scripts" / "tests" / "fixtures" / "cost_state.jsonl"
+PRICING = Path(__file__).parent / "fixtures" / "rate_check" / "pricing_snippet.md"
+
+
+@pytest.fixture(autouse=True)
+def offline_doc(monkeypatch):
+    # An unpriced model triggers a pricing-doc lookup; keep it off the network.
+    monkeypatch.setattr(rate_check, "fetch_pricing_doc", lambda: PRICING.read_text())
 
 
 def _usage_line(model: str) -> str:
@@ -57,6 +64,23 @@ def test_passes_when_every_model_is_priced(transcripts):
 def test_fails_the_run_on_an_unpriced_model(transcripts):
     (transcripts / "p" / "new.jsonl").write_text(_usage_line("claude-future-9") + "\n")
     with pytest.raises(UnpricedModelError, match="claude-future-9"):
+        run_workflow(registry.get("model-rates"))
+
+
+def test_the_failure_suggests_the_published_rates(transcripts):
+    (transcripts / "p" / "new.jsonl").write_text(_usage_line("claude-opus-4-1") + "\n")
+    with pytest.raises(UnpricedModelError) as exc_info:
+        run_workflow(registry.get("model-rates"))
+    assert '"claude-opus-4-1": {"input": 15.0, "output": 75.0' in str(exc_info.value)
+
+
+def test_an_unreachable_pricing_doc_still_fails_on_the_unpriced_model(transcripts, monkeypatch):
+    def _offline():
+        raise OSError("network down")
+
+    monkeypatch.setattr(rate_check, "fetch_pricing_doc", _offline)
+    (transcripts / "p" / "new.jsonl").write_text(_usage_line("claude-future-9") + "\n")
+    with pytest.raises(UnpricedModelError, match="could not look up the pricing doc: network down"):
         run_workflow(registry.get("model-rates"))
 
 

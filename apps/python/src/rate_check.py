@@ -195,6 +195,14 @@ def parse_pricing_table(markdown: str) -> tuple[dict[str, tuple[float, ...]], se
     by prompt length, like Claude Haiku 5.5 — cannot be expressed as one rate
     tuple, so it lands in ``tiered`` instead of ``rates``.
     """
+    rows = _parse_pricing_rows(markdown)
+    rates = {model: found[0] for model, found in rows.items() if len(found) == 1}
+    tiered = {model for model, found in rows.items() if len(found) > 1}
+    return rates, tiered
+
+
+def _parse_pricing_rows(markdown: str) -> dict[str, list[tuple[float, ...]]]:
+    """Every row of the main per-model table, grouped by model id."""
     lines = markdown.splitlines()
     try:
         start = next(
@@ -217,10 +225,43 @@ def parse_pricing_table(markdown: str) -> tuple[dict[str, tuple[float, ...]], se
                 raise ValueError(f"no price in pricing table cell {cell!r} for {name!r}")
             prices.append(float(match.group(1)))
         rows.setdefault(display_name_to_id(name), []).append(tuple(prices))
+    return rows
 
-    rates = {model: found[0] for model, found in rows.items() if len(found) == 1}
-    tiered = {model for model, found in rows.items() if len(found) > 1}
-    return rates, tiered
+
+def suggest_entries(models: list[str], markdown: str) -> list[str]:
+    """Ready-to-paste ``model_rates.json`` entries for unpriced models.
+
+    A tiered model gets its cheapest tier, flagged, since a single entry is all
+    the table can hold. Nothing here writes the table: a human still decides.
+    """
+    rows = _parse_pricing_rows(markdown)
+    lines = []
+    for model in models:
+        found = rows.get(_DATED_ID.sub("", model))
+        if not found:
+            lines.append(f"{model}: not in the pricing doc")
+            continue
+        rate = min(found)
+        entry = json.dumps({model: dict(zip(RATE_FIELDS, rate))})[1:-1]
+        if len(found) > 1:
+            entry += (
+                f"  (cheapest of {len(found)} prompt-length tiers;"
+                " requests on a higher tier are under-counted)"
+            )
+        lines.append(entry)
+    return lines
+
+
+def suggest_from_upstream(models: list[str], markdown: str | None = None) -> list[str]:
+    """``suggest_entries`` against the live pricing doc, never raising.
+
+    An unreachable or reshaped doc yields one explanatory line, so a caller
+    reporting unpriced models still reports them.
+    """
+    try:
+        return suggest_entries(models, markdown if markdown is not None else fetch_pricing_doc())
+    except (OSError, ValueError) as e:
+        return [f"could not look up the pricing doc: {e}"]
 
 
 def diff_upstream(
@@ -263,17 +304,20 @@ def fetch_pricing_doc() -> str:
         return resp.read().decode("utf-8")
 
 
-def _print_upstream_diff(rates: dict[str, tuple[float, ...]]) -> None:
+def _print_upstream_diff(rates: dict[str, tuple[float, ...]]) -> str | None:
+    """Print the diff; return the fetched doc for reuse, or None if unusable."""
     print(f"Pricing doc ({PRICING_URL}):")
     try:
-        upstream, tiered = parse_pricing_table(fetch_pricing_doc())
+        doc = fetch_pricing_doc()
+        upstream, tiered = parse_pricing_table(doc)
     except (OSError, ValueError) as e:
         # Advisory only: an unreachable or reshaped doc must not mask the
         # transcript checks, which alone decide the exit code.
         print(f"  could not check: {e}")
-        return
+        return None
     for line in diff_upstream(rates, upstream, tiered) or ["no differences"]:
         print(f"  {line}")
+    return doc
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -305,8 +349,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Rate table cannot be read: {e}")
         return 1
 
-    if args.check_upstream:
-        _print_upstream_diff(rates)
+    doc = _print_upstream_diff(rates) if args.check_upstream else None
 
     if not args.transcripts.is_dir():
         print(f"no transcripts found at {args.transcripts} — nothing to check")
@@ -319,6 +362,12 @@ def main(argv: list[str] | None = None) -> int:
         for model in unpriced:
             print(f"  {model}")
         print(f"\nAdd them to {args.rates} with their published rates.")
+        if doc is not None:
+            print("Suggested entries from the pricing doc (check before pasting):")
+            for line in suggest_entries(unpriced, doc):
+                print(f"  {line}")
+        elif not args.check_upstream:
+            print("Re-run with --check-upstream for ready-to-paste entries.")
     if drift:
         print("Rates disagree with Claude Code's own cost records:")
         for line in drift:
