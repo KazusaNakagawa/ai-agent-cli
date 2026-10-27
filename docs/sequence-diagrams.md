@@ -13,8 +13,22 @@
 
 ## 1. 日次ブリーフィング（バッチ実行）
 
-`bin/run.sh` → `python -m src.handler` の一本道。claude CLI 2 本を並列実行し、
+`bin/run.sh` → `python -m src.handler` の一本道。claude CLI を最大 3 本並列実行し、
 メイン分析が落ちたときだけ全体を失敗させる（セクタースイープは劣化継続）。
+3 本目の保有銘柄示唆は `--json-schema` で BriefScript を受け取り、検証して「自分への示唆」に描画する。
+メイン分析は保有銘柄の示唆を書かず、個別ニュースも調べない（#511、二重生成の回避）。保有銘柄示唆が失敗したときは、
+株価データから作った見出しに「〔未確認〕本日の示唆は生成できませんでした。」を添えて出す。
+generator の戻り値は `BriefingDocument`（IR、#513）で、株価スナップショットとセクションの並びを持つ。
+セクタースイープも `--json-schema` で受け取り、監視セクター名を enum で固定して検証する（#514）。
+検証が 2 回とも通らなければセクター失敗として扱い、従来どおりリカバリ対象の失敗注記を残す。
+quotes があるときはメイン分析も `--json-schema` で受け取り（#515）、サマリー・ストーリー・地政学・為替・参考記事を
+`MainBlock` に入れる。為替の数値は fetcher のブロックをそのまま描画し、LLM はコメントだけを書く。
+メイン分析の検証が 2 回とも通らなければメイン失敗として扱い、セクター動向のみの劣化版を出す。
+quotes がないときのメイン分析は従来の Markdown プロンプトで、`MarkdownSection` に入る。
+Discord とローカル MD はこの IR を `render_document_markdown` で Markdown にしてから送る。
+Notion は `render_document_notion` で IR から直接ブロックを作り（#516）、確信度を色付きラベル、
+［n］を出典へのリンク、地政学をテーブル、サマリーをコールアウトにする。`MarkdownSection` だけは
+従来の `markdown_to_notion_blocks` で変換する。
 
 エントリポイント: `apps/python/src/handler.py:29` (`lambda_handler`)
 
@@ -39,27 +53,40 @@ sequenceDiagram
     alt 当日 MD が既にある
         H-->>Sh: skipped
     else 実行する
-        H->>YF: fetch_stock_moves
-        YF-->>H: 前日比
-        H->>G: generate_briefing
+        H->>YF: fetch_stock_snapshot
+        YF-->>H: 前日比テキスト + quotes
+        H->>G: generate_briefing(stocks, quotes)
 
         par メイン分析
-            G->>CLI: run_claude(main)
-            CLI-->>G: 本文 + usage
+            G->>CLI: run_claude(main, json_schema)（quotes がないときは Markdown）
+            CLI-->>G: BriefScript JSON + usage
         and セクタースイープ
-            G->>CLI: run_claude(sectors)
-            CLI-->>G: 本文 + usage
+            G->>CLI: run_claude(sectors, json_schema)
+            CLI-->>G: BriefScript JSON + usage
+        and 保有銘柄示唆（quotes があるとき）
+            G->>CLI: run_claude(holdings, json_schema)
+            CLI-->>G: BriefScript JSON + usage
+            Note over G: Pydantic 検証（失敗時は 1 回だけ再生成）→ quotes で見出しを描画
         end
 
-        alt メイン失敗
+        alt 保有銘柄示唆が成功
+            Note over G: MainBlock の中に HoldingsBlock を置く（為替と参考記事の間）
+        else 保有銘柄示唆が失敗
+            Note over G: content なしの HoldingsBlock（描画時に quotes だけの見出し + 〔未確認〕注記）
+        end
+
+        alt メインとセクターが両方失敗
             G-->>H: RuntimeError
+        else メインのみ失敗
+            G-->>H: BriefingDocument（失敗注記 + セクター動向）
         else セクターのみ失敗
-            G-->>H: 本文 + 失敗注記
+            G-->>H: BriefingDocument（本文 + 失敗注記）
         else 両方成功
-            G-->>H: 本文 + セクター動向
+            G-->>H: BriefingDocument（本文 + セクター動向）
         end
 
-        Note over H: looks_like_briefing で体裁検査
+        Note over H: looks_like_briefing_document（MainBlock があれば検証済み、なければ looks_like_briefing）
+        H->>MD: save_briefing_document（briefing_<date>.json）
         H->>MD: save_briefing_md
         Note over H: index_briefings は best-effort
 
@@ -67,7 +94,8 @@ sequenceDiagram
             H->>DC: send_to_discord
         end
         opt Notion 設定済み
-            H->>NT: send_to_notion + metrics
+            Note over H: render_document_notion で IR から直接ブロックを作る（#516）
+            H->>NT: send_to_notion(blocks) + metrics
             NT-->>H: page_url
         end
         H-->>Sh: 200 Briefing sent

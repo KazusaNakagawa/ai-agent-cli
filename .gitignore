@@ -2,11 +2,15 @@
 .env
 
 # ローカル設定（個人用）
+.agents/skills/yomiyasu
+*.bk
+data/**
+scripts/jev
 briefing.json
-self_agent_profile.md
 holdings.json
 money_rules.json
-*.bk
+self_agent_profile.md
+skills-lock.json
 
 # Claude Code
 .claude/*

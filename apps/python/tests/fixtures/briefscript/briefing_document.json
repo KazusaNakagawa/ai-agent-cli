@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "date": "2026-10-24",
+  "market": {
+    "quotes": [
+      {
+        "ticker": "TICKER1",
+        "last_price": 100.0,
+        "previous_close": 100.2,
+        "change_pct": -0.2,
+        "currency": "USD",
+        "error": null
+      },
+      {
+        "ticker": "TICKER2",
+        "last_price": 2000.0,
+        "previous_close": 1980.0,
+        "change_pct": 1.0,
+        "currency": "JPY",
+        "error": null
+      },
+      {
+        "ticker": "TICKER3",
+        "last_price": null,
+        "previous_close": null,
+        "change_pct": null,
+        "currency": "USD",
+        "error": "Stock fetch error (x)"
+      }
+    ],
+    "fx_change_pct": -0.9
+  },
+  "sections": [
+    {
+      "kind": "markdown",
+      "text": "### 今日のサマリー（1文）\n\nサマリー。\n\n---\n\n### なぜ動いたか（ストーリー）\n\n#### トピック\n本文。\n\n---\n\n### 自分への示唆\n\n"
+    },
+    {
+      "kind": "holdings",
+      "tickers": [
+        "TICKER1",
+        "TICKER2",
+        "TICKER3"
+      ],
+      "content": {
+        "holdings": [
+          {
+            "ticker": "TICKER1",
+            "claims": [
+              {
+                "text": "ドル建てではほぼ横ばいで、円建ての下落はほぼ為替によるものです。",
+                "confidence": "inferred",
+                "source_ids": []
+              },
+              {
+                "text": "来週の決算では、新製品の売上寄与と通期ガイダンスが焦点です。",
+                "confidence": "confirmed",
+                "source_ids": [
+                  "s1"
+                ]
+              },
+              {
+                "text": "決算前後は大きめの値動きを想定しておくと良いです。",
+                "confidence": "inferred",
+                "source_ids": [
+                  "s1"
+                ]
+              }
+            ],
+            "next_event": "決算（来週）"
+          }
+        ],
+        "sources": [
+          {
+            "id": "s1",
+            "title": "TICKER1 earnings preview",
+            "url": "https://example.com/ticker1-earnings-preview"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "markdown",
+      "text": "\n\n---\n\n### 参考記事\n\n- [記事](https://example.com/a)\n"
+    },
+    {
+      "kind": "markdown",
+      "text": "\n\n---\n\n## セクター動向\n\n"
+    },
+    {
+      "kind": "markdown",
+      "text": "### 今日のセクター動向（全セクター）\n\n#### Tech\n動き限定的"
+    }
+  ]
+}

@@ -23,3 +23,9 @@ PYTHONPATH="$PROJECT_ROOT" python -m src.handler
 # 毎日呼んでよい (WEEKLY_RECAP_WEEKDAY 以外の日は skipped で即終了する)。
 # bin/workflow.sh run weekly でも同じものが走る。
 PYTHONPATH="$PROJECT_ROOT" python -m src.workflow run weekly
+
+# Model rate check (#475): fails the run when a model in the Claude Code
+# transcripts has no rate in src/model_rates.json, so a new model is noticed
+# the next morning instead of showing up as $0 in the Monitor tab. Last on
+# purpose — a failure here must not hold back the briefing or the recap.
+PYTHONPATH="$PROJECT_ROOT" python -m src.workflow run model-rates

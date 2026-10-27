@@ -2,6 +2,7 @@ import type React from "react"
 import { useMemo } from "react"
 import ReactMarkdown from "react-markdown"
 import rehypeSanitize from "rehype-sanitize"
+import remarkBreaks from "remark-breaks"
 import remarkGfm from "remark-gfm"
 
 import { MermaidBlock } from "@/components/ui/MermaidBlock"
@@ -67,12 +68,17 @@ function makeMarkdownComponents(onLinkClick?: LinkHandler) {
   }
 }
 
+// `breaks` renders single newlines as <br>. Meant for hand-typed or pasted
+// text (e.g. Journal entries) where line breaks carry meaning; generated
+// markdown keeps standard paragraph semantics.
 export function MarkdownView({
   content,
   onLinkClick,
+  breaks = false,
 }: {
   content: string
   onLinkClick?: LinkHandler
+  breaks?: boolean
 }) {
   const components = useMemo(
     () => makeMarkdownComponents(onLinkClick),
@@ -81,7 +87,7 @@ export function MarkdownView({
   return (
     <div className={PROSE_CLASS} data-testid="markdown-view">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={breaks ? [remarkGfm, remarkBreaks] : [remarkGfm]}
         rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
         components={components}
       >
