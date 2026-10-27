@@ -52,6 +52,8 @@ class _StreamResult:
     returncode: int
     stdout: str
     stderr: str
+    # Models the CLI reported switching to (``model_fallback`` events).
+    fallback_models: tuple[str, ...] = ()
 
 
 def _stream_claude(cmd: list[str], env: dict[str, str], timeout: int, label: str) -> _StreamResult:
@@ -127,6 +129,7 @@ def _stream_claude(cmd: list[str], env: dict[str, str], timeout: int, label: str
         returncode=proc.returncode,
         stdout=state.result_raw or "",
         stderr=b"".join(stderr_chunks).decode("utf-8", errors="replace"),
+        fallback_models=tuple(state.fallback_models),
     )
 
 
@@ -157,13 +160,7 @@ def _log_api_errors(state: StreamState, label: str) -> None:
     )
 
 
-def _parse_and_log_usage(
-    stdout: str,
-    label: str,
-    structured: bool = False,
-    model: str | None = None,
-    fallbacks: list[str] | None = None,
-) -> str:
+def _parse_and_log_usage(stdout: str, label: str, structured: bool = False) -> str:
     """Parse ``--output-format json`` stdout, record usage, and return the text result.
 
     If the output is not JSON or lacks a ``result`` field, log a warning and
@@ -182,9 +179,6 @@ def _parse_and_log_usage(
             "could not parse claude CLI output as JSON, skipping usage log [%s]", label,
         )
         return stdout.strip()
-
-    if model and fallbacks and isinstance(parsed, dict):
-        _warn_if_fell_back(parsed, model, fallbacks, label)
 
     if not log_usage_from_result(label, parsed):
         # Calls without usage can happen in normal operation, so keep this at debug (avoid noise).
@@ -282,19 +276,17 @@ def get_fallback_models() -> list[str]:
     return [m.strip() for m in raw.split(",") if m.strip()]
 
 
-def _warn_if_fell_back(parsed: dict, model: str, fallbacks: list[str], label: str) -> None:
-    """Log when the CLI answered on a fallback model instead of ``model``.
+def _warn_if_fell_back(result: _StreamResult, model: str, label: str) -> None:
+    """Log when the CLI switched to a fallback model during the call.
 
     A silent switch changes cost and output quality, so it must be visible.
-    Only a configured fallback counts as evidence: ``modelUsage`` can also list
-    models the CLI uses internally, and an alias (``opus``) never appears
+    The CLI's own ``model_fallback`` event is the evidence rather than
+    ``modelUsage``: the latter also lists models the CLI uses internally (often
+    with more output than the main model), and an alias primary never appears
     there under its own name.
     """
-    usage = parsed.get("modelUsage")
-    if not isinstance(usage, dict) or model in usage:
-        return
-    used = [m for m in fallbacks if m in usage]
-    if used:
+    used = getattr(result, "fallback_models", ())
+    if isinstance(used, tuple) and used:
         logger.warning(
             "claude CLI fell back from %s to %s [%s] — check the configured model",
             model, ", ".join(used), label,
@@ -381,7 +373,8 @@ def run_claude(
     ]
     if json_schema is not None:
         cmd += ["--json-schema", json.dumps(json_schema)]
-    fallbacks = [m for m in get_fallback_models() if m != model]
+    # Order-preserving dedupe; a fallback equal to the primary would be a no-op.
+    fallbacks = [m for m in dict.fromkeys(get_fallback_models()) if m != model]
     if fallbacks:
         cmd += ["--fallback-model", ",".join(fallbacks)]
 
@@ -402,10 +395,8 @@ def run_claude(
 
         if result.returncode == 0:
             logger.info("claude CLI done: %s (%d chars)", label, len(result.stdout))
-            return _parse_and_log_usage(
-                result.stdout, label, structured=json_schema is not None,
-                model=model, fallbacks=fallbacks,
-            )
+            _warn_if_fell_back(result, model, label)
+            return _parse_and_log_usage(result.stdout, label, structured=json_schema is not None)
 
         logger.error(
             "claude CLI error [%s] rc=%d attempt=%d/%d\nstdout=%s\nstderr=%s",

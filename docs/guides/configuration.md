@@ -32,16 +32,20 @@ All monitoring targets are managed here — no code changes needed.
 
 ### Model fallback
 
-`fallback_model` (optional) is passed to the `claude` CLI as `--fallback-model`.
-When the primary model (`CLAUDE_MODEL` > `model` > built-in default) is
-retired, mistyped, unavailable to the account, or overloaded, the call finishes
-on the fallback instead of failing the run. A comma-separated value is tried in
-order.
+`fallback_model` (optional) is passed to the `claude` CLI as `--fallback-model`,
+which the CLI applies when the primary model (`CLAUDE_MODEL` > `model` >
+built-in default) is "overloaded or not available". An unknown id counts as not
+available: checked on 2026-10-28, a nonexistent primary with a fallback set
+finished on the fallback, and failed with exit 1 without one. A comma-separated
+value is tried in order; duplicates and an entry equal to the primary are
+dropped.
 
-The switch is not silent: when the answer comes from a fallback, the app log
-gets a `claude CLI fell back from <model> to <fallback>` warning. Use full model
-ids here — an alias such as `haiku` works for the CLI but cannot be matched
-against the model ids the CLI reports, so the warning would not fire.
+The switch is not silent. The CLI reports it as a `model_fallback` event in its
+stream, and the app log then gets a
+`claude CLI fell back from <model> to <fallback>` warning. That event, not the
+per-model usage breakdown, is the evidence: the CLI also uses helper models
+internally, so a Haiku id in the usage breakdown does not mean a fallback
+happened.
 
 ## `prompts/briefing.md`
 

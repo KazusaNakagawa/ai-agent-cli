@@ -551,12 +551,15 @@ class TestFallbackModel:
         monkeypatch.setattr(claude_runner, "get_model", lambda: "claude-primary-1")
         monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: None)
 
-    def _run(self, stdout=json.dumps({"result": "ok"})):
+    def _run(self, fallback_models=()):
         captured = {}
 
         def fake_stream(cmd, env, timeout, label):
             captured["cmd"] = cmd
-            return _make_result(stdout=stdout)
+            return claude_runner._StreamResult(
+                returncode=0, stdout=json.dumps({"result": "ok"}), stderr="",
+                fallback_models=fallback_models,
+            )
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner._stream_claude", side_effect=fake_stream):
@@ -582,25 +585,21 @@ class TestFallbackModel:
         monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-primary-1")
         assert "--fallback-model" not in self._run()
 
-    def test_answering_on_the_fallback_logs_a_warning(self, monkeypatch, caplog):
+    def test_duplicate_fallbacks_are_dropped_in_order(self, monkeypatch):
+        monkeypatch.setenv("CLAUDE_FALLBACK_MODEL", "claude-b-1,claude-a-1,claude-b-1,claude-primary-1")
+        cmd = self._run()
+        assert cmd[cmd.index("--fallback-model") + 1] == "claude-b-1,claude-a-1"
+
+    def test_a_reported_fallback_logs_a_warning(self, monkeypatch, caplog):
         monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-backup-1")
-        stdout = json.dumps({"result": "ok", "modelUsage": {"claude-backup-1": {"costUSD": 0.01}}})
-        self._run(stdout)
+        self._run(fallback_models=("claude-backup-1",))
         assert "fell back from claude-primary-1 to claude-backup-1 [test]" in caplog.text
 
-    def test_answering_on_the_primary_does_not_warn(self, monkeypatch, caplog):
-        # The CLI can also list internal helper models next to the primary.
+    def test_no_fallback_event_means_no_warning(self, monkeypatch, caplog):
+        # modelUsage may still list the fallback id (the CLI uses helper
+        # models internally); only the CLI's own event counts.
         monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-backup-1")
-        stdout = json.dumps(
-            {"result": "ok", "modelUsage": {"claude-primary-1": {}, "claude-backup-1": {}}}
-        )
-        self._run(stdout)
-        assert "fell back" not in caplog.text
-
-    def test_an_unrelated_model_in_usage_does_not_warn(self, monkeypatch, caplog):
-        # An alias primary never appears under its own name in modelUsage.
-        monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-backup-1")
-        self._run(json.dumps({"result": "ok", "modelUsage": {"claude-resolved-1": {}}}))
+        self._run()
         assert "fell back" not in caplog.text
 
 
@@ -797,6 +796,16 @@ class TestStreamClaude:
             result = claude_runner._stream_claude(["claude"], {}, 300, "test")
         assert result.returncode == 0
         assert json.loads(result.stdout)["result"] == "final answer"
+
+    def test_model_fallback_events_are_returned_in_order(self):
+        """The CLI's own system/model_fallback event is the fallback evidence."""
+        event = json.dumps(
+            {"type": "system", "subtype": "model_fallback", "fallback_model": "claude-backup-1"}
+        )
+        proc = _FakeProc([event, _result_line()])
+        with patch("src.claude_runner.subprocess.Popen", return_value=proc):
+            result = claude_runner._stream_claude(["claude"], {}, 300, "test")
+        assert result.fallback_models == ("claude-backup-1",)
 
     def test_timeout_salvages_streamed_text_and_kills_process(self):
         """Failure case: the process never exits, so the text streamed so far
