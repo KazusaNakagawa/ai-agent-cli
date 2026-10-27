@@ -31,6 +31,17 @@ describe("MarkdownView", () => {
     expect(link).toHaveAttribute("rel", "noopener noreferrer")
   })
 
+  it("renders single newlines as <br> when breaks is set (success)", () => {
+    const { container } = render(<MarkdownView content={"line one\nline two"} breaks />)
+    expect(container.querySelectorAll("p")).toHaveLength(1)
+    expect(container.querySelector("p br")).not.toBeNull()
+  })
+
+  it("keeps single newlines inside one paragraph without <br> by default (boundary)", () => {
+    const { container } = render(<MarkdownView content={"line one\nline two"} />)
+    expect(container.querySelector("p br")).toBeNull()
+  })
+
   it("renders links with default target=_blank behavior when no onLinkClick is passed (boundary)", () => {
     render(<MarkdownView content="[ext](https://example.com)" />)
     const link = screen.getByRole("link", { name: "ext" })
