@@ -13,7 +13,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ValidationError
 
-from src import usage_monitor
+from src import claude_rates, usage_monitor
 from src.usage_logger import USAGE_DIR, parse_usage_file_date
 from src.usage_report import build_summary
 from web.auth import require_bearer
@@ -142,6 +142,9 @@ class MonitorResponse(BaseModel):
     by_date: list[MonitorDateEntry]
     by_model: list[MonitorBucket]
     unpriced_models: list[str]
+    # When the hand-maintained rate table was last checked against the
+    # published pricing doc; ``None`` if the table does not say.
+    rates_as_of: str | None = None
 
 
 _ISO_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
@@ -222,6 +225,7 @@ def get_monitor(
         by_date=by_date,
         by_model=_buckets(report.by_model),
         unpriced_models=sorted(report.unpriced_models),
+        rates_as_of=claude_rates.rates_as_of(),
     )
     with _monitor_cache_lock:
         if cache_key not in _monitor_cache and len(_monitor_cache) >= _MONITOR_CACHE_MAX_ENTRIES:

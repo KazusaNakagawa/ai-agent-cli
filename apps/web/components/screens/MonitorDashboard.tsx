@@ -116,14 +116,19 @@ export function MonitorDashboard() {
           A rough guide, not a bill. Usage runs on a subscription plan, so these are
           API-equivalent figures meant for spotting scale and trends.
         </p>
+        <p data-testid="monitor-rates-as-of">
+          Rates are copied by hand from the published pricing page
+          {data.rates_as_of ? ` (last checked ${data.rates_as_of})` : ""} and are not
+          kept in sync with it, so a price change can take a while to show up here.
+        </p>
         <details data-testid="monitor-accuracy-note">
           <summary className="cursor-pointer underline-offset-2 hover:underline">
             Why the numbers are approximate
           </summary>
           <ul className="ml-1 mt-1 list-disc space-y-0.5 pl-4">
             <li>
-              Rates are maintained by hand from published pricing — there is no pricing
-              API to read them from, so a change upstream shows up here late.
+              Prompt-length pricing is not modelled. claude-haiku-5-5 charges more for
+              prompts over 100,000 tokens; those requests are costed at the lower rate.
             </li>
             <li>
               Server-side tool use is not counted. Web search bills per request on top of

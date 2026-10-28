@@ -7,6 +7,7 @@ These tests pin the file contract so the loader fails loudly instead.
 
 from __future__ import annotations
 
+import datetime
 import json
 from pathlib import Path
 
@@ -203,3 +204,36 @@ def test_integers_in_the_file_load_as_floats(tmp_path):
     path = _write_rates(tmp_path / "r.json", {"m": dict.fromkeys(RATE_FIELDS, 3)})
 
     assert claude_rates.load_rates(path) == {"m": (3.0,) * 5}
+
+
+# --- as_of ---
+
+
+def test_the_shipped_table_says_when_it_was_last_checked():
+    as_of = claude_rates.rates_as_of()
+
+    assert as_of is not None
+    # ISO date, so the Monitor tab can show it as-is.
+    assert datetime.date.fromisoformat(as_of)
+
+
+def test_as_of_is_read_from_the_table_file(monkeypatch, tmp_path):
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps({"as_of": "2026-01-02", "rates": {}}))
+    monkeypatch.setattr(claude_rates, "RATES_PATH", path)
+
+    assert claude_rates.rates_as_of() == "2026-01-02"
+
+
+@pytest.mark.parametrize(
+    "content",
+    ['{"rates": {}}', '{"as_of": 20260102, "rates": {}}', "not json", None],
+    ids=["missing", "non-string", "malformed", "no-file"],
+)
+def test_as_of_is_none_when_the_table_does_not_say(monkeypatch, tmp_path, content):
+    path = tmp_path / "r.json"
+    if content is not None:
+        path.write_text(content)
+    monkeypatch.setattr(claude_rates, "RATES_PATH", path)
+
+    assert claude_rates.rates_as_of() is None
