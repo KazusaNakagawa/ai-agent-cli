@@ -137,6 +137,55 @@ def test_a_perturbed_rate_is_caught(transcripts, rates_file, capsys):
     assert "claude-haiku-4-5-20251001" in out and "0.0030" in out
 
 
+HAIKU_5_5_BASE = {"input": 0.1, "output": 0.5, "cache_write_5m": 0.125,
+                  "cache_write_1h": 0.2, "cache_read": 0.01}
+
+
+def _long_prompt_haiku_5_5(cost: float) -> str:
+    # 200k input tokens puts the request on the over-100k tier ($0.50 / $2.50),
+    # so Claude Code bills $0.1025 where the base-tier entry gives $0.0205.
+    return _cost_state_line({"claude-haiku-5-5": {
+        "inputTokens": 200_000, "outputTokens": 1_000, "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0, "webSearchRequests": 0, "costUSD": cost}})
+
+
+@pytest.mark.parametrize("tiered, expected", [(False, 1), (True, 0)])
+def test_a_higher_tier_bill_is_drift_only_for_an_unflagged_model(
+    transcripts, rates_file, tiered, expected
+):
+    _write(transcripts / "p" / "s.jsonl", [_long_prompt_haiku_5_5(0.1025)])
+    entry = {**HAIKU_5_5_BASE, **({"tiered": True} if tiered else {})}
+
+    code = cmr.main(
+        ["--transcripts", str(transcripts),
+         "--rates", str(rates_file({"claude-haiku-5-5": entry}))]
+    )
+
+    assert code == expected
+
+
+def test_a_tiered_model_billed_below_its_floor_is_still_drift(transcripts, rates_file, capsys):
+    _write(transcripts / "p" / "s.jsonl", [_long_prompt_haiku_5_5(0.001)])
+
+    code = cmr.main(
+        ["--transcripts", str(transcripts),
+         "--rates", str(rates_file({"claude-haiku-5-5": {**HAIKU_5_5_BASE, "tiered": True}}))]
+    )
+
+    assert code == 1
+    assert "claude-haiku-5-5" in capsys.readouterr().out
+
+
+def test_a_non_boolean_tiered_flag_is_a_diagnostic(transcripts, rates_file, capsys):
+    code = cmr.main(
+        ["--transcripts", str(transcripts),
+         "--rates", str(rates_file({"claude-haiku-5-5": {**HAIKU_5_5_BASE, "tiered": "yes"}}))]
+    )
+
+    assert code == 1
+    assert "non-boolean 'tiered' flag" in capsys.readouterr().out
+
+
 def test_an_error_smaller_than_the_cache_write_bracket_is_not_flagged(
     transcripts, rates_file
 ):

@@ -281,6 +281,17 @@ def test_a_normal_step_failure_propagates_and_stops_the_run():
     assert calls == []
 
 
+def test_a_failure_logs_the_cause_not_just_the_step(caplog):
+    # The CLI reports the exception on stderr only, so the app log is the
+    # sole persistent trace of why a scheduled run failed.
+    wf = Workflow(id="w", title="W", steps=(Step("boom", _boom),))
+
+    with pytest.raises(RuntimeError):
+        run_workflow(wf)
+
+    assert "workflow failed: w at step boom: step exploded" in caplog.text
+
+
 def test_a_failed_run_record_is_attached_to_the_raised_exception():
     # The record is the only trace of a failed run, so it must survive the
     # raise — #455 persists it from here.
