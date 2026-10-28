@@ -1,6 +1,6 @@
 name: web
 
-# Runs on every PR to dev — deliberately NOT path-filtered, and the job is named
+# Runs on every PR to dev or main — deliberately NOT path-filtered, and the job is named
 # `web` rather than `test` so it reports a status context distinct from
 # pytest.yml's. Two workflows reporting the same context name let a real failure
 # be masked by an unrelated pass. See #447.
@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - dev
+      - main
 
 jobs:
   web:
