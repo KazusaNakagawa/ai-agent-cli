@@ -143,6 +143,32 @@ class JournalChatConfig(BaseModel):
     trusted_write_dirs: list[str] = Field(default_factory=list)
 
 
+class SpeechConfig(BaseModel):
+    """Spoken briefing settings (#517).
+
+    The script text is always written; ``audio`` additionally turns it into an
+    ``.m4a`` with macOS ``say``. Off by default, so installs without a TTS
+    engine see no new subprocess.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    audio: bool = False
+    # A ``say -v`` voice name (e.g. "Kyoko"); None = the system voice.
+    voice: str | None = None
+    # Upper bound on the script length; trimmed by whole sentences. None = full.
+    max_chars: int | None = Field(default=None, ge=1)
+
+
+class SlidesConfig(BaseModel):
+    """Marp slide deck settings (#518)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Claims per slide; a story is cut there, geopolitics / sectors continue.
+    max_claims: int = Field(default=3, ge=1)
+
+
 class BriefingFileConfig(BaseModel):
     """The part expressed in ``briefing.json``. Contains no credentials.
 
@@ -155,6 +181,10 @@ class BriefingFileConfig(BaseModel):
     # Model ID passed to the claude CLI (optional). DEFAULT_MODEL if unset.
     # Precedence: CLAUDE_MODEL env > this config value > DEFAULT_MODEL (see claude_runner.get_model).
     model: str | None = None
+    # Passed as --fallback-model: the CLI switches to it when ``model`` is
+    # unavailable or overloaded. Comma-separated to try several in order.
+    # Precedence: CLAUDE_FALLBACK_MODEL env > this config value > none.
+    fallback_model: str | None = None
     portfolio: PortfolioConfig
     # Optional FX tracking. Default (no pairs) leaves the briefing USD-only.
     fx: FxConfig = Field(default_factory=FxConfig)
@@ -164,6 +194,8 @@ class BriefingFileConfig(BaseModel):
     # Optional Obsidian vault integration. None = feature disabled.
     obsidian: ObsidianConfig | None = None
     journal_chat: JournalChatConfig = Field(default_factory=JournalChatConfig)
+    speech: SpeechConfig = Field(default_factory=SpeechConfig)
+    slides: SlidesConfig = Field(default_factory=SlidesConfig)
 
 
 class BriefingConfig(BriefingFileConfig):

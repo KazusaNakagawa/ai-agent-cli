@@ -123,7 +123,11 @@ def send_to_discord(
     text = _wrap_tables_in_codeblock(text)
     chunks = _chunk_preserving_fences(text)
     for i, chunk in enumerate(chunks, 1):
-        res = requests.post(url, headers=headers, json={"content": chunk})
+        # Briefing text is LLM output informed by web pages, so a prompt-injected
+        # "@everyone" must never notify the channel.
+        res = requests.post(
+            url, headers=headers, json={"content": chunk, "allowed_mentions": {"parse": []}},
+        )
         res.raise_for_status()
         logger.debug("Discord send done (chunk %d/%d)", i, len(chunks))
     logger.info("Discord send done (%d chunks total)", len(chunks))

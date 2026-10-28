@@ -226,12 +226,14 @@ briefing には承認ステップが無いため、パイロットでは骨格�
 | `_preflight()` (L21) | `preflight` | `preamble=True` |
 | `BRIEFING_SKIP_IF_EXISTS` + `_is_degraded_md` (L51) | `Workflow.guard` | `force` で無視 |
 | `fetch_fx_context` (L63) | `fx` | — |
-| `fetch_stock_moves` (L66) | `stocks` | — |
-| `generate_briefing` + `looks_like_briefing` (L69-79) | `generate` | 内部の2並列は generator 側に残す |
-| `save_briefing_md` (L87) | `persist` | 配信ステップより必ず前。`OSError` を自身で捕捉し `md_written` を bool で返す |
+| `fetch_stock_moves` (L66) | `stocks` | 現在は `fetch_stock_snapshot` でテキストと quotes を返す（#506） |
+| `generate_briefing` + `looks_like_briefing` (L69-79) | `generate` | 内部の並列（メイン・セクター・保有銘柄示唆の最大 3 本、#506）は generator 側に残す。現在は `generate_briefing_document` で `BriefingDocument` を返し、後続は描画した Markdown を使う（#513）。体裁検査は `looks_like_briefing_document` で、検証済みの `MainBlock` があればテキストの推定を使わない（#515） |
+| `save_briefing_md` (L87) | `persist` | 配信ステップより必ず前。`OSError` を自身で捕捉し `md_written` を bool で返す。IR の JSON も並べて保存するが、その失敗は `md_written` に影響しない（#513） |
 | `index_briefings` (L104) | `index` | ステップ自身が例外を握り潰す, `skip_if=lambda ctx: not ctx.results["persist"]` |
 | `send_to_discord` (L110) | `deliver_discord` | `skip_if=` 認証情報未設定 |
-| `send_to_notion` (L119) | `deliver_notion` | `skip_if=` 認証情報未設定 |
+| `send_to_notion` (L119) | `deliver_notion` | `skip_if=` 認証情報未設定。本文は `render_document_notion` で IR から組んだブロックを渡す（#516） |
+| （新規、#517） | `speech` | 最後に実行。`render_document_speech` で読み上げ原稿を `output/speech/` に書き、`speech.audio` が有効なら `say` で `.m4a` も作る。書き込み失敗も TTS の欠落・失敗もステップ自身が警告して握り潰す |
+| （新規、#518） | `slides` | `render_document_slides` で Marp の Markdown を `output/slides/briefing_<date>.slides.md` に書く。1 枚あたりの主張数は `slides.max_claims`。書き込み失敗はステップ自身が警告して握り潰す。PDF / PPTX への変換はパイプラインでは行わず、必要なときに `npx @marp-team/marp-cli <file> --pdf`（または `--pptx`）で変換する |
 
 **移植で挙動を変えない。** 現状 Discord / Notion 送信は best-effort ではなく例外が伝播するので、`best_effort=False` のまま移植する。ここを変えるかどうかは別 issue で判断する。
 

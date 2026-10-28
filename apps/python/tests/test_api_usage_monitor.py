@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from src import usage_monitor
+from src import claude_rates, usage_monitor
 
 
 def _line(mid, model="claude-sonnet-5", inp=100, out=10, ts="2026-07-10T03:00:00.000Z"):
@@ -68,6 +68,9 @@ async def test_monitor_returns_breakdowns(authed_client, transcripts_root):
         "claude-future-9",
     }
     assert data["unpriced_models"] == ["claude-future-9"]
+    # The UI shows how fresh the hand-maintained rates are.
+    assert data["rates_as_of"] == claude_rates.rates_as_of()
+    assert data["rates_as_of"] is not None
 
     # by_date is chronological and carries per-model splits
     dates = [d["date"] for d in data["by_date"]]

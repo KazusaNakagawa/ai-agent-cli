@@ -170,9 +170,26 @@ def fetch_stock_moves(tickers: list[str], fx_change_pct: float | None = None) ->
     unchanged, keeping the pipeline working when the FX fetch fails or no pair
     is configured.
     """
-    quotes = fetch_stock_quotes(tickers)
+    return fetch_stock_snapshot(tickers, fx_change_pct)[0]
+
+
+def format_stock_moves(quotes: dict[str, StockQuote], fx_change_pct: float | None = None) -> str:
+    """Render fetched quotes as the one-line-per-ticker block the prompts use."""
     if fx_change_pct is None:
         return "\n".join(f"{t}: {_format_move(q)}" for t, q in quotes.items())
     return "\n".join(
         f"{t}: {_format_move_with_jpy(q, fx_change_pct)}" for t, q in quotes.items()
     )
+
+
+def fetch_stock_snapshot(
+    tickers: list[str], fx_change_pct: float | None = None,
+) -> tuple[str, dict[str, StockQuote]]:
+    """Fetch once and return both the prompt text and the structured quotes.
+
+    The BriefScript holdings renderer (#506) injects figures from the quotes,
+    so they must be the same fetch the prompt text was built from — parsing
+    the text back, or fetching twice, could disagree with what the LLM saw.
+    """
+    quotes = fetch_stock_quotes(tickers)
+    return format_stock_moves(quotes, fx_change_pct), quotes

@@ -4,7 +4,8 @@ Reuses the repo-code Indexer/Retriever unchanged: pointing
 ``LocalLLMConfig.repo_root`` at the briefing output directory and querying a
 dedicated Chroma collection (``BRIEFING_COLLECTION_NAME``) is enough — the
 extension allowlist already accepts ``.md`` and rejects the extension-less
-session-id files under ``output/briefing/.sessions/``.
+session-id files under ``output/briefing/.sessions/``. The BriefScript IR
+JSON under ``output/briefing/ir/`` is excluded: it repeats the MD's content.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-from src.constants import BRIEFING_OUTPUT_DIR
+from src.constants import BRIEFING_IR_SUBDIR, BRIEFING_OUTPUT_DIR
 
 from .clients import ensure_models_available, make_chroma_collection, make_ollama_client
 from .config import BRIEFING_COLLECTION_NAME, LocalLLMConfig
@@ -21,7 +22,11 @@ from .retriever import RetrievedChunk, Retriever
 
 
 def _briefing_cfg(cfg: LocalLLMConfig, briefing_dir: Path | None) -> LocalLLMConfig:
-    return dataclasses.replace(cfg, repo_root=briefing_dir or BRIEFING_OUTPUT_DIR)
+    return dataclasses.replace(
+        cfg,
+        repo_root=briefing_dir or BRIEFING_OUTPUT_DIR,
+        extra_exclude_dirs=cfg.extra_exclude_dirs | {BRIEFING_IR_SUBDIR},
+    )
 
 
 def index_briefings(cfg: LocalLLMConfig, *, briefing_dir: Path | None = None) -> IndexStats:
