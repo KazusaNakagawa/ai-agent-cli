@@ -27,6 +27,13 @@ class StepContext:
     There is deliberately no shared mutable scratch space: a step that needs a
     value must name the step it came from, which keeps the dependency visible
     in the definition.
+
+    ``force`` is a fact about the run rather than a step's output, which is why
+    it sits here and not in ``results``. Only a step that starts another
+    workflow needs it — the composite ``daily`` definition would otherwise
+    accept ``--force`` at the CLI and silently drop it before the children.
+    ``dry_run`` is deliberately absent: the runner never reaches a non-preamble
+    step on a dry run, so a step could never observe it being true.
     """
 
     run_id: str
@@ -34,6 +41,7 @@ class StepContext:
     inputs: dict[str, Any]
     results: dict[str, Any]
     logger: Logger
+    force: bool = False
 
 
 @dataclass(frozen=True)

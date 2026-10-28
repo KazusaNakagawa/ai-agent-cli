@@ -1,6 +1,6 @@
 """The daily model-rate check, declared as a workflow (#475).
 
-Runs last in ``bin/run.sh`` so a model missing from ``src/model_rates.json``
+Runs last in the ``daily`` workflow so a model missing from ``src/model_rates.json``
 fails the next morning's run instead of reporting $0 in the Monitor tab for
 weeks. Drift between the table and Claude Code's own cost records only warns:
 it can be a mid-flight price change that needs a human to read the pricing
