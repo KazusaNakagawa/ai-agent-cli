@@ -1,6 +1,6 @@
 name: pytest
 
-# Runs on every PR to dev — deliberately NOT path-filtered.
+# Runs on every PR to dev or main — deliberately NOT path-filtered.
 # `test` is a required status check on dev. A path-filtered workflow reports
 # nothing when it is skipped, so the required context stays pending forever and
 # docs-only PRs become unmergeable without an admin override (#447).
@@ -9,6 +9,7 @@ on:
   pull_request:
     branches:
       - dev
+      - main
 
 jobs:
   # One leg per supported interpreter. The range is declared in
