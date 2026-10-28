@@ -141,16 +141,23 @@ tokens or `.env` files.
 
 ## Releasing
 
-Maintainers only. One-time setup in the GitHub repository settings:
+Maintainers only. One-time setup, with no npm token stored anywhere:
 
-1. **Environments → New environment** `npm-publish`, with yourself as a required reviewer.
-2. Add an `NPM_TOKEN` secret (an npm automation token) to that environment.
+1. **GitHub → Settings → Environments → New environment** `npm-publish`, with yourself as a
+   required reviewer and deployments limited to `v*` tags.
+2. **npmjs.com → `brief-lens` → Settings → Trusted Publisher → GitHub Actions**: owner
+   `KazusaNakagawa`, repository `ai-agent-cli`, workflow `publish.yml`, environment
+   `npm-publish`.
+
+The workflow then authenticates to npm with its own OIDC token (`id-token: write`), so there is
+no `NPM_TOKEN` secret to create or rotate. v0.1.0 was published from a maintainer's machine
+before the trusted publisher was set up.
 
 Then bump `packages/brief-lens/package.json` `version`, merge to `main`, and push a matching
 tag:
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.1.1 && git push origin v0.1.1
 ```
 
 The `publish` workflow checks that the tag matches the package version, runs the launcher
