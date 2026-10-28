@@ -2,6 +2,8 @@
 
 *[English](README.md) | 日本語*
 
+[![npm](https://img.shields.io/npm/v/brief-lens)](https://www.npmjs.com/package/brief-lens)
+
 地政学イベント・株価変動・セクターテーマを毎朝収集し、特定のポートフォリオに引きつけて解釈したうえで、3分で読めるブリーフィングを Discord と Notion に配信する LLM エージェントシステム。デモではなく実運用前提で作られており、2026年4月からメンテナ本人の朝のブリーフィングとして使われている。
 
 | | |
@@ -97,7 +99,7 @@ packages/brief-lens/              # `npx brief-lens` ランチャー — ~/.brie
 
 ### npx でクイックスタート
 
-Web UI だけなら clone 不要です。macOS または Linux、Node.js 18 以上、[uv](https://github.com/astral-sh/uv)、有料の Claude プラン（Pro/Max）でログイン済みの [Claude Code CLI](https://claude.ai/code) が必要です。
+Web UI だけなら clone 不要です。npm に [`brief-lens`](https://www.npmjs.com/package/brief-lens) として公開しています。macOS または Linux、Node.js 18 以上、[uv](https://github.com/astral-sh/uv)、有料の Claude プラン（Pro/Max）でログイン済みの [Claude Code CLI](https://claude.ai/code) が必要です。
 
 ```bash
 npx brief-lens            # 初回は ~/.brief-lens と Python バックエンドを自動セットアップ
@@ -190,7 +192,7 @@ cd apps/web && npm run test:e2e         # Playwright
 cd packages/brief-lens && npm test      # npx ランチャー（node:test）
 ```
 
-GitHub Actions は `dev` 向けのすべての Pull Request で 3 つのワークフローを起動する。[`pytest.yml`](.github/workflows/pytest.yml) と [`web.yml`](.github/workflows/web.yml) は、それぞれ `apps/python/`・`apps/web/`（またはワークフロー自身）に変更があるときだけテストを実行する。[`launcher.yml`](.github/workflows/launcher.yml) は常に実行され、npm の tarball を作ってインストールし、起動まで確認する。テストは `apps/python/tests/config/briefing.json` を読み込む。`conftest.py` が `src.config` の import より前に `BRIEFING_CONFIG_PATH` を固定するため、実行に個人設定は一切不要。
+GitHub Actions は `dev` と `main` 向けのすべての Pull Request で 3 つのワークフローを起動する。[`pytest.yml`](.github/workflows/pytest.yml) と [`web.yml`](.github/workflows/web.yml) は、それぞれ `apps/python/`・`apps/web/`（またはワークフロー自身）に変更があるときだけテストを実行する。[`launcher.yml`](.github/workflows/launcher.yml) は常に実行され、npm の tarball を作ってインストールし、起動まで確認する。テストは `apps/python/tests/config/briefing.json` を読み込む。`conftest.py` が `src.config` の import より前に `BRIEFING_CONFIG_PATH` を固定するため、実行に個人設定は一切不要。
 
 ---
 
