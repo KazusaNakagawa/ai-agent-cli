@@ -9,8 +9,8 @@ npx brief-lens
 The first run sets up a data home and the Python backend, then starts the API and
 the Web UI and opens your browser. Later runs start in a few seconds.
 
-> **Release status:** `brief-lens` is published from `v*` tags (see [Releasing](#releasing)).
-> Until the first release is on npm, try a local build as described in
+> **Release status:** `brief-lens` is on npm and published from `v*` tags (see
+> [Releasing](#releasing)). To try changes that are not released yet, see
 > [Trying an unreleased build](#trying-an-unreleased-build).
 
 ## Prerequisites
@@ -132,7 +132,7 @@ path as the command makes npx try to execute the file.
 ```bash
 cd apps/web && npm ci && cd ../..
 cd packages/brief-lens && npm pack --pack-destination /tmp
-npx --package=/tmp/brief-lens-0.1.0.tgz brief-lens
+npx --package="/tmp/brief-lens-$(node -p 'require("./package.json").version').tgz" brief-lens
 ```
 
 `npm pack` runs `scripts/build.mjs`, which builds the Web UI into `apps/web/.next-pack` (a
@@ -141,16 +141,23 @@ tokens or `.env` files.
 
 ## Releasing
 
-Maintainers only. One-time setup in the GitHub repository settings:
+Maintainers only. One-time setup, with no npm token stored anywhere:
 
-1. **Environments → New environment** `npm-publish`, with yourself as a required reviewer.
-2. Add an `NPM_TOKEN` secret (an npm automation token) to that environment.
+1. **GitHub → Settings → Environments → New environment** `npm-publish`, with yourself as a
+   required reviewer and deployments limited to `v*` tags.
+2. **npmjs.com → `brief-lens` → Settings → Trusted Publisher → GitHub Actions**: owner
+   `KazusaNakagawa`, repository `ai-agent-cli`, workflow `publish.yml`, environment
+   `npm-publish`.
+
+The workflow then authenticates to npm with its own OIDC token (`id-token: write`), so there is
+no `NPM_TOKEN` secret to create or rotate. v0.1.0 was published from a maintainer's machine
+before the trusted publisher was set up.
 
 Then bump `packages/brief-lens/package.json` `version`, merge to `main`, and push a matching
 tag:
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.1.1 && git push origin v0.1.1
 ```
 
 The `publish` workflow checks that the tag matches the package version, runs the launcher
