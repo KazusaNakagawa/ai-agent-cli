@@ -30,6 +30,23 @@ All monitoring targets are managed here — no code changes needed.
 }
 ```
 
+### Model fallback
+
+`fallback_model` (optional) is passed to the `claude` CLI as `--fallback-model`,
+which the CLI applies when the primary model (`CLAUDE_MODEL` > `model` >
+built-in default) is "overloaded or not available". An unknown id counts as not
+available: checked on 2026-10-28, a nonexistent primary with a fallback set
+finished on the fallback, and failed with exit 1 without one. A comma-separated
+value is tried in order; duplicates and an entry equal to the primary are
+dropped.
+
+The switch is not silent. The CLI reports it as a `model_fallback` event in its
+stream, and the app log then gets a
+`claude CLI fell back from <model> to <fallback>` warning. That event, not the
+per-model usage breakdown, is the evidence: the CLI also uses helper models
+internally, so a Haiku id in the usage breakdown does not mean a fallback
+happened.
+
 ## `prompts/briefing.md`
 
 Prompt template for the briefing agent. Variables: `{tickers}` `{themes}` `{geopolitical}` `{watch_sectors}` `{stocks}`. Edit this file to change Claude's output behavior.
@@ -51,6 +68,7 @@ cp .env.example .env
 | `BRAVE_API_KEY` | [api-dashboard.search.brave.com](https://api-dashboard.search.brave.com/) | Local LLM briefing web search |
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/) | Only used in `api` auth mode; injected into the `claude` subprocess. In `cli` mode it is stripped so the CLI's OAuth session is used |
 | `CLAUDE_MODEL` | — | Override the model passed to the `claude` CLI. Empty = CLI default |
+| `CLAUDE_FALLBACK_MODEL` | — | Override `fallback_model` in `briefing.json`: the model(s), comma-separated, the `claude` CLI switches to when the primary model is unavailable or overloaded. Empty = no fallback |
 | `RCLONE_REMOTE` | `rclone config` remote name | Upload target for the briefing archive (default `repo-briefing`) |
 
 ### Credential Management

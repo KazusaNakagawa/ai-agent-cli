@@ -44,6 +44,9 @@ class StreamState:
         self.result_raw: str | None = None
         # "API Error: NNN" messages seen in tool results during the run.
         self.api_errors: list[str] = []
+        # Models the CLI switched to under --fallback-model, in order, from its
+        # ``system``/``model_fallback`` events.
+        self.fallback_models: list[str] = []
 
 
 def _find_api_errors(obj: dict) -> list[str]:
@@ -100,6 +103,10 @@ def consume_stream_line(line: str, state: StreamState) -> list[str]:
                 return parts
     elif obj_type == "user":
         state.api_errors.extend(_find_api_errors(obj))
+    elif obj_type == "system" and obj.get("subtype") == "model_fallback":
+        fallback = obj.get("fallback_model")
+        if isinstance(fallback, str) and fallback:
+            state.fallback_models.append(fallback)
     elif obj_type == "result":
         state.result_raw = line
         usage = obj.get("usage")
