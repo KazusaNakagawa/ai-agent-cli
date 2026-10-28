@@ -35,12 +35,13 @@ Exit codes: 0 when everything reconciles, 1 when anything does not.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import re
 import urllib.request
 from pathlib import Path
 
-from src.claude_rates import RATE_FIELDS, RATES_PATH, load_rates
+from src.claude_rates import RATE_FIELDS, RATES_PATH, load_rates, load_tiered
 
 DEFAULT_TRANSCRIPTS = Path.home() / ".claude" / "projects"
 
@@ -113,9 +114,15 @@ def _describe(model: str, offenders: list[tuple[float, float, float]], total: in
 
 
 def check(
-    root: Path, rates: dict[str, tuple[float, ...]]
+    root: Path,
+    rates: dict[str, tuple[float, ...]],
+    tiered: frozenset[str] = frozenset(),
 ) -> tuple[list[str], list[str], int]:
-    """Return (unpriced model ids, drift descriptions, reconciled record count)."""
+    """Return (unpriced model ids, drift descriptions, reconciled record count).
+
+    A model in ``tiered`` is priced by prompt length and its entry holds the
+    cheapest tier, so only a bill below the table's floor counts as drift.
+    """
     unpriced: set[str] = set()
     offenders: dict[str, list[tuple[float, float, float]]] = {}
     per_model_total: dict[str, int] = {}
@@ -158,7 +165,8 @@ def check(
             tolerance = max(ABS_TOLERANCE_USD, actual * REL_TOLERANCE)
             reconciled += 1
             per_model_total[model] = per_model_total.get(model, 0) + 1
-            if actual < low - tolerance or actual > high + tolerance:
+            above = actual > high + tolerance and model not in tiered
+            if actual < low - tolerance or above:
                 offenders.setdefault(model, []).append((actual, low, high))
 
     if skipped["files"]:
@@ -195,6 +203,19 @@ def parse_pricing_table(markdown: str) -> tuple[dict[str, tuple[float, ...]], se
     by prompt length, like Claude Haiku 5.5 — cannot be expressed as one rate
     tuple, so it lands in ``tiered`` instead of ``rates``.
     """
+    return _split_tiers(parse_pricing_rows(markdown))
+
+
+def _split_tiers(
+    rows: dict[str, list[tuple[float, ...]]],
+) -> tuple[dict[str, tuple[float, ...]], set[str]]:
+    rates = {model: found[0] for model, found in rows.items() if len(found) == 1}
+    tiered = {model for model, found in rows.items() if len(found) > 1}
+    return rates, tiered
+
+
+def parse_pricing_rows(markdown: str) -> dict[str, list[tuple[float, ...]]]:
+    """Every row of the main per-model table, grouped by model id."""
     lines = markdown.splitlines()
     try:
         start = next(
@@ -217,10 +238,57 @@ def parse_pricing_table(markdown: str) -> tuple[dict[str, tuple[float, ...]], se
                 raise ValueError(f"no price in pricing table cell {cell!r} for {name!r}")
             prices.append(float(match.group(1)))
         rows.setdefault(display_name_to_id(name), []).append(tuple(prices))
+    return rows
 
-    rates = {model: found[0] for model, found in rows.items() if len(found) == 1}
-    tiered = {model for model, found in rows.items() if len(found) > 1}
-    return rates, tiered
+
+def suggest_entries(models: list[str], rows: dict[str, list[tuple[float, ...]]]) -> list[str]:
+    """Ready-to-paste ``model_rates.json`` entries for unpriced models.
+
+    ``rows`` is ``parse_pricing_rows`` output. A tiered model gets the tier
+    with the lowest input rate, flagged ``"tiered": true`` so reconciliation
+    tolerates the higher tiers. Nothing here writes the table: a human decides.
+    """
+    lines = []
+    for model in models:
+        found = rows.get(_DATED_ID.sub("", model))
+        if not found:
+            lines.append(f"{model}: not in the pricing doc")
+            continue
+        # Prompt-length tiers rise in every column together, so the input rate
+        # alone identifies the base tier.
+        rate = min(found, key=lambda r: r[RATE_FIELDS.index("input")])
+        fields: dict[str, float | bool] = dict(zip(RATE_FIELDS, rate))
+        if len(found) > 1:
+            fields["tiered"] = True
+        entry = json.dumps({model: fields})[1:-1]
+        if len(found) > 1:
+            entry += (
+                f"  (lowest-input of {len(found)} prompt-length tiers;"
+                " requests on a higher tier are under-counted)"
+            )
+        lines.append(entry)
+    return lines
+
+
+# Advisory lookups must not hold up a run that is already failing.
+SUGGEST_FETCH_TIMEOUT_SEC = 5
+
+# urlopen().read() raises http.client.HTTPException (e.g. IncompleteRead) on a
+# dropped body, which is not an OSError.
+_FETCH_ERRORS = (OSError, http.client.HTTPException, ValueError)
+
+
+def suggest_from_upstream(models: list[str]) -> list[str]:
+    """``suggest_entries`` against the live pricing doc, never raising.
+
+    An unreachable or reshaped doc yields one explanatory line, so a caller
+    reporting unpriced models still reports them.
+    """
+    try:
+        rows = parse_pricing_rows(fetch_pricing_doc(timeout=SUGGEST_FETCH_TIMEOUT_SEC))
+    except _FETCH_ERRORS as e:
+        return [f"could not look up the pricing doc: {e}"]
+    return suggest_entries(models, rows)
 
 
 def diff_upstream(
@@ -256,24 +324,29 @@ def diff_upstream(
     return lines
 
 
-def fetch_pricing_doc() -> str:
+def fetch_pricing_doc(timeout: float = 30) -> str:
     # The docs host answers urllib's default User-Agent with 403.
     request = urllib.request.Request(PRICING_URL, headers={"User-Agent": "ai-agent-cli rate_check"})
-    with urllib.request.urlopen(request, timeout=30) as resp:  # noqa: S310 — fixed https URL
+    with urllib.request.urlopen(request, timeout=timeout) as resp:  # noqa: S310 — fixed https URL
         return resp.read().decode("utf-8")
 
 
-def _print_upstream_diff(rates: dict[str, tuple[float, ...]]) -> None:
+def _print_upstream_diff(
+    rates: dict[str, tuple[float, ...]],
+) -> dict[str, list[tuple[float, ...]]] | None:
+    """Print the diff; return the parsed rows for reuse, or None if unusable."""
     print(f"Pricing doc ({PRICING_URL}):")
     try:
-        upstream, tiered = parse_pricing_table(fetch_pricing_doc())
-    except (OSError, ValueError) as e:
+        rows = parse_pricing_rows(fetch_pricing_doc())
+    except _FETCH_ERRORS as e:
         # Advisory only: an unreachable or reshaped doc must not mask the
         # transcript checks, which alone decide the exit code.
         print(f"  could not check: {e}")
-        return
+        return None
+    upstream, tiered = _split_tiers(rows)
     for line in diff_upstream(rates, upstream, tiered) or ["no differences"]:
         print(f"  {line}")
+    return rows
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -301,24 +374,32 @@ def main(argv: list[str] | None = None) -> int:
     # same treatment as any other finding rather than a traceback.
     try:
         rates = load_rates(args.rates)
+        tiered = load_tiered(args.rates)
     except (OSError, ValueError) as e:
         print(f"Rate table cannot be read: {e}")
         return 1
 
-    if args.check_upstream:
-        _print_upstream_diff(rates)
+    rows = _print_upstream_diff(rates) if args.check_upstream else None
 
     if not args.transcripts.is_dir():
         print(f"no transcripts found at {args.transcripts} — nothing to check")
         return 0
 
-    unpriced, drift, reconciled = check(args.transcripts, rates)
+    unpriced, drift, reconciled = check(args.transcripts, rates, tiered)
 
     if unpriced:
         print("Models seen in transcripts with no entry in the rate table:")
         for model in unpriced:
             print(f"  {model}")
         print(f"\nAdd them to {args.rates} with their published rates.")
+        if rows is not None:
+            print("Suggested entries from the pricing doc (check before pasting):")
+            for line in suggest_entries(unpriced, rows):
+                print(f"  {line}")
+        elif args.check_upstream:
+            print("No suggested entries: the pricing doc could not be read (see above).")
+        else:
+            print("Re-run with --check-upstream for ready-to-paste entries.")
     if drift:
         print("Rates disagree with Claude Code's own cost records:")
         for line in drift:
