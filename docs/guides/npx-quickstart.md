@@ -9,8 +9,8 @@ npx brief-lens
 The first run sets up a data home and the Python backend, then starts the API and
 the Web UI and opens your browser. Later runs start in a few seconds.
 
-> **Release status:** `brief-lens` is published from `v*` tags (see [Releasing](#releasing)).
-> Until the first release is on npm, try a local build as described in
+> **Release status:** `brief-lens` is on npm and published from `v*` tags (see
+> [Releasing](#releasing)). To try changes that are not released yet, see
 > [Trying an unreleased build](#trying-an-unreleased-build).
 
 ## Prerequisites
@@ -132,7 +132,7 @@ path as the command makes npx try to execute the file.
 ```bash
 cd apps/web && npm ci && cd ../..
 cd packages/brief-lens && npm pack --pack-destination /tmp
-npx --package=/tmp/brief-lens-0.1.0.tgz brief-lens
+npx --package="/tmp/brief-lens-$(node -p 'require("./package.json").version').tgz" brief-lens
 ```
 
 `npm pack` runs `scripts/build.mjs`, which builds the Web UI into `apps/web/.next-pack` (a
