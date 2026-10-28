@@ -52,6 +52,8 @@ class _StreamResult:
     returncode: int
     stdout: str
     stderr: str
+    # Models the CLI reported switching to (``model_fallback`` events).
+    fallback_models: tuple[str, ...] = ()
 
 
 def _stream_claude(cmd: list[str], env: dict[str, str], timeout: int, label: str) -> _StreamResult:
@@ -127,6 +129,7 @@ def _stream_claude(cmd: list[str], env: dict[str, str], timeout: int, label: str
         returncode=proc.returncode,
         stdout=state.result_raw or "",
         stderr=b"".join(stderr_chunks).decode("utf-8", errors="replace"),
+        fallback_models=tuple(state.fallback_models),
     )
 
 
@@ -224,21 +227,31 @@ def _save_partial_output(label: str, raw_output: str | None) -> None:
         logger.warning("failed to save partial output [%s]", label, exc_info=True)
 
 
-def _config_model() -> str | None:
-    """Return the ``model`` field from briefing.json. None if it cannot be read.
+def _config_str(field: str) -> str | None:
+    """Return a string field from briefing.json. None if unset or unreadable.
 
     To avoid blocking model resolution when briefing.json is missing or broken,
-    swallow exceptions and return None (the caller falls back to DEFAULT_MODEL).
+    swallow exceptions and return None (the caller falls back to its default).
     """
     try:
-        model = config_mod.CONFIG.model
+        value = getattr(config_mod.CONFIG, field)
     except FileNotFoundError:
         # briefing.json not yet created (e.g. right after web startup) is expected; ignore quietly.
         return None
     except Exception:  # noqa: BLE001 — unexpected config errors must not block model resolution
-        logger.warning("failed to read model from config, using DEFAULT_MODEL", exc_info=True)
+        logger.warning("failed to read %s from config, using the default", field, exc_info=True)
         return None
-    return model.strip() if model and model.strip() else None
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _config_model() -> str | None:
+    """Return the ``model`` field from briefing.json. None if it cannot be read."""
+    return _config_str("model")
+
+
+def _config_fallback_model() -> str | None:
+    """Return the ``fallback_model`` field from briefing.json. None if it cannot be read."""
+    return _config_str("fallback_model")
 
 
 def get_model() -> str:
@@ -251,6 +264,33 @@ def get_model() -> str:
     if env_model:
         return env_model
     return _config_model() or DEFAULT_MODEL
+
+
+def get_fallback_models() -> list[str]:
+    """Resolve the models passed to ``--fallback-model``, in the order to try.
+
+    Precedence: ``CLAUDE_FALLBACK_MODEL`` env > briefing.json ``fallback_model``.
+    Empty when neither is set, which leaves the CLI command unchanged.
+    """
+    raw = os.environ.get("CLAUDE_FALLBACK_MODEL", "").strip() or _config_fallback_model() or ""
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def _warn_if_fell_back(result: _StreamResult, model: str, label: str) -> None:
+    """Log when the CLI switched to a fallback model during the call.
+
+    A silent switch changes cost and output quality, so it must be visible.
+    The CLI's own ``model_fallback`` event is the evidence rather than
+    ``modelUsage``: the latter also lists models the CLI uses internally (often
+    with more output than the main model), and an alias primary never appears
+    there under its own name.
+    """
+    used = getattr(result, "fallback_models", ())
+    if isinstance(used, tuple) and used:
+        logger.warning(
+            "claude CLI fell back from %s to %s [%s] — check the configured model",
+            model, ", ".join(used), label,
+        )
 
 
 def _backoff_delay(attempt: int) -> float:
@@ -333,6 +373,10 @@ def run_claude(
     ]
     if json_schema is not None:
         cmd += ["--json-schema", json.dumps(json_schema)]
+    # Order-preserving dedupe; a fallback equal to the primary would be a no-op.
+    fallbacks = [m for m in dict.fromkeys(get_fallback_models()) if m != model]
+    if fallbacks:
+        cmd += ["--fallback-model", ",".join(fallbacks)]
 
     last_returncode = 0
     last_detail = ""
@@ -351,6 +395,7 @@ def run_claude(
 
         if result.returncode == 0:
             logger.info("claude CLI done: %s (%d chars)", label, len(result.stdout))
+            _warn_if_fell_back(result, model, label)
             return _parse_and_log_usage(result.stdout, label, structured=json_schema is not None)
 
         logger.error(
