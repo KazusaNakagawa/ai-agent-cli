@@ -2,6 +2,8 @@
 
 *English | [日本語](README.ja.md)*
 
+[![npm](https://img.shields.io/npm/v/brief-lens)](https://www.npmjs.com/package/brief-lens)
+
 An LLM agent system that collects geopolitical events, stock moves, and sector themes each morning, interprets them against a specific portfolio, and delivers a 3-minute brief to Discord and Notion. Built as a daily driver, not a demo — it has been the maintainer's own morning brief since April 2026.
 
 | | |
@@ -97,7 +99,7 @@ This is why **manual execution is the maintainer's current schedule** rather tha
 
 ### Quick start with npx
 
-Just the Web UI, no clone: needs macOS or Linux, Node.js 18+, [uv](https://github.com/astral-sh/uv) and a logged-in [Claude Code CLI](https://claude.ai/code) on a paid Claude plan (Pro/Max).
+Just the Web UI, no clone — published on npm as [`brief-lens`](https://www.npmjs.com/package/brief-lens). Needs macOS or Linux, Node.js 18+, [uv](https://github.com/astral-sh/uv) and a logged-in [Claude Code CLI](https://claude.ai/code) on a paid Claude plan (Pro/Max).
 
 ```bash
 npx brief-lens            # first run sets up ~/.brief-lens and the Python backend
@@ -190,7 +192,7 @@ cd apps/web && npm run test:e2e         # Playwright
 cd packages/brief-lens && npm test      # npx launcher (node:test)
 ```
 
-GitHub Actions starts all three workflows on every pull request to `dev`. [`pytest.yml`](.github/workflows/pytest.yml) and [`web.yml`](.github/workflows/web.yml) run their tests only when `apps/python/` or `apps/web/` (or the workflow itself) changed; [`launcher.yml`](.github/workflows/launcher.yml) always runs, and also packs the npm tarball, installs it and boots it. Tests load `apps/python/tests/config/briefing.json` — `conftest.py` pins `BRIEFING_CONFIG_PATH` before any `src.config` import, so no personal config is ever needed to run them.
+GitHub Actions starts all three workflows on every pull request to `dev` or `main`. [`pytest.yml`](.github/workflows/pytest.yml) and [`web.yml`](.github/workflows/web.yml) run their tests only when `apps/python/` or `apps/web/` (or the workflow itself) changed; [`launcher.yml`](.github/workflows/launcher.yml) always runs, and also packs the npm tarball, installs it and boots it. Tests load `apps/python/tests/config/briefing.json` — `conftest.py` pins `BRIEFING_CONFIG_PATH` before any `src.config` import, so no personal config is ever needed to run them.
 
 ---
 
