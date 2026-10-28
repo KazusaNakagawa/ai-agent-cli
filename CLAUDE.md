@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Layout
 
-Python sources live under `apps/python/`. Root-level `bin/run.sh` and `bin/chat.sh` are thin wrappers that `exec` into `apps/python/bin/` for backward compatibility.
+Python sources live under `apps/python/`. Root-level `bin/*.sh` scripts (e.g. `bin/workflow.sh`, `bin/chat.sh`) are thin wrappers that `exec` into `apps/python/bin/` for backward compatibility.
 
 ## Quick Commands
 
