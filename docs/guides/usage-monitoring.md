@@ -109,13 +109,13 @@ to `model_rates.json` — check the cache-hit footnotes, since some models
 python3 scripts/check_model_rates.py                       # default transcript root and table
 python3 scripts/check_model_rates.py --transcripts /path --rates /path/rates.json
 python3 scripts/check_model_rates.py --check-upstream      # also diff against the pricing doc
-bin/workflow.sh run model-rates                            # the daily gate (last step of bin/run.sh)
+bin/workflow.sh run model-rates                            # the daily gate (last step of `run daily`)
 ```
 
 `scripts/check_model_rates.py` is a thin wrapper over `src.rate_check`, which
 the `model-rates` workflow imports directly. The script exits non-zero on either
 of two findings; the workflow **fails** on an unpriced model, so a new model
-breaks the next morning's `bin/run.sh`, and only **warns** on drift, since that
+breaks the next morning's `bin/workflow.sh run daily`, and only **warns** on drift, since that
 can be a price change mid-flight that needs a human to read the pricing doc:
 
 - **Unpriced models** — a model id appears in transcript `message.usage`
@@ -241,7 +241,7 @@ python3 scripts/token_usage_report.py /path/to/other/projects  # alternate trans
 |---|---|
 | `No transcript usage found for this range.` | No `message.usage` lines in `~/.claude/projects` for those dates. Widen the range to **All time** to confirm the root is being found at all. |
 | `Unpriced models (excluded from cost): …` | The model id is missing from the rate table. Add it to `apps/python/src/model_rates.json` with its published rates, then re-run `scripts/check_model_rates.py`. |
-| `model-rates` workflow failed in `bin/run.sh` | Same cause, caught by the daily gate — the error names the missing ids. |
+| `model-rates` workflow failed in `bin/workflow.sh run daily` | Same cause, caught by the daily gate — the error names the missing ids. |
 | `<synthetic>` appears as a model | CLI-internal messages, not real model calls. Shown for completeness and labelled as such in the UI. |
 | Monitor and Settings > Usage disagree | Expected — different data sources (all Claude Code traffic vs. this app's runs). Neither is wrong. |
 | A change in usage does not show up | The API caches identical queries for 60 seconds. Wait, or switch range and back. |

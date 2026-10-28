@@ -1,6 +1,6 @@
 """Tests for the ``model-rates`` workflow (#475).
 
-The workflow is the daily gate in ``bin/run.sh``: an unpriced model must fail
+The workflow is the last step of ``daily``, the morning gate: an unpriced model must fail
 the run, while rate drift only warns so a mid-flight price change does not
 break the morning job.
 """
