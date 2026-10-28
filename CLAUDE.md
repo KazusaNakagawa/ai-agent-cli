@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Layout
 
-Python sources live under `apps/python/`. Root-level `bin/run.sh` and `bin/chat.sh` are thin wrappers that `exec` into `apps/python/bin/` for backward compatibility.
+Python sources live under `apps/python/`. Root-level `bin/*.sh` scripts (e.g. `bin/workflow.sh`, `bin/chat.sh`) are thin wrappers that `exec` into `apps/python/bin/` for backward compatibility.
 
 ## Quick Commands
 
@@ -19,8 +19,8 @@ uv pip sync requirements.txt   # Install deps
 uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt  # Recompile deps
 
 # From repo root
-bin/run.sh    # Run both agents
-bin/chat.sh   # Launch chat session
+bin/workflow.sh run daily   # Daily briefing, the weekly recap on its day, then the model-rate check
+bin/chat.sh                 # Launch chat session
 ```
 
 ## Key Implementation Notes

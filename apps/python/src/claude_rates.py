@@ -81,6 +81,23 @@ def load_rates(path: Path) -> dict[str, tuple[float, float, float, float, float]
     return table
 
 
+def load_tiered(path: Path) -> frozenset[str]:
+    """Models whose entry is flagged ``"tiered": true`` in the table at ``path``.
+
+    Such a model is priced by prompt length and its entry holds only the
+    cheapest tier, so a higher bill is expected and is not drift. Call after
+    ``load_rates`` has accepted the same file.
+    """
+    tiered = set()
+    for model, fields in json.loads(path.read_text())["rates"].items():
+        flag = fields.get("tiered", False)
+        if not isinstance(flag, bool):
+            raise ValueError(f"{path}: {model!r} has a non-boolean 'tiered' flag")
+        if flag:
+            tiered.add(model)
+    return frozenset(tiered)
+
+
 _cached_rates: dict[str, tuple[float, float, float, float, float]] | None = None
 
 
@@ -140,6 +157,21 @@ def rate_for(model: str) -> tuple[float, float, float, float, float]:
         _unpriced_models_warned.add(model)
         logger.warning("no rate table entry for model '%s' — cost shown as $0", model)
     return (0.0, 0.0, 0.0, 0.0, 0.0)
+
+
+def rates_as_of() -> str | None:
+    """The table's ``as_of`` date: when it was last checked against the pricing doc.
+
+    Shown next to the Monitor totals so readers can tell how stale the rates
+    may be. ``None`` when the file has no usable value; the table itself is
+    validated by ``load_rates``, not here.
+    """
+    try:
+        raw = json.loads(RATES_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    value = raw.get("as_of") if isinstance(raw, dict) else None
+    return value if isinstance(value, str) else None
 
 
 def usage_cost(usage: dict, model: str) -> float:

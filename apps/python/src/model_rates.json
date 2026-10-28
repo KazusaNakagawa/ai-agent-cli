@@ -7,9 +7,13 @@
     "Cache rates follow the standard multipliers on the input rate -- 5-minute",
     "write 1.25x, 1-hour write 2x, read 0.1x -- unless a model publishes its own,",
     "as claude-fable-5-1 (0.025x) and claude-opus-5-5 / claude-sonnet-5-5 (0.05x) do for reads. There is no pricing API to fetch these",
-    "from; see docs/guides/usage-monitoring.md."
+    "from; see docs/guides/usage-monitoring.md.",
+    "claude-haiku-5-5 is priced by prompt length; the entry holds the <=100k-token tier and is flagged \"tiered\": true,",
+    "so requests over 100k tokens are under-counted and a higher Claude Code bill is not reported as drift.",
+    "as_of is the date the table was last checked against the pricing doc (rate_check --check-upstream); the Monitor tab shows it. Bump it whenever you re-check."
   ],
   "_source": "Published Anthropic API pricing as of 2026-10 (https://platform.claude.com/docs/en/about-claude/pricing.md).",
+  "as_of": "2026-10-29",
   "rates": {
     "claude-fable-5-1": {
       "input": 10.0,
@@ -80,6 +84,14 @@
       "cache_write_5m": 3.75,
       "cache_write_1h": 6.0,
       "cache_read": 0.3
+    },
+    "claude-haiku-5-5": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_write_5m": 0.125,
+      "cache_write_1h": 0.2,
+      "cache_read": 0.01,
+      "tiered": true
     },
     "claude-haiku-4-5": {
       "input": 1.0,

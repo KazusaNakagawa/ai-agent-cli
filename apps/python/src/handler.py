@@ -4,7 +4,7 @@ The pipeline itself is declared as a workflow in
 ``src/workflow/definitions/briefing.py``; the steps it references live here, so
 that everything the briefing touches — config, fetchers, notifiers — stays in
 one module. ``lambda_handler`` remains the entry point and keeps its original
-signature and response shape for ``bin/run.sh``, the web run route and the
+signature and response shape for the ``briefing`` workflow, the web run route and the
 existing tests.
 """
 from datetime import date

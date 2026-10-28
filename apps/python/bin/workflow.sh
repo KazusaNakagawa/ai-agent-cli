@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Re-exec under caffeinate for the same reason as run.sh: a workflow can make
-# long claude CLI calls, and a macOS sleep mid-run drops the connection.
-# No-op when caffeinate is unavailable (e.g. CI).
+# Re-exec under caffeinate so macOS doesn't sleep mid-run: a workflow can make
+# long claude CLI calls, and a sleep drops the connection (observed 2026-07-20:
+# "Connection closed mid-response", not retried since the message isn't
+# classified transient). No-op when caffeinate is unavailable (e.g. CI).
 if command -v caffeinate >/dev/null 2>&1 && [ -z "${CAFFEINATED:-}" ]; then
     export CAFFEINATED=1
     exec caffeinate -ims "$0" "$@"

@@ -1,9 +1,10 @@
 """Tests for the ``model-rates`` workflow (#475).
 
-The workflow is the daily gate in ``bin/run.sh``: an unpriced model must fail
+The workflow is the last step of ``daily``, the morning gate: an unpriced model must fail
 the run, while rate drift only warns so a mid-flight price change does not
 break the morning job.
 """
+import http.client
 import json
 import shutil
 from pathlib import Path
@@ -16,6 +17,13 @@ from src.workflow.definitions.model_rates import UnpricedModelError
 from src.workflow.runner import run_workflow
 
 COST_STATES = Path(__file__).resolve().parents[3] / "scripts" / "tests" / "fixtures" / "cost_state.jsonl"
+PRICING = Path(__file__).parent / "fixtures" / "rate_check" / "pricing_snippet.md"
+
+
+@pytest.fixture(autouse=True)
+def offline_doc(monkeypatch):
+    # An unpriced model triggers a pricing-doc lookup; keep it off the network.
+    monkeypatch.setattr(rate_check, "fetch_pricing_doc", lambda timeout=30: PRICING.read_text())
 
 
 def _usage_line(model: str) -> str:
@@ -58,6 +66,44 @@ def test_fails_the_run_on_an_unpriced_model(transcripts):
     (transcripts / "p" / "new.jsonl").write_text(_usage_line("claude-future-9") + "\n")
     with pytest.raises(UnpricedModelError, match="claude-future-9"):
         run_workflow(registry.get("model-rates"))
+
+
+def test_the_failure_logs_suggested_rates_and_keeps_the_error_one_line(transcripts, caplog):
+    (transcripts / "p" / "new.jsonl").write_text(_usage_line("claude-opus-4-1") + "\n")
+    with pytest.raises(UnpricedModelError) as exc_info:
+        run_workflow(registry.get("model-rates"))
+    assert "\n" not in str(exc_info.value)
+    assert '"claude-opus-4-1": {"input": 15.0, "output": 75.0' in caplog.text
+
+
+def test_the_suggestion_lookup_uses_a_short_timeout(transcripts, monkeypatch):
+    seen = {}
+
+    def _fetch(timeout=30):
+        seen["timeout"] = timeout
+        return PRICING.read_text()
+
+    monkeypatch.setattr(rate_check, "fetch_pricing_doc", _fetch)
+    (transcripts / "p" / "new.jsonl").write_text(_usage_line("claude-future-9") + "\n")
+    with pytest.raises(UnpricedModelError):
+        run_workflow(registry.get("model-rates"))
+    assert seen["timeout"] == rate_check.SUGGEST_FETCH_TIMEOUT_SEC
+
+
+@pytest.mark.parametrize(
+    "error", [OSError("network down"), http.client.IncompleteRead(b"partial")]
+)
+def test_an_unreadable_pricing_doc_still_fails_on_the_unpriced_model(
+    transcripts, monkeypatch, caplog, error
+):
+    def _offline(timeout=30):
+        raise error
+
+    monkeypatch.setattr(rate_check, "fetch_pricing_doc", _offline)
+    (transcripts / "p" / "new.jsonl").write_text(_usage_line("claude-future-9") + "\n")
+    with pytest.raises(UnpricedModelError, match="claude-future-9"):
+        run_workflow(registry.get("model-rates"))
+    assert "could not look up the pricing doc" in caplog.text
 
 
 def test_only_warns_on_drift(transcripts, monkeypatch, caplog):

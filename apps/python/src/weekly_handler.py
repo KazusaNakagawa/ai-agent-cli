@@ -104,7 +104,7 @@ def recap_reason_to_skip(today: date, output_dir: Path, posted_week: str | None)
     """Return why the recap should not run on ``today``, or ``None`` to run.
 
     The weekday half is the rule that used to be the ``date +%u = 5`` branch in
-    ``bin/run.sh``. Keeping it here rather than in the shell is what lets the
+    ``bin/run.sh``, retired in #472. Keeping it here rather than in the shell is what lets the
     recap be reached from ``bin/workflow.sh`` like every other workflow, and
     makes running it every day harmless.
 
