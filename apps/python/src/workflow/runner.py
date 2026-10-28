@@ -99,7 +99,9 @@ def _run_steps(
                 continue
             record.status = "failed"
             record.finished_at = _now_iso()
-            logger.error("workflow failed: %s at step %s", workflow_id, step.id)
+            # The CLI prints the exception to stderr only, so without it here
+            # the app log names the step but not the cause.
+            logger.error("workflow failed: %s at step %s: %s", workflow_id, step.id, exc)
             exc.workflow_run_record = record
             raise
 

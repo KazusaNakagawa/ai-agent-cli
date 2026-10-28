@@ -13,7 +13,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ValidationError
 
-from src import usage_monitor
+from src import claude_rates, usage_monitor
 from src.usage_logger import USAGE_DIR, parse_usage_file_date
 from src.usage_report import build_summary
 from web.auth import require_bearer
@@ -111,11 +111,19 @@ def get_summary() -> UsageSummaryResponse:
 
 
 class MonitorBucket(BaseModel):
-    """One aggregation bucket (project, date, or model)."""
+    """One aggregation bucket (project, date, or model).
+
+    ``path`` / ``label`` are populated for project buckets only, and only
+    when the transcripts revealed the project's real working directory —
+    the bucket ``key`` is a lossy encoding of it, so clients fall back to
+    the key when these are ``None``.
+    """
 
     key: str
     tokens: int
     cost_usd: float
+    path: str | None = None
+    label: str | None = None
 
 
 class MonitorDateEntry(BaseModel):
@@ -134,6 +142,9 @@ class MonitorResponse(BaseModel):
     by_date: list[MonitorDateEntry]
     by_model: list[MonitorBucket]
     unpriced_models: list[str]
+    # When the hand-maintained rate table was last checked against the
+    # published pricing doc; ``None`` if the table does not say.
+    rates_as_of: str | None = None
 
 
 _ISO_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
@@ -181,9 +192,20 @@ def get_monitor(
 
     report = usage_monitor.aggregate(root, since=since, until=until)
 
-    def _buckets(m: dict[str, usage_monitor.Bucket]) -> list[MonitorBucket]:
+    def _buckets(
+        m: dict[str, usage_monitor.Bucket], paths: dict[str, str] | None = None
+    ) -> list[MonitorBucket]:
+        paths = paths or {}
         return [
-            MonitorBucket(key=k, tokens=b.tokens, cost_usd=b.cost)
+            MonitorBucket(
+                key=k,
+                tokens=b.tokens,
+                cost_usd=b.cost,
+                path=paths.get(k),
+                label=(
+                    usage_monitor.abbreviate_home(paths[k]) if k in paths else None
+                ),
+            )
             for k, b in sorted(m.items(), key=lambda kv: -kv[1].cost)
         ]
 
@@ -199,10 +221,11 @@ def get_monitor(
     response = MonitorResponse(
         total_tokens=report.total_tokens,
         total_cost_usd=report.total_cost,
-        by_project=_buckets(report.by_project),
+        by_project=_buckets(report.by_project, report.project_paths),
         by_date=by_date,
         by_model=_buckets(report.by_model),
         unpriced_models=sorted(report.unpriced_models),
+        rates_as_of=claude_rates.rates_as_of(),
     )
     with _monitor_cache_lock:
         if cache_key not in _monitor_cache and len(_monitor_cache) >= _MONITOR_CACHE_MAX_ENTRIES:

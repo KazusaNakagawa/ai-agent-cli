@@ -13,7 +13,14 @@ from typing import Any
 
 import keyring
 
+from src import paths
+
+# Keychain service names. A relocated install (``BRIEF_LENS_HOME``, i.e. npx)
+# keeps its own items: macOS ties each item's ACL to the python binary that
+# created it, so reading the clone's items from the npx venv would prompt for
+# the login password once per item, on every request.
 SERVICE = "ai-agent"
+RELOCATED_SERVICE = "brief-lens"
 ALLOWED_KEYS: tuple[str, ...] = (
     "DISCORD_TOKEN",
     "CHANNEL_ID",
@@ -31,10 +38,15 @@ def _ensure_allowed(name: str) -> None:
         raise ValueError(f"Unknown credential key: {name}")
 
 
+def service_name() -> str:
+    """Keychain service for this install (see ``SERVICE`` / ``RELOCATED_SERVICE``)."""
+    return RELOCATED_SERVICE if paths.DATA_HOME != paths.APP_ROOT else SERVICE
+
+
 def get_credential(name: str) -> str | None:
     _ensure_allowed(name)
     try:
-        value = _backend.get_password(SERVICE, name)
+        value = _backend.get_password(service_name(), name)
     except keyring.errors.NoKeyringError:
         value = None
     if value:
@@ -44,12 +56,12 @@ def get_credential(name: str) -> str | None:
 
 def set_credential(name: str, value: str) -> None:
     _ensure_allowed(name)
-    _backend.set_password(SERVICE, name, value)
+    _backend.set_password(service_name(), name, value)
 
 
 def delete_credential(name: str) -> None:
     _ensure_allowed(name)
-    _backend.delete_password(SERVICE, name)
+    _backend.delete_password(service_name(), name)
 
 
 def list_credentials() -> dict[str, bool]:

@@ -5,11 +5,12 @@ Data shapes only. Parsing lives in ``parsers``, persistence in ``store``.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
-from pathlib import Path
 
-OUTPUT_DIR = Path(__file__).parents[2] / "output" / "money"
+from src import paths
+
+OUTPUT_DIR = paths.OUTPUT_DIR / "money"
 STORE_PATH = OUTPUT_DIR / "transactions.jsonl"
-RULES_PATH = Path(__file__).parents[2] / "config" / "money_rules.json"
+RULES_PATH = paths.CONFIG_DIR / "money_rules.json"
 
 UNCATEGORIZED = "uncategorized"
 

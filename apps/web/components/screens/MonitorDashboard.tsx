@@ -108,10 +108,39 @@ export function MonitorDashboard() {
         </span>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        API-equivalent estimate across all Claude Code transcripts — usage runs on a
-        subscription plan, not per-token billing.
-      </p>
+      {/* The figures are good enough to see scale and spot a spike, and not
+          good enough to reconcile against anything. Say which, rather than
+          leaving "estimate" to carry that on its own. */}
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p>
+          A rough guide, not a bill. Usage runs on a subscription plan, so these are
+          API-equivalent figures meant for spotting scale and trends.
+        </p>
+        <p data-testid="monitor-rates-as-of">
+          Rates are copied by hand from the published pricing page
+          {data.rates_as_of ? ` (last checked ${data.rates_as_of})` : ""} and are not
+          kept in sync with it, so a price change can take a while to show up here.
+        </p>
+        <details data-testid="monitor-accuracy-note">
+          <summary className="cursor-pointer underline-offset-2 hover:underline">
+            Why the numbers are approximate
+          </summary>
+          <ul className="ml-1 mt-1 list-disc space-y-0.5 pl-4">
+            <li>
+              Prompt-length pricing is not modelled. claude-haiku-5-5 charges more for
+              prompts over 100,000 tokens; those requests are costed at the lower rate.
+            </li>
+            <li>
+              Server-side tool use is not counted. Web search bills per request on top of
+              tokens and never reaches this total.
+            </li>
+            <li>
+              Cache writes are billed by TTL. Entries that do not record which TTL was
+              used fall back to the cheaper 5-minute rate, so those days read low.
+            </li>
+          </ul>
+        </details>
+      </div>
 
       {data.by_date.length === 0 ? (
         <p data-testid="monitor-empty" className="text-sm text-muted-foreground">
@@ -173,8 +202,8 @@ export function MonitorDashboard() {
               <ul data-testid="monitor-by-project" className="space-y-1 text-sm">
                 {data.by_project.map((p) => (
                   <li key={p.key} className="flex items-center justify-between gap-2">
-                    <span className="truncate" title={p.key}>
-                      {p.key}
+                    <span className="truncate" title={p.path ?? p.key}>
+                      {p.label ?? p.key}
                     </span>
                     <span className="tabular-nums">
                       {formatValue(metric === "cost_usd" ? p.cost_usd : p.tokens)}

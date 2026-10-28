@@ -7,16 +7,16 @@ Filename convention: ``{type}_{YYYY-MM-DD}[-NNN].md``
 ``type`` is any lowercase-led prefix (``briefing`` / ``local`` / ``market`` ...).
 """
 import re
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from src import paths
 from web.auth import require_bearer
 
 router = APIRouter(dependencies=[Depends(require_bearer)])
 
-BRIEFING_DIR = Path(__file__).parents[2] / "output" / "briefing"
+BRIEFING_DIR = paths.OUTPUT_DIR / "briefing"
 
 # filename: <type>_YYYY-MM-DD[-NNN].md — type is any lowercase-led prefix.
 _FILE_RE = re.compile(r"^([a-z][\w-]*?)_(\d{4}-\d{2}-\d{2})(?:-\d+)?\.md$")

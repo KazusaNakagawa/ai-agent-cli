@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from src import paths
 from src.constants import LOG_RETENTION_DAYS
 
 
@@ -32,8 +33,8 @@ def get_logger(name: str) -> logging.Logger:
     stream_handler.setLevel(logging.INFO)
     stream_handler.setFormatter(formatter)
 
-    log_dir = Path(__file__).parents[1] / "log"
-    log_dir.mkdir(exist_ok=True)
+    log_dir = paths.LOG_DIR
+    log_dir.mkdir(parents=True, exist_ok=True)
     _purge_old_logs(log_dir)
 
     log_file = log_dir / f"{datetime.now().strftime('%Y%m%d')}-app.log"

@@ -49,6 +49,11 @@ BRIEFING = Workflow(
         Step("index", _handler("step_index"), skip_if=_handler("skip_index")),
         Step("deliver_discord", _handler("step_deliver_discord"), skip_if=_handler("skip_discord")),
         Step("deliver_notion", _handler("step_deliver_notion"), skip_if=_handler("skip_notion")),
+        # Last: the spoken version is an extra and ``say`` is slow. Absorbs
+        # its own failures (see ``step_speech``).
+        Step("speech", _handler("step_speech")),
+        # Local file only; absorbs its own write failure (see ``step_slides``).
+        Step("slides", _handler("step_slides")),
     ),
     guard=_handler("briefing_guard"),
 )

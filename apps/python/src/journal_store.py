@@ -18,11 +18,12 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+from src import paths
 from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-JOURNAL_DIR = Path(__file__).parents[1] / "output" / "journal"
+JOURNAL_DIR = paths.OUTPUT_DIR / "journal"
 
 # Serializes sidecar read-modify-write so concurrent save_item/save_notion_meta
 # calls for the same entry can't clobber each other's update.

@@ -1,5 +1,6 @@
 import re
-from pathlib import Path
+
+from src import paths
 
 # Claude model
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
@@ -13,6 +14,7 @@ DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 TIMEOUT_CLAUDE_DEFAULT = 900
 TIMEOUT_BRIEFING_MAIN = TIMEOUT_CLAUDE_DEFAULT
 TIMEOUT_BRIEFING_SECTORS = TIMEOUT_CLAUDE_DEFAULT
+TIMEOUT_BRIEFING_HOLDINGS = TIMEOUT_CLAUDE_DEFAULT
 TIMEOUT_WEEKLY_SUMMARY = TIMEOUT_CLAUDE_DEFAULT
 
 # Claude CLI retry policy (5xx transient errors only)
@@ -25,6 +27,10 @@ RETRY_BACKOFF_FACTOR = 3.0  # 5s -> 15s -> 45s
 # attempt observed), so the module default of 3 would triple worst-case token
 # spend on a string of transient errors.
 RETRY_MAX_ATTEMPTS_BRIEFING = 2
+# BriefScript holdings (#504): attempts for output that parses but fails the
+# Pydantic cross-field checks. The retry prompt carries the validation error.
+# Separate from RETRY_MAX_ATTEMPTS_BRIEFING, which covers transient API errors.
+BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS = 2
 
 # Log retention
 LOG_RETENTION_DAYS = 7
@@ -45,10 +51,21 @@ WEEKLY_WINDOW_DAYS = 7
 WEEKLY_RECAP_WEEKDAY = 5
 
 # Output directory for MD output
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+OUTPUT_DIR = paths.OUTPUT_DIR
 BRIEFING_OUTPUT_DIR = OUTPUT_DIR / "briefing"
+# BriefScript IR of each briefing (#513). A subdirectory so the briefing RAG
+# index, which reads every allowlisted file under BRIEFING_OUTPUT_DIR, skips it.
+BRIEFING_IR_SUBDIR = "ir"
 # Salvaged text from claude CLI calls that ultimately failed (see run_claude)
 PARTIAL_OUTPUT_DIR = OUTPUT_DIR / "partial"
+# Spoken briefing script and optional audio (#517). Outside BRIEFING_OUTPUT_DIR
+# so the briefing RAG index does not read the same content twice.
+SPEECH_OUTPUT_DIR = OUTPUT_DIR / "speech"
+# Marp slide deck of each briefing (#518), outside BRIEFING_OUTPUT_DIR for the
+# same reason as the speech script.
+SLIDES_OUTPUT_DIR = OUTPUT_DIR / "slides"
+# Upper bound for one ``say`` run; a full briefing takes well under a minute.
+TIMEOUT_SPEECH_AUDIO = 300
 # Portfolio comparison charts (bin/chart.sh and the briefing's chart step)
 CHART_OUTPUT_DIR = OUTPUT_DIR / "charts"
 

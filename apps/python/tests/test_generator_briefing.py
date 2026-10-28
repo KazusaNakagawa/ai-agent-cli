@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 import pytest
@@ -17,6 +18,36 @@ from src.generator.briefing import (
     looks_like_briefing,
     merge_recovered_sectors,
 )
+from src.generator.briefscript_render import splice_holdings
+
+
+def _sectors_json(text: str = "セクター結果。", sector: str = "Tech") -> str:
+    """A valid sector-sweep payload whose one claim renders as ``text`` (#514)."""
+    return json.dumps({
+        "sectors": [{"sector": sector, "claims": [{"text": text, "confidence": "inferred"}]}],
+    }, ensure_ascii=False)
+
+
+_SECTORS_OK = _sectors_json()
+
+
+def _main_json(**overrides) -> str:
+    """A valid main-analysis payload (#515); ``overrides`` replace top-level fields."""
+    data = {
+        "summary": "今日のまとめ。",
+        "stories": [{"title": "話題A", "claims": [
+            {"text": "記事で確認した事実。", "confidence": "confirmed", "source_ids": ["s1"]},
+        ]}],
+        "references": [{"category": "カテゴリA", "source_ids": ["s1"]}],
+        "sources": [{"id": "s1", "title": "記事1", "url": "https://example.com/s1"}],
+    }
+    data.update(overrides)
+    return json.dumps(data, ensure_ascii=False)
+
+
+_MAIN_OK = _main_json()
+# Long enough that a sectors-only body clears looks_like_briefing.
+_SECTORS_LONG = _sectors_json("セクター本文。" * 40)
 
 
 def _make_config(**overrides):
@@ -130,7 +161,7 @@ class TestGenerateBriefing:
 
     def test_success_combines_main_and_sectors(self):
         config = _make_config()
-        mock = self._mock_run({"メイン分析": "メイン結果", "セクタースイープ": "セクター結果"})
+        mock = self._mock_run({"メイン分析": "メイン結果", "セクタースイープ": _SECTORS_OK})
         with patch("src.generator.briefing.run_claude", side_effect=mock):
             result = generate_briefing("PLTR: +2%", config)
         assert "メイン結果" in result
@@ -149,7 +180,7 @@ class TestGenerateBriefing:
         def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
                 raise RuntimeError("claude CLI timed out (メイン分析)")
-            return "### 今日のセクター動向\n\n" + "セクター本文。" * 40
+            return _SECTORS_LONG
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
             result = generate_briefing("PLTR: +2%", config)
@@ -169,7 +200,7 @@ class TestGenerateBriefing:
         def mock(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
                 raise RuntimeError("x" * 2000)
-            return "### 今日のセクター動向\n\n" + "セクター本文。" * 40
+            return _SECTORS_LONG
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
             result = generate_briefing("PLTR: +2%", config)
@@ -185,7 +216,7 @@ class TestGenerateBriefing:
         def main_fails(prompt, label, timeout, **kwargs):
             if label == "メイン分析":
                 raise RuntimeError("boom")
-            return long_body
+            return _SECTORS_LONG
 
         def sectors_fail(prompt, label, timeout, **kwargs):
             if label == "セクタースイープ":
@@ -197,7 +228,7 @@ class TestGenerateBriefing:
                 assert is_degraded_briefing(generate_briefing("PLTR: +2%", config)) is True
 
         with patch("src.generator.briefing.run_claude", side_effect=self._mock_run(
-            {"メイン分析": long_body, "セクタースイープ": long_body}
+            {"メイン分析": long_body, "セクタースイープ": _SECTORS_LONG}
         )):
             assert is_degraded_briefing(generate_briefing("PLTR: +2%", config)) is False
 
@@ -335,12 +366,12 @@ class TestGenerateSectors:
 
         def mock(prompt, label, timeout, **kwargs):
             calls.append((label, timeout, kwargs.get("max_attempts")))
-            return "### 半導体\n強い"
+            return _sectors_json("強い")
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
             result = generate_sectors("PLTR: +2%", config)
 
-        assert result == "### 半導体\n強い"
+        assert result == "### 今日のセクター動向（全セクター）\n\n#### Tech\n- 〔推測〕強い"
         assert calls == [
             ("セクタースイープ", TIMEOUT_BRIEFING_SECTORS, RETRY_MAX_ATTEMPTS_BRIEFING)
         ]
@@ -351,10 +382,431 @@ class TestGenerateSectors:
 
         def mock(prompt, label, timeout, **kwargs):
             prompts.append(prompt)
-            return "ok"
+            return _sectors_json(sector="防衛")
 
         with patch("src.generator.briefing.run_claude", side_effect=mock):
             generate_sectors("PLTR: +2%", config)
 
         assert "防衛" in prompts[0]
         assert "RTX" in prompts[0]
+
+
+class TestBriefScriptHoldings:
+    """Holdings generated as BriefScript and spliced into the main body (#506)."""
+
+    # The no-quotes path still asks the main analysis for Markdown.
+    _MAIN_MD = (
+        "### 今日のサマリー（1文）\n\nサマリー。\n\n---\n\n"
+        "### 自分への示唆\n\n#### PLTR：旧見出し\n- 旧本文（Markdown フォールバック）\n\n---\n\n"
+        "### 参考記事\n\n- [a](https://example.com)\n"
+    )
+
+    @classmethod
+    def _main(cls, kwargs):
+        return _MAIN_OK if "json_schema" in kwargs else cls._MAIN_MD
+
+    def _config(self):
+        return _make_config(portfolio=PortfolioConfig(tickers=["PLTR", "NVDA"], themes=["AI"]))
+
+    @staticmethod
+    def _quotes():
+        from src.fetcher.stocks import StockQuote
+
+        return {
+            "PLTR": StockQuote("PLTR", 196.75, 197.14, -0.2),
+            "NVDA": StockQuote("NVDA", 100.0, 99.0, 1.0),
+        }
+
+    @staticmethod
+    def _payload(ticker="PLTR", source_ids=("s1",)):
+        import json
+
+        return json.dumps({
+            "holdings": [{"ticker": ticker, "claims": [
+                {"text": "決算が予想を上回った。", "confidence": "confirmed",
+                 "source_ids": list(source_ids)},
+            ]}],
+            "sources": [{"id": "s1", "title": "t", "url": "https://example.com/s1"}],
+        })
+
+    def _run(self, holdings_responses, quotes="default", fx_change_pct=-0.9):
+        calls = {"holdings": [], "kwargs": None}
+        responses = iter(holdings_responses)
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                return self._main(kwargs)
+            if label == "セクタースイープ":
+                return _SECTORS_OK
+            calls["holdings"].append(prompt)
+            calls["kwargs"] = kwargs
+            item = next(responses)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        quotes = self._quotes() if quotes == "default" else quotes
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            out = generate_briefing("PLTR: ↓0.2%", self._config(), "fx",
+                                    quotes=quotes, fx_change_pct=fx_change_pct)
+        return out, calls
+
+    def test_valid_briefscript_replaces_markdown_holdings(self):
+        out, calls = self._run([self._payload()])
+        assert "#### PLTR：ドル建て ↓0.2% / 円建て ↓1.1%（$196.75）" in out
+        assert "- 決算が予想を上回った。" in out
+        assert "旧本文" not in out
+        # NVDA was configured but not returned: still listed, with real figures.
+        assert "#### NVDA：ドル建て ↑1.0% / 円建て ↑0.1%（$100.00）" in out
+        assert "### 参考記事" in out and "セクター結果" in out
+        assert looks_like_briefing(out)
+
+    def test_call_uses_schema_with_tickers_pinned_and_bounded_retries(self):
+        _, calls = self._run([self._payload()])
+        schema = calls["kwargs"]["json_schema"]
+        assert schema["$defs"]["HoldingNote"]["properties"]["ticker"]["enum"] == ["PLTR", "NVDA"]
+        assert calls["kwargs"]["max_attempts"] == RETRY_MAX_ATTEMPTS_BRIEFING
+
+    def test_validation_failure_retries_once_with_the_error(self):
+        out, calls = self._run([self._payload(source_ids=("s9",)), self._payload()])
+        assert len(calls["holdings"]) == 2
+        assert "s9" in calls["holdings"][1]
+        assert "#### PLTR：ドル建て" in out
+
+    _FALLBACK_NOTE = "- 〔未確認〕本日の示唆は生成できませんでした。"
+
+    def _assert_quote_only_fallback(self, out):
+        # #511: the main analysis no longer writes holdings, so the fallback is
+        # the quote-derived headings plus an explicit note, not its Markdown.
+        assert "旧本文" not in out
+        assert "#### PLTR：ドル建て ↓0.2% / 円建て ↓1.1%（$196.75）" in out
+        assert "#### NVDA：ドル建て ↑1.0% / 円建て ↑0.1%（$100.00）" in out
+        assert out.count(self._FALLBACK_NOTE) == 2
+
+    def test_exhausted_validation_falls_back_to_quote_only_headings(self):
+        bad = self._payload(ticker="TSLA")
+        with patch("src.generator.briefing.logger") as log:
+            out, calls = self._run([bad, bad])
+        assert len(calls["holdings"]) == 2
+        self._assert_quote_only_fallback(out)
+        assert any("falling back" in c.args[0] for c in log.warning.call_args_list)
+        assert "### 参考記事" in out
+
+    def test_non_json_output_falls_back_to_quote_only_headings(self):
+        out, _ = self._run(["not json", "still not json"])
+        self._assert_quote_only_fallback(out)
+
+    def test_cli_failure_falls_back_without_validation_retry(self):
+        out, calls = self._run([RuntimeError("claude CLI timed out (保有銘柄示唆)")])
+        assert len(calls["holdings"]) == 1
+        self._assert_quote_only_fallback(out)
+
+    def test_no_quotes_skips_briefscript_call_and_keeps_main_markdown(self):
+        out, calls = self._run([], quotes=None)
+        assert calls["holdings"] == []
+        assert "旧本文（Markdown フォールバック）" in out
+
+    def _main_prompt(self, quotes):
+        captured = {}
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                captured["prompt"] = prompt
+                return self._main(kwargs)
+            return self._payload() if label == "保有銘柄示唆" else _SECTORS_OK
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            generate_briefing("x", self._config(), quotes=quotes)
+        return captured["prompt"]
+
+    def test_briefscript_mode_main_prompt_drops_holdings_body_and_research(self):
+        prompt = self._main_prompt(self._quotes())
+        assert "保有者として今日意識すべきこと" not in prompt
+        assert "保有・注目銘柄の最新ニュース" not in prompt
+        assert "銘柄別示唆" not in prompt and "示唆を書くとき" not in prompt
+        assert "保有銘柄の個別の示唆は書かない" in prompt
+        assert "PLTR, NVDA" in prompt
+        # The few-shot's holdings body is replaced too, or it would model the old output.
+        assert "規制の本命銘柄" not in prompt
+        assert "### 今日のサマリー（1文）" in prompt
+
+    def test_markdown_mode_main_prompt_keeps_holdings_format(self):
+        prompt = self._main_prompt(None)
+        assert "保有者として今日意識すべきこと" in prompt
+        assert "保有・注目銘柄の最新ニュース: PLTR, NVDA" in prompt
+        assert "示唆を書くときは円建てを基準にし" in prompt
+        assert "（$123.53）" in prompt
+        assert "規制の本命銘柄" in prompt
+
+    def test_padded_and_duplicate_config_tickers_are_normalised(self):
+        captured = {}
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "保有銘柄示唆":
+                captured["schema"] = kwargs["json_schema"]
+                return self._payload()
+            return self._main(kwargs) if label == "メイン分析" else _SECTORS_OK
+
+        config = _make_config(portfolio=PortfolioConfig(tickers=[" PLTR ", "PLTR", "NVDA"], themes=["AI"]))
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            out = generate_briefing("x", config, quotes=self._quotes(), fx_change_pct=-0.9)
+        assert captured["schema"]["$defs"]["HoldingNote"]["properties"]["ticker"]["enum"] == ["PLTR", "NVDA"]
+        assert out.count("#### PLTR：") == 1
+
+
+class TestBriefingDocument:
+    """generate_briefing_document returns the IR that generate_briefing renders (#513)."""
+
+    def _run(self, holdings, quotes=True, sectors_fail=False):
+        from src.generator.briefing import generate_briefing_document
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "メイン分析":
+                return TestBriefScriptHoldings._main(kwargs)
+            if label == "セクタースイープ":
+                if sectors_fail:
+                    raise RuntimeError("sec boom")
+                return _SECTORS_OK
+            if isinstance(holdings, Exception):
+                raise holdings
+            return holdings
+
+        config = _make_config(portfolio=PortfolioConfig(tickers=[" PLTR ", "NVDA"], themes=["AI"]))
+        q = TestBriefScriptHoldings._quotes() if quotes else None
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            return generate_briefing_document("x", config, quotes=q, fx_change_pct=-0.9)
+
+    def test_holdings_are_a_structured_block_inside_the_main_block(self):
+        doc = self._run(TestBriefScriptHoldings._payload())
+        kinds = [s.kind for s in doc.sections]
+        assert kinds == ["main", "markdown", "sectors"]
+        block = doc.sections[0].holdings
+        assert block.tickers == ["PLTR", "NVDA"]
+        assert block.content.holdings[0].claims[0].text == "決算が予想を上回った。"
+        assert {q.ticker for q in doc.market.quotes} == {"PLTR", "NVDA"}
+        assert doc.market.fx_change_pct == -0.9
+
+    def test_failed_holdings_call_leaves_an_empty_block(self):
+        doc = self._run(RuntimeError("boom"))
+        assert doc.sections[0].holdings.content is None
+
+    def test_no_quotes_means_no_holdings_block(self):
+        doc = self._run(None, quotes=False)
+        assert [s.kind for s in doc.sections][0] == "markdown"
+        assert doc.market.quotes == []
+
+    def test_sectors_failure_still_marks_the_rendered_body_degraded(self):
+        from src.generator.briefscript_render import render_document_markdown
+
+        doc = self._run(TestBriefScriptHoldings._payload(), sectors_fail=True)
+        assert is_degraded_briefing(render_document_markdown(doc))
+
+    def test_document_json_round_trip_renders_the_same_briefing(self):
+        from src.generator.briefscript_render import render_document_markdown
+        from src.generator.briefscript_schema import BriefingDocument
+
+        doc = self._run(TestBriefScriptHoldings._payload())
+        again = BriefingDocument.model_validate_json(doc.model_dump_json())
+        assert render_document_markdown(again) == render_document_markdown(doc)
+
+
+class TestSectorsBriefScript:
+    """The sector sweep is generated as validated BriefScript (#514)."""
+
+    def _config(self):
+        return _make_config(watch_sectors=[
+            WatchSector(sector="AI・クラウド", tickers=["MSFT"]),
+            WatchSector(sector=" 防衛 ", tickers=["RTX"]),
+        ])
+
+    def _payload(self, sector="AI・クラウド", source_ids=("s1",), extra=()):
+        return json.dumps({
+            "sectors": [
+                {"sector": sector, "claims": [
+                    {"text": "データセンター投資の上方修正が続いた。", "confidence": "confirmed",
+                     "source_ids": list(source_ids)},
+                ], "related_tickers": ["MSFT", "[x](https://evil.example)"]},
+                *extra,
+            ],
+            "sources": [{"id": "s1", "title": "t", "url": "https://example.com/s1"}],
+        }, ensure_ascii=False)
+
+    def _run(self, responses):
+        calls = []
+        it = iter(responses)
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label != "セクタースイープ":
+                return "### 見出し\n\n" + "本文。" * 80
+            calls.append((prompt, kwargs))
+            item = next(it)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            out = generate_briefing("x", self._config())
+        return out, calls
+
+    def test_every_configured_sector_rendered_once_in_order(self):
+        quiet = {"sector": "防衛", "claims": []}
+        out, calls = self._run([self._payload(extra=(quiet,))])
+        assert out.count("#### AI・クラウド") == 1 and out.count("#### 防衛") == 1
+        assert out.index("#### AI・クラウド") < out.index("#### 防衛")
+        assert "#### 防衛\n- 動き限定的" in out
+        assert "- データセンター投資の上方修正が続いた。［1］" in out
+        assert "- ［1］[t](https://example.com/s1)" in out
+
+    def test_sector_missing_from_output_is_marked_unconfirmed(self):
+        out, _ = self._run([self._payload()])
+        assert "#### 防衛\n- 〔未確認〕今日の動きは確認できませんでした。" in out
+
+    def test_schema_pins_configured_sector_names(self):
+        _, calls = self._run([self._payload()])
+        schema = calls[0][1]["json_schema"]
+        assert schema["$defs"]["SectorNote"]["properties"]["sector"]["enum"] == ["AI・クラウド", "防衛"]
+        assert calls[0][1]["max_attempts"] == RETRY_MAX_ATTEMPTS_BRIEFING
+
+    def test_unknown_sector_is_retried_once_with_the_error(self):
+        out, calls = self._run([self._payload(sector="宇宙"), self._payload()])
+        assert len(calls) == 2 and "宇宙" in calls[1][0]
+        assert "#### AI・クラウド" in out
+
+    def test_unknown_source_id_is_retried_once(self):
+        out, calls = self._run([self._payload(source_ids=("s9",)), self._payload()])
+        assert len(calls) == 2 and "s9" in calls[1][0]
+
+    def test_exhausted_validation_degrades_to_the_recoverable_notice(self):
+        out, calls = self._run(["not json", self._payload(sector="宇宙")])
+        assert len(calls) == 2
+        assert is_degraded_briefing(out) and SECTORS_FAILED_NOTICE in out
+
+    def test_related_tickers_are_sanitised(self):
+        out, _ = self._run([self._payload()])
+        assert "evil.example" not in out
+        assert "- 関連銘柄：MSFT, x" in out
+
+    def test_cli_failure_is_not_validation_retried(self):
+        out, calls = self._run([RuntimeError("claude CLI timed out (セクタースイープ)")])
+        assert len(calls) == 1 and SECTORS_FAILED_NOTICE in out
+
+
+class TestMainBriefScript:
+    """The main analysis as validated BriefScript when quotes exist (#515)."""
+
+    _FX = "- USD/JPY: 150.23（前日比 +0.10%）"
+
+    def _run(self, main_responses, fx=_FX):
+        from src.generator.briefing import generate_briefing_document
+
+        calls = {"main": [], "kwargs": None}
+        responses = iter(main_responses)
+
+        def mock(prompt, label, timeout, **kwargs):
+            if label == "セクタースイープ":
+                return _SECTORS_LONG
+            if label == "保有銘柄示唆":
+                return TestBriefScriptHoldings._payload()
+            calls["main"].append(prompt)
+            calls["kwargs"] = kwargs
+            calls["timeout"] = timeout
+            item = next(responses)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            doc = generate_briefing_document(
+                "x", TestBriefScriptHoldings()._config(), fx,
+                quotes=TestBriefScriptHoldings._quotes(), fx_change_pct=-0.9,
+            )
+        return doc, calls
+
+    def test_main_call_uses_the_json_prompt_and_schema(self):
+        from src.constants import TIMEOUT_BRIEFING_MAIN
+
+        doc, calls = self._run([_MAIN_OK])
+        assert "summary" in calls["kwargs"]["json_schema"]["properties"]
+        assert calls["kwargs"]["max_attempts"] == RETRY_MAX_ATTEMPTS_BRIEFING
+        assert "出力は指定された JSON スキーマに従うこと" in calls["main"][0]
+        assert self._FX in calls["main"][0]
+        assert doc.sections[0].kind == "main"
+        assert calls["timeout"] == TIMEOUT_BRIEFING_MAIN
+
+    def test_fx_shown_is_the_fetcher_value_even_if_the_model_writes_another(self):
+        from src.generator.briefscript_render import render_document_markdown
+
+        rogue_field = _main_json(fx={"rate": 160.0, "claims": []})
+        rogue_text = _main_json(fx={"claims": [{"text": "ドル円は 160.00 円。", "confidence": "inferred"}]})
+        doc, calls = self._run([rogue_field, rogue_text])
+        assert len(calls["main"]) == 2 and "rate" in calls["main"][1]
+        out = render_document_markdown(doc)
+        assert f"### 為替\n\n{self._FX}\n" in out
+        assert doc.market.fx_context == self._FX
+
+    def test_confirmed_claim_without_source_is_retried(self):
+        bare = _main_json(stories=[{"title": "T", "claims": [{"text": "x", "confidence": "confirmed"}]}])
+        doc, calls = self._run([bare, _MAIN_OK])
+        assert len(calls["main"]) == 2 and "must cite at least one source" in calls["main"][1]
+        assert doc.sections[0].content.sources[0].id == "s1"
+
+    def test_exhausted_validation_degrades_to_sectors_only(self):
+        from src.generator.briefing import MAIN_FAILED_NOTICE, looks_like_briefing_document
+        from src.generator.briefscript_render import render_document_markdown
+
+        doc, calls = self._run(["not json", "still not json"])
+        assert len(calls["main"]) == 2
+        out = render_document_markdown(doc)
+        assert out.startswith(MAIN_FAILED_NOTICE) and is_degraded_briefing(out)
+        assert "セクター本文" in out and looks_like_briefing_document(doc)
+
+    def test_layout_puts_holdings_and_references_inside_the_main_block(self):
+        from src.generator.briefscript_render import render_document_markdown
+
+        out = render_document_markdown(self._run([_MAIN_OK])[0])
+        order = ["### 今日のサマリー（1文）", "### 為替", "### 自分への示唆", "#### PLTR：ドル建て",
+                 "### 参考記事", "## セクター動向"]
+        positions = [out.index(part) for part in order]
+        assert positions == sorted(positions)
+
+
+def test_main_schema_pins_geopolitics_to_configured_conflicts():
+    from src.generator.briefing import generate_briefing_document
+
+    captured = {}
+
+    def mock(prompt, label, timeout, **kwargs):
+        if label == "メイン分析":
+            captured["schema"] = kwargs["json_schema"]
+            return _MAIN_OK
+        return TestBriefScriptHoldings._payload() if label == "保有銘柄示唆" else _SECTORS_OK
+
+    conflicts = [Conflict(name=f" 紛争{i} ", affected_sectors=["S"]) for i in range(7)]
+    config = _make_config(geopolitical=GeopoliticalConfig(conflicts=conflicts))
+    with patch("src.generator.briefing.run_claude", side_effect=mock):
+        generate_briefing_document("x", config, quotes=TestBriefScriptHoldings._quotes())
+    assert captured["schema"]["properties"]["geopolitics"]["maxItems"] == 7
+    assert captured["schema"]["$defs"]["GeoImpact"]["properties"]["risk"]["enum"] == [
+        f"紛争{i}" for i in range(7)
+    ]
+
+
+class TestLooksLikeBriefingDocument:
+    def test_validated_main_block_passes_without_the_text_heuristic(self):
+        from src.generator.briefing import looks_like_briefing_document
+        from src.generator.briefscript_schema import BriefingDocument, MainBlock, parse_main_section
+
+        doc = BriefingDocument(date="2026-10-25", sections=[
+            MainBlock(content=parse_main_section(json.loads(_MAIN_OK), conflicts=[])),
+        ])
+        assert looks_like_briefing_document(doc)
+
+    def test_markdown_body_still_uses_the_heuristic(self):
+        from src.generator.briefing import looks_like_briefing_document
+        from src.generator.briefscript_schema import BriefingDocument, MarkdownSection
+
+        def doc(text):
+            return BriefingDocument(date="2026-10-25", sections=[MarkdownSection(text=text)])
+
+        assert not looks_like_briefing_document(doc(HIJACKED_SKILL_COMPLETION_REPORT))
+        assert looks_like_briefing_document(doc("### 見出し\n\n" + "本文。" * 100))

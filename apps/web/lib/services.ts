@@ -1,11 +1,24 @@
+import {
+  Activity,
+  BookOpen,
+  ChartPie,
+  FolderTree,
+  Globe,
+  Map,
+  MessageSquare,
+  NotebookPen,
+  Play,
+  type LucideIcon,
+} from "lucide-react"
+
 export type ServiceId = "briefing" | "journal" | "monitor" | "workspace"
 
-export type NavItem = { href: string; label: string; icon: string }
+export type NavItem = { href: string; label: string; icon: LucideIcon }
 
 export type Service = {
   id: ServiceId
   label: string
-  icon: string
+  icon: LucideIcon
   defaultHref: string
   items: NavItem[]
 }
@@ -16,37 +29,37 @@ export const SERVICES: Service[] = [
   {
     id: "briefing",
     label: "Briefing",
-    icon: "📚",
+    icon: BookOpen,
     defaultHref: "/portfolio",
     items: [
-      { href: "/portfolio", label: "Portfolio", icon: "📊" },
-      { href: "/watch-sectors", label: "Watch Sectors", icon: "🌐" },
-      { href: "/geopolitical", label: "Geopolitical Risks", icon: "🗺️" },
-      { href: "/run", label: "Run", icon: "▶️" },
-      { href: "/chat", label: "Q&A Chat", icon: "💬" },
-      { href: "/briefing", label: "Briefing", icon: "📚" },
+      { href: "/portfolio", label: "Portfolio", icon: ChartPie },
+      { href: "/watch-sectors", label: "Watch Sectors", icon: Globe },
+      { href: "/geopolitical", label: "Geopolitical Risks", icon: Map },
+      { href: "/run", label: "Run", icon: Play },
+      { href: "/chat", label: "Q&A Chat", icon: MessageSquare },
+      { href: "/briefing", label: "Briefing", icon: BookOpen },
     ],
   },
   {
     id: "journal",
     label: "Journal",
-    icon: "📓",
+    icon: NotebookPen,
     defaultHref: "/journal",
-    items: [{ href: "/journal", label: "Journal", icon: "📓" }],
+    items: [{ href: "/journal", label: "Journal", icon: NotebookPen }],
   },
   {
     id: "monitor",
     label: "Monitor",
-    icon: "📈",
+    icon: Activity,
     defaultHref: "/monitor",
-    items: [{ href: "/monitor", label: "Monitor", icon: "📈" }],
+    items: [{ href: "/monitor", label: "Monitor", icon: Activity }],
   },
   {
     id: "workspace",
     label: "Workspace",
-    icon: "🗂️",
+    icon: FolderTree,
     defaultHref: "/workspace",
-    items: [{ href: "/workspace", label: "Workspace", icon: "🗂️" }],
+    items: [{ href: "/workspace", label: "Workspace", icon: FolderTree }],
   },
 ]
 

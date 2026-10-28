@@ -1,4 +1,5 @@
 "use client"
+import { CircleCheck, TriangleAlert } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { SessionExpiredCard } from "@/components/SessionExpiredCard"
@@ -85,11 +86,9 @@ export function RunForm() {
               {(status === "pending" || status === "running") && (
                 <LoadingDots label="" data-testid="job-running" />
               )}
-              {status === "done" && <span aria-hidden>✅</span>}
+              {status === "done" && <CircleCheck aria-hidden className="h-4 w-4 text-primary" />}
               {status === "failed" && (
-                <span aria-hidden className="text-destructive">
-                  ⚠️
-                </span>
+                <TriangleAlert aria-hidden className="h-4 w-4 text-destructive" />
               )}
             </p>
             <p className="text-xs text-muted-foreground">

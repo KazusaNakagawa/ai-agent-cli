@@ -6,10 +6,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from src import paths
 from src.chat_session import build_cmd, session_name_for
 
-PROJECT_ROOT = Path(__file__).parents[1]
-BRIEFING_DIR = PROJECT_ROOT / "output" / "briefing"
+BRIEFING_DIR = paths.OUTPUT_DIR / "briefing"
 SESSIONS_DIR = BRIEFING_DIR / ".sessions"
 
 

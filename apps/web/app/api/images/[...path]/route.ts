@@ -2,10 +2,9 @@ import { readFile } from "fs/promises"
 import { NextResponse } from "next/server"
 import path from "path"
 
-const STORAGE_ROOT = path.resolve(
-  process.cwd(),
-  "../../apps/python/input/images"
-)
+import { inputRoot } from "@/lib/storage"
+
+const STORAGE_ROOT = path.join(inputRoot(), "images")
 
 const MIME: Record<string, string> = {
   jpg: "image/jpeg",

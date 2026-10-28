@@ -831,6 +831,8 @@ async def test_chat_notion_import_success_invokes_skill_and_extracts_url(
     assert "stream-json" in cmd
     assert cmd[cmd.index("--model") + 1] == "opus"
     assert "--add-dir" in cmd
+    from web.routers.chat import REPO_ROOT
+    assert factory.calls[0]["kwargs"]["cwd"] == str(REPO_ROOT)
     # Notion credentials must reach the subprocess env so a non-MCP fallback
     # path (e.g. notion-client reading env directly) can still authenticate.
     env = factory.calls[0]["kwargs"]["env"]
@@ -1418,3 +1420,24 @@ async def test_post_chat_skips_vault_retrieval_when_unconfigured(
 
     assert response.status_code == 202
     assert called == []
+
+
+# --- notion-import working directory (#485) ---
+
+
+def test_skill_workdir_defaults_to_repo_root(monkeypatch):
+    from src import paths
+    from web.routers.chat import REPO_ROOT, _skill_workdir
+
+    monkeypatch.setattr(paths, "DATA_HOME", paths.APP_ROOT)
+    assert _skill_workdir() == REPO_ROOT
+
+
+def test_skill_workdir_follows_data_home(monkeypatch, tmp_path):
+    """The skill writes ``output/<slug>_<date>.md`` relative to its cwd, so a
+    relocated data home must be the cwd or the file lands in the package."""
+    from src import paths
+    from web.routers.chat import _skill_workdir
+
+    monkeypatch.setattr(paths, "DATA_HOME", tmp_path)
+    assert _skill_workdir() == tmp_path

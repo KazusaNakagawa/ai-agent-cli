@@ -1,5 +1,6 @@
 {
   "model": "claude-haiku-4-5-20251001",
+  "fallback_model": "claude-haiku-5-5",
   "portfolio": {
     "tickers": [
       "PLTR",
@@ -288,6 +289,14 @@
   },
   "journal_chat": {
     "trusted_write_dirs": ["~/work/zenn-docs"]
+  },
+  "speech": {
+    "audio": false,
+    "voice": "Kyoko",
+    "max_chars": 3000
+  },
+  "slides": {
+    "max_claims": 3
   },
   "watch_events": [
     {

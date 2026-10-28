@@ -1,6 +1,6 @@
 # Scheduled Execution — macOS launchd Setup
 
-macOS uses **launchd** instead of cron. `bin/workflow.sh` (root-level wrapper) sources `.env` and delegates to `apps/python/bin/workflow.sh`, so API credentials are available in non-interactive shells. `workflow.sh run daily` is the daily job — the briefing, then the weekly recap on its own day. It replaced `bin/run.sh`, which was retired in #472; a plist still naming `run.sh` must be repointed.
+macOS uses **launchd** instead of cron. `bin/workflow.sh` (root-level wrapper) sources `.env` and delegates to `apps/python/bin/workflow.sh`, so API credentials are available in non-interactive shells. `workflow.sh run daily` is the daily job — the briefing, the weekly recap on its own day, then the model-rate check. It replaced `bin/run.sh`, which was retired in #472; a plist still naming `run.sh` must be repointed.
 
 > **Current setup (2026-08-12): manual execution.** The maintainer's machine no longer loads the daily briefing or recovery launchd jobs. Run `./bin/workflow.sh run daily` by hand once the Mac is open and fully awake. launchd remains documented below for AC-powered / always-awake setups only. cron + `pmset` is the other alternative — [cron-setup.md](cron-setup.md). Use at most one scheduler; running both would trigger the briefing twice.
 

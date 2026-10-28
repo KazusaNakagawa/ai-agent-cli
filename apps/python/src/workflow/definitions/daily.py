@@ -1,9 +1,9 @@
-"""The daily run, declared as a workflow that composes the other two.
+"""The daily run, declared as a workflow that composes the others.
 
-``bin/run.sh`` used to be this composition: it ran the briefing and then the
-weekly recap, under ``set -e`` so a failed briefing stopped the recap. Once
-both pipelines became workflows (#461, #463) the script was the last place that
-sequence was written down, and the only thing still invoking ``src.handler``
+``bin/run.sh`` used to be this composition: it ran the briefing, the weekly
+recap and then the model-rate check (#475), under ``set -e`` so a failure
+stopped everything after it. Once all three became workflows (#461, #463,
+#475) the script was the last place that sequence was written down, and the only thing still invoking ``src.handler``
 directly. Declaring the sequence here retires the script and puts the
 composition in the same layer as everything else it composes (#472).
 
@@ -49,7 +49,7 @@ def _child(workflow_id: str) -> Callable[[StepContext], Any]:
 
 DAILY = Workflow(
     id="daily",
-    title="Daily briefing, then the weekly recap on its day",
+    title="Daily briefing, the weekly recap on its day, then the model-rate check",
     steps=(
         Step("preflight", _preflight, preamble=True),
         # Not ``best_effort``: bin/run.sh ran under ``set -e``, so a failed
@@ -57,5 +57,8 @@ DAILY = Workflow(
         # that produced nothing to recap does not go on to recap it.
         Step("briefing", _child("briefing")),
         Step("weekly", _child("weekly")),
+        # Last on purpose (#475): an unpriced model fails the run so it is
+        # noticed the next morning, but only after both deliveries went out.
+        Step("model-rates", _child("model-rates")),
     ),
 )

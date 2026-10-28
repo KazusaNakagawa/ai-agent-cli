@@ -22,7 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from claude_rates import RATES, usage_cost  # noqa: E402,F401
+import claude_rates  # noqa: E402,F401
+from claude_rates import usage_cost  # noqa: E402
 
 
 def main(path: str) -> None:

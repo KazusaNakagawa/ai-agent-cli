@@ -10,6 +10,7 @@ import uuid
 
 from pydantic import ValidationError
 
+from src import paths
 from src.claude_runner import run_claude
 from src.constants import TIMEOUT_CLAUDE_DEFAULT
 from src.generator.wordset_schema import KNOWN_CATEGORIES, WordSet
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 PROMPTS_DIR = pathlib.Path(__file__).resolve().parents[1].parent / "prompts"
 FEWSHOT_PATH = PROMPTS_DIR / "wordset_fewshot.json"
 TIMEOUT = TIMEOUT_CLAUDE_DEFAULT
-OUTPUT_DIR = pathlib.Path(__file__).resolve().parents[1].parent / "output"
+OUTPUT_DIR = paths.OUTPUT_DIR
 
 
 def _load_fewshot() -> str:

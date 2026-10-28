@@ -15,11 +15,12 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
+from src import paths
 from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-STATE_FILE = Path.home() / ".ai-agent" / "weekly_recap.json"
+STATE_FILE = paths.STATE_DIR / "weekly_recap.json"
 
 
 def week_key(day: date) -> str:

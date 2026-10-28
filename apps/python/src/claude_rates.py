@@ -2,49 +2,200 @@
 
 Used by src.usage_monitor, scripts/token_usage_report.py, and
 scripts/sdd_token_cost.py so the rates are maintained in one place.
+
+The rates themselves live in ``model_rates.json`` next to this module. It
+sits under ``src/`` rather than ``config/`` because the npm build copies
+``src/`` wholesale but only ``*.example`` templates from ``config/`` (which
+otherwise holds personal data), so a table in ``config/`` would not ship. There is no pricing API to fetch them from — the Models API returns
+ids, context windows and capabilities but no prices — so the table is
+hand-maintained, and ``scripts/check_model_rates.py`` is what catches a model
+that has appeared in transcripts without one. See
+``docs/guides/usage-monitoring.md``.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import math
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# USD per 1M tokens: (input, output, cache_write, cache_read)
-# Source: published Anthropic API pricing as of 2026-07.
-# Keyed by exact model id; add new ids here as models are released rather
-# than relying on substring matching, which can mis-map as model names
-# evolve (e.g. a future id containing "claude-sonnet-5" as a substring but
-# priced differently).
-RATES = {
-    "claude-sonnet-5": (3.00, 15.00, 3.75, 0.30),
-    "claude-opus-4-8": (15.00, 75.00, 18.75, 1.50),
-    "claude-haiku-4-5": (0.80, 4.00, 1.00, 0.08),
-    "claude-haiku-4-5-20251001": (0.80, 4.00, 1.00, 0.08),
-    "claude-fable-5": (10.00, 50.00, 12.50, 1.00),
-    "claude-sonnet-4-6": (3.00, 15.00, 3.75, 0.30),
-}
+RATES_PATH = Path(
+    os.getenv(
+        "MODEL_RATES_PATH", str(Path(__file__).with_name("model_rates.json"))
+    )
+)
 
+# Order matters: the loaded tuple is (input, output, cache_write_5m,
+# cache_write_1h, cache_read) and every consumer unpacks it positionally.
+RATE_FIELDS = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read")
+
+
+def load_rates(path: Path) -> dict[str, tuple[float, float, float, float, float]]:
+    """Read a rate table from ``path``, in USD per 1M tokens.
+
+    Every field is required per model. A partially specified model is rejected
+    rather than defaulted, because a silent 0 for one component is exactly the
+    failure this file exists to prevent.
+    """
+    def _reject_constant(name: str):
+        # json accepts NaN/Infinity by default; a non-finite rate turns every
+        # cost into NaN and every drift comparison false.
+        raise ValueError(f"{path}: non-finite value {name} is not a valid rate")
+
+    try:
+        raw = json.loads(path.read_text(), parse_constant=_reject_constant)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"model rate table not found: {path}") from None
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{path} is not valid JSON: {e}") from e
+
+    if not isinstance(raw, dict) or not isinstance(raw.get("rates"), dict):
+        raise ValueError(f"{path} must contain a top-level 'rates' object")
+
+    table: dict[str, tuple[float, float, float, float, float]] = {}
+    for model, fields in raw["rates"].items():
+        if not isinstance(fields, dict):
+            raise ValueError(f"{path}: rates for {model!r} must be an object")
+        values = []
+        for name in RATE_FIELDS:
+            if name not in fields:
+                raise ValueError(f"{path}: {model!r} is missing the {name!r} rate")
+            value = fields[name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{path}: {model!r} has a non-numeric {name!r} rate")
+            try:
+                rate = float(value)
+            except OverflowError:
+                # A JSON integer can exceed the float range.
+                rate = math.inf
+            if not math.isfinite(rate):
+                raise ValueError(f"{path}: {model!r} has a non-finite {name!r} rate")
+            if rate < 0:
+                raise ValueError(f"{path}: {model!r} has a negative {name!r} rate")
+            values.append(rate)
+        table[model] = tuple(values)  # type: ignore[assignment]
+    return table
+
+
+def load_tiered(path: Path) -> frozenset[str]:
+    """Models whose entry is flagged ``"tiered": true`` in the table at ``path``.
+
+    Such a model is priced by prompt length and its entry holds only the
+    cheapest tier, so a higher bill is expected and is not drift. Call after
+    ``load_rates`` has accepted the same file.
+    """
+    tiered = set()
+    for model, fields in json.loads(path.read_text())["rates"].items():
+        flag = fields.get("tiered", False)
+        if not isinstance(flag, bool):
+            raise ValueError(f"{path}: {model!r} has a non-boolean 'tiered' flag")
+        if flag:
+            tiered.add(model)
+    return frozenset(tiered)
+
+
+_cached_rates: dict[str, tuple[float, float, float, float, float]] | None = None
+
+
+def _rates() -> dict[str, tuple[float, float, float, float, float]]:
+    """The rate table, loaded on first call and cached.
+
+    Module-level ``__getattr__`` only fires for attribute access from outside,
+    so code inside this module has to go through here rather than naming
+    ``RATES`` directly — a bare reference would be an unresolved global.
+    """
+    global _cached_rates
+    if _cached_rates is None:
+        _cached_rates = load_rates(RATES_PATH)
+    return _cached_rates
+
+
+def __getattr__(name: str):
+    """Read the rate table on first use rather than at import.
+
+    Mirrors ``src.config.CONFIG``. Loading eagerly meant a typo in
+    ``model_rates.json`` raised during the import of anything that transitively
+    touched this module — including ``scripts/check_model_rates.py``, whose
+    entire job is to diagnose that file, and which died with a traceback before
+    argparse ran. Deferring keeps a bad table a runtime error at the point that
+    actually needs the rates, where it can be reported properly.
+
+    Consumers must reach the table through the module (``claude_rates.RATES``);
+    a ``from src.claude_rates import RATES`` at module scope resolves it at
+    import time and gives the eager behaviour back.
+    """
+    if name == "RATES":
+        return _rates()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+# Process-global so a long batch run logs each unknown model once instead of
+# once per message. That makes it shared state between tests — see
+# reset_unpriced_warnings().
 _unpriced_models_warned: set[str] = set()
 
 
-def rate_for(model: str) -> tuple[float, float, float, float]:
+def reset_unpriced_warnings() -> None:
+    """Forget which models have already been warned about.
+
+    Test-support hook: without it the first suite to hit an unknown model
+    suppresses the warning for every later test in the same process, so
+    assertions on the warning pass or fail depending on collection order.
+    """
+    _unpriced_models_warned.clear()
+
+
+def rate_for(model: str) -> tuple[float, float, float, float, float]:
     """Return the rate tuple for a model, warning once per unknown model."""
-    if model in RATES:
-        return RATES[model]
+    rates = _rates()
+    if model in rates:
+        return rates[model]
     if model not in _unpriced_models_warned:
         _unpriced_models_warned.add(model)
         logger.warning("no rate table entry for model '%s' — cost shown as $0", model)
-    return (0.0, 0.0, 0.0, 0.0)
+    return (0.0, 0.0, 0.0, 0.0, 0.0)
+
+
+def rates_as_of() -> str | None:
+    """The table's ``as_of`` date: when it was last checked against the pricing doc.
+
+    Shown next to the Monitor totals so readers can tell how stale the rates
+    may be. ``None`` when the file has no usable value; the table itself is
+    validated by ``load_rates``, not here.
+    """
+    try:
+        raw = json.loads(RATES_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    value = raw.get("as_of") if isinstance(raw, dict) else None
+    return value if isinstance(value, str) else None
 
 
 def usage_cost(usage: dict, model: str) -> float:
-    """Estimate USD cost for one usage dict under the given model's rates."""
-    in_rate, out_rate, cw_rate, cr_rate = rate_for(model)
+    """Estimate USD cost for one usage dict under the given model's rates.
+
+    A 1-hour cache write costs 2x input where a 5-minute write costs 1.25x, so
+    the two are billed apart. Transcripts carry the split under
+    ``usage["cache_creation"]``; the 5-minute share is taken as the remainder
+    of ``cache_creation_input_tokens`` so an entry without that breakdown (or
+    with an unrecognised TTL) falls back to the cheaper rate rather than being
+    dropped.
+    """
+    in_rate, out_rate, cw5m_rate, cw1h_rate, cr_rate = rate_for(model)
     inp = usage.get("input_tokens", 0)
     out = usage.get("output_tokens", 0)
     cw = usage.get("cache_creation_input_tokens", 0)
     cr = usage.get("cache_read_input_tokens", 0)
+    breakdown = usage.get("cache_creation") or {}
+    cw_1h = min(breakdown.get("ephemeral_1h_input_tokens", 0), cw)
+    cw_5m = cw - cw_1h
     return (
-        inp * in_rate + out * out_rate + cw * cw_rate + cr * cr_rate
+        inp * in_rate
+        + out * out_rate
+        + cw_5m * cw5m_rate
+        + cw_1h * cw1h_rate
+        + cr * cr_rate
     ) / 1_000_000

@@ -133,3 +133,13 @@ def test_api_error_message_is_truncated():
     state = StreamState()
     consume_stream_line(_tool_result("API Error: 529 " + "x" * 5000), state)
     assert len(state.api_errors[0]) <= 200
+
+
+def test_model_fallback_events_are_collected():
+    state = StreamState()
+    event = {"type": "system", "subtype": "model_fallback", "fallback_model": "claude-backup-1"}
+    assert consume_stream_line(json.dumps(event), state) == []
+    # Other system records (init, hooks) and a malformed event are ignored.
+    consume_stream_line(json.dumps({"type": "system", "subtype": "init", "model": "x"}), state)
+    consume_stream_line(json.dumps({"type": "system", "subtype": "model_fallback"}), state)
+    assert state.fallback_models == ["claude-backup-1"]

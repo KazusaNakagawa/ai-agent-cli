@@ -14,21 +14,35 @@ from src.claude_runner import get_model
 from src.config import CONFIG
 from src.constants import (
     BRIEFING_CHART_PERIOD,
+    BRIEFING_IR_SUBDIR,
     BRIEFING_MD_RETENTION_DAYS,
     BRIEFING_MD_ROTATION_ENABLED,
     BRIEFING_OUTPUT_DIR,
     BRIEFING_SKIP_IF_EXISTS,
     CHART_OUTPUT_DIR,
+    SLIDES_OUTPUT_DIR,
+    SPEECH_OUTPUT_DIR,
 )
 from src.fetcher.fx import fetch_fx_context
-from src.fetcher.stocks import fetch_stock_moves
-from src.generator.briefing import generate_briefing, is_degraded_briefing, looks_like_briefing
+from src.fetcher.stocks import StockQuote, fetch_stock_snapshot
+from src.generator.briefing import (
+    generate_briefing_document,
+    is_degraded_briefing,
+    looks_like_briefing_document,
+)
+from src.generator.briefscript_notion import render_document_notion
+from src.generator.briefscript_render import render_document_markdown
+from src.generator.briefscript_schema import BriefingDocument
+from src.generator.briefscript_slides import render_document_slides
+from src.generator.briefscript_speech import render_document_speech
 from src.local_llm.briefing_index import index_briefings
 from src.local_llm.config import load_config as load_local_llm_config
 from src.metrics.briefing import extract_briefing_metrics
 from src.notifier.discord import send_to_discord
-from src.notifier.local_md import save_briefing_md
+from src.notifier.local_md import save_briefing_document, save_briefing_md, save_slides
+from src.notifier.markdown import markdown_to_notion_blocks
 from src.notifier.notion import send_to_notion
+from src.notifier.speech import save_speech_script, synthesize_audio
 from src.logger import get_logger
 from src.utils import is_configured as _is_configured
 from src.workflow.registry import get as get_workflow
@@ -89,26 +103,36 @@ def step_fx(ctx) -> tuple[str, float | None]:
     return fetch_fx_context(CONFIG)
 
 
-def step_stocks(ctx) -> str:
+def step_stocks(ctx) -> tuple[str, dict[str, StockQuote]]:
+    """Prompt text plus the quotes it was built from, so the holdings headings
+    show the very figures the model was given (#506)."""
     logger.info("fetching stock moves...")
     _, fx_change_pct = ctx.results["fx"]
-    return fetch_stock_moves(CONFIG.portfolio.tickers, fx_change_pct)
+    return fetch_stock_snapshot(CONFIG.portfolio.tickers, fx_change_pct)
 
 
-def step_generate(ctx) -> str:
+def _briefing_md(ctx) -> str:
+    """The generated document as the Markdown every delivery sends."""
+    return render_document_markdown(ctx.results["generate"])
+
+
+def step_generate(ctx) -> BriefingDocument:
+    """The briefing as IR (#513); deliveries render it on the way out."""
     logger.info("generating briefing (WebSearch)...")
-    fx, _ = ctx.results["fx"]
-    briefing = generate_briefing(ctx.results["stocks"], CONFIG, fx)
+    fx, fx_change_pct = ctx.results["fx"]
+    stocks, quotes = ctx.results["stocks"]
+    doc = generate_briefing_document(stocks, CONFIG, fx, quotes=quotes, fx_change_pct=fx_change_pct)
+    briefing = render_document_markdown(doc)
     logger.debug("briefing generated (length=%d)", len(briefing))
 
-    if not looks_like_briefing(briefing):
+    if not looks_like_briefing_document(doc):
         # Do not include the raw briefing text here — it can carry
         # user-specific financial/portfolio data and this message may end up
         # in logs or a monitoring service (review feedback on #410).
         raise RuntimeError(
             f"generated briefing does not look like a real briefing body (len={len(briefing)})"
         )
-    return briefing
+    return doc
 
 
 def step_persist(ctx) -> bool:
@@ -117,10 +141,24 @@ def step_persist(ctx) -> bool:
     Only ``OSError`` is absorbed — a blanket catch would hide real defects
     while still returning 200. ``best_effort`` on the step would do exactly
     that, which is why the tolerance lives here instead.
+
+    The IR JSON under ``ir/`` lets a renderer be re-run without another claude
+    call (#513). It is a secondary artifact: its failure does not change the
+    result, which reports the MD the index step reads.
     """
     try:
-        save_briefing_md(
+        save_briefing_document(
             ctx.results["generate"],
+            # Derived here, not a constant, so it follows BRIEFING_OUTPUT_DIR.
+            BRIEFING_OUTPUT_DIR / BRIEFING_IR_SUBDIR,
+            BRIEFING_MD_RETENTION_DAYS,
+            rotation_enabled=BRIEFING_MD_ROTATION_ENABLED,
+        )
+    except OSError as exc:
+        logger.warning("briefing IR JSON write failed: %s — continuing", exc)
+    try:
+        save_briefing_md(
+            _briefing_md(ctx),
             BRIEFING_OUTPUT_DIR,
             BRIEFING_MD_RETENTION_DAYS,
             rotation_enabled=BRIEFING_MD_ROTATION_ENABLED,
@@ -183,7 +221,7 @@ def step_deliver_discord(ctx) -> None:
     # .get(): a failed best-effort step records no result, so the delivery has
     # to tolerate the key being absent entirely.
     send_to_discord(
-        ctx.results["generate"],
+        _briefing_md(ctx),
         CONFIG.discord_token,
         CONFIG.discord_channel_id,
         attachment=ctx.results.get("chart"),
@@ -196,20 +234,69 @@ def skip_notion(ctx) -> bool:
 
 def step_deliver_notion(ctx) -> str | None:
     logger.info("creating Notion page...")
-    briefing = ctx.results["generate"]
-    notion_text = briefing + f"\n\n---\nModel: {get_model()}"
+    briefing = _briefing_md(ctx)
+    footer = f"---\nModel: {get_model()}"
+    notion_text = f"{briefing}\n\n{footer}"
     metrics = extract_briefing_metrics(briefing, CONFIG.portfolio.tickers)
-    page_url = send_to_notion(
-        notion_text,
-        CONFIG.notion_api_key,
-        CONFIG.notion_database_id,
+    page = dict(
         title=f"マーケットブリーフィング — {date.today().strftime('%Y-%m-%d')}",
         tags=["agent"],
         extra_properties=metrics,
     )
+    # Built from the IR (#516), so confidence and sources are native blocks.
+    blocks = render_document_notion(ctx.results["generate"]) + markdown_to_notion_blocks(footer)
+    page_url = send_to_notion(
+        notion_text, CONFIG.notion_api_key, CONFIG.notion_database_id,
+        blocks=blocks, strict=True, **page,
+    )
+    if not page_url:
+        # The IR blocks are newer than the Markdown conversion; if Notion
+        # rejects any of them, today's page must still exist in full. strict
+        # makes a rejected batch past the first 100 fail the call too — on the
+        # retry as well, so a truncated page is never reported as delivered.
+        logger.warning("Notion page from IR blocks failed — retrying with the Markdown conversion")
+        page_url = send_to_notion(
+            notion_text, CONFIG.notion_api_key, CONFIG.notion_database_id, strict=True, **page,
+        )
     if page_url:
         logger.info("Notion ページ: %s", page_url)
     return page_url
+
+
+def step_speech(ctx) -> dict[str, str | None]:
+    """Write the spoken script and, with ``speech.audio`` on, its audio (#517).
+
+    Last, after every delivery: ``say`` can take tens of seconds and the
+    listenable version is an extra. A failed write is logged and swallowed,
+    like ``step_index``, so the warning names the speech output; a missing
+    or failing TTS engine is handled inside ``synthesize_audio``.
+    """
+    doc = ctx.results["generate"]
+    speech = CONFIG.speech
+    try:
+        script = save_speech_script(
+            render_document_speech(doc, max_chars=speech.max_chars), SPEECH_OUTPUT_DIR, doc.date,
+        )
+    except OSError as exc:
+        logger.warning("speech script write failed: %s — continuing", exc)
+        return {"script": None, "audio": None}
+    audio = synthesize_audio(script, speech.voice) if speech.audio else None
+    return {"script": str(script), "audio": str(audio) if audio else None}
+
+
+def step_slides(ctx) -> str | None:
+    """Write the Marp deck for weekly review (#518) and return its path.
+
+    Conversion to PDF / PPTX is left to the Marp CLI. A failed write is
+    logged and swallowed, like ``step_speech``: the deck is an extra.
+    """
+    doc = ctx.results["generate"]
+    try:
+        deck = render_document_slides(doc, max_claims=CONFIG.slides.max_claims)
+        return str(save_slides(deck, SLIDES_OUTPUT_DIR, doc.date))
+    except OSError as exc:
+        logger.warning("slide deck write failed: %s — continuing", exc)
+        return None
 
 
 # --- entry point ------------------------------------------------------------

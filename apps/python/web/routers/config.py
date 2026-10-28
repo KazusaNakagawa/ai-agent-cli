@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import ValidationError
 
+from src import paths
 from web.auth import require_bearer
 from web.schemas import BriefingConfigSchema
 
@@ -24,7 +25,7 @@ def _config_path() -> Path:
     return Path(
         os.getenv(
             "BRIEFING_CONFIG_PATH",
-            str(Path(__file__).resolve().parents[2] / "config" / "briefing.json"),
+            str(paths.CONFIG_DIR / "briefing.json"),
         )
     )
 

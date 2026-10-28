@@ -1,5 +1,6 @@
 {
   "model": null,
+  "fallback_model": null,
   "portfolio": {
     "tickers": ["TICKER1", "TICKER2"],
     "themes": ["theme1", "theme2", "theme3"]
@@ -18,6 +19,14 @@
       "notes": "このセクターの注目点"
     }
   ],
+  "speech": {
+    "audio": false,
+    "voice": null,
+    "max_chars": null
+  },
+  "slides": {
+    "max_claims": 3
+  },
   "watch_events": [
     {
       "name": "イベント名（例: SpaceX IPO）",

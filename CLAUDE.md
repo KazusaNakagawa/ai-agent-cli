@@ -19,7 +19,7 @@ uv pip sync requirements.txt   # Install deps
 uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt  # Recompile deps
 
 # From repo root
-bin/workflow.sh run daily   # Daily briefing, then the weekly recap on its day
+bin/workflow.sh run daily   # Daily briefing, the weekly recap on its day, then the model-rate check
 bin/chat.sh                 # Launch chat session
 ```
 

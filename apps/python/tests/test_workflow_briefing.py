@@ -35,6 +35,8 @@ def test_step_order_puts_the_local_copy_before_every_delivery():
         "index",
         "deliver_discord",
         "deliver_notion",
+        "speech",
+        "slides",
     ]
     assert ids.index("persist") < ids.index("deliver_discord")
     assert ids.index("persist") < ids.index("deliver_notion")

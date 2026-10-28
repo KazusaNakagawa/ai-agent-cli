@@ -1,23 +1,20 @@
 "use client"
+import { Mic, Square } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
 
 import { CloseIcon } from "@/components/briefing/icons"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { LoadingDots } from "@/components/ui/loading-dots"
+import { MarkdownView } from "@/components/ui/MarkdownView"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { insertAtCursor } from "@/lib/insertAtCursor"
 import { useJournalChatJobState } from "@/lib/journalChatJobStore"
 import { useJournalChatState } from "@/lib/journalChatStore"
 import { useJournalNav } from "@/lib/journalNavStore"
+import { parseQaTranscript } from "@/lib/journalQa"
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition"
 import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
-
-const PROSE =
-  "prose prose-sm max-w-none dark:prose-invert prose-a:text-blue-600 " +
-  "hover:prose-a:underline dark:prose-a:text-blue-400"
 
 const HEADER_BTN =
   "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -26,6 +23,52 @@ const HEADER_BTN =
 function entryTime(id: string): string | null {
   const m = id.match(/^\d{4}-\d{2}-\d{2}_(\d{2})(\d{2})(\d{2})/)
   return m ? `${m[1]}:${m[2]}:${m[3]}` : null
+}
+
+/** Drop the leading `# Journal YYYY-MM-DD` heading — the panel header already shows the date. */
+function stripTitleHeading(md: string): string {
+  return md.replace(/^\s*# [^\n]*\n+/, "")
+}
+
+/**
+ * One Q&A turn as chat bubbles: the user on the right, the AI on the left.
+ * `answer` null shows the thinking indicator; an empty string omits the AI
+ * bubble (a saved question that never got an answer).
+ */
+function ChatTurn({ question, answer }: { question: string; answer: string | null }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="max-w-[85%] self-end rounded-2xl rounded-br-sm bg-muted px-4 py-2 text-foreground">
+        <MarkdownView content={question} breaks />
+      </div>
+      {answer === null ? (
+        <div className="self-start rounded-2xl rounded-bl-sm border bg-background px-4 py-2">
+          <LoadingDots label="Thinking…" data-testid="journal-chat-thinking" />
+        </div>
+      ) : (
+        answer && (
+          <div className="max-w-[85%] self-start rounded-2xl rounded-bl-sm border bg-background px-4 py-2">
+            <MarkdownView content={answer} />
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
+/** A saved entry: chat bubbles when it holds role-labelled Q&A, plain Markdown otherwise. */
+function EntryBody({ md }: { md: string }) {
+  const body = stripTitleHeading(md)
+  const transcript = parseQaTranscript(body)
+  if (!transcript) return <MarkdownView content={body} breaks />
+  return (
+    <div className="flex flex-col gap-4">
+      {transcript.preamble && <MarkdownView content={transcript.preamble} breaks />}
+      {transcript.turns.map((turn, i) => (
+        <ChatTurn key={i} question={turn.question} answer={turn.answer} />
+      ))}
+    </div>
+  )
 }
 
 export function JournalScreen() {
@@ -118,11 +161,18 @@ export function JournalScreen() {
     )
   }
 
+  const title = trashPreview
+    ? trashMeta?.item || trashPreview
+    : composing && !selected
+      ? null
+      : selectedMeta?.item || selected
+
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-background">
       {/* Panel header */}
       <div className="flex items-center justify-between border-b px-4 py-2">
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {!trashPreview && !(composing && !selected) && <span>Journal</span>}
           {trashPreview ? (
             <>
               <span className="font-medium text-destructive">Trash</span>
@@ -193,14 +243,21 @@ export function JournalScreen() {
         </div>
       </div>
 
+      {/* Panel title */}
+      {title && (
+        <div className="border-b px-4 py-3">
+          <h2 className="truncate text-sm font-semibold" data-testid="journal-panel-title">
+            {title}
+          </h2>
+        </div>
+      )}
+
       {/* Panel body */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4 pr-6">
         {trashPreview ? (
           /* Read-only preview of a trashed entry — no brainstorm here. */
           trashContent ? (
-            <div className={PROSE}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{trashContent}</ReactMarkdown>
-            </div>
+            <EntryBody md={trashContent} />
           ) : (
             <p className="text-sm text-muted-foreground">Loading…</p>
           )
@@ -208,8 +265,8 @@ export function JournalScreen() {
           <div className="flex flex-col gap-6">
             {/* Entry content (read view; hidden while composing a new entry) */}
             {selected && content && (
-              <div className={PROSE}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+              <div data-testid="journal-content">
+                <EntryBody md={content} />
               </div>
             )}
 
@@ -218,18 +275,7 @@ export function JournalScreen() {
               {displayTurns.length > 0 && (
                 <div className="flex flex-col gap-4">
                   {displayTurns.map((turn, i) => (
-                    <div key={i} className="flex flex-col gap-2">
-                      <div className="self-end rounded-2xl rounded-br-sm bg-muted px-4 py-2 text-sm text-foreground">
-                        {turn.question}
-                      </div>
-                      <div className={cn(PROSE, "self-start rounded-2xl rounded-bl-sm border bg-background px-4 py-2")}>
-                        {turn.answer ? (
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.answer}</ReactMarkdown>
-                        ) : (
-                          <LoadingDots label="Thinking…" data-testid="journal-chat-thinking" />
-                        )}
-                      </div>
-                    </div>
+                    <ChatTurn key={i} question={turn.question} answer={turn.answer || null} />
                   ))}
                 </div>
               )}
@@ -282,7 +328,7 @@ export function JournalScreen() {
                           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                       )}
                     >
-                      {listening ? "🛑" : "🎤"}
+                      {listening ? <Square aria-hidden className="h-4 w-4" /> : <Mic aria-hidden className="h-4 w-4" />}
                     </button>
                   )}
                   {brainstorming && (

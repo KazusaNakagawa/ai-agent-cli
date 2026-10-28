@@ -1,4 +1,5 @@
 "use client"
+import { X } from "lucide-react"
 import type { ImageAttachment } from "@/lib/types/image"
 
 type Props = {
@@ -21,7 +22,7 @@ export function ImageAttachmentPreview({ image, onRemove }: Props) {
         onClick={onRemove}
         className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground"
       >
-        ✕
+        <X aria-hidden className="h-3 w-3" />
       </button>
     </div>
   )

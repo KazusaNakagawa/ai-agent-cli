@@ -49,10 +49,14 @@ class TestExistingTemplates:
             stocks="STK",
             fx="FX",
             few_shot="FEWSHOT",
+            ticker_research="RSCH",
+            holdings_format="HLD",
+            holdings_guidance="GDN",
         )
-        for marker in ("THM", "TKR", "GEO", "EVT", "STK", "FX", "FEWSHOT"):
+        for marker in ("THM", "GEO", "EVT", "STK", "FX", "FEWSHOT", "RSCH", "HLD", "GDN"):
             assert marker in out
-        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$fx", "$few_shot"):
+        for placeholder in ("$themes", "$tickers", "$geopolitical", "$watch_events", "$stocks", "$fx",
+                            "$few_shot", "$ticker_research", "$holdings_format", "$holdings_guidance"):
             assert placeholder not in out
 
     def test_briefing_literal_dollar_amount_survives_rendering(self):
@@ -62,16 +66,8 @@ class TestExistingTemplates:
         ValueError, so the escape is required — not a typo. Guards against it
         being "corrected" to a single `$`, which breaks every briefing run.
         """
-        out = render(
-            "briefing",
-            themes="THM",
-            tickers="TKR",
-            geopolitical="GEO",
-            watch_events="EVT",
-            stocks="STK",
-            fx="FX",
-            few_shot="FEWSHOT",
-        )
+        # The amount lives in the Markdown-mode holdings format since #511.
+        out = render("briefing_holdings_format_markdown")
         assert "$123.53" in out
         assert "$$123.53" not in out
 
@@ -90,8 +86,19 @@ class TestExistingTemplates:
             stocks="STK",
             fx="FX",
             few_shot="INSIDE $themes NOT REPLACED",
+            ticker_research="RSCH",
+            holdings_format="HLD",
+            holdings_guidance="GDN",
         )
         assert "INSIDE $themes NOT REPLACED" in out
+
+    def test_briefing_main_renders_all_placeholders(self):
+        markers = dict(themes="THM", geopolitical="GEO", watch_events="EVT", stocks="STK", fx="FX",
+                       few_shot="FEWSHOT", ticker_research="RSCH", holdings_guidance="GDN")
+        out = render("briefing_main", **markers)
+        for name, marker in markers.items():
+            assert marker in out
+            assert f"${name}" not in out
 
     def test_briefing_sectors_renders_all_placeholders(self):
         out = render("briefing_sectors", watch_sectors="SECT", stocks="STK")
