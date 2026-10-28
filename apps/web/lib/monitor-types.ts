@@ -27,6 +27,9 @@ export type MonitorResponse = {
   by_date: MonitorDateEntry[]
   by_model: MonitorBucket[]
   unpriced_models: string[]
+  // ISO date the hand-maintained rate table was last checked against the
+  // published pricing doc. Null/absent when the table does not record one.
+  rates_as_of?: string | null
 }
 
 export type MonitorMetric = "cost_usd" | "tokens"

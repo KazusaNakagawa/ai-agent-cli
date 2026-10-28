@@ -34,6 +34,7 @@ const MONITOR = {
     { key: "claude-sonnet-5", tokens: 200, cost_usd: 1.0 },
   ],
   unpriced_models: ["claude-future-9"],
+  rates_as_of: "2026-10-29",
 }
 
 const fetchMock = vi.fn()
@@ -91,9 +92,21 @@ describe("MonitorDashboard", () => {
     // says which known gaps make the figures approximate.
     expect(screen.getByText(/API-equivalent/i)).toBeInTheDocument()
     const note = screen.getByTestId("monitor-accuracy-note")
-    expect(note).toHaveTextContent(/maintained by hand/i)
+    expect(note).toHaveTextContent(/prompt-length pricing/i)
+    // How fresh the hand-maintained rates are stays visible, not collapsed.
+    expect(screen.getByTestId("monitor-rates-as-of")).toHaveTextContent(
+      /copied by hand.*last checked 2026-10-29/i,
+    )
     expect(note).toHaveTextContent(/web search/i)
     expect(note).toHaveTextContent(/5-minute rate/i)
+  })
+
+  it("omits the last-checked date when the API does not send one", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ...MONITOR, rates_as_of: null }))
+    render(<MonitorDashboard />)
+    const note = await screen.findByTestId("monitor-rates-as-of")
+    expect(note).toHaveTextContent(/copied by hand/i)
+    expect(note).not.toHaveTextContent(/last checked/i)
   })
 
   it("flags unpriced models", async () => {

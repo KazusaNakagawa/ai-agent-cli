@@ -142,6 +142,21 @@ def rate_for(model: str) -> tuple[float, float, float, float, float]:
     return (0.0, 0.0, 0.0, 0.0, 0.0)
 
 
+def rates_as_of() -> str | None:
+    """The table's ``as_of`` date: when it was last checked against the pricing doc.
+
+    Shown next to the Monitor totals so readers can tell how stale the rates
+    may be. ``None`` when the file has no usable value; the table itself is
+    validated by ``load_rates``, not here.
+    """
+    try:
+        raw = json.loads(RATES_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    value = raw.get("as_of") if isinstance(raw, dict) else None
+    return value if isinstance(value, str) else None
+
+
 def usage_cost(usage: dict, model: str) -> float:
     """Estimate USD cost for one usage dict under the given model's rates.
 
