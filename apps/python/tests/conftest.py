@@ -5,6 +5,17 @@ from pathlib import Path
 # src.config の import 前に環境変数を立てる必要があるので、conftest 最上位で実行する。
 os.environ.setdefault("BRIEFING_CONFIG_PATH", str(Path(__file__).parent / "config" / "briefing.json"))
 
+# Never touch the real OS Keychain from tests: on macOS a read prompts for the
+# login password and blocks the run (#548). Forced rather than setdefault so a
+# developer's own PYTHON_KEYRING_BACKEND cannot route tests to the real store.
+# set_keyring() covers the case where keyring was initialized before this ran.
+os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
+
+import keyring
+from keyring.backends import null as _null_keyring
+
+keyring.set_keyring(_null_keyring.Keyring())
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
