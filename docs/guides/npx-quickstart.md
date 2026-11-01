@@ -157,7 +157,7 @@ Then bump `packages/brief-lens/package.json` `version`, merge to `main`, and pus
 tag:
 
 ```bash
-git tag v0.1.1 && git push origin v0.1.1
+git tag v0.1.2 && git push origin v0.1.2
 ```
 
 The `publish` workflow checks that the tag matches the package version, runs the launcher
