@@ -1,4 +1,5 @@
 """Tests for src/credentials.py — Keychain wrapper with .env fallback."""
+import keyring.errors
 import pytest
 
 from src import credentials
@@ -96,3 +97,15 @@ def test_reads_and_writes_use_the_resolved_service(monkeypatch, tmp_path):
     credentials.set_credential("DISCORD_TOKEN", "x")
     credentials.delete_credential("DISCORD_TOKEN")
     assert calls == [("get", "brief-lens"), ("set", "brief-lens"), ("delete", "brief-lens")]
+
+
+def test_env_fallback_when_keychain_is_locked(monkeypatch):
+    # A cancelled macOS prompt raises KeyringLocked; the documented .env
+    # fallback must still apply instead of crashing the caller (#548).
+    class _Locked:
+        def get_password(self, service, name):
+            raise keyring.errors.KeyringLocked("cancelled")
+
+    monkeypatch.setattr(credentials, "_backend", _Locked())
+    monkeypatch.setenv("NOTION_API_KEY", "from-env")
+    assert credentials.get_credential("NOTION_API_KEY") == "from-env"
