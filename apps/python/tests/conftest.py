@@ -68,9 +68,15 @@ def fixed_token(monkeypatch, tmp_path):
     monkeypatch.setattr(auth, "_token_cache", None, raising=False)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def isolated_keyring(monkeypatch):
-    """Swap the keyring backend for an in-memory dict so tests never touch the real Keychain."""
+    """Swap the keyring backend for an in-memory dict so tests never touch the real Keychain.
+
+    Autouse together with ``clear_credential_env``: any test reaching a real
+    integration (Journal Notion sync, Briefing notifier, Discord, ...) with the
+    developer's own credentials would write to the real service (#546).
+    Isolating the credential inputs covers every caller, however it imports.
+    """
     store: dict[tuple[str, str], str] = {}
 
     class _Fake:
@@ -86,9 +92,14 @@ def isolated_keyring(monkeypatch):
     monkeypatch.setattr(credentials, "_backend", _Fake())
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def clear_credential_env(monkeypatch):
-    """Strip any inherited env values for allow-listed credentials so .env fallback can't leak in."""
+    """Strip inherited env values for allow-listed credentials so .env fallback can't leak in.
+
+    ``src.config`` runs ``load_dotenv()`` at import, so the real ``.env`` is in
+    ``os.environ`` before any test runs. Autouse for the reason given in
+    ``isolated_keyring``; tests opt back in with ``monkeypatch.setenv``.
+    """
     for name in credentials.ALLOWED_KEYS:
         monkeypatch.delenv(name, raising=False)
 
