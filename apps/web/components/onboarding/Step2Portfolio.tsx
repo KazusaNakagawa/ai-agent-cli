@@ -2,7 +2,7 @@
 import { useState } from "react"
 
 import { Input } from "@/components/ui/input"
-import { BriefingConfig } from "@/lib/config-types"
+import { BriefingConfig, WatchSector } from "@/lib/config-types"
 import { WizardData } from "./Wizard"
 import { WizardShell } from "./wizard-shell"
 
@@ -28,6 +28,13 @@ const splitCsv = (raw: string): string[] =>
 const normalizeTickers = (raw: string): string[] =>
   Array.from(new Set(splitCsv(raw).map((t) => t.toUpperCase())))
 
+// The first run's synthesised "Default" sector mirrors the portfolio. While it
+// still does, a re-run keeps it in step; once the user has edited it, leave it.
+const isMirroredDefault = (s: WatchSector, portfolioTickers: string[]): boolean =>
+  s.sector === "Default" &&
+  s.tickers.length === portfolioTickers.length &&
+  s.tickers.every((t) => portfolioTickers.includes(t))
+
 export function Step2Portfolio({ data, setData, onNext, onBack, step, existing = null }: Props) {
   const [tickersRaw, setTickersRaw] = useState<string>(data.tickers.join(", "))
   const [themesRaw, setThemesRaw] = useState<string>(data.themes.join(", "))
@@ -47,7 +54,13 @@ export function Step2Portfolio({ data, setData, onNext, onBack, step, existing =
       // requires >=1 watch_sector: we synthesise a default sector wrapping
       // the same tickers, and the user refines it later from the sidebar.
       const payload: BriefingConfig = existing
-        ? { ...existing, portfolio: { ...existing.portfolio, tickers, themes } }
+        ? {
+            ...existing,
+            portfolio: { ...existing.portfolio, tickers, themes },
+            watch_sectors: existing.watch_sectors.map((s) =>
+              isMirroredDefault(s, existing.portfolio.tickers) ? { ...s, tickers } : s,
+            ),
+          }
         : {
             portfolio: { tickers, themes },
             watch_sectors: [

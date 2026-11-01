@@ -35,9 +35,9 @@ export function Step4TestRun({ onBack, step }: Props) {
         setCompleting(false)
         return
       }
-      // Reload so the Server Component re-evaluates and renders the
-      // post-onboarding placeholder.
-      window.location.reload()
+      // Load "/" (not reload) so the Server Component redirects to the app
+      // also from a re-run, whose URL carries ?rerun=1.
+      window.location.assign("/")
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error")
       setCompleting(false)

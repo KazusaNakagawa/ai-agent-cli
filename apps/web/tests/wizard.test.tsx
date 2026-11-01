@@ -73,30 +73,48 @@ describe("Wizard re-run mode", () => {
         { name: "Hormuz", affected_sectors: ["Energy"], related_tickers: ["XOM"], notes: null },
       ],
     },
-    watch_sectors: [{ sector: "Cloud", tickers: ["MSFT"], notes: "keep me" }],
+    watch_sectors: [
+      // Synthesised by the first run to mirror the portfolio.
+      { sector: "Default", tickers: ["GOOGL", "MSFT"], notes: null },
+      { sector: "Cloud", tickers: ["MSFT"], notes: "keep me" },
+    ],
     watch_events: [
       { name: "FOMC", trigger: "rate hike", affected_sectors: [], related_tickers: [], notes: null },
     ],
   }
 
   // Route by URL + method so the parallel prefill GETs don't depend on order.
-  const routeFetch = (config: Response | (() => Response)) =>
+  const routeFetch = (
+    config: () => Response,
+    put: (url: string) => Response = () => new Response("{}", { status: 200 }),
+  ) =>
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET"
-      if (url === "/api/auth/mode" && method === "GET") {
+      if (method === "PUT") return put(url)
+      if (url === "/api/auth/mode") {
         return new Response(JSON.stringify({ auth_mode: "api" }), { status: 200 })
       }
-      if (url === "/api/config" && method === "GET") {
-        return typeof config === "function" ? config() : config
-      }
+      if (url === "/api/config") return config()
       return new Response("{}", { status: 200 })
     })
+  const existingConfig = () => new Response(JSON.stringify(EXISTING), { status: 200 })
 
-  const putBody = (url: string) => {
-    const call = fetchMock.mock.calls.find(
-      ([u, init]) => u === url && (init as RequestInit | undefined)?.method === "PUT",
-    )
-    return call ? JSON.parse((call[1] as RequestInit).body as string) : undefined
+  const putBodies = (url: string) =>
+    fetchMock.mock.calls
+      .filter(([u, init]) => u === url && (init as RequestInit | undefined)?.method === "PUT")
+      .map(([, init]) => JSON.parse((init as RequestInit).body as string))
+
+  const advanceToStep3 = async (user: ReturnType<typeof userEvent.setup>, tickers: string) => {
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: /Anthropic API key/ })).toBeChecked()
+    })
+    await user.click(screen.getByRole("radio", { name: /Claude Pro/ }))
+    await user.click(screen.getByTestId("wizard-primary"))
+    await waitFor(() => expect(screen.getByTestId("tickers-input")).toBeInTheDocument())
+    await user.clear(screen.getByTestId("tickers-input"))
+    await user.type(screen.getByTestId("tickers-input"), tickers)
+    await user.click(screen.getByTestId("wizard-primary"))
+    await waitFor(() => expect(screen.getByText(/Step 3 \/ 4/)).toBeInTheDocument())
   }
 
   beforeEach(() => {
@@ -110,7 +128,7 @@ describe("Wizard re-run mode", () => {
   })
 
   it("prefills from current settings and keeps unrelated config on save", async () => {
-    routeFetch(() => new Response(JSON.stringify(EXISTING), { status: 200 }))
+    routeFetch(existingConfig)
     const user = userEvent.setup()
     render(<Wizard rerun />)
 
@@ -118,7 +136,6 @@ describe("Wizard re-run mode", () => {
       expect(screen.getByRole("radio", { name: /Anthropic API key/ })).toBeChecked()
     })
     await user.click(screen.getByTestId("wizard-primary"))
-
     await waitFor(() => {
       expect(screen.getByTestId("tickers-input")).toHaveValue("MSFT, GOOGL")
     })
@@ -127,29 +144,41 @@ describe("Wizard re-run mode", () => {
     await user.type(screen.getByTestId("tickers-input"), "PLTR")
     await user.click(screen.getByTestId("wizard-primary"))
 
-    await waitFor(() => expect(putBody("/api/config")).toBeDefined())
-    expect(putBody("/api/auth/mode")).toEqual({ auth_mode: "api" })
-    expect(putBody("/api/config")).toEqual({
+    await waitFor(() => expect(putBodies("/api/config")).toHaveLength(1))
+    expect(putBodies("/api/auth/mode")).toEqual([{ auth_mode: "api" }])
+    expect(putBodies("/api/config")[0]).toEqual({
       ...EXISTING,
       portfolio: { tickers: ["PLTR"], themes: ["AI"] },
+      // The mirrored Default sector follows the new tickers; others are kept.
+      watch_sectors: [
+        { sector: "Default", tickers: ["PLTR"], notes: null },
+        { sector: "Cloud", tickers: ["MSFT"], notes: "keep me" },
+      ],
     })
   })
 
-  it("falls back to a fresh config when briefing.json is missing", async () => {
+  it("leaves a Default sector alone once the user has edited it", async () => {
+    const edited = {
+      ...EXISTING,
+      watch_sectors: [{ sector: "Default", tickers: ["MSFT", "NVDA"], notes: null }],
+    }
+    routeFetch(() => new Response(JSON.stringify(edited), { status: 200 }))
+    const user = userEvent.setup()
+    render(<Wizard rerun />)
+
+    await advanceToStep3(user, "PLTR")
+
+    expect(putBodies("/api/config")[0].watch_sectors).toEqual(edited.watch_sectors)
+  })
+
+  it("falls back to a fresh config only when briefing.json is missing (404)", async () => {
     routeFetch(() => new Response("not found", { status: 404 }))
     const user = userEvent.setup()
     render(<Wizard rerun />)
 
-    await waitFor(() => {
-      expect(screen.getByRole("radio", { name: /Anthropic API key/ })).toBeChecked()
-    })
-    await user.click(screen.getByTestId("wizard-primary"))
-    await waitFor(() => expect(screen.getByTestId("tickers-input")).toHaveValue(""))
-    await user.type(screen.getByTestId("tickers-input"), "PLTR")
-    await user.click(screen.getByTestId("wizard-primary"))
+    await advanceToStep3(user, "PLTR")
 
-    await waitFor(() => expect(putBody("/api/config")).toBeDefined())
-    expect(putBody("/api/config")).toEqual({
+    expect(putBodies("/api/config")[0]).toEqual({
       portfolio: { tickers: ["PLTR"], themes: [] },
       watch_sectors: [{ sector: "Default", tickers: ["PLTR"], notes: null }],
       geopolitical: { conflicts: [] },
@@ -157,27 +186,53 @@ describe("Wizard re-run mode", () => {
     })
   })
 
-  it("cancel restores onboarded and returns to the app", async () => {
-    routeFetch(() => new Response(JSON.stringify(EXISTING), { status: 200 }))
+  it("blocks the wizard when the current config cannot be read", async () => {
+    routeFetch(() => new Response("boom", { status: 500 }))
+    render(<Wizard rerun />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("wizard-load-error")).toHaveTextContent(/500/)
+    })
+    expect(screen.queryByTestId("wizard-primary")).not.toBeInTheDocument()
+    expect(screen.getByTestId("wizard-cancel-rerun")).toBeInTheDocument()
+  })
+
+  it("cancel before saving anything just navigates back", async () => {
+    routeFetch(existingConfig)
     const user = userEvent.setup()
     render(<Wizard rerun />)
+    await waitFor(() => expect(screen.getByTestId("wizard-primary")).toBeInTheDocument())
 
     await user.click(screen.getByTestId("wizard-cancel-rerun"))
 
     await waitFor(() => expect(assignMock).toHaveBeenCalledWith("/portfolio"))
-    expect(putBody("/api/state")).toEqual({ onboarded: true })
+    expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "PUT")).toBe(false)
   })
 
-  it("cancel surfaces an error when PUT /api/state fails", async () => {
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-      if (url === "/api/state" && init?.method === "PUT") {
-        return new Response("boom", { status: 500 })
-      }
-      return new Response("not found", { status: 404 })
+  it("cancel after saving restores the original auth mode and config", async () => {
+    routeFetch(existingConfig)
+    const user = userEvent.setup()
+    render(<Wizard rerun />)
+    await advanceToStep3(user, "PLTR")
+
+    await user.click(screen.getByTestId("wizard-cancel-rerun"))
+
+    await waitFor(() => expect(assignMock).toHaveBeenCalledWith("/portfolio"))
+    expect(putBodies("/api/auth/mode")).toEqual([{ auth_mode: "cli" }, { auth_mode: "api" }])
+    expect(putBodies("/api/config").at(-1)).toEqual(EXISTING)
+  })
+
+  it("cancel surfaces an error and stays when the restore fails", async () => {
+    let restoring = false
+    routeFetch(existingConfig, (url) => {
+      if (restoring && url === "/api/config") return new Response("boom", { status: 500 })
+      return new Response("{}", { status: 200 })
     })
     const user = userEvent.setup()
     render(<Wizard rerun />)
+    await advanceToStep3(user, "PLTR")
 
+    restoring = true
     await user.click(screen.getByTestId("wizard-cancel-rerun"))
 
     await waitFor(() => {
