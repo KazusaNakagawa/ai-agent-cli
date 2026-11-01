@@ -6,6 +6,7 @@ import {
   Mail,
   Package,
   Palette,
+  RotateCcw,
   Settings,
   type LucideIcon,
 } from "lucide-react"
@@ -18,6 +19,7 @@ import { ResizeHandle } from "@/components/ResizeHandle"
 import { UsageDashboard } from "@/components/screens/UsageDashboard"
 import { AuthPanel } from "@/components/settings/AuthPanel"
 import { CredentialsPanel } from "@/components/settings/CredentialsPanel"
+import { SetupPanel } from "@/components/settings/SetupPanel"
 import {
   Dialog,
   DialogContent,
@@ -41,6 +43,7 @@ const SECTIONS: Section[] = [
   { key: "export", label: "Export data", icon: Package, render: () => <OutputExportPanel /> },
   { key: "credentials", label: "Credentials", icon: Mail, render: () => <CredentialsPanel /> },
   { key: "auth", label: "Auth", icon: KeyRound, render: () => <AuthPanel /> },
+  { key: "setup", label: "Setup", icon: RotateCcw, render: () => <SetupPanel /> },
 ]
 
 export function SettingsModal() {

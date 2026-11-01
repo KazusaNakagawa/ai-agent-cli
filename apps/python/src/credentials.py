@@ -47,7 +47,9 @@ def get_credential(name: str) -> str | None:
     _ensure_allowed(name)
     try:
         value = _backend.get_password(service_name(), name)
-    except keyring.errors.NoKeyringError:
+    except keyring.errors.KeyringError:
+        # No backend, or a locked / denied Keychain (e.g. a cancelled macOS
+        # prompt): fall back to the environment rather than crash the caller.
         value = None
     if value:
         return value
