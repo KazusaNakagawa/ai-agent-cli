@@ -32,6 +32,10 @@ DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TOP_K = 6
 DEFAULT_CHUNK_LINES = 40
 DEFAULT_CHUNK_OVERLAP = 8
+# Upper bound on a chunk's text. Ollama runs embedding models with a 2048-token
+# ubatch and the whole input must fit in it (num_ctx does not lift this), so a
+# 40-line window of dense Japanese tables (~3,500+ chars) fails to embed (#553).
+DEFAULT_CHUNK_MAX_CHARS = 2000
 DEFAULT_REPO_ROOT = Path.home() / "work" / "ai-agent"
 DEFAULT_CHROMA_REL = Path("apps/python/.chroma_db")
 COLLECTION_NAME = "ai_agent_repo"
@@ -67,6 +71,7 @@ class LocalLLMConfig:
     chroma_path: Path
     chunk_lines: int
     chunk_overlap: int
+    chunk_max_chars: int = DEFAULT_CHUNK_MAX_CHARS
     # Extra directory names excluded on top of EXCLUDE_DIRS. Lets a caller
     # (e.g. the Obsidian vault indexer) skip vault-internal folders without
     # changing the global exclusion set. Empty = existing behavior.
