@@ -2,6 +2,7 @@
 import { useState } from "react"
 
 import { Input } from "@/components/ui/input"
+import { BriefingConfig } from "@/lib/config-types"
 import { WizardData } from "./Wizard"
 import { WizardShell } from "./wizard-shell"
 
@@ -11,6 +12,8 @@ type Props = {
   onNext: () => void
   onBack: () => void
   step: 1 | 2 | 3 | 4
+  // Current briefing.json when re-running setup; null on a first run.
+  existing?: BriefingConfig | null
 }
 
 const splitCsv = (raw: string): string[] =>
@@ -25,7 +28,7 @@ const splitCsv = (raw: string): string[] =>
 const normalizeTickers = (raw: string): string[] =>
   Array.from(new Set(splitCsv(raw).map((t) => t.toUpperCase())))
 
-export function Step2Portfolio({ data, setData, onNext, onBack, step }: Props) {
+export function Step2Portfolio({ data, setData, onNext, onBack, step, existing = null }: Props) {
   const [tickersRaw, setTickersRaw] = useState<string>(data.tickers.join(", "))
   const [themesRaw, setThemesRaw] = useState<string>(data.themes.join(", "))
   const [busy, setBusy] = useState(false)
@@ -39,17 +42,20 @@ export function Step2Portfolio({ data, setData, onNext, onBack, step }: Props) {
     setBusy(true)
     setError(null)
     try {
-      // The backend schema requires >=1 watch_sector. We synthesise a default
-      // sector wrapping the same tickers so the wizard succeeds; the user
-      // refines real sector mapping later from the sidebar.
-      const payload = {
-        portfolio: { tickers, themes },
-        watch_sectors: [
-          { sector: "Default", tickers, notes: null },
-        ],
-        geopolitical: { conflicts: [] },
-        watch_events: [],
-      }
+      // PUT /api/config replaces the whole file, so a re-run keeps every
+      // section this step does not edit. On a first run the backend schema
+      // requires >=1 watch_sector: we synthesise a default sector wrapping
+      // the same tickers, and the user refines it later from the sidebar.
+      const payload: BriefingConfig = existing
+        ? { ...existing, portfolio: { ...existing.portfolio, tickers, themes } }
+        : {
+            portfolio: { tickers, themes },
+            watch_sectors: [
+              { sector: "Default", tickers, notes: null },
+            ],
+            geopolitical: { conflicts: [] },
+            watch_events: [],
+          }
       const res = await fetch("/api/config", {
         method: "PUT",
         headers: { "content-type": "application/json" },

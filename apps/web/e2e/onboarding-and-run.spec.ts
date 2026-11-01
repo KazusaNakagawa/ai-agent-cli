@@ -37,6 +37,24 @@ test("first-time user can complete onboarding and reach the sidebar", async ({ p
   await expect(page.getByTestId("nav-portfolio")).toBeVisible({ timeout: 15_000 })
 })
 
+test("an onboarded user can re-run the setup wizard and back out (#543)", async ({ page }) => {
+  await page.goto("/portfolio")
+  await page.getByTestId("config-toggle").click()
+  await page.getByTestId("settings-nav-setup").click()
+  await page.getByTestId("rerun-setup").click()
+
+  // The wizard opens prefilled from the settings saved by the previous test.
+  await expect(page).toHaveURL(/\/\?rerun=1$/)
+  await expect(page.getByText("Choose how to call Claude")).toBeVisible()
+  await page.getByRole("button", { name: "Next" }).click()
+  await expect(page.getByTestId("tickers-input")).toHaveValue("PLTR, NVDA")
+
+  // Cancel restores onboarded=true, so the later tests can still open /chat.
+  await page.getByTestId("wizard-cancel-rerun").click()
+  await expect(page).toHaveURL(/\/portfolio$/)
+  await expect(page.getByTestId("nav-portfolio")).toBeVisible()
+})
+
 test("chat: an in-flight job survives a page reload via sessionStorage resume (Issue #125)", async ({
   page,
   context,

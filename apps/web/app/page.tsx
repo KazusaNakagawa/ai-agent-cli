@@ -16,14 +16,18 @@ async function isOnboarded(): Promise<boolean> {
 
 export const dynamic = "force-dynamic"
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: { rerun?: string }
+}) {
   const onboarded = await isOnboarded()
   if (onboarded) {
     redirect("/portfolio")
   }
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
-      <Wizard />
+      <Wizard rerun={searchParams.rerun === "1"} />
     </main>
   )
 }
