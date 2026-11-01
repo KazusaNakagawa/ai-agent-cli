@@ -8,7 +8,7 @@ os.environ.setdefault("BRIEFING_CONFIG_PATH", str(Path(__file__).parent / "confi
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src import claude_rates, credentials, journal_store, state as state_mod, weekly_recap_state
+from src import claude_rates, config, credentials, journal_store, state as state_mod, weekly_recap_state
 from web import auth
 from web.app import app
 
@@ -34,6 +34,19 @@ def reset_unpriced_warnings():
     across this suite and scripts/tests/.
     """
     claude_rates.reset_unpriced_warnings()
+
+
+@pytest.fixture(autouse=True)
+def no_journal_notion_credentials(monkeypatch):
+    """Report Journal <-> Notion sync as unconfigured for every test.
+
+    Autouse rather than opt-in: ``/api/journal`` writes schedule a background
+    sync that the ASGI test client runs synchronously, so any test reaching it
+    with the developer's real Keychain/.env credentials would create pages in
+    the real Journal database (#546). Tests that exercise sync patch fake
+    credentials in explicitly.
+    """
+    monkeypatch.setattr(config, "get_journal_notion_credentials", lambda: ("", ""))
 
 
 @pytest.fixture
