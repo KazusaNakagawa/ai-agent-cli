@@ -10,7 +10,7 @@ Contract:
 """
 from unittest.mock import patch
 
-from src import journal_store
+from src import config, credentials, journal_store
 
 
 async def test_list_requires_auth(async_client, journal_dir):
@@ -328,18 +328,36 @@ async def test_trash_requires_auth(async_client, journal_dir):
     assert resp.status_code == 401
 
 
-async def test_default_run_never_syncs_to_real_notion(
-    authed_client, journal_dir, isolated_keyring, monkeypatch
-):
-    # Simulate a developer machine with real Journal credentials in .env: an
-    # unpatched test must still not reach Notion (#546).
-    monkeypatch.setenv("NOTION_API_KEY", "real-key")
-    monkeypatch.setenv("NOTION_DATABASE_ID_JOURNAL", "real-db")
+def test_default_run_sees_no_journal_notion_credentials():
+    # The real .env / Keychain must be invisible to tests by default, otherwise
+    # journal writes sync to the real Notion Journal database (#546).
+    assert config.get_journal_notion_credentials() == ("", "")
+
+
+def test_journal_notion_credentials_read_from_keyring():
+    credentials.set_credential("NOTION_API_KEY", "key")
+    credentials.set_credential("NOTION_DATABASE_ID_JOURNAL", "db-id")
+    assert config.get_journal_notion_credentials() == ("key", "db-id")
+
+
+async def test_default_create_never_syncs_to_notion(authed_client, journal_dir):
     with patch("web.routers.journal.journal_sync.sync_new_entry") as mock_sync:
         response = await authed_client.post(
             "/api/journal", json={"content": "hi", "date": "2026-07-03"}
         )
     assert response.status_code == 200
+    mock_sync.assert_not_called()
+
+
+async def test_default_append_never_syncs_to_notion(authed_client, journal_dir):
+    post = await authed_client.post(
+        "/api/journal", json={"content": "hi", "date": "2026-07-03"}
+    )
+    with patch("web.routers.journal.journal_sync.sync_append") as mock_sync:
+        response = await authed_client.patch(
+            f"/api/journal/{post.json()['id']}", json={"content": "more"}
+        )
+    assert response.status_code == 204
     mock_sync.assert_not_called()
 
 
@@ -350,7 +368,7 @@ class TestNotionSync:
         return ("key", database_id)
 
     async def test_no_database_id_skips_sync(self, authed_client, journal_dir):
-        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")), \
+        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("key", "")), \
              patch("web.routers.journal.journal_sync.sync_new_entry") as mock_sync:
             response = await authed_client.post(
                 "/api/journal", json={"content": "hi", "date": "2026-07-03"}
@@ -451,10 +469,9 @@ class TestObsidianSync:
             journal_router.config, "get_obsidian_config",
             lambda: ObsidianConfig(vault_path=str(vault)),
         )
-        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")):
-            response = await authed_client.post(
-                "/api/journal", json={"content": "obsidian sync test", "date": "2026-07-17"}
-            )
+        response = await authed_client.post(
+            "/api/journal", json={"content": "obsidian sync test", "date": "2026-07-17"}
+        )
         assert response.status_code == 200
         entry_id = response.json()["id"]
         dest = vault / "journal" / f"{entry_id}.md"
@@ -471,14 +488,13 @@ class TestObsidianSync:
             journal_router.config, "get_obsidian_config",
             lambda: ObsidianConfig(vault_path=str(vault)),
         )
-        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")):
-            created = await authed_client.post(
-                "/api/journal", json={"content": "first", "date": "2026-07-17"}
-            )
-            entry_id = created.json()["id"]
-            response = await authed_client.patch(
-                f"/api/journal/{entry_id}", json={"content": "second"}
-            )
+        created = await authed_client.post(
+            "/api/journal", json={"content": "first", "date": "2026-07-17"}
+        )
+        entry_id = created.json()["id"]
+        response = await authed_client.patch(
+            f"/api/journal/{entry_id}", json={"content": "second"}
+        )
         assert response.status_code == 204
         text = (vault / "journal" / f"{entry_id}.md").read_text(encoding="utf-8")
         assert "first" in text and "second" in text
@@ -490,8 +506,7 @@ class TestObsidianSync:
             raise RuntimeError("config exploded")
 
         monkeypatch.setattr(journal_router.config, "get_obsidian_config", _boom)
-        with patch("web.routers.journal.config.get_journal_notion_credentials", return_value=("", "")):
-            response = await authed_client.post(
-                "/api/journal", json={"content": "still works", "date": "2026-07-17"}
-            )
+        response = await authed_client.post(
+            "/api/journal", json={"content": "still works", "date": "2026-07-17"}
+        )
         assert response.status_code == 200
