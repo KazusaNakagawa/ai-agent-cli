@@ -16,14 +16,21 @@ async function isOnboarded(): Promise<boolean> {
 
 export const dynamic = "force-dynamic"
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: { rerun?: string }
+}) {
   const onboarded = await isOnboarded()
-  if (onboarded) {
+  // ?rerun=1 (Config → Setup) opens the wizard for an onboarded user without
+  // clearing the flag. Before onboarding it means nothing: show a first run.
+  const rerun = onboarded && searchParams.rerun === "1"
+  if (onboarded && !rerun) {
     redirect("/portfolio")
   }
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
-      <Wizard />
+      <Wizard rerun={rerun} />
     </main>
   )
 }

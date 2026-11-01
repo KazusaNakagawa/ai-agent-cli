@@ -16,7 +16,7 @@ export default async function PortfolioPage() {
   if (!config) {
     return (
       <div className="rounded-md border border-destructive/40 p-4 text-sm text-destructive">
-        briefing.json is missing. Re-run onboarding from the home page.
+        briefing.json is missing. Open Config → Setup and re-run the setup wizard.
       </div>
     )
   }
