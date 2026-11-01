@@ -1,9 +1,24 @@
 import os
 from pathlib import Path
 
-# テスト実行時は tests/config/briefing.json を使用し、本番設定を読まない。
-# src.config の import 前に環境変数を立てる必要があるので、conftest 最上位で実行する。
+# Tests load tests/config/briefing.json, never the real config. The env var must
+# be set before src.config is imported, so it lives at the top of conftest.
 os.environ.setdefault("BRIEFING_CONFIG_PATH", str(Path(__file__).parent / "config" / "briefing.json"))
+
+# Never touch the real OS Keychain from tests: on macOS a read prompts for the
+# login password and blocks the run (#548). The fail backend raises instead of
+# prompting, so a test that writes a credential without ``isolated_keyring``
+# errors out rather than silently reading back None.
+# Both lines are needed: the env var reaches child processes (and any keyring
+# initialized later in this one); set_keyring() covers this process even if
+# keyring was already initialized before conftest ran. Forced rather than
+# setdefault so a developer's own PYTHON_KEYRING_BACKEND cannot override it.
+os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+
+import keyring
+from keyring.backends import fail as _fail_keyring
+
+keyring.set_keyring(_fail_keyring.Keyring())
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -53,9 +68,15 @@ def fixed_token(monkeypatch, tmp_path):
     monkeypatch.setattr(auth, "_token_cache", None, raising=False)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def isolated_keyring(monkeypatch):
-    """Swap the keyring backend for an in-memory dict so tests never touch the real Keychain."""
+    """Swap the keyring backend for an in-memory dict so tests never touch the real Keychain.
+
+    Autouse together with ``clear_credential_env``: any test reaching a real
+    integration (Journal Notion sync, Briefing notifier, Discord, ...) with the
+    developer's own credentials would write to the real service (#546).
+    Isolating the credential inputs covers every caller, however it imports.
+    """
     store: dict[tuple[str, str], str] = {}
 
     class _Fake:
@@ -71,9 +92,14 @@ def isolated_keyring(monkeypatch):
     monkeypatch.setattr(credentials, "_backend", _Fake())
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def clear_credential_env(monkeypatch):
-    """Strip any inherited env values for allow-listed credentials so .env fallback can't leak in."""
+    """Strip inherited env values for allow-listed credentials so .env fallback can't leak in.
+
+    ``src.config`` runs ``load_dotenv()`` at import, so the real ``.env`` is in
+    ``os.environ`` before any test runs. Autouse for the reason given in
+    ``isolated_keyring``; tests opt back in with ``monkeypatch.setenv``.
+    """
     for name in credentials.ALLOWED_KEYS:
         monkeypatch.delenv(name, raising=False)
 

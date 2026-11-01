@@ -37,6 +37,40 @@ test("first-time user can complete onboarding and reach the sidebar", async ({ p
   await expect(page.getByTestId("nav-portfolio")).toBeVisible({ timeout: 15_000 })
 })
 
+test("an onboarded user can re-run the setup wizard and back out (#543)", async ({ page }) => {
+  // Seed the state this test needs instead of relying on the test above.
+  const config = {
+    portfolio: { tickers: ["MSFT", "GOOGL"], themes: ["AI"] },
+    watch_sectors: [{ sector: "Cloud", tickers: ["MSFT"], notes: "kept" }],
+    geopolitical: { conflicts: [] },
+    watch_events: [],
+  }
+  expect((await page.request.put("/api/state", { data: { onboarded: true } })).ok()).toBe(true)
+  expect((await page.request.put("/api/config", { data: config })).ok()).toBe(true)
+
+  await page.goto("/portfolio")
+  await page.getByTestId("config-toggle").click()
+  await page.getByTestId("settings-nav-setup").click()
+  await page.getByTestId("rerun-setup").click()
+
+  // The wizard opens prefilled from the current settings.
+  await expect(page).toHaveURL(/\/\?rerun=1$/)
+  await expect(page.getByText("Choose how to call Claude")).toBeVisible()
+  await page.getByRole("button", { name: "Next" }).click()
+  await expect(page.getByTestId("tickers-input")).toHaveValue("MSFT, GOOGL")
+  await page.getByTestId("tickers-input").fill("PLTR")
+  await page.getByRole("button", { name: "Next" }).click()
+  await expect(page.getByText("Notifications and credentials")).toBeVisible()
+
+  // Cancel puts the saved config back and returns to the app. The onboarded
+  // flag was never cleared, so nothing else is affected.
+  await page.getByTestId("wizard-cancel-rerun").click()
+  await expect(page).toHaveURL(/\/portfolio$/)
+  await expect(page.getByTestId("nav-portfolio")).toBeVisible()
+  // GET fills in schema defaults for fields the seed omitted.
+  expect(await (await page.request.get("/api/config")).json()).toMatchObject(config)
+})
+
 test("chat: an in-flight job survives a page reload via sessionStorage resume (Issue #125)", async ({
   page,
   context,
