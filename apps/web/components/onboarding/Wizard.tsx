@@ -64,6 +64,9 @@ export function Wizard({ rerun = false }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
+  const [confirmSkip, setConfirmSkip] = useState(false)
+  const [skipping, setSkipping] = useState(false)
+  const [skipError, setSkipError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!rerun) return
@@ -108,6 +111,21 @@ export function Wizard({ rerun = false }: Props) {
     }
   }
 
+  // First run only: marks onboarding done and leaves briefing.json and the
+  // auth mode as they are (npx seeds usable defaults), with no test run.
+  const skipSetup = async () => {
+    setSkipping(true)
+    setSkipError(null)
+    try {
+      const res = await putJson("/api/state", { onboarded: true })
+      if (!res.ok) throw new Error(`PUT /api/state failed (HTTP ${res.status})`)
+      window.location.assign("/portfolio")
+    } catch (e) {
+      setSkipError(e instanceof Error ? e.message : "Network error")
+      setSkipping(false)
+    }
+  }
+
   const goNext = () => {
     const next = (step === 4 ? step : step + 1) as Step
     setStep(next)
@@ -132,6 +150,56 @@ export function Wizard({ rerun = false }: Props) {
           >
             Cancel
           </Button>
+        </div>
+      )}
+      {!rerun && !confirmSkip && (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setConfirmSkip(true)}
+            data-testid="wizard-skip"
+          >
+            Skip setup
+          </Button>
+        </div>
+      )}
+      {!rerun && confirmSkip && (
+        <div
+          className="space-y-2 rounded-md border p-3 text-sm"
+          data-testid="wizard-skip-note"
+        >
+          <p>
+            Skip setup and start with the default settings? You can change them later
+            in Config → Setup, or run this wizard again from there.
+          </p>
+          {skipError && (
+            <p role="alert" className="text-destructive" data-testid="wizard-skip-error">
+              {skipError}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setConfirmSkip(false)
+                setSkipError(null)
+              }}
+              disabled={skipping}
+              data-testid="wizard-skip-dismiss"
+            >
+              Continue setup
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => void skipSetup()}
+              disabled={skipping}
+              data-testid="wizard-skip-confirm"
+            >
+              {skipping ? "..." : "Skip setup"}
+            </Button>
+          </div>
         </div>
       )}
       {cancelError && (

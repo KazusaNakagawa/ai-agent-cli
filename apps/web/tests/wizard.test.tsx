@@ -241,3 +241,86 @@ describe("Wizard re-run mode", () => {
     expect(assignMock).not.toHaveBeenCalled()
   })
 })
+
+describe("Wizard skip setup (#544)", () => {
+  const fetchMock = vi.fn()
+  const assignMock = vi.fn()
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    assignMock.mockReset()
+    vi.stubGlobal("fetch", fetchMock)
+    vi.stubGlobal("location", { ...window.location, assign: assignMock })
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("asks for confirmation before skipping and touches nothing yet", async () => {
+    const user = userEvent.setup()
+    render(<Wizard />)
+
+    await user.click(screen.getByTestId("wizard-skip"))
+
+    expect(screen.getByTestId("wizard-skip-note")).toHaveTextContent(/Config → Setup/)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(assignMock).not.toHaveBeenCalled()
+  })
+
+  it("marks onboarding done and goes to the app without saving anything else", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 200 }))
+    const user = userEvent.setup()
+    render(<Wizard />)
+
+    await user.click(screen.getByTestId("wizard-skip"))
+    await user.click(screen.getByTestId("wizard-skip-confirm"))
+
+    await waitFor(() => expect(assignMock).toHaveBeenCalledWith("/portfolio"))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/state",
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ onboarded: true }) }),
+    )
+  })
+
+  it("shows the error and stays on the wizard when PUT /api/state fails", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("boom", { status: 500 }))
+    const user = userEvent.setup()
+    render(<Wizard />)
+
+    await user.click(screen.getByTestId("wizard-skip"))
+    await user.click(screen.getByTestId("wizard-skip-confirm"))
+
+    await waitFor(() => expect(screen.getByTestId("wizard-skip-error")).toHaveTextContent(/500/))
+    expect(assignMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId("wizard-skip-confirm")).toBeEnabled()
+  })
+
+  it("keeps the current step when the user decides to continue", async () => {
+    const user = userEvent.setup()
+    render(<Wizard />)
+
+    await user.click(screen.getByTestId("wizard-skip"))
+    await user.click(screen.getByTestId("wizard-skip-dismiss"))
+
+    expect(screen.queryByTestId("wizard-skip-note")).not.toBeInTheDocument()
+    expect(screen.getByText(/Step 1 \/ 4/)).toBeInTheDocument()
+  })
+
+  it("offers skip on later steps too", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ auth_mode: "cli" }), { status: 200 }))
+    const user = userEvent.setup()
+    render(<Wizard />)
+
+    await user.click(screen.getByTestId("wizard-primary"))
+    await waitFor(() => expect(screen.getByText(/Step 2 \/ 4/)).toBeInTheDocument())
+
+    expect(screen.getByTestId("wizard-skip")).toBeInTheDocument()
+  })
+
+  it("does not offer skip when re-running setup", () => {
+    fetchMock.mockImplementation(async () => new Response("{}", { status: 404 }))
+    render(<Wizard rerun />)
+    expect(screen.queryByTestId("wizard-skip")).not.toBeInTheDocument()
+  })
+})
