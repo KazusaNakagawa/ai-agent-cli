@@ -50,7 +50,55 @@ def iter_source_files(cfg: LocalLLMConfig) -> Iterator[Path]:
         yield path
 
 
+def _make_chunk(rel: str, start: int, end: int, body: str) -> Chunk:
+    cid = hashlib.sha256(
+        f"{rel}:{start}-{end}:{body}".encode("utf-8")
+    ).hexdigest()
+    return Chunk(
+        chunk_id=cid,
+        source_path=rel,
+        start_line=start,
+        end_line=end,
+        text=body,
+    )
+
+
+def _split_over_cap(
+    lines: list[str], first_line: int, max_chars: int
+) -> Iterator[tuple[int, int, str]]:
+    """Yield (start, end, body) pieces of ``lines``, each at most ``max_chars``.
+
+    Lines are packed greedily into contiguous, non-overlapping pieces; a
+    single line longer than the cap is cut into character slices that all
+    report that line as both start and end.
+    """
+    buf: list[str] = []
+    buf_start = first_line
+    buf_len = 0
+    for offset, line in enumerate(lines):
+        lineno = first_line + offset
+        if len(line) > max_chars:
+            if buf:
+                yield buf_start, lineno - 1, "\n".join(buf)
+                buf, buf_len = [], 0
+            for k in range(0, len(line), max_chars):
+                yield lineno, lineno, line[k:k + max_chars]
+            buf_start = lineno + 1
+            continue
+        added = len(line) + (1 if buf else 0)
+        if buf and buf_len + added > max_chars:
+            yield buf_start, lineno - 1, "\n".join(buf)
+            buf, buf_len, buf_start = [], 0, lineno
+            added = len(line)
+        buf.append(line)
+        buf_len += added
+    if buf:
+        yield buf_start, first_line + len(lines) - 1, "\n".join(buf)
+
+
 def chunk_file(path: Path, cfg: LocalLLMConfig) -> list[Chunk]:
+    if cfg.chunk_max_chars <= 0:
+        raise ValueError(f"chunk_max_chars must be positive, got {cfg.chunk_max_chars}")
     text = path.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines()
     if not lines:
@@ -59,21 +107,26 @@ def chunk_file(path: Path, cfg: LocalLLMConfig) -> list[Chunk]:
     rel = path.relative_to(cfg.repo_root).as_posix()
     step = cfg.chunk_lines - cfg.chunk_overlap
     out: list[Chunk] = []
+    seen: set[str] = set()
     i = 0
     while i < len(lines):
         start = i + 1
         end = min(i + cfg.chunk_lines, len(lines))
         body = "\n".join(lines[i:end])
-        cid = hashlib.sha256(
-            f"{rel}:{start}-{end}:{body}".encode("utf-8")
-        ).hexdigest()
-        out.append(Chunk(
-            chunk_id=cid,
-            source_path=rel,
-            start_line=start,
-            end_line=end,
-            text=body,
-        ))
+        if len(body) <= cfg.chunk_max_chars:
+            # Same text and ID as before the cap existed, so already-indexed
+            # chunks are not re-embedded.
+            pieces = [(start, end, body)]
+        else:
+            pieces = list(_split_over_cap(lines[i:end], start, cfg.chunk_max_chars))
+        for s, e, b in pieces:
+            c = _make_chunk(rel, s, e, b)
+            # Overlapping windows can re-split into identical pieces; a batch
+            # upsert with duplicate IDs is rejected by Chroma.
+            if c.chunk_id in seen:
+                continue
+            seen.add(c.chunk_id)
+            out.append(c)
         if end >= len(lines):
             break
         i += step
