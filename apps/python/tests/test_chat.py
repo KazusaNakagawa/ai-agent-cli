@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from src import chat_cli as chat
+from src import credentials, state as state_mod
 
 
 class TestListSessions:
@@ -91,7 +92,8 @@ class TestBuildCmd:
 
 
 class TestRunClaude:
-    def test_claude_subprocess_strips_anthropic_api_key(self, tmp_path, monkeypatch):
+    def test_claude_subprocess_strips_anthropic_api_key(self, tmp_path, monkeypatch, isolated_state):
+        state_mod.write_state(state_mod.State(auth_mode="cli"))
         briefing = tmp_path / "briefing_2026-05-16.md"
         briefing.write_text("本文テスト")
         session_file = tmp_path / "2026-05-16"
@@ -109,7 +111,31 @@ class TestRunClaude:
         assert exit_code == 0
         assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") is None
 
-    def test_stale_resume_session_falls_back_to_new_session(self, tmp_path, monkeypatch, capsys):
+    def test_claude_subprocess_injects_anthropic_api_key_in_api_mode(
+        self, tmp_path, monkeypatch, isolated_state
+    ):
+        state_mod.write_state(state_mod.State(auth_mode="api"))
+        credentials.set_credential("ANTHROPIC_API_KEY", "secret-api-key")
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        monkeypatch.setattr(chat.subprocess, "run", fake_run)
+
+        exit_code = chat.run_claude("2026-05-16", briefing, session_file)
+
+        assert exit_code == 0
+        assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") == "secret-api-key"
+
+    def test_stale_resume_session_falls_back_to_new_session(
+        self, tmp_path, monkeypatch, capsys, isolated_state
+    ):
+        state_mod.write_state(state_mod.State(auth_mode="cli"))
         briefing = tmp_path / "briefing_2026-05-16.md"
         briefing.write_text("本文テスト")
         session_file = tmp_path / "2026-05-16"

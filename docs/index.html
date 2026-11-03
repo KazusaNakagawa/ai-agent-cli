@@ -596,9 +596,10 @@ apps/web/                         # Next.js UI — 閲覧・チャット・ジ�
       </p>
       <p>
         このため、対話セッションには <code>claude_runner</code> のリトライ・使用量ログが効きません。
-        認証も <code>claude_env()</code> が <code>ANTHROPIC_API_KEY</code> を常に除去するため、
-        <code>auth_mode</code> の設定に関わらず <code>cli</code> モード相当で固定されます。
-        claude を呼ぶコードを追加・監査するときは、この 1 か所が単一入口の外にあることを前提にしてください。
+        例外はこの 2 点だけです。環境変数の組み立ては
+        <code>claude_runner.build_env(state.read_state().auth_mode)</code> を使うため、
+        認証モードは他の経路と同じく <code>auth_mode</code> の設定に従います。
+        claude を呼ぶコードを追加・監査するときは、実行（<code>subprocess.run()</code>）だけが単一入口の外にあることを前提にしてください。
       </p>
 
       <h2>無人運用のための設計</h2>
