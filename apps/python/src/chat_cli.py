@@ -24,6 +24,24 @@ def list_sessions(sessions_dir: Path) -> None:
         print(f"  {f.name}  {f.read_text().strip()}")
 
 
+def _auth_mode() -> str:
+    """Return the configured auth_mode, falling back to "cli" with a warning.
+
+    The chat CLI never read state.json before auth_mode support, so a corrupt
+    file (JSONDecodeError) or an invalid auth_mode value (ValueError) must not
+    brick bin/chat.sh with a raw traceback — warn readably and run on the
+    OAuth session instead, matching the pre-change behaviour.
+    """
+    try:
+        return state_mod.read_state().auth_mode
+    except (ValueError, OSError) as exc:
+        print(
+            f"Warning: could not read state ({exc}); falling back to cli auth mode.",
+            file=sys.stderr,
+        )
+        return "cli"
+
+
 def _print_intro(target_date: str, session_file: Path, is_resume: bool) -> None:
     """Tell the user which session they're in. Lives here (not in build_cmd) so
     the library function stays silent for SSE use."""
@@ -40,7 +58,14 @@ def run_claude(target_date: str, briefing_file: Path, session_file: Path) -> int
     initial context for new sessions, and session_file stores the saved Claude
     session id. Returns the final subprocess exit code.
     """
-    env = build_env(auth_mode=state_mod.read_state().auth_mode)
+    auth_mode = _auth_mode()
+    env = build_env(auth_mode=auth_mode)
+    if auth_mode == "api" and "ANTHROPIC_API_KEY" not in env:
+        print(
+            "Warning: auth_mode is 'api' but no ANTHROPIC_API_KEY was found in "
+            "the Keychain or .env; the session will run on the OAuth subscription.",
+            file=sys.stderr,
+        )
 
     is_resume = session_file.exists()
     cmd = build_cmd(target_date, briefing_file, session_file)

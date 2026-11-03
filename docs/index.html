@@ -549,7 +549,7 @@ apps/web/                         # Next.js UI — 閲覧・チャット・ジ�
             </tr>
             <tr>
               <td><strong>生成系の LLM 呼び出しの入口を 1 か所に集約</strong></td>
-              <td>非対話の <code>claude</code> 実行が <code>src/claude_runner.py</code> を通るため、認証モード・環境変数の扱い・リトライの実装が 1 つしか存在しない（対話セッションは<a href="#対話セッションは別経路">別経路</a>）</td>
+              <td>非対話の <code>claude</code> 実行が <code>src/claude_runner.py</code> を通るため、認証モード・環境変数の扱い・リトライの実装が 1 つしか存在しない（対話セッションも環境変数の扱いは共通で、実行だけが<a href="#対話セッションは別経路">別経路</a>）</td>
             </tr>
             <tr>
               <td><strong>地政学 → 株価の因果を毎日の出力に織り込む</strong></td>
@@ -568,7 +568,7 @@ apps/web/                         # Next.js UI — 閲覧・チャット・ジ�
         <code>claude_runner.run_claude()</code> が<strong>非対話の</strong> claude CLI 呼び出しを引き受けます。
         ブリーフィング生成・週次リキャップ・評価パイプラインなど、出力をキャプチャして扱う経路がこれに当たります。
         認証まわりはモード依存で、<code>state.read_state().auth_mode</code>（既定は <code>cli</code>）に応じて
-        <code>_build_env()</code> が subprocess の環境変数を組み立てます。
+        <code>build_env()</code> が subprocess の環境変数を組み立てます。
       </p>
       <div class="table-wrap">
         <table>
@@ -582,14 +582,14 @@ apps/web/                         # Next.js UI — 閲覧・チャット・ジ�
       <div class="callout callout--warn">
         <p class="callout__title">実装時の注意</p>
         <p>
-          claude への新しい subprocess 呼び出しを追加するときは、必ず <code>_build_env(state.read_state().auth_mode)</code> を経由させてください。
+          claude への新しい subprocess 呼び出しを追加するときは、必ず <code>build_env(state.read_state().auth_mode)</code> を経由させてください。
           このヘルパーの外側で <code>ANTHROPIC_API_KEY</code> を直接セットすると、認証モードの切り替えが壊れます。
         </p>
       </div>
 
       <h3 id="対話セッションは別経路">例外 — 対話セッションは別経路</h3>
       <p>
-        <code>bin/chat.sh</code> の対話 Q&amp;A だけは <code>claude_runner</code> を通りません。
+        <code>bin/chat.sh</code> の対話 Q&amp;A だけは、実行が <code>claude_runner.run_claude()</code> を通りません。
         <code>src/chat_cli.py</code> が同名の <code>run_claude()</code> を持ち、<code>subprocess.run()</code> を直接呼びます。
         利用者がその場で入力する以上、子プロセスに端末をそのまま渡す必要があり、
         出力をキャプチャして再試行する前提の <code>claude_runner</code> には載せられないためです。
