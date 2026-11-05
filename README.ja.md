@@ -130,10 +130,12 @@ cd ../web && npm install  # Web UI を使う場合のみ
 ```bash
 # ワークフロー — 宣言済みパイプライン共通の入口
 bin/workflow.sh                   # 登録済みワークフロー一覧
-bin/workflow.sh run daily         # 日次の実行: ブリーフィング → 週次リキャップ（その日のみ）→ モデル単価チェック
+bin/workflow.sh run daily         # 日次の実行: ブリーフィング → 週次リキャップ（その日のみ）→ チャットのアーカイブ → モデル単価チェック
 bin/workflow.sh run briefing      # 日次ブリーフィング単体
 bin/workflow.sh run weekly        # 週次リキャップ。金曜以外はスキップ、--force で強制実行
 bin/workflow.sh run model-rates   # transcript に単価未登録の Claude モデルがあれば失敗
+bin/workflow.sh run chat-archive  # Claude Code が消す前に chat.sh の会話を output/chat_archive/ へ保存
+bin/workflow.sh run chat-insights # アーカイブしたうえで、直近のチャットの利用傾向レポートを output/chat_insights/ に出力
 
 # 当日のブリーフィングに対する対話 Q&A
 bin/chat.sh            # 新規セッション、または再開
