@@ -1,13 +1,13 @@
 "use client"
-import { Mic, Square } from "lucide-react"
+import { ArrowUp, Mic, Square } from "lucide-react"
 import { useEffect, useState, useRef, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { insertAtCursor } from "@/lib/insertAtCursor"
 import type { ImageAttachment } from "@/lib/types/image"
+import { cn } from "@/lib/utils"
 
 const MIN_TEXTAREA_HEIGHT_PX = 40
 const MAX_TEXTAREA_HEIGHT_PX = 200
@@ -71,9 +71,14 @@ export function ChatComposer({
   }
 
   return (
-    <Card>
-      <CardContent className="space-y-2 pt-6">
-        <div className="flex items-end gap-2">
+    <div className="mx-auto w-full max-w-3xl px-1">
+      <div
+        className={cn(
+          "rounded-3xl border bg-card shadow-sm",
+          isDragging && "ring-2 ring-primary",
+        )}
+      >
+        <div className="px-3 pt-3">
           <textarea
             ref={textareaRef}
             aria-label="Chat message"
@@ -99,13 +104,27 @@ export function ChatComposer({
             }}
             placeholder="Ask about today's briefing…"
             rows={2}
-            className={`flex-1 resize-none overflow-hidden rounded-md border bg-background px-3 py-2 text-sm${isDragging ? " ring-2 ring-primary" : ""}`}
+            className="w-full resize-none overflow-hidden bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground"
             data-testid="chat-input"
+          />
+        </div>
+        <div className="flex items-center gap-1 px-2 pb-2">
+          <ImageAttachArea
+            attachedImage={attachedImage}
+            onAttach={setAttachedImage}
+            onRemove={() => setAttachedImage(null)}
+            disabled={busy}
+            isDragging={isDragging}
+            onInsertFile={(markdown) =>
+              setInput(insertAtCursor(textareaRef.current, input, markdown))
+            }
           />
           {supportsMic && (
             <Button
               type="button"
-              variant={listening ? "destructive" : "outline"}
+              variant={listening ? "destructive" : "ghost"}
+              size="icon"
+              className="rounded-full"
               onClick={() => onToggleMic(input)}
               data-testid="mic-button"
               aria-label={listening ? "音声入力停止" : "音声入力開始"}
@@ -115,10 +134,22 @@ export function ChatComposer({
               {listening ? <Square aria-hidden className="h-4 w-4" /> : <Mic aria-hidden className="h-4 w-4" />}
             </Button>
           )}
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={searchHistory}
+              onChange={(e) => onToggleSearchHistory(e.target.checked)}
+              disabled={busy}
+              data-testid="search-history-toggle"
+            />
+            過去ブリーフィングを検索
+          </label>
+          <div className="flex-1" />
           {busy ? (
             <Button
               type="button"
               variant="destructive"
+              className="rounded-full"
               onClick={onCancel}
               data-testid="cancel-button"
               title="送信中の応答を中止 (Esc)"
@@ -130,40 +161,23 @@ export function ChatComposer({
               onClick={handleSend}
               disabled={input.trim().length === 0}
               data-testid="send-button"
+              className="rounded-full"
+              aria-label="Send"
             >
+              <ArrowUp aria-hidden className="h-4 w-4" />
               Send
             </Button>
           )}
         </div>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={searchHistory}
-            onChange={(e) => onToggleSearchHistory(e.target.checked)}
-            disabled={busy}
-            data-testid="search-history-toggle"
-          />
-          過去ブリーフィングを検索
-        </label>
-        <ImageAttachArea
-          attachedImage={attachedImage}
-          onAttach={setAttachedImage}
-          onRemove={() => setAttachedImage(null)}
-          disabled={busy}
-          isDragging={isDragging}
-          onInsertFile={(markdown) =>
-            setInput(insertAtCursor(textareaRef.current, input, markdown))
-          }
-        />
-        {!supportsMic && (
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="mic-unsupported"
-          >
-            Voice input is unavailable in this browser (Chrome / Edge supported).
-          </p>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+      {!supportsMic && (
+        <p
+          className="px-2 pt-2 text-xs text-muted-foreground"
+          data-testid="mic-unsupported"
+        >
+          Voice input is unavailable in this browser (Chrome / Edge supported).
+        </p>
+      )}
+    </div>
   )
 }

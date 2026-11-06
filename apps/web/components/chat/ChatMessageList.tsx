@@ -4,7 +4,6 @@ import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { LoadingDots } from "@/components/ui/loading-dots"
 import type { ChatMessage } from "@/lib/chatStore"
 import type { NotionSaveState } from "@/lib/hooks/useNotionSave"
@@ -18,12 +17,21 @@ type Props = {
   notionState: Record<number, NotionSaveState>
   onNotionSave: (idx: number) => void
   /**
-   * Grow to fill the available height instead of capping at 60vh. Used by the
-   * split view, where the surrounding pane already has a definite height and
-   * the composer must stay pinned below the scrolling log.
+   * Fill the host's height with the log scrolling inside it, instead of
+   * capping the log's height. Used by the split view, where the surrounding
+   * pane already has a definite height and the composer must stay pinned
+   * below the scrolling log.
    */
   fill?: boolean
+  /** Fill the composer with a suggestion (empty-state chips). */
+  onSuggest?: (text: string) => void
 }
+
+const SUGGESTIONS = [
+  "半導体セクターの新着リスクは？",
+  "今日のブリーフィングを3行で要約して",
+  "先週の見立てで外したテーマは？",
+]
 
 export function ChatMessageList({
   messages,
@@ -33,39 +41,51 @@ export function ChatMessageList({
   notionState,
   onNotionSave,
   fill = false,
+  onSuggest,
 }: Props) {
   return (
-    <Card className={cn(fill && "flex min-h-0 flex-1 flex-col")}>
-      <CardContent
-        className={cn(
-          "space-y-3 overflow-y-auto pt-6",
-          fill ? "min-h-0 flex-1" : "max-h-[60vh]",
-        )}
-        data-testid="chat-log"
-      >
+    <div
+      className={cn(
+        "overflow-y-auto",
+        fill ? "min-h-0 flex-1" : "max-h-[70vh]",
+      )}
+      data-testid="chat-log"
+    >
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-1 py-2">
         {messages.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Ask anything about today&apos;s briefing — e.g.
-            {" "}&ldquo;半導体セクターの新着リスクは？&rdquo;
-          </p>
+          <div className="flex flex-col items-start gap-4 py-6">
+            <p className="text-sm text-muted-foreground">
+              Ask anything about today&apos;s briefing.
+            </p>
+            {onSuggest && (
+              <div className="flex flex-wrap gap-2">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => onSuggest(s)}
+                    className="rounded-full border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
-          messages.map((m, i) => (
-            <div
-              key={i}
-              className={cn(
-                "rounded-md border p-3 text-sm",
-                m.role === "user"
-                  ? "border-primary/30 bg-primary/5"
-                  : "border-muted bg-muted/30",
-              )}
-              data-testid={`chat-msg-${m.role}`}
-            >
-              <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-                {m.role}
-              </p>
-              {m.role === "assistant" ? (
-                m.content ? (
-                  <div className="prose prose-sm max-w-none dark:prose-invert">
+          messages.map((m, i) =>
+            m.role === "user" ? (
+              <div
+                key={i}
+                className="max-w-[80%] self-end whitespace-pre-wrap rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm leading-relaxed"
+                data-testid="chat-msg-user"
+              >
+                {m.content}
+              </div>
+            ) : (
+              <div key={i} data-testid="chat-msg-assistant">
+                {m.content ? (
+                  <div className="prose prose-sm max-w-none leading-7 dark:prose-invert">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       rehypePlugins={[rehypeSanitize]}
@@ -75,30 +95,24 @@ export function ChatMessageList({
                   </div>
                 ) : busy && i === messages.length - 1 && !m.cancelled ? (
                   <LoadingDots label="調査中" data-testid="chat-thinking" />
-                ) : null
-              ) : (
-                <p className="whitespace-pre-wrap">{m.content}</p>
-              )}
-              {m.error && (
-                <p
-                  className="mt-2 text-xs text-destructive"
-                  data-testid="chat-error"
-                >
-                  {m.error}
-                </p>
-              )}
-              {m.role === "assistant" && m.cancelled && (
-                <p
-                  className="mt-2 text-xs text-muted-foreground"
-                  data-testid="chat-cancelled"
-                >
-                  Cancelled
-                </p>
-              )}
-              {m.role === "assistant" &&
-                m.content &&
-                !m.error &&
-                !m.cancelled && (
+                ) : null}
+                {m.error && (
+                  <p
+                    className="mt-2 text-xs text-destructive"
+                    data-testid="chat-error"
+                  >
+                    {m.error}
+                  </p>
+                )}
+                {m.cancelled && (
+                  <p
+                    className="mt-2 text-xs text-muted-foreground"
+                    data-testid="chat-cancelled"
+                  >
+                    Cancelled
+                  </p>
+                )}
+                {m.content && !m.error && !m.cancelled && (
                   <NotionSaveRow
                     state={notionState[i]}
                     // Disable while this assistant message is still streaming
@@ -110,8 +124,9 @@ export function ChatMessageList({
                     onSave={() => onNotionSave(i)}
                   />
                 )}
-            </div>
-          ))
+              </div>
+            ),
+          )
         )}
         {retrying && (
           <p
@@ -121,8 +136,8 @@ export function ChatMessageList({
             Session expired upstream, retrying…
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -141,10 +156,10 @@ function NotionSaveRow({
     ? undefined
     : "Notion 認証情報が未設定です（Credentials タブで設定してください）"
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
         onClick={onSave}
         disabled={disabled}
