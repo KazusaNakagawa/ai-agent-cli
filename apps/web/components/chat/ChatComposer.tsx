@@ -161,11 +161,11 @@ export function ChatComposer({
               onClick={handleSend}
               disabled={input.trim().length === 0}
               data-testid="send-button"
+              size="icon"
               className="rounded-full"
               aria-label="Send"
             >
               <ArrowUp aria-hidden className="h-4 w-4" />
-              Send
             </Button>
           )}
         </div>
