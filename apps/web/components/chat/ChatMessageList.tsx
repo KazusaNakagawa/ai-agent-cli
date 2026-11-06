@@ -46,7 +46,7 @@ export function ChatMessageList({
   return (
     <div
       className={cn(
-        "overflow-y-auto",
+        "scrollbar-slim overflow-y-auto",
         fill ? "min-h-0 flex-1" : "max-h-[70vh]",
       )}
       data-testid="chat-log"
