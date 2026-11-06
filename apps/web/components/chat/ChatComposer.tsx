@@ -5,6 +5,7 @@ import { useEffect, useState, useRef, type KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
+import { useImagePaste } from "@/lib/hooks/useImagePaste"
 import { insertAtCursor } from "@/lib/insertAtCursor"
 import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
@@ -52,7 +53,9 @@ export function ChatComposer({
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null)
+  const [pasteError, setPasteError] = useState<string | null>(null)
   const { isDragging } = useImageDrop(textareaRef, setAttachedImage)
+  const { pasting } = useImagePaste(textareaRef, setAttachedImage, setPasteError)
 
   // Covers height updates from sources other than direct typing (history
   // recall via Up/Down, mic dictation, drag-and-drop file insert), which set
@@ -64,9 +67,12 @@ export function ChatComposer({
   function handleSend() {
     // Guard the keyboard path: ChatForm.send no-ops on empty input, so without
     // this the Enter key would clear the attachment without ever sending it.
-    if (input.trim().length === 0) return
+    // Sending mid-upload would lose the image from this message and leave it
+    // attached to the next one.
+    if (input.trim().length === 0 || pasting) return
     const path = attachedImage?.path
     setAttachedImage(null)
+    setPasteError(null)
     onSend(path)
   }
 
@@ -159,7 +165,7 @@ export function ChatComposer({
           ) : (
             <Button
               onClick={handleSend}
-              disabled={input.trim().length === 0}
+              disabled={input.trim().length === 0 || pasting}
               data-testid="send-button"
               size="icon"
               className="shrink-0 rounded-full"
@@ -170,6 +176,15 @@ export function ChatComposer({
           )}
         </div>
       </div>
+      {pasteError && (
+        <p
+          className="px-2 pt-2 text-xs text-destructive"
+          role="alert"
+          data-testid="paste-error"
+        >
+          {pasteError}
+        </p>
+      )}
       {!supportsMic && (
         <p
           className="px-2 pt-2 text-xs text-muted-foreground"
