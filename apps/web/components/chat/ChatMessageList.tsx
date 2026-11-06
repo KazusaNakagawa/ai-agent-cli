@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
 import { LoadingDots } from "@/components/ui/loading-dots"
 import type { ChatMessage } from "@/lib/chatStore"
+import { useFollowTail } from "@/lib/hooks/useFollowTail"
 import type { NotionSaveState } from "@/lib/hooks/useNotionSave"
 import { cn } from "@/lib/utils"
 
@@ -43,8 +44,11 @@ export function ChatMessageList({
   fill = false,
   onSuggest,
 }: Props) {
+  const { ref, onScroll } = useFollowTail(messages)
   return (
     <div
+      ref={ref}
+      onScroll={onScroll}
       className={cn(
         "scrollbar-slim overflow-y-auto",
         fill ? "min-h-0 flex-1" : "max-h-[70vh]",
