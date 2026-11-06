@@ -60,3 +60,5 @@ scripts/jev/job.json
 scripts/jev/*result*.json
 scripts/jev/money-*.json
 scripts/jev/results/
+.chaff-cache/
+.env*
