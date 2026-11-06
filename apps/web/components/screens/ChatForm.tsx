@@ -205,6 +205,7 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
         notionState={notionState}
         onNotionSave={(idx) => void saveToNotion(idx)}
         fill={fill}
+        onSuggest={setInput}
       />
       <ChatComposer
         input={input}
