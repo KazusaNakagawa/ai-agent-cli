@@ -246,3 +246,108 @@ test("chat: the cross-date history toggle sends search_history:true (#395)", asy
     await context.unrouteAll({ behavior: "ignoreErrors" })
   }
 })
+
+test("chat: the log follows a streaming reply and pauses when scrolled up (#560)", async ({
+  page,
+}) => {
+  // route.fulfill delivers a body in one piece, so the chat backend is faked
+  // inside the page: each token is pushed from the test, making "the reply
+  // grew" an explicit step rather than a timing race.
+  await page.addInitScript(() => {
+    const realFetch = window.fetch
+    const encoder = new TextEncoder()
+    const json = { "content-type": "application/json" }
+    const w = window as unknown as Record<string, unknown>
+    let controller: ReadableStreamDefaultController<Uint8Array>
+    let jobs = 0
+    window.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith("/api/chat") && init?.method === "POST") {
+        jobs++
+        return new Response(
+          JSON.stringify({ job_id: `e2e-follow-${jobs}`, status: "pending" }),
+          { status: 202, headers: json },
+        )
+      }
+      if (/\/api\/chat\/e2e-follow-\d+\/stream$/.test(url)) {
+        const body = new ReadableStream<Uint8Array>({
+          start(c) {
+            controller = c
+            w.__streams = ((w.__streams as number) ?? 0) + 1
+          },
+        })
+        return new Response(body, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        })
+      }
+      return realFetch(input, init)
+    }
+    w.__push = (text: string) =>
+      controller.enqueue(encoder.encode(`data: ${text}\n\n`))
+    w.__end = () => controller.close()
+  })
+
+  const log = page.getByTestId("chat-log")
+  const scrollTop = () => log.evaluate((el) => el.scrollTop)
+  const distance = () =>
+    log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
+  const push = (text: string) =>
+    page.evaluate((t) => {
+      ;(window as unknown as { __push: (s: string) => void }).__push(t)
+    }, text)
+  const end = () =>
+    page.evaluate(() => {
+      ;(window as unknown as { __end: () => void }).__end()
+    })
+  const streamOpened = (count: number) =>
+    expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as unknown as { __streams?: number }).__streams,
+        ),
+      )
+      .toBe(count)
+  const filler = (marker: string) => `${marker} ${"長い応答のテキストです。".repeat(300)}`
+
+  await page.goto("/chat")
+  await page.getByTestId("chat-input").fill("first question")
+  await page.getByTestId("send-button").click()
+  await streamOpened(1)
+
+  // Following: every token leaves the log at its end.
+  await push(filler("TOKEN-A"))
+  await expect(log).toContainText("TOKEN-A")
+  await push(filler("TOKEN-B"))
+  await expect(log).toContainText("TOKEN-B")
+  expect(await log.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  await expect.poll(distance).toBeLessThanOrEqual(40)
+
+  // Paused: a real wheel gesture holds the position against further tokens,
+  // and the commit at the end of the stream does not disturb it.
+  await log.hover()
+  await page.mouse.wheel(0, -400)
+  await expect.poll(distance).toBeGreaterThan(40)
+  const held = await scrollTop()
+  await push(filler("TOKEN-C"))
+  await expect(log).toContainText("TOKEN-C")
+  expect(await scrollTop()).toBe(held)
+  await end()
+  await expect(page.getByTestId("send-button")).toBeVisible()
+  expect(await scrollTop()).toBe(held)
+
+  // A new question resumes following from wherever the reader was.
+  await page.getByTestId("chat-input").fill("second question")
+  await page.getByTestId("send-button").click()
+  await streamOpened(2)
+  await push(filler("TOKEN-D"))
+  await expect(log).toContainText("TOKEN-D")
+  await expect.poll(distance).toBeLessThanOrEqual(40)
+  await end()
+  await expect(page.getByTestId("send-button")).toBeVisible()
+
+  // A restored history opens at its end.
+  await page.reload()
+  await expect(log).toContainText("TOKEN-D")
+  await expect.poll(distance).toBeLessThanOrEqual(40)
+})
