@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { RefObject } from "react"
 import type { ImageAttachment } from "@/lib/types/image"
-import { uploadImage } from "@/lib/imageUpload"
+import { uploadImages } from "@/lib/uploadImages"
 
 export function useImageDrop(
   ref: RefObject<HTMLTextAreaElement>,
@@ -48,12 +48,10 @@ export function useImageDrop(
       const files = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
         f.type.startsWith("image/")
       )
-      const results = await Promise.allSettled(files.map(uploadImage))
       // Attached in drop order. Failures stay silent — there is no persistent
       // UI anchor for drop errors.
-      for (const result of results) {
-        if (result.status === "fulfilled") onAttachRef.current(result.value)
-      }
+      const { attachments } = await uploadImages(files)
+      attachments.forEach((attachment) => onAttachRef.current(attachment))
     }
 
     document.addEventListener("dragover", onDragOver)

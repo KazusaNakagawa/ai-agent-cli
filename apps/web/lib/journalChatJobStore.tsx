@@ -28,7 +28,8 @@ export type JournalChatJobState = {
   question: string
   /** entryId snapshot taken at job start — later journalChatStore.entryId changes don't retarget an in-flight save. */
   targetEntryId: string | null
-  imagePath: string | null
+  /** Absent in snapshots persisted before multi-image support. */
+  imagePaths?: string[]
   /** Accumulating assistant content. Rebuilt from the GET stream's replay on resume, not persisted. */
   assistantContent: string
   error: string | null
@@ -36,7 +37,7 @@ export type JournalChatJobState = {
 
 export type JournalChatJobStartOpts = {
   question: string
-  imagePath?: string | null
+  imagePaths?: string[]
   targetEntryId: string | null
 }
 
@@ -54,7 +55,7 @@ const initialState: JournalChatJobState = {
   status: "idle",
   question: "",
   targetEntryId: null,
-  imagePath: null,
+  imagePaths: [],
   assistantContent: "",
   error: null,
 }
@@ -218,7 +219,7 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
       status: "pending",
       question: opts.question,
       targetEntryId: opts.targetEntryId,
-      imagePath: opts.imagePath ?? null,
+      imagePaths: opts.imagePaths ?? [],
     }))
     let post: Response
     try {
@@ -227,7 +228,7 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           question: opts.question,
-          ...(opts.imagePath ? { image_path: opts.imagePath } : {}),
+          ...(opts.imagePaths?.length ? { image_paths: opts.imagePaths } : {}),
         }),
       })
     } catch (e) {

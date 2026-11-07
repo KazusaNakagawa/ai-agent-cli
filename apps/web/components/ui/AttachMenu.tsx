@@ -1,7 +1,7 @@
 "use client"
 import { ImageIcon, Paperclip } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { uploadImage } from "@/lib/imageUpload"
+import { uploadImages } from "@/lib/uploadImages"
 import { uploadFile } from "@/lib/fileUpload"
 import type { ImageAttachment } from "@/lib/types/image"
 
@@ -45,18 +45,16 @@ export function AttachMenu({ onAttachImage, onInsertFile, disabled }: Props) {
   }, [open])
 
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
     setError(null)
     setBusy(true)
-    try {
-      onAttachImage(await uploadImage(file))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed, please try again")
-    } finally {
-      setBusy(false)
-      if (imageInputRef.current) imageInputRef.current.value = ""
-    }
+    // Attached in selection order; one failed upload doesn't drop the rest.
+    const { attachments, error } = await uploadImages(files)
+    attachments.forEach((attachment) => onAttachImage(attachment))
+    setError(error)
+    setBusy(false)
+    if (imageInputRef.current) imageInputRef.current.value = ""
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -81,6 +79,7 @@ export function AttachMenu({ onAttachImage, onInsertFile, disabled }: Props) {
         ref={imageInputRef}
         type="file"
         accept="image/jpeg,image/png,image/gif,image/webp"
+        multiple
         className="hidden"
         onChange={handleImageChange}
       />

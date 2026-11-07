@@ -6,14 +6,13 @@ import { CloseIcon } from "@/components/briefing/icons"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { LoadingDots } from "@/components/ui/loading-dots"
 import { MarkdownView } from "@/components/ui/MarkdownView"
-import { useImageDrop } from "@/lib/hooks/useImageDrop"
+import { useImageAttachments } from "@/lib/hooks/useImageAttachments"
 import { insertAtCursor } from "@/lib/insertAtCursor"
 import { useJournalChatJobState } from "@/lib/journalChatJobStore"
 import { useJournalChatState } from "@/lib/journalChatStore"
 import { useJournalNav } from "@/lib/journalNavStore"
 import { parseQaTranscript } from "@/lib/journalQa"
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition"
-import type { ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
 
 const HEADER_BTN =
@@ -88,8 +87,15 @@ export function JournalScreen() {
   } = useJournalNav()
 
   const brainstormRef = useRef<HTMLTextAreaElement>(null)
-  const [brainstormImage, setBrainstormImage] = useState<ImageAttachment | null>(null)
-  const { isDragging: isBrainstormDragging } = useImageDrop(brainstormRef, setBrainstormImage)
+  const {
+    images: brainstormImages,
+    attach: attachBrainstormImage,
+    remove: removeBrainstormImage,
+    take: takeBrainstormImages,
+    error: brainstormImageError,
+    isDragging: isBrainstormDragging,
+    pasting: brainstormPasting,
+  } = useImageAttachments(brainstormRef)
 
   const [question, setQuestion] = useState("")
   const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
@@ -103,23 +109,22 @@ export function JournalScreen() {
 
   const brainstorm = useCallback(async () => {
     const q = question.trim()
-    if (!q || brainstorming) return
+    if (!q || brainstorming || brainstormPasting) return
     setQuestion("")
     brainstormEpoch.current = viewEpoch.current
     await job.startJob({
       question: q,
-      imagePath: brainstormImage?.path ?? null,
+      // Taken (and so cleared) unconditionally, including on cancel/failure —
+      // simpler than threading the outcome back through startJob's return
+      // value, and re-attaching images to a retyped question is a minor
+      // inconvenience compared to the state this replaces.
+      imagePaths: takeBrainstormImages(),
       targetEntryId: journalChat.entryId,
     })
-    // Cleared unconditionally (including on cancel/failure) — simpler than
-    // threading the outcome back through startJob's return value, and
-    // re-attaching an image to a retyped question is a minor inconvenience
-    // compared to the state this replaces.
-    setBrainstormImage(null)
     // viewEpoch is a ref (stable identity) read only for its .current value at
     // call time, so it's intentionally omitted from the dependency array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question, brainstorming, brainstormImage, job, journalChat.entryId])
+  }, [question, brainstorming, brainstormPasting, takeBrainstormImages, job, journalChat.entryId])
 
   // Abort the in-flight brainstorm and terminate the backend job — works
   // whether or not the backend job_id has arrived yet (journalChatJobStore
@@ -296,19 +301,24 @@ export function JournalScreen() {
                   className={`w-full resize-y rounded-md border bg-background p-3 text-sm${isBrainstormDragging ? " ring-2 ring-primary" : ""}`}
                 />
                 <ImageAttachArea
-                  attachedImages={brainstormImage ? [brainstormImage] : []}
-                  onAttach={setBrainstormImage}
-                  onRemove={() => setBrainstormImage(null)}
+                  attachedImages={brainstormImages}
+                  onAttach={attachBrainstormImage}
+                  onRemove={removeBrainstormImage}
                   isDragging={isBrainstormDragging}
                   onInsertFile={(markdown) =>
                     setQuestion(insertAtCursor(brainstormRef.current, question, markdown))
                   }
                 />
+                {brainstormImageError && (
+                  <p className="text-xs text-destructive" role="alert" data-testid="attach-error">
+                    {brainstormImageError}
+                  </p>
+                )}
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => void brainstorm()}
-                    disabled={brainstorming || question.trim() === ""}
+                    disabled={brainstorming || brainstormPasting || question.trim() === ""}
                     className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
                   >
                     {brainstorming ? "Thinking…" : "Brainstorm"}
