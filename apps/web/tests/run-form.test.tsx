@@ -127,7 +127,10 @@ describe("RunForm", () => {
   })
 
   describe("polling loop", () => {
-    // Collapse the 2s poll delay to 0ms so the loop runs at microtask speed.
+    // Collapse only the 2s poll delay to 0ms so the loop runs at microtask
+    // speed. Other timers keep their delay: waitFor schedules its own 1s
+    // timeout through setTimeout, and zeroing it fails the wait on its first
+    // check.
     // Keeping real timers everywhere else avoids the userEvent + fake-timer
     // entanglement and lets waitFor work normally.
     let realSetTimeout: typeof setTimeout
@@ -135,8 +138,8 @@ describe("RunForm", () => {
       realSetTimeout = global.setTimeout
       vi.stubGlobal(
         "setTimeout",
-        ((cb: (...a: unknown[]) => void) =>
-          realSetTimeout(cb, 0)) as unknown as typeof setTimeout,
+        ((cb: (...a: unknown[]) => void, ms?: number, ...args: unknown[]) =>
+          realSetTimeout(cb, ms === 2000 ? 0 : ms, ...args)) as unknown as typeof setTimeout,
       )
     })
 

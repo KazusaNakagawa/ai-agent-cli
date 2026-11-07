@@ -11,7 +11,7 @@ import { uploadImages } from "@/lib/uploadImages"
  * field.
  */
 export function useImagePaste(
-  ref: RefObject<HTMLTextAreaElement>,
+  ref: RefObject<HTMLTextAreaElement | null>,
   onAttach: (image: ImageAttachment) => void,
   onError: (message: string | null) => void
 ): { pasting: boolean } {

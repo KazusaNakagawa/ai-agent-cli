@@ -15,9 +15,9 @@ const HOP_BY_HOP = new Set([
 
 async function handle(
   req: Request,
-  { params }: { params: { path: string[] } },
+  { params }: { params: Promise<{ path: string[] }> },
 ) {
-  const upstreamPath = "/api/" + params.path.join("/")
+  const upstreamPath = "/api/" + (await params).path.join("/")
   const url = new URL(req.url)
   const target = upstreamPath + url.search
 
