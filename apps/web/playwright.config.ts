@@ -28,6 +28,11 @@ if (!process.env.TEST_WORKER_INDEX) {
   writeFileSync(PATHS.NEXT_TOKEN_FILE, token, { mode: 0o600 })
 }
 
+// Ports default to the dev ones; scripts/e2e-isolated.mjs moves them so a run
+// can sit beside a developer's own servers.
+const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 3000)
+const API_PORT = Number(process.env.E2E_API_PORT ?? 8000)
+
 export default defineConfig({
   testDir: "./e2e",
   testMatch: /.*\.spec\.ts$/,
@@ -37,16 +42,16 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: `http://127.0.0.1:${WEB_PORT}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
-      command: ".venv/bin/uvicorn web.app:app --host 127.0.0.1 --port 8000",
+      command: `.venv/bin/uvicorn web.app:app --host 127.0.0.1 --port ${API_PORT}`,
       cwd: PATHS.PYTHON_DIR,
-      url: "http://127.0.0.1:8000/api/health",
+      url: `http://127.0.0.1:${API_PORT}/api/health`,
       reuseExistingServer: false,
       timeout: 60_000,
       env: {
@@ -56,14 +61,14 @@ export default defineConfig({
       },
     },
     {
-      command: "npm run dev",
+      command: `npm run dev -- -p ${WEB_PORT}`,
       cwd: PATHS.WEB_DIR,
-      url: "http://127.0.0.1:3000",
+      url: `http://127.0.0.1:${WEB_PORT}`,
       reuseExistingServer: false,
       timeout: 120_000,
       env: {
         AI_AGENT_TOKEN_PATH: PATHS.NEXT_TOKEN_FILE,
-        API_BASE: "http://127.0.0.1:8000",
+        API_BASE: `http://127.0.0.1:${API_PORT}`,
       },
     },
   ],

@@ -13,7 +13,8 @@ npm run start    # serve the production build
 npm run lint     # next lint
 npm run test     # vitest run (one-off)
 npm run test:watch
-npm run test:e2e # playwright — onboarding-and-run smoke gate
+npm run test:e2e # playwright — e2e smoke gate (uses ports 3000 / 8000)
+npm run test:e2e:isolated  # same suite from a temp copy on 3100 / 8100, beside your dev servers
 ```
 
 ## API client
@@ -45,13 +46,14 @@ Vitest + jsdom + Testing Library. Tests live in `tests/` and run with
 
 ### E2E smoke gate
 
-`npm run test:e2e` runs the single Playwright scenario in `e2e/` that walks
-the first-time user flow end-to-end: launch → 4-step onboarding wizard →
-`POST /api/run?dry_run=true` → sidebar reachable. This is intentionally
-the *only* E2E test — everything else is covered by Vitest. Treat it as
-the manual smoke gate before cutting a release; it is **not** wired into
-the `web` GitHub Actions workflow because Playwright's browser download
-(~150 MB) inflates CI time disproportionately for a single scenario.
+`npm run test:e2e` runs the Playwright specs in `e2e/`.
+
+- `onboarding-and-run.spec.ts` starts with the first-time flow: launch → 4-step onboarding wizard → `POST /api/run?dry_run=true` → sidebar reachable. It then covers re-running and skipping setup, and the chat and journal paths, with their backends mocked in the browser.
+- `workspace.spec.ts` covers the file workspace.
+
+Vitest covers the rest. Treat the suite as the manual smoke gate before cutting a release. It is **not** wired into the `web` GitHub Actions workflow, because Playwright's browser download (~150 MB) inflates CI time disproportionately.
+
+The tests in `onboarding-and-run.spec.ts` run serially and share backend state: the first test marks onboarding done, and the chat tests depend on it. Run the whole file. A chat test picked alone with `-g` lands on the wizard and fails.
 
 Isolation is per-run, no manual cleanup required:
 
@@ -81,6 +83,18 @@ npx playwright install chromium
 
 The config invokes `apps/python/.venv/bin/uvicorn` directly, so the venv
 must exist before `npm run test:e2e` is run.
+
+#### Running beside your dev servers
+
+`npm run test:e2e` starts its own `next dev` on 3000 and FastAPI on 8000, and refuses to reuse running ones. `npm run test:e2e:isolated` (`scripts/e2e-isolated.mjs`) runs the same suite without stopping yours:
+
+- It copies `apps/web` and `apps/python` into a temp directory and starts both servers there, on 3100 and 8100. A second `next dev` in this checkout would share `.next` with the running one, hence the copy.
+- The copy is the git-visible file set: tracked files with your uncommitted edits, plus new files not yet added. Gitignored personal config, `input/`, `output/`, and tokens stay behind.
+- `node_modules` and `.venv` are symlinked from this checkout, so install them first.
+- Arguments after `--` go to Playwright, e.g. `npm run test:e2e:isolated -- e2e/workspace.spec.ts`.
+- To change the ports, set `E2E_WEB_PORT` / `E2E_API_PORT`. The script stops before copying anything if a port is taken.
+- A passing run deletes the copy. A failed run keeps it and prints its path, so the report and traces stay readable. `E2E_ISOLATED_KEEP=1` keeps it either way.
+- An interrupted run (Ctrl+C) also leaves the copy behind; its path is printed when the run starts.
 
 ## References
 
