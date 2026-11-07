@@ -11,6 +11,10 @@ on:
       - dev
       - main
 
+# Read-only token: these jobs only check out and test the code.
+permissions:
+  contents: read
+
 jobs:
   # One leg per supported interpreter. The range is declared in
   # apps/python/pyproject.toml (requires-python) and this matrix is what proves

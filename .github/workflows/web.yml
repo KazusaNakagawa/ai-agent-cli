@@ -10,6 +10,10 @@ on:
       - dev
       - main
 
+# Read-only token: these jobs only check out and test the code.
+permissions:
+  contents: read
+
 jobs:
   web:
     runs-on: ubuntu-latest

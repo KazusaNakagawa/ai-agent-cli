@@ -834,7 +834,7 @@ cd apps/web && npm run test:e2e         # Playwright</code></pre>
     li.className = "toc--" + h.tagName.toLowerCase();
 
     var a = document.createElement("a");
-    a.href = "#" + h.id;
+    a.href = "#" + encodeURIComponent(h.id);
     a.textContent = h.textContent.trim();
     li.appendChild(a);
     toc.appendChild(li);
@@ -842,7 +842,7 @@ cd apps/web && npm run test:e2e         # Playwright</code></pre>
 
     var anchor = document.createElement("a");
     anchor.className = "anchor";
-    anchor.href = "#" + h.id;
+    anchor.href = "#" + encodeURIComponent(h.id);
     anchor.textContent = "#";
     anchor.setAttribute("aria-label", "この見出しへのリンク");
     h.appendChild(anchor);
@@ -854,7 +854,7 @@ cd apps/web && npm run test:e2e         # Playwright</code></pre>
     if (id === current) return;
     current = id;
     links.forEach(function (a) {
-      a.classList.toggle("is-active", a.getAttribute("href") === "#" + id);
+      a.classList.toggle("is-active", a.getAttribute("href") === "#" + encodeURIComponent(id));
     });
   }
 
