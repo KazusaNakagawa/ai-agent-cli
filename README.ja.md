@@ -168,7 +168,7 @@ cd apps/python
 
 | スクリプト | 用途 |
 |---|---|
-| `workflow.sh` | 宣言済みワークフロー共通の入口。`workflow.sh` で一覧、`workflow.sh run <id>` で実行（`--force` / `--dry-run`）。`run daily` が日次のジョブ（ブリーフィング → その日なら週次リキャップ → モデル単価チェック）で、メンテナのマシンでは**手動実行が現行の運用**（[launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active) 参照）。[workflow-runner.md](docs/features/workflow-runner.md) 参照 |
+| `workflow.sh` | 宣言済みワークフロー共通の入口。`workflow.sh` で一覧、`workflow.sh run <id>` で実行（`--force` / `--dry-run`）。`run daily` が日次のジョブ（ブリーフィング → その日なら週次リキャップ → チャットのアーカイブ → モデル単価チェック）で、メンテナのマシンでは**手動実行が現行の運用**（[launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active) 参照）。[workflow-runner.md](docs/features/workflow-runner.md) 参照 |
 | `chat.sh` | ブリーフィングセッションに対する対話 Q&A |
 | `serve.sh` | Web UI 一式（FastAPI + Next.js）の起動。`API_PORT` / `WEB_PORT` で上書き可 |
 | `self_agent.sh` | 判断ログをペルソナプロファイル化して Notion へ投稿 |
