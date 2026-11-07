@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test"
 
-// The two tests below share backend state (onboarded=true is persisted into
-// state.json by test 1, used by test 2). Run serially so the order is fixed
-// and one test's failure aborts the rest instead of cascading.
+// The onboarding tests below share backend state: test 1 persists
+// onboarded=true into state.json, the re-run (#543) and skip (#544) tests flip
+// that flag again, and the chat tests rely on it being true. Run serially so
+// the order is fixed and one test's failure aborts the rest instead of
+// cascading.
 test.describe.configure({ mode: "serial" })
 
 test("first-time user can complete onboarding and reach the sidebar", async ({ page }) => {
@@ -69,6 +71,37 @@ test("an onboarded user can re-run the setup wizard and back out (#543)", async 
   await expect(page.getByTestId("nav-portfolio")).toBeVisible()
   // GET fills in schema defaults for fields the seed omitted.
   expect(await (await page.request.get("/api/config")).json()).toMatchObject(config)
+})
+
+test("a first-time user can skip setup and land in the app (#544)", async ({ page }) => {
+  // Start from a not-yet-onboarded home, whatever the tests above left behind.
+  expect((await page.request.put("/api/state", { data: { onboarded: false } })).ok()).toBe(true)
+  const configBefore = await (await page.request.get("/api/config")).json()
+  const modeBefore = await (await page.request.get("/api/auth/mode")).json()
+  const runRequests: string[] = []
+  page.on("request", (req) => {
+    if (req.method() === "POST" && new URL(req.url()).pathname === "/api/run") runRequests.push(req.url())
+  })
+
+  await page.goto("/")
+  await expect(page.getByText("Choose how to call Claude")).toBeVisible()
+  await page.getByTestId("wizard-skip").click()
+  await expect(page.getByTestId("wizard-skip-note")).toContainText("Config → Setup")
+  await page.getByTestId("wizard-skip-confirm").click()
+
+  await expect(page).toHaveURL(/\/portfolio$/)
+  await expect(page.getByTestId("nav-portfolio")).toBeVisible()
+  // The flag is persisted: neither a reload nor "/" brings the wizard back.
+  await page.reload()
+  await expect(page.getByTestId("nav-portfolio")).toBeVisible()
+  await page.goto("/")
+  await expect(page).toHaveURL(/\/portfolio$/)
+  expect(await (await page.request.get("/api/state")).json()).toMatchObject({ onboarded: true })
+
+  // Skipping saves nothing else and never starts a run.
+  expect(await (await page.request.get("/api/config")).json()).toEqual(configBefore)
+  expect(await (await page.request.get("/api/auth/mode")).json()).toEqual(modeBefore)
+  expect(runRequests).toEqual([])
 })
 
 test("chat: an in-flight job survives a page reload via sessionStorage resume (Issue #125)", async ({

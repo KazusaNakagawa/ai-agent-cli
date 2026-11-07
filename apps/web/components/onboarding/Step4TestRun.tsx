@@ -1,6 +1,7 @@
 "use client"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
+import { markOnboarded } from "./onboardingApi"
 import { WizardData } from "./Wizard"
 import { WizardShell } from "./wizard-shell"
 
@@ -9,6 +10,7 @@ type Props = {
   setData: (updater: (prev: WizardData) => WizardData) => void
   onBack: () => void
   step: 1 | 2 | 3 | 4
+  onBusyChange?: (busy: boolean) => void
 }
 
 type JobStatus = "idle" | "pending" | "running" | "done" | "failed"
@@ -16,7 +18,7 @@ type JobStatus = "idle" | "pending" | "running" | "done" | "failed"
 const POLL_INTERVAL_MS = 1000
 const POLL_TIMEOUT_MS = 30_000
 
-export function Step4TestRun({ onBack, step }: Props) {
+export function Step4TestRun({ onBack, step, onBusyChange }: Props) {
   const [status, setStatus] = useState<JobStatus>("idle")
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -25,19 +27,7 @@ export function Step4TestRun({ onBack, step }: Props) {
   const finishOnboarding = useCallback(async () => {
     setCompleting(true)
     try {
-      const res = await fetch("/api/state", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ onboarded: true }),
-      })
-      if (!res.ok) {
-        setError(`PUT /api/state failed (HTTP ${res.status})`)
-        setCompleting(false)
-        return
-      }
-      // Load "/" (not reload) so the Server Component redirects to the app
-      // also from a re-run, whose URL carries ?rerun=1.
-      window.location.assign("/")
+      await markOnboarded()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error")
       setCompleting(false)
@@ -63,9 +53,10 @@ export function Step4TestRun({ onBack, step }: Props) {
       setJobId(body.job_id)
       // Poll until the job leaves pending/running. The 30s ceiling is the
       // only stop condition; we don't track a cancelled flag because the
-      // button is disabled while busy so the user can't navigate away
-      // mid-poll, and StrictMode double-invoke of an effect-based flag was
-      // the source of an earlier "loop never starts" bug.
+      // user can't navigate away mid-poll (Back is disabled while busy, and
+      // so is the wizard's "Skip setup", via onBusyChange), and StrictMode
+      // double-invoke of an effect-based flag was the source of an earlier
+      // "loop never starts" bug.
       const startedAt = Date.now()
       while (true) {
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
@@ -102,6 +93,11 @@ export function Step4TestRun({ onBack, step }: Props) {
   const isDone = status === "done"
   const isFailed = status === "failed"
   const busy = status === "pending" || status === "running" || completing
+
+  // Lets the wizard hold back "Skip setup" while the test run is in flight.
+  useEffect(() => {
+    onBusyChange?.(busy)
+  }, [busy, onBusyChange])
 
   let primaryLabel: string
   let primaryHandler: () => void
