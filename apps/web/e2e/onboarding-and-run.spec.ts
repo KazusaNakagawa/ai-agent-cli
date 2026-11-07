@@ -489,3 +489,82 @@ test("chat: the image picker attaches several files at once (#562)", async ({
     await context.unrouteAll({ behavior: "ignoreErrors" })
   }
 })
+
+test("journal: an entry opens at the top and a brainstorm is followed", async ({
+  page,
+  context,
+}) => {
+  const entry = { id: "2026-11-07_101500", date: "2026-11-07", size: 10, item: "Long entry", notion_url: "" }
+  const longBody = Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1} of the entry.`).join("\n\n")
+  // Journal endpoints are faked so the test neither reads nor writes entries.
+  await context.route("**/api/journal**", async (route) => {
+    const req = route.request()
+    const path = new URL(req.url()).pathname
+    const json = (body: unknown, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) })
+    if (path === "/api/journal" && req.method() === "GET") return json({ entries: [entry] })
+    if (path === "/api/journal/trash") return json({ entries: [] })
+    if (path === `/api/journal/${entry.id}` && req.method() === "GET") {
+      return json({ content: `# Journal 2026-11-07\n\n${longBody}` })
+    }
+    return json({ ok: true, id: entry.id })
+  })
+  // The brainstorm stream is pushed token by token from the test.
+  await page.addInitScript(() => {
+    const realFetch = window.fetch
+    const encoder = new TextEncoder()
+    const w = window as unknown as Record<string, unknown>
+    let controller: ReadableStreamDefaultController<Uint8Array>
+    window.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith("/api/journal/chat") && init?.method === "POST") {
+        return new Response(JSON.stringify({ job_id: "e2e-journal-follow" }), {
+          status: 202,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      if (url.endsWith("/api/chat/e2e-journal-follow/stream")) {
+        const body = new ReadableStream<Uint8Array>({
+          start(c) {
+            controller = c
+            w.__streams = ((w.__streams as number) ?? 0) + 1
+          },
+        })
+        return new Response(body, { headers: { "content-type": "text/event-stream" } })
+      }
+      return realFetch(input, init)
+    }
+    w.__push = (text: string) => controller.enqueue(encoder.encode(`data: ${text}\n\n`))
+  })
+
+  const area = page.getByTestId("journal-scroll")
+  const scrollTop = () => area.evaluate((el) => el.scrollTop)
+  const distance = () => area.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
+  const push = (text: string) =>
+    page.evaluate((t) => (window as unknown as { __push: (s: string) => void }).__push(t), text)
+
+  await page.goto("/journal")
+  await page.getByText("Long entry").click()
+  await expect(page.getByTestId("journal-content")).toContainText("Paragraph 60")
+  expect(await area.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  // Opening an entry reads from the top.
+  expect(await scrollTop()).toBe(0)
+
+  await page.getByTestId("chat-input").fill("what next?")
+  await page.getByRole("button", { name: "Brainstorm" }).click()
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __streams?: number }).__streams))
+    .toBe(1)
+  await push(`TOKEN-A ${"An idea worth writing down. ".repeat(80)}`)
+  await expect(area).toContainText("TOKEN-A")
+  await expect.poll(distance).toBeLessThanOrEqual(40)
+
+  // Scrolling up holds the position while the answer keeps growing.
+  await area.hover()
+  await page.mouse.wheel(0, -500)
+  await expect.poll(distance).toBeGreaterThan(40)
+  const held = await scrollTop()
+  await push(`TOKEN-B ${"Another idea. ".repeat(80)}`)
+  await expect(area).toContainText("TOKEN-B")
+  expect(await scrollTop()).toBe(held)
+})

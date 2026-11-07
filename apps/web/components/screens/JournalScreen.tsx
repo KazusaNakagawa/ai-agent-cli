@@ -1,5 +1,5 @@
 "use client"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { CloseIcon } from "@/components/briefing/icons"
 import { ChatComposer } from "@/components/chat/ChatComposer"
@@ -9,6 +9,7 @@ import { useJournalChatJobState } from "@/lib/journalChatJobStore"
 import { useJournalChatState } from "@/lib/journalChatStore"
 import { useJournalNav } from "@/lib/journalNavStore"
 import { parseQaTranscript } from "@/lib/journalQa"
+import { useFollowTail } from "@/lib/hooks/useFollowTail"
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition"
 
 const HEADER_BTN =
@@ -66,6 +67,43 @@ export function JournalScreen() {
   const chatError = job.error
   const brainstormEpoch = useRef(0)
 
+  // The in-flight job only renders as a pending bubble while the view it
+  // was started from is still current — matches the pre-refactor behavior
+  // where switching entries/composing/trash cleared the visible transcript
+  // even though the backend job kept running in the background.
+  const showPendingTurn = job.jobId !== null && brainstormEpoch.current === viewEpoch.current
+  const displayTurns = useMemo(
+    () =>
+      showPendingTurn
+        ? [...journalChat.turns, { question: job.question, answer: job.assistantContent }]
+        : journalChat.turns,
+    [showPendingTurn, journalChat.turns, job.question, job.assistantContent],
+  )
+
+  const tailMessages = useMemo(
+    () =>
+      displayTurns.flatMap((turn) => [
+        { role: "user", content: turn.question },
+        { role: "assistant", content: turn.answer },
+      ]),
+    [displayTurns],
+  )
+  // Starts only when a brainstorm is sent, so opening an entry reads from the
+  // top. The user-message trigger is off because committing a turn briefly
+  // shows it next to its pending copy, which would look like a new question.
+  const {
+    ref: scrollRef,
+    onScroll: onScrollPanel,
+    follow: followTail,
+    stopFollowing,
+  } = useFollowTail(tailMessages, { followFromStart: false, followOnNewUserMessage: false })
+
+  // A different entry, a new draft, or a trash preview is a fresh read from
+  // the top; following restarts only with the next brainstorm.
+  useEffect(() => {
+    stopFollowing()
+  }, [selected, composing, trashPreview, stopFollowing])
+
   // Called by ChatComposer, which holds the images and the send guards (empty
   // input, uploads still in flight).
   const brainstorm = useCallback(async (imagePaths: string[]) => {
@@ -73,6 +111,7 @@ export function JournalScreen() {
     if (!q || brainstorming) return
     setQuestion("")
     brainstormEpoch.current = viewEpoch.current
+    followTail()
     await job.startJob({
       question: q,
       // The composer clears its images on send, including when the job is later
@@ -84,7 +123,7 @@ export function JournalScreen() {
     // viewEpoch is a ref (stable identity) read only for its .current value at
     // call time, so it's intentionally omitted from the dependency array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question, brainstorming, job, journalChat.entryId])
+  }, [question, brainstorming, job, journalChat.entryId, followTail])
 
   // Abort the in-flight brainstorm and terminate the backend job — works
   // whether or not the backend job_id has arrived yet (journalChatJobStore
@@ -109,14 +148,6 @@ export function JournalScreen() {
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [brainstorming, cancelBrainstorm])
 
-  // The in-flight job only renders as a pending bubble while the view it
-  // was started from is still current — matches the pre-refactor behavior
-  // where switching entries/composing/trash cleared the visible transcript
-  // even though the backend job kept running in the background.
-  const showPendingTurn = job.jobId !== null && brainstormEpoch.current === viewEpoch.current
-  const displayTurns = showPendingTurn
-    ? [...journalChat.turns, { question: job.question, answer: job.assistantContent }]
-    : journalChat.turns
 
   if (!panelOpen) {
     return (
@@ -219,7 +250,12 @@ export function JournalScreen() {
 
       {/* Panel body: the entry and the brainstorm turns scroll; the composer
           below stays pinned to the bottom of the panel. */}
-      <div className="scrollbar-slim flex-1 overflow-y-auto px-4 py-4 pr-6">
+      <div
+        ref={scrollRef}
+        onScroll={onScrollPanel}
+        className="scrollbar-slim flex-1 overflow-y-auto px-4 py-4 pr-6"
+        data-testid="journal-scroll"
+      >
         {trashPreview ? (
           /* Read-only preview of a trashed entry — no brainstorm here. */
           trashContent ? (
