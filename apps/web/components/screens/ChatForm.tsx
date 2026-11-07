@@ -100,7 +100,7 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
     [committedMessages, inFlightTurn],
   )
 
-  const send = useCallback((imagePath?: string) => {
+  const send = useCallback((imagePaths: string[] = []) => {
     const question = input.trim()
     if (!question || busy) return
     setInput("")
@@ -109,7 +109,7 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
     void chatJob.startJob({
       question,
       date: today(),
-      ...(imagePath ? { image_path: imagePath } : {}),
+      ...(imagePaths.length > 0 ? { image_paths: imagePaths } : {}),
       ...(searchHistory ? { search_history: true } : {}),
     })
   }, [busy, chatJob, input, searchHistory, setInput])
@@ -148,13 +148,19 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
 
     if (chatJob.staleSession && !retriedRef.current) {
       retriedRef.current = true
-      const { question, date, searchHistory: retrySearchHistory } = chatJob
+      const {
+        question,
+        date,
+        searchHistory: retrySearchHistory,
+        imagePaths: retryImagePaths = [],
+      } = chatJob
       setRetrying(true)
       chatJob.reset()
       void chatJob
         .startJob({
           question,
           date,
+          ...(retryImagePaths.length > 0 ? { image_paths: retryImagePaths } : {}),
           ...(retrySearchHistory ? { search_history: true } : {}),
         })
         .finally(() => {

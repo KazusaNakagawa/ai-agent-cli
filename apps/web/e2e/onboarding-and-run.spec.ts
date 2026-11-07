@@ -351,3 +351,88 @@ test("chat: the log follows a streaming reply and pauses when scrolled up (#560)
   await expect(log).toContainText("TOKEN-D")
   await expect.poll(distance).toBeLessThanOrEqual(40)
 })
+
+test("chat: real clipboard pastes add images and send them all (#559)", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"])
+  // Only the chat call is mocked: the paste and the upload route are real.
+  let capturedBody: Record<string, unknown> | null = null
+  await context.route("**/api/chat", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback()
+    }
+    capturedBody = route.request().postDataJSON()
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ job_id: "e2e-paste", status: "pending" }),
+    })
+  })
+  await context.route("**/api/chat/e2e-paste/stream", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: "data: saw the image\n\n",
+    })
+  })
+
+  const writeClipboard = (withText: boolean, color: string) =>
+    page.evaluate(async ([text, fill]) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = canvas.height = 8
+      const ctx = canvas.getContext("2d")!
+      ctx.fillStyle = fill
+      ctx.fillRect(0, 0, 8, 8)
+      const png = await new Promise<Blob>((resolve) =>
+        canvas.toBlob((b) => resolve(b!), "image/png"),
+      )
+      const items: Record<string, Blob> = { "image/png": png }
+      if (text) items["text/plain"] = new Blob([text], { type: "text/plain" })
+      await navigator.clipboard.write([new ClipboardItem(items)])
+    }, [withText ? "pasted caption" : "", color] as const)
+
+  const input = page.getByTestId("chat-input")
+  const previews = page.getByRole("img", { name: "Attached image" })
+  try {
+    await page.goto("/chat")
+
+    // Plain text attaches nothing.
+    await page.evaluate(() => navigator.clipboard.writeText("plain words"))
+    await input.focus()
+    await page.keyboard.press("ControlOrMeta+V")
+    await expect(input).toHaveValue("plain words")
+    await expect(previews).toHaveCount(0)
+
+    // Image and text together: the text lands and the image attaches.
+    await input.fill("")
+    await writeClipboard(true, "red")
+    await input.focus()
+    await page.keyboard.press("ControlOrMeta+V")
+    await expect(previews).toHaveCount(1)
+    await expect(input).toHaveValue("pasted caption")
+
+    // A second paste adds to the first instead of replacing it.
+    await writeClipboard(false, "blue")
+    await input.focus()
+    await page.keyboard.press("ControlOrMeta+V")
+    await expect(previews).toHaveCount(2)
+    for (const img of await previews.all()) {
+      await expect
+        .poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth))
+        .toBeGreaterThan(0)
+    }
+
+    await page.getByTestId("send-button").click()
+    await expect(page.getByTestId("chat-msg-assistant")).toContainText("saw the image")
+    expect(capturedBody).toMatchObject({ question: "pasted caption" })
+    const paths = (capturedBody as unknown as { image_paths: string[] }).image_paths
+    expect(paths).toHaveLength(2)
+    expect(new Set(paths).size).toBe(2)
+    for (const path of paths) expect(path).toMatch(/\.png$/)
+    await expect(previews).toHaveCount(0)
+  } finally {
+    await context.unrouteAll({ behavior: "ignoreErrors" })
+  }
+})

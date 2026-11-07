@@ -268,6 +268,36 @@ describe("chatJobStore", () => {
     expect(JSON.parse(capturedBody!)).toMatchObject({ search_history: true })
   })
 
+  it("startJob sends image_paths only when there are images", async () => {
+    const bodies: Array<Record<string, unknown>> = []
+    for (const id of ["one", "none"]) {
+      on("/api/chat", (init) => {
+        bodies.push(JSON.parse(init?.body as string))
+        return jsonResponse({ job_id: id, status: "pending" }, 202)
+      })
+      on(`/api/chat/${id}/stream`, () => sseStream([{ data: "hi" }]))
+    }
+
+    const { result } = renderHook(() => useChatJobState(), { wrapper })
+    await act(async () => {
+      await result.current.startJob({
+        question: "Q?",
+        date: "2026-06-06",
+        image_paths: ["/tmp/a.png", "/tmp/b.png"],
+      })
+    })
+    await waitFor(() => expect(result.current.status).toBe("done"))
+    expect(result.current.imagePaths).toEqual(["/tmp/a.png", "/tmp/b.png"])
+    act(() => result.current.reset())
+    await act(async () => {
+      await result.current.startJob({ question: "Q?", date: "2026-06-06", image_paths: [] })
+    })
+    await waitFor(() => expect(result.current.status).toBe("done"))
+
+    expect(bodies[0]).toMatchObject({ image_paths: ["/tmp/a.png", "/tmp/b.png"] })
+    expect(bodies[1]).not.toHaveProperty("image_paths")
+  })
+
   it("startJob omits search_history from the POST body when not requested", async () => {
     let capturedBody: string | undefined
     on("/api/chat", (init) => {

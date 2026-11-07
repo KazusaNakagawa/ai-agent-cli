@@ -296,7 +296,7 @@ export function JournalScreen() {
                   className={`w-full resize-y rounded-md border bg-background p-3 text-sm${isBrainstormDragging ? " ring-2 ring-primary" : ""}`}
                 />
                 <ImageAttachArea
-                  attachedImage={brainstormImage}
+                  attachedImages={brainstormImage ? [brainstormImage] : []}
                   onAttach={setBrainstormImage}
                   onRemove={() => setBrainstormImage(null)}
                   isDragging={isBrainstormDragging}

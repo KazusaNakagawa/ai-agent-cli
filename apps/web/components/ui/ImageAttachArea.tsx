@@ -5,9 +5,10 @@ import { ImageAttachmentPreview } from "@/components/ui/ImageAttachmentPreview"
 import { AttachMenu } from "@/components/ui/AttachMenu"
 
 type Props = {
-  attachedImage: ImageAttachment | null
+  attachedImages: ImageAttachment[]
   onAttach: (image: ImageAttachment) => void
-  onRemove: () => void
+  /** Called with the position of the image to drop. */
+  onRemove: (index: number) => void
   disabled?: boolean
   isDragging?: boolean
   // When provided, the "+" becomes a menu (image + generic file). The callback
@@ -16,7 +17,7 @@ type Props = {
 }
 
 export function ImageAttachArea({
-  attachedImage,
+  attachedImages,
   onAttach,
   onRemove,
   disabled,
@@ -36,9 +37,14 @@ export function ImageAttachArea({
       ) : (
         <ImageInsertButton onAttach={onAttach} disabled={disabled} />
       )}
-      {attachedImage && (
-        <ImageAttachmentPreview image={attachedImage} onRemove={onRemove} />
-      )}
+      {attachedImages.map((image, i) => (
+        <ImageAttachmentPreview
+          key={image.path}
+          image={image}
+          index={attachedImages.length > 1 ? i : undefined}
+          onRemove={() => onRemove(i)}
+        />
+      ))}
     </div>
   )
 }
