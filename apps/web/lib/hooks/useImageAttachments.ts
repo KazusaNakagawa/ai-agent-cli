@@ -11,7 +11,7 @@ import { MAX_IMAGES_PER_MESSAGE, type ImageAttachment } from "@/lib/types/image"
  * notice to show beside the box, and tracks uploads still in flight so the
  * host can hold back its send.
  */
-export function useImageAttachments(ref: RefObject<HTMLTextAreaElement>) {
+export function useImageAttachments(ref: RefObject<HTMLTextAreaElement | null>) {
   const [images, setImagesState] = useState<ImageAttachment[]>([])
   // Mirrors the state so overlapping uploads append to the latest list and
   // the limit check sees images attached earlier in the same tick.

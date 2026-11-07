@@ -106,6 +106,11 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
   // checks this right after the id arrives and DELETEs immediately instead
   // of ever entering "running".
   const cancelRequested = useRef(false)
+  // The job id as soon as the POST returns it, before setState commits.
+  // cancelJob reads it so a cancel that lands between the POST resolving and
+  // the "running" render still DELETEs the job instead of setting a
+  // cancelRequested flag that nothing will check again.
+  const latestJobId = useRef<string | null>(null)
 
   useEffect(() => {
     setState(loadPersisted())
@@ -214,6 +219,7 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
 
   const startJob = useCallback(async (opts: JournalChatJobStartOpts) => {
     cancelRequested.current = false
+    latestJobId.current = null
     setState(() => ({
       ...initialState,
       status: "pending",
@@ -263,14 +269,17 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
       setState(() => initialState)
       return
     }
+    latestJobId.current = body.job_id
     setState((prev) =>
       prev.status === "pending" ? { ...prev, jobId: body.job_id ?? null, status: "running" } : prev,
     )
   }, [])
 
   const cancelJob = useCallback(() => {
-    if (state.jobId) {
-      void fetch(`/api/chat/${state.jobId}`, { method: "DELETE", cache: "no-store" })
+    const id = state.jobId ?? latestJobId.current
+    latestJobId.current = null
+    if (id) {
+      void fetch(`/api/chat/${id}`, { method: "DELETE", cache: "no-store" })
       setState(initialState)
       // Clear immediately: waiting for the persist effect leaves a window
       // where a reload could rehydrate the cancelled job.
@@ -281,6 +290,7 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
   }, [state.jobId])
 
   const reset = useCallback(() => {
+    latestJobId.current = null
     setState(initialState)
     clearPersisted()
   }, [])

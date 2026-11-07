@@ -19,12 +19,13 @@ export const dynamic = "force-dynamic"
 export default async function Home({
   searchParams,
 }: {
-  searchParams: { rerun?: string }
+  searchParams: Promise<{ rerun?: string }>
 }) {
+  const { rerun: rerunParam } = await searchParams
   const onboarded = await isOnboarded()
   // ?rerun=1 (Config → Setup) opens the wizard for an onboarded user without
   // clearing the flag. Before onboarding it means nothing: show a first run.
-  const rerun = onboarded && searchParams.rerun === "1"
+  const rerun = onboarded && rerunParam === "1"
   if (onboarded && !rerun) {
     redirect("/portfolio")
   }
