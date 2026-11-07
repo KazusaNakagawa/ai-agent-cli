@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { RefObject } from "react"
 import type { ImageAttachment } from "@/lib/types/image"
-import { uploadImage } from "@/lib/imageUpload"
+import { uploadImages } from "@/lib/uploadImages"
 
 /**
  * Attaches the images pasted into `ref`, uploading them the same way a drop
@@ -37,18 +37,8 @@ export function useImagePaste(
       pendingRef.current++
       setPasting(true)
       onErrorRef.current(null)
-      const results = await Promise.allSettled(files.map(uploadImage))
-      let error: string | null = null
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          onAttachRef.current(result.value)
-        } else if (error === null) {
-          error =
-            result.reason instanceof Error
-              ? result.reason.message
-              : "Upload failed, please try again"
-        }
-      }
+      const { attachments, error } = await uploadImages(files)
+      attachments.forEach((attachment) => onAttachRef.current(attachment))
       if (error !== null) onErrorRef.current(error)
       if (--pendingRef.current === 0) setPasting(false)
     }

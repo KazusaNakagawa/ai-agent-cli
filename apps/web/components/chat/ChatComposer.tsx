@@ -1,13 +1,11 @@
 "use client"
 import { ArrowUp, Mic, Square } from "lucide-react"
-import { useCallback, useEffect, useState, useRef, type KeyboardEvent } from "react"
+import { useEffect, useRef, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
-import { useImageDrop } from "@/lib/hooks/useImageDrop"
-import { useImagePaste } from "@/lib/hooks/useImagePaste"
+import { useImageAttachments } from "@/lib/hooks/useImageAttachments"
 import { insertAtCursor } from "@/lib/insertAtCursor"
-import { MAX_IMAGES_PER_MESSAGE, type ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
 
 const MIN_TEXTAREA_HEIGHT_PX = 40
@@ -52,29 +50,16 @@ export function ChatComposer({
 }: Props) {
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [attachedImages, setAttachedImages] = useState<ImageAttachment[]>([])
-  // Mirrors the state so overlapping uploads append to the latest list and
-  // the limit check sees images attached earlier in the same tick.
-  const imagesRef = useRef<ImageAttachment[]>([])
-  const [attachError, setAttachError] = useState<string | null>(null)
-
-  const setImages = useCallback((next: ImageAttachment[]) => {
-    imagesRef.current = next
-    setAttachedImages(next)
-  }, [])
-  const attachImage = useCallback(
-    (image: ImageAttachment) => {
-      if (imagesRef.current.length >= MAX_IMAGES_PER_MESSAGE) {
-        setAttachError(`Up to ${MAX_IMAGES_PER_MESSAGE} images per message`)
-        return
-      }
-      setImages([...imagesRef.current, image])
-    },
-    [setImages],
-  )
-
-  const { isDragging } = useImageDrop(textareaRef, attachImage)
-  const { pasting } = useImagePaste(textareaRef, attachImage, setAttachError)
+  const {
+    images: attachedImages,
+    attach: attachImage,
+    remove: removeImage,
+    take: takeImages,
+    error: attachError,
+    isDragging,
+    uploading,
+    onPickerUploadingChange,
+  } = useImageAttachments(textareaRef)
 
   // Covers height updates from sources other than direct typing (history
   // recall via Up/Down, mic dictation, drag-and-drop file insert), which set
@@ -88,11 +73,8 @@ export function ChatComposer({
     // this the Enter key would clear the attachment without ever sending it.
     // Sending mid-upload would lose the image from this message and leave it
     // attached to the next one.
-    if (input.trim().length === 0 || pasting) return
-    const paths = imagesRef.current.map((image) => image.path)
-    setImages([])
-    setAttachError(null)
-    onSend(paths)
+    if (input.trim().length === 0 || uploading) return
+    onSend(takeImages())
   }
 
   return (
@@ -137,9 +119,8 @@ export function ChatComposer({
           <ImageAttachArea
             attachedImages={attachedImages}
             onAttach={attachImage}
-            onRemove={(index) =>
-              setImages(imagesRef.current.filter((_, i) => i !== index))
-            }
+            onRemove={removeImage}
+            onUploadingChange={onPickerUploadingChange}
             disabled={busy}
             isDragging={isDragging}
             onInsertFile={(markdown) =>
@@ -186,7 +167,7 @@ export function ChatComposer({
           ) : (
             <Button
               onClick={handleSend}
-              disabled={input.trim().length === 0 || pasting}
+              disabled={input.trim().length === 0 || uploading}
               data-testid="send-button"
               size="icon"
               className="shrink-0 rounded-full"

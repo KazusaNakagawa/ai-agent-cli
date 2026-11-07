@@ -436,3 +436,56 @@ test("chat: real clipboard pastes add images and send them all (#559)", async ({
     await context.unrouteAll({ behavior: "ignoreErrors" })
   }
 })
+
+test("chat: the image picker attaches several files at once (#562)", async ({
+  page,
+  context,
+}) => {
+  let capturedBody: Record<string, unknown> | null = null
+  await context.route("**/api/chat", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback()
+    }
+    capturedBody = route.request().postDataJSON()
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ job_id: "e2e-picker", status: "pending" }),
+    })
+  })
+  await context.route("**/api/chat/e2e-picker/stream", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: "data: saw both\n\n",
+    })
+  })
+
+  // A 1x1 PNG; the upload route is real.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64",
+  )
+  try {
+    await page.goto("/chat")
+    await page.getByRole("button", { name: "Attach" }).click()
+    const chooser = page.waitForEvent("filechooser")
+    await page.getByRole("menuitem", { name: /insert image/i }).click()
+    const fileChooser = await chooser
+    expect(fileChooser.isMultiple()).toBe(true)
+    await fileChooser.setFiles([
+      { name: "one.png", mimeType: "image/png", buffer: png },
+      { name: "two.png", mimeType: "image/png", buffer: png },
+    ])
+    await expect(page.getByRole("img", { name: "Attached image" })).toHaveCount(2)
+
+    await page.getByTestId("chat-input").fill("two from the picker")
+    await page.getByTestId("send-button").click()
+    await expect(page.getByTestId("chat-msg-assistant")).toContainText("saw both")
+    const paths = (capturedBody as unknown as { image_paths: string[] }).image_paths
+    expect(paths).toHaveLength(2)
+    expect(new Set(paths).size).toBe(2)
+  } finally {
+    await context.unrouteAll({ behavior: "ignoreErrors" })
+  }
+})

@@ -244,4 +244,35 @@ describe("journalChatJobStore", () => {
     expect(result.current.error).toBe("Auto-save failed (HTTP 500)")
     expect(result.current.assistantContent).toBe("partial")
   })
+
+  it("startJob sends image_paths only when there are images", async () => {
+    const bodies: Array<Record<string, unknown>> = []
+    for (const id of ["imgs", "none"]) {
+      on("/api/journal/chat", (init) => {
+        bodies.push(JSON.parse(init?.body as string))
+        return jsonResponse({ job_id: id }, 202)
+      })
+      on(`/api/chat/${id}/stream`, () => sseStream([{ data: "ok" }]))
+    }
+
+    const { result } = renderHook(() => useJournalChatJobState(), { wrapper })
+    await act(async () => {
+      await result.current.startJob({
+        question: "Q",
+        imagePaths: ["/abs/a.png", "/abs/b.png"],
+        targetEntryId: null,
+      })
+    })
+    await waitFor(() => expect(result.current.status).toBe("done"))
+    expect(result.current.imagePaths).toEqual(["/abs/a.png", "/abs/b.png"])
+    act(() => result.current.reset())
+    await act(async () => {
+      await result.current.startJob({ question: "Q", imagePaths: [], targetEntryId: null })
+    })
+    await waitFor(() => expect(result.current.status).toBe("done"))
+
+    expect(bodies[0]).toMatchObject({ image_paths: ["/abs/a.png", "/abs/b.png"] })
+    expect(bodies[0]).not.toHaveProperty("image_path")
+    expect(bodies[1]).not.toHaveProperty("image_paths")
+  })
 })

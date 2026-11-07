@@ -1,32 +1,36 @@
 "use client"
 import { useRef, useState } from "react"
 import type { ImageAttachment } from "@/lib/types/image"
-import { uploadImage } from "@/lib/imageUpload"
+import { uploadImages } from "@/lib/uploadImages"
 
 type Props = {
   onAttach: (image: ImageAttachment) => void
   disabled?: boolean
+  /** Told when an upload starts and settles, so the host can hold back a
+   * send that would otherwise race it. */
+  onUploadingChange?: (uploading: boolean) => void
 }
 
-export function ImageInsertButton({ onAttach, disabled }: Props) {
+export function ImageInsertButton({ onAttach, disabled, onUploadingChange }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
+  const [uploading, setUploadingState] = useState(false)
+  function setUploading(value: boolean) {
+    setUploadingState(value)
+    onUploadingChange?.(value)
+  }
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
     setError(null)
     setUploading(true)
-    try {
-      const attachment = await uploadImage(file)
-      onAttach(attachment)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed, please try again")
-    } finally {
-      setUploading(false)
-      if (inputRef.current) inputRef.current.value = ""
-    }
+    // Attached in selection order; one failed upload doesn't drop the rest.
+    const { attachments, error } = await uploadImages(files)
+    attachments.forEach((attachment) => onAttach(attachment))
+    setError(error)
+    setUploading(false)
+    if (inputRef.current) inputRef.current.value = ""
   }
 
   return (
@@ -35,6 +39,7 @@ export function ImageInsertButton({ onAttach, disabled }: Props) {
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/gif,image/webp"
+        multiple
         className="hidden"
         onChange={handleChange}
       />

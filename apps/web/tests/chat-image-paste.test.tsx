@@ -196,4 +196,55 @@ describe("pasting into the chat composer", () => {
     fireEvent.keyDown(textarea, { key: "Enter" })
     expect(onSend).toHaveBeenCalledWith(["/tmp/slow.png", "/tmp/fast.png"])
   })
+
+  describe("uploads from other routes", () => {
+    const pickerInput = () =>
+      document.querySelector(
+        'input[accept="image/jpeg,image/png,image/gif,image/webp"]'
+      ) as HTMLInputElement
+
+    function holdUpload() {
+      let finish: () => void = () => {}
+      upload.mockImplementationOnce(
+        (file) => new Promise((r) => { finish = () => r(attachmentFor(file)) }),
+      )
+      return () => act(async () => finish())
+    }
+
+    it("holds back sending while a picked image uploads", async () => {
+      const release = holdUpload()
+      const { onSend, textarea } = setup("question")
+      fireEvent.change(pickerInput(), { target: { files: [image("picked.png")] } })
+      await waitFor(() => expect(screen.getByTestId("send-button")).toBeDisabled())
+      fireEvent.keyDown(textarea, { key: "Enter" })
+      expect(onSend).not.toHaveBeenCalled()
+      await release()
+      await waitFor(() => expect(screen.getByTestId("send-button")).toBeEnabled())
+      fireEvent.keyDown(textarea, { key: "Enter" })
+      expect(onSend).toHaveBeenCalledWith(["/tmp/picked.png"])
+    })
+
+    it("holds back sending while a dropped image uploads", async () => {
+      const release = holdUpload()
+      const { onSend, textarea } = setup("question")
+      fireEvent.drop(textarea, {
+        dataTransfer: { files: [image("dropped.png")], types: ["Files"] },
+      })
+      await waitFor(() => expect(screen.getByTestId("send-button")).toBeDisabled())
+      fireEvent.keyDown(textarea, { key: "Enter" })
+      expect(onSend).not.toHaveBeenCalled()
+      await release()
+      await waitFor(() => expect(screen.getByTestId("send-button")).toBeEnabled())
+      fireEvent.keyDown(textarea, { key: "Enter" })
+      expect(onSend).toHaveBeenCalledWith(["/tmp/dropped.png"])
+    })
+
+    it("re-enables sending after a failed picked upload", async () => {
+      upload.mockRejectedValueOnce(new Error("Image must be under 5 MB"))
+      setup("question")
+      fireEvent.change(pickerInput(), { target: { files: [image("bad.png")] } })
+      expect(await screen.findByText("Image must be under 5 MB")).toBeInTheDocument()
+      expect(screen.getByTestId("send-button")).toBeEnabled()
+    })
+  })
 })
