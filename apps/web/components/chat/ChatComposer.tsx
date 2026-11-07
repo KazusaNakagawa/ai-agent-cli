@@ -1,13 +1,13 @@
 "use client"
 import { ArrowUp, Mic, Square } from "lucide-react"
-import { useEffect, useState, useRef, type KeyboardEvent } from "react"
+import { useCallback, useEffect, useState, useRef, type KeyboardEvent } from "react"
 
 import { Button } from "@/components/ui/button"
 import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
 import { useImageDrop } from "@/lib/hooks/useImageDrop"
 import { useImagePaste } from "@/lib/hooks/useImagePaste"
 import { insertAtCursor } from "@/lib/insertAtCursor"
-import type { ImageAttachment } from "@/lib/types/image"
+import { MAX_IMAGES_PER_MESSAGE, type ImageAttachment } from "@/lib/types/image"
 import { cn } from "@/lib/utils"
 
 const MIN_TEXTAREA_HEIGHT_PX = 40
@@ -30,7 +30,7 @@ type Props = {
   supportsMic: boolean
   listening: boolean
   onToggleMic: (prefix: string) => void
-  onSend: (imagePath?: string) => void
+  onSend: (imagePaths: string[]) => void
   onCancel: () => void
   onHistoryKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
   searchHistory: boolean
@@ -52,10 +52,29 @@ export function ChatComposer({
 }: Props) {
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null)
-  const [pasteError, setPasteError] = useState<string | null>(null)
-  const { isDragging } = useImageDrop(textareaRef, setAttachedImage)
-  const { pasting } = useImagePaste(textareaRef, setAttachedImage, setPasteError)
+  const [attachedImages, setAttachedImages] = useState<ImageAttachment[]>([])
+  // Mirrors the state so overlapping uploads append to the latest list and
+  // the limit check sees images attached earlier in the same tick.
+  const imagesRef = useRef<ImageAttachment[]>([])
+  const [attachError, setAttachError] = useState<string | null>(null)
+
+  const setImages = useCallback((next: ImageAttachment[]) => {
+    imagesRef.current = next
+    setAttachedImages(next)
+  }, [])
+  const attachImage = useCallback(
+    (image: ImageAttachment) => {
+      if (imagesRef.current.length >= MAX_IMAGES_PER_MESSAGE) {
+        setAttachError(`Up to ${MAX_IMAGES_PER_MESSAGE} images per message`)
+        return
+      }
+      setImages([...imagesRef.current, image])
+    },
+    [setImages],
+  )
+
+  const { isDragging } = useImageDrop(textareaRef, attachImage)
+  const { pasting } = useImagePaste(textareaRef, attachImage, setAttachError)
 
   // Covers height updates from sources other than direct typing (history
   // recall via Up/Down, mic dictation, drag-and-drop file insert), which set
@@ -70,10 +89,10 @@ export function ChatComposer({
     // Sending mid-upload would lose the image from this message and leave it
     // attached to the next one.
     if (input.trim().length === 0 || pasting) return
-    const path = attachedImage?.path
-    setAttachedImage(null)
-    setPasteError(null)
-    onSend(path)
+    const paths = imagesRef.current.map((image) => image.path)
+    setImages([])
+    setAttachError(null)
+    onSend(paths)
   }
 
   return (
@@ -116,9 +135,11 @@ export function ChatComposer({
         </div>
         <div className="flex items-center gap-1 px-2 pb-2">
           <ImageAttachArea
-            attachedImage={attachedImage}
-            onAttach={setAttachedImage}
-            onRemove={() => setAttachedImage(null)}
+            attachedImages={attachedImages}
+            onAttach={attachImage}
+            onRemove={(index) =>
+              setImages(imagesRef.current.filter((_, i) => i !== index))
+            }
             disabled={busy}
             isDragging={isDragging}
             onInsertFile={(markdown) =>
@@ -176,13 +197,13 @@ export function ChatComposer({
           )}
         </div>
       </div>
-      {pasteError && (
+      {attachError && (
         <p
           className="px-2 pt-2 text-xs text-destructive"
           role="alert"
-          data-testid="paste-error"
+          data-testid="attach-error"
         >
-          {pasteError}
+          {attachError}
         </p>
       )}
       {!supportsMic && (

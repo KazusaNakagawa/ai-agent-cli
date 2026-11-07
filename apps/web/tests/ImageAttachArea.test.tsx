@@ -17,7 +17,7 @@ describe("ImageAttachArea", () => {
   it("renders + button when no image attached", () => {
     render(
       <ImageAttachArea
-        attachedImage={null}
+        attachedImages={[]}
         onAttach={vi.fn()}
         onRemove={vi.fn()}
       />
@@ -29,7 +29,7 @@ describe("ImageAttachArea", () => {
   it("renders thumbnail and remove button when image attached", () => {
     render(
       <ImageAttachArea
-        attachedImage={ATTACHMENT}
+        attachedImages={[ATTACHMENT]}
         onAttach={vi.fn()}
         onRemove={vi.fn()}
       />
@@ -42,13 +42,28 @@ describe("ImageAttachArea", () => {
     const onRemove = vi.fn()
     render(
       <ImageAttachArea
-        attachedImage={ATTACHMENT}
+        attachedImages={[ATTACHMENT]}
         onAttach={vi.fn()}
         onRemove={onRemove}
       />
     )
     fireEvent.click(screen.getByRole("button", { name: /remove attached image/i }))
-    expect(onRemove).toHaveBeenCalledOnce()
+    expect(onRemove).toHaveBeenCalledWith(0)
+  })
+
+  it("renders one thumbnail per image and removes by position", () => {
+    const onRemove = vi.fn()
+    const second = { url: "/api/images/2026-06-26/y.png", path: "/abs/input/2026-06-26/y.png" }
+    render(
+      <ImageAttachArea
+        attachedImages={[ATTACHMENT, second]}
+        onAttach={vi.fn()}
+        onRemove={onRemove}
+      />
+    )
+    expect(screen.getAllByRole("img", { name: /attached image/i })).toHaveLength(2)
+    fireEvent.click(screen.getByRole("button", { name: "Remove attached image 2" }))
+    expect(onRemove).toHaveBeenCalledWith(1)
   })
 
   it("calls onAttach after upload via button", async () => {
@@ -56,7 +71,7 @@ describe("ImageAttachArea", () => {
     const onAttach = vi.fn()
     render(
       <ImageAttachArea
-        attachedImage={null}
+        attachedImages={[]}
         onAttach={onAttach}
         onRemove={vi.fn()}
       />
@@ -71,7 +86,7 @@ describe("ImageAttachArea", () => {
   it("applies drag ring class when isDragging is true", () => {
     const { container } = render(
       <ImageAttachArea
-        attachedImage={null}
+        attachedImages={[]}
         onAttach={vi.fn()}
         onRemove={vi.fn()}
         isDragging={true}

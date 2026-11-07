@@ -45,13 +45,14 @@ export function useImageDrop(
       e.preventDefault()
       setIsDragging(false)
       if (!insideTarget(e)) return
-      const file = e.dataTransfer?.files[0]
-      if (!file || !file.type.startsWith("image/")) return
-      try {
-        const attachment = await uploadImage(file)
-        onAttachRef.current(attachment)
-      } catch {
-        // Silent — no persistent UI anchor for drop errors
+      const files = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
+        f.type.startsWith("image/")
+      )
+      const results = await Promise.allSettled(files.map(uploadImage))
+      // Attached in drop order. Failures stay silent — there is no persistent
+      // UI anchor for drop errors.
+      for (const result of results) {
+        if (result.status === "fulfilled") onAttachRef.current(result.value)
       }
     }
 

@@ -5,10 +5,10 @@ import type { ImageAttachment } from "@/lib/types/image"
 import { uploadImage } from "@/lib/imageUpload"
 
 /**
- * Attaches an image pasted into `ref`, uploading it the same way a drop does.
- * The paste is never default-prevented, so any text on the clipboard still
- * lands in the field. Only the first image is taken because a message carries
- * one attachment.
+ * Attaches the images pasted into `ref`, uploading them the same way a drop
+ * does. Every image in a paste is attached, in clipboard order. The paste is
+ * never default-prevented, so any text on the clipboard still lands in the
+ * field.
  */
 export function useImagePaste(
   ref: RefObject<HTMLTextAreaElement>,
@@ -20,8 +20,8 @@ export function useImagePaste(
   onAttachRef.current = onAttach
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
-  // Newest paste wins, so a slow earlier upload can't overwrite a later one.
-  const latestRef = useRef(0)
+  // Pastes can overlap; `pasting` stays on until the last one settles.
+  const pendingRef = useRef(0)
 
   useEffect(() => {
     // On `document` for the same reason as useImageDrop: the textarea may
@@ -29,26 +29,28 @@ export function useImagePaste(
     async function onPaste(e: ClipboardEvent) {
       const el = ref.current
       if (!el || !(e.target instanceof Node) || !el.contains(e.target)) return
-      const file = Array.from(e.clipboardData?.files ?? []).find((f) =>
+      const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
         f.type.startsWith("image/")
       )
-      if (!file) return
+      if (files.length === 0) return
 
-      const id = ++latestRef.current
+      pendingRef.current++
       setPasting(true)
       onErrorRef.current(null)
-      try {
-        const attachment = await uploadImage(file)
-        if (id === latestRef.current) onAttachRef.current(attachment)
-      } catch (err) {
-        if (id === latestRef.current) {
-          onErrorRef.current(
-            err instanceof Error ? err.message : "Upload failed, please try again"
-          )
+      const results = await Promise.allSettled(files.map(uploadImage))
+      let error: string | null = null
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          onAttachRef.current(result.value)
+        } else if (error === null) {
+          error =
+            result.reason instanceof Error
+              ? result.reason.message
+              : "Upload failed, please try again"
         }
-      } finally {
-        if (id === latestRef.current) setPasting(false)
       }
+      if (error !== null) onErrorRef.current(error)
+      if (--pendingRef.current === 0) setPasting(false)
     }
 
     document.addEventListener("paste", onPaste)

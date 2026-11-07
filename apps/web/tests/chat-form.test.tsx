@@ -212,6 +212,52 @@ describe("ChatForm", () => {
     expect(chatCalls[0][1].body).toBe(chatCalls[1][1].body)
   })
 
+  it("resends every attached image on the stale_session retry", async () => {
+    let uploads = 0
+    const uploadResponse = () => {
+      uploads++
+      return new Response(
+        JSON.stringify({ url: `/api/images/${uploads}.png`, path: `/tmp/${uploads}.png` }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }
+    on("/api/images/upload", uploadResponse)
+    on("/api/images/upload", uploadResponse)
+    chatRoundtrip(() =>
+      sseResponse([{ event: "stale_session", data: "expired" }]),
+    )
+    chatRoundtrip(() => sseResponse([{ data: "after retry" }]))
+    const user = userEvent.setup()
+    renderChatForm()
+    const input = screen.getByTestId("chat-input")
+    await user.type(input, "q")
+    fireEvent.paste(input, {
+      clipboardData: {
+        files: [
+          new File(["a"], "a.png", { type: "image/png" }),
+          new File(["b"], "b.png", { type: "image/png" }),
+        ],
+        getData: () => "",
+      },
+    })
+    await waitFor(() =>
+      expect(screen.getAllByRole("img", { name: "Attached image" })).toHaveLength(2),
+    )
+    await user.click(screen.getByTestId("send-button"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent(
+        "after retry",
+      )
+    })
+    const bodies = (
+      fetchMock.mock.calls.filter(([u]) => u === "/api/chat") as Array<[string, RequestInit]>
+    ).map(([, init]) => JSON.parse(init.body as string))
+    expect(bodies).toHaveLength(2)
+    expect(bodies[0].image_paths).toEqual(["/tmp/1.png", "/tmp/2.png"])
+    expect(bodies[1].image_paths).toEqual(bodies[0].image_paths)
+  })
+
   it("shows event:error inline and does not retry", async () => {
     chatRoundtrip(() => sseResponse([{ event: "error", data: "boom" }]))
     const user = userEvent.setup()
