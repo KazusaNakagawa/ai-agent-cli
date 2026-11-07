@@ -40,7 +40,7 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
   const [retrying, setRetrying] = useState(false)
   const [searchHistory, setSearchHistory] = useState(false)
   const { notionReady } = useNotionCredentials()
-  const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
+  const { supportsMic, listening, toggle: toggleMic, stop: stopMic } = useSpeechRecognition({
     onTranscript: setInput,
   })
   // Notion save targets committed turns only — never the in-flight one. It
@@ -103,6 +103,7 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
   const send = useCallback((imagePaths: string[] = []) => {
     const question = input.trim()
     if (!question || busy) return
+    stopMic()
     setInput("")
     setRetrying(false)
     retriedRef.current = false
@@ -112,7 +113,7 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
       ...(imagePaths.length > 0 ? { image_paths: imagePaths } : {}),
       ...(searchHistory ? { search_history: true } : {}),
     })
-  }, [busy, chatJob, input, searchHistory, setInput])
+  }, [busy, chatJob, input, searchHistory, setInput, stopMic])
 
   // Cancel: terminate the backend job, commit the partial answer as a
   // cancelled turn to chat history, restore the question into the textarea
