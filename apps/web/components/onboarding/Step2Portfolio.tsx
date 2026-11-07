@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { Input } from "@/components/ui/input"
 import { BriefingConfig, WatchSector } from "@/lib/config-types"
@@ -12,6 +12,7 @@ type Props = {
   onNext: () => void
   onBack: () => void
   step: 1 | 2 | 3 | 4
+  onBusyChange?: (busy: boolean) => void
   // Current briefing.json when re-running setup; null on a first run.
   existing?: BriefingConfig | null
 }
@@ -35,10 +36,23 @@ const isMirroredDefault = (s: WatchSector, portfolioTickers: string[]): boolean 
   s.tickers.length === portfolioTickers.length &&
   s.tickers.every((t) => portfolioTickers.includes(t))
 
-export function Step2Portfolio({ data, setData, onNext, onBack, step, existing = null }: Props) {
+export function Step2Portfolio({
+  data,
+  setData,
+  onNext,
+  onBack,
+  step,
+  existing = null,
+  onBusyChange,
+}: Props) {
   const [tickersRaw, setTickersRaw] = useState<string>(data.tickers.join(", "))
   const [themesRaw, setThemesRaw] = useState<string>(data.themes.join(", "))
   const [busy, setBusy] = useState(false)
+
+  // Lets the wizard hold back "Skip setup" while this step is saving.
+  useEffect(() => {
+    onBusyChange?.(busy)
+  }, [busy, onBusyChange])
   const [error, setError] = useState<string | null>(null)
 
   const tickers = normalizeTickers(tickersRaw)

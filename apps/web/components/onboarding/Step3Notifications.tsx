@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { Input } from "@/components/ui/input"
 import { WizardData } from "./Wizard"
@@ -11,6 +11,7 @@ type Props = {
   onNext: () => void
   onBack: () => void
   step: 1 | 2 | 3 | 4
+  onBusyChange?: (busy: boolean) => void
 }
 
 type Field = {
@@ -32,6 +33,7 @@ export function Step3Notifications({
   onNext,
   onBack,
   step,
+  onBusyChange,
 }: Props) {
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(FIELDS.map((f) => [f.name, ""])),
@@ -51,6 +53,11 @@ export function Step3Notifications({
     : FIELDS
 
   const [busy, setBusy] = useState(false)
+
+  // Lets the wizard hold back "Skip setup" while this step is saving.
+  useEffect(() => {
+    onBusyChange?.(busy)
+  }, [busy, onBusyChange])
   const [error, setError] = useState<string | null>(null)
 
   const submit = async () => {
