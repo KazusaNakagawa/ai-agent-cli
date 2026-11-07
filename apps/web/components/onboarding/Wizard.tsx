@@ -6,6 +6,7 @@ import { BriefingConfig } from "@/lib/config-types"
 import { Step1AuthMode } from "./Step1AuthMode"
 import { Step2Portfolio } from "./Step2Portfolio"
 import { Step3Notifications } from "./Step3Notifications"
+import { markOnboarded, putJson, seedDefaults } from "./onboardingApi"
 import { Step4TestRun } from "./Step4TestRun"
 
 export type AuthMode = "cli" | "api"
@@ -34,13 +35,6 @@ type Props = {
 
 type Original = { authMode: AuthMode; config: BriefingConfig | null }
 
-const putJson = (url: string, body: unknown) =>
-  fetch(url, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  })
-
 async function loadOriginal(): Promise<Original> {
   const [modeRes, configRes] = await Promise.all([fetch("/api/auth/mode"), fetch("/api/config")])
   if (!modeRes.ok) throw new Error(`GET /api/auth/mode failed (HTTP ${modeRes.status})`)
@@ -67,6 +61,9 @@ export function Wizard({ rerun = false }: Props) {
   const [confirmSkip, setConfirmSkip] = useState(false)
   const [skipping, setSkipping] = useState(false)
   const [skipError, setSkipError] = useState<string | null>(null)
+  // A step is saving (or running the Step 4 test). Skipping then would race
+  // that request, so "Skip setup" waits.
+  const [stepBusy, setStepBusy] = useState(false)
 
   useEffect(() => {
     if (!rerun) return
@@ -111,15 +108,15 @@ export function Wizard({ rerun = false }: Props) {
     }
   }
 
-  // First run only: marks onboarding done and leaves briefing.json and the
-  // auth mode as they are (npx seeds usable defaults), with no test run.
+  // First run only: creates briefing.json from the template if nothing has
+  // yet (a source checkout has none; npx already seeded one), marks
+  // onboarding done, and runs no test. What earlier steps saved stays.
   const skipSetup = async () => {
     setSkipping(true)
     setSkipError(null)
     try {
-      const res = await putJson("/api/state", { onboarded: true })
-      if (!res.ok) throw new Error(`PUT /api/state failed (HTTP ${res.status})`)
-      window.location.assign("/portfolio")
+      await seedDefaults()
+      await markOnboarded()
     } catch (e) {
       setSkipError(e instanceof Error ? e.message : "Network error")
       setSkipping(false)
@@ -133,7 +130,7 @@ export function Wizard({ rerun = false }: Props) {
   }
   const goBack = () => setStep((s) => (s === 1 ? s : ((s - 1) as Step)))
 
-  const props = { data, setData, onNext: goNext, onBack: goBack, step }
+  const props = { data, setData, onNext: goNext, onBack: goBack, step, onBusyChange: setStepBusy }
   const loading = rerun && !original && !loadError
 
   return (
@@ -158,6 +155,7 @@ export function Wizard({ rerun = false }: Props) {
             variant="ghost"
             size="sm"
             onClick={() => setConfirmSkip(true)}
+            disabled={stepBusy}
             data-testid="wizard-skip"
           >
             Skip setup
@@ -170,8 +168,10 @@ export function Wizard({ rerun = false }: Props) {
           data-testid="wizard-skip-note"
         >
           <p>
-            Skip setup and start with the default settings? You can change them later
-            in Config → Setup, or run this wizard again from there.
+            {reached >= 2
+              ? "Skip the remaining steps? What you already saved stays, and anything not set up yet starts from the default settings."
+              : "Skip setup and start with the default settings?"}{" "}
+            You can change them later in Config → Setup, or run this wizard again from there.
           </p>
           {skipError && (
             <p role="alert" className="text-destructive" data-testid="wizard-skip-error">
@@ -214,12 +214,15 @@ export function Wizard({ rerun = false }: Props) {
       ) : loading ? (
         <p className="text-sm text-muted-foreground">Loading current settings…</p>
       ) : (
-        <>
+        // Hidden, not unmounted, while the skip is confirmed: the step can't
+        // be submitted underneath it, and "Continue setup" brings back what
+        // was typed.
+        <div hidden={confirmSkip}>
           {step === 1 && <Step1AuthMode {...props} />}
           {step === 2 && <Step2Portfolio {...props} existing={original?.config ?? null} />}
           {step === 3 && <Step3Notifications {...props} />}
           {step === 4 && <Step4TestRun {...props} />}
-        </>
+        </div>
       )}
     </div>
   )

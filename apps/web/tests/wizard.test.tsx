@@ -267,24 +267,44 @@ describe("Wizard skip setup (#544)", () => {
     expect(assignMock).not.toHaveBeenCalled()
   })
 
-  it("marks onboarding done and goes to the app without saving anything else", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 200 }))
+  it("seeds missing defaults, marks onboarding done, and lets / pick the landing page", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ created: true }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }))
     const user = userEvent.setup()
     render(<Wizard />)
 
     await user.click(screen.getByTestId("wizard-skip"))
     await user.click(screen.getByTestId("wizard-skip-confirm"))
 
-    await waitFor(() => expect(assignMock).toHaveBeenCalledWith("/portfolio"))
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith(
+    await waitFor(() => expect(assignMock).toHaveBeenCalledWith("/"))
+    expect(fetchMock.mock.calls.map(([url, init]) => `${init?.method} ${url}`)).toEqual([
+      "POST /api/config/seed",
+      "PUT /api/state",
+    ])
+    expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/state",
-      expect.objectContaining({ method: "PUT", body: JSON.stringify({ onboarded: true }) }),
+      expect.objectContaining({ body: JSON.stringify({ onboarded: true }) }),
     )
   })
 
+  it("does not mark onboarding done when seeding the defaults fails", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("no template", { status: 500 }))
+    const user = userEvent.setup()
+    render(<Wizard />)
+
+    await user.click(screen.getByTestId("wizard-skip"))
+    await user.click(screen.getByTestId("wizard-skip-confirm"))
+
+    await waitFor(() => expect(screen.getByTestId("wizard-skip-error")).toHaveTextContent(/500/))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(assignMock).not.toHaveBeenCalled()
+  })
+
   it("shows the error and stays on the wizard when PUT /api/state fails", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("boom", { status: 500 }))
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ created: false }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("boom", { status: 500 }))
     const user = userEvent.setup()
     render(<Wizard />)
 
@@ -316,6 +336,72 @@ describe("Wizard skip setup (#544)", () => {
     await waitFor(() => expect(screen.getByText(/Step 2 \/ 4/)).toBeInTheDocument())
 
     expect(screen.getByTestId("wizard-skip")).toBeInTheDocument()
+  })
+
+  it("hides the step while the skip is being confirmed", async () => {
+    const user = userEvent.setup()
+    render(<Wizard />)
+
+    await user.click(screen.getByTestId("wizard-skip"))
+    expect(screen.getByTestId("wizard-primary")).not.toBeVisible()
+
+    await user.click(screen.getByTestId("wizard-skip-dismiss"))
+    expect(screen.getByTestId("wizard-primary")).toBeVisible()
+  })
+
+  it("can't be started while a step is saving", async () => {
+    let finish: (r: Response) => void = () => {}
+    fetchMock.mockReturnValueOnce(new Promise<Response>((r) => { finish = r }))
+    const user = userEvent.setup()
+    render(<Wizard />)
+
+    await user.click(screen.getByTestId("wizard-primary"))
+    expect(screen.getByTestId("wizard-skip")).toBeDisabled()
+
+    finish(new Response(JSON.stringify({ auth_mode: "cli" }), { status: 200 }))
+    await waitFor(() => expect(screen.getByText(/Step 2 \/ 4/)).toBeInTheDocument())
+    expect(screen.getByTestId("wizard-skip")).toBeEnabled()
+  })
+
+  it("can't be started during the Step 4 test run", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ auth_mode: "cli" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }))
+      .mockReturnValueOnce(new Promise<Response>(() => {}))
+    const user = userEvent.setup()
+    render(<Wizard />)
+
+    await user.click(screen.getByTestId("wizard-primary"))
+    await waitFor(() => expect(screen.getByText(/Step 2 \/ 4/)).toBeInTheDocument())
+    await user.type(screen.getByTestId("tickers-input"), "AAA")
+    await user.click(screen.getByTestId("wizard-primary"))
+    await waitFor(() => expect(screen.getByText(/Step 3 \/ 4/)).toBeInTheDocument())
+    await user.click(screen.getByTestId("wizard-primary"))
+    await waitFor(() => expect(screen.getByText(/Step 4 \/ 4/)).toBeInTheDocument())
+    expect(screen.getByTestId("wizard-skip")).toBeEnabled()
+
+    await user.click(screen.getByTestId("wizard-primary"))
+    await waitFor(() => expect(screen.getByTestId("job-status")).toHaveTextContent("pending"))
+    expect(screen.getByTestId("wizard-skip")).toBeDisabled()
+  })
+
+  it("says the defaults apply on Step 1", async () => {
+    const user = userEvent.setup()
+    render(<Wizard />)
+    await user.click(screen.getByTestId("wizard-skip"))
+    expect(screen.getByTestId("wizard-skip-note")).toHaveTextContent(/default settings/)
+    expect(screen.getByTestId("wizard-skip-note")).not.toHaveTextContent(/already saved/)
+  })
+
+  it("says earlier steps stay saved once one was saved", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ auth_mode: "cli" }), { status: 200 }))
+    const user = userEvent.setup()
+    render(<Wizard />)
+    await user.click(screen.getByTestId("wizard-primary"))
+    await waitFor(() => expect(screen.getByText(/Step 2 \/ 4/)).toBeInTheDocument())
+
+    await user.click(screen.getByTestId("wizard-skip"))
+    expect(screen.getByTestId("wizard-skip-note")).toHaveTextContent(/already saved/)
   })
 
   it("does not offer skip when re-running setup", () => {

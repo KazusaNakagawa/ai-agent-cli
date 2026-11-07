@@ -30,6 +30,10 @@ def _config_path() -> Path:
     )
 
 
+def _template_path() -> Path:
+    return paths.CONFIG_DIR / "briefing.json.example"
+
+
 @router.get("/config", response_model=BriefingConfigSchema)
 def get_config() -> BriefingConfigSchema:
     path = _config_path()
@@ -62,3 +66,27 @@ def put_config(payload: BriefingConfigSchema) -> dict:
         Path(tmp_path).unlink(missing_ok=True)
         raise
     return data
+
+
+@router.post("/config/seed")
+def seed_config() -> dict:
+    """Create briefing.json from the bundled template when it is missing.
+
+    The onboarding wizard calls this when the user skips setup, so a source
+    checkout (where nothing has created the file yet) still opens on usable
+    defaults. An existing file is never touched.
+    """
+    path = _config_path()
+    if path.exists():
+        return {"created": False}
+    template = _template_path()
+    if not template.is_file():
+        raise HTTPException(status_code=500, detail="briefing.json template not found")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        # "x" fails if another request created the file in the meantime.
+        with path.open("x", encoding="utf-8") as f:
+            f.write(template.read_text(encoding="utf-8"))
+    except FileExistsError:
+        return {"created": False}
+    return {"created": True}

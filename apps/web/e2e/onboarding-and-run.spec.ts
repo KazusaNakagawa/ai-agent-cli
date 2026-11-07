@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test"
 
-// The two tests below share backend state (onboarded=true is persisted into
-// state.json by test 1, used by test 2). Run serially so the order is fixed
-// and one test's failure aborts the rest instead of cascading.
+// The onboarding tests below share backend state: test 1 persists
+// onboarded=true into state.json, the re-run (#543) and skip (#544) tests flip
+// that flag again, and the chat tests rely on it being true. Run serially so
+// the order is fixed and one test's failure aborts the rest instead of
+// cascading.
 test.describe.configure({ mode: "serial" })
 
 test("first-time user can complete onboarding and reach the sidebar", async ({ page }) => {
