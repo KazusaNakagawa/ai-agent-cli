@@ -136,6 +136,10 @@ def _validate_image_path(image_path: str | None) -> Path | None:
 # stream-json output already in CHAT_STREAM_FLAGS.
 IMAGE_INPUT_FLAGS = ["--input-format", "stream-json"]
 
+# Images one message may carry. Each upload is capped at 5 MB, so this also
+# bounds the base64 payload piped into the CLI.
+MAX_IMAGES_PER_MESSAGE = 5
+
 _IMAGE_MEDIA_TYPES = {
     "jpg": "image/jpeg",
     "jpeg": "image/jpeg",
@@ -145,25 +149,36 @@ _IMAGE_MEDIA_TYPES = {
 }
 
 
-def _build_image_message(img_path: Path, question: str) -> str:
-    """Build a stream-json input envelope carrying a base64 image + the question.
+def _resolve_image_paths(image_paths: list[str], image_path: str | None) -> list[Path]:
+    """Validate every attached image. ``image_path`` is the single-image field
+    older clients still send; it is appended after ``image_paths``."""
+    raw = [*image_paths, *([image_path] if image_path else [])]
+    if len(raw) > MAX_IMAGES_PER_MESSAGE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {MAX_IMAGES_PER_MESSAGE} images per message",
+        )
+    return [path for path in map(_validate_image_path, raw) if path is not None]
+
+
+def _build_image_message(img_paths: list[Path], question: str) -> str:
+    """Build a stream-json input envelope carrying base64 images + the question.
 
     The claude CLI's stream-json input expects newline-delimited
     ``{"type":"user","message":{...}}`` objects whose ``content`` uses the
-    Messages API block format. The trailing newline terminates the record.
+    Messages API block format. One image block per attachment, in order, then
+    the question. The trailing newline terminates the record.
     """
-    b64 = base64.b64encode(img_path.read_bytes()).decode()
-    ext = img_path.suffix.lstrip(".").lower()
-    media = _IMAGE_MEDIA_TYPES.get(ext, "image/png")
+    blocks: list[dict] = []
+    for img_path in img_paths:
+        b64 = base64.b64encode(img_path.read_bytes()).decode()
+        ext = img_path.suffix.lstrip(".").lower()
+        media = _IMAGE_MEDIA_TYPES.get(ext, "image/png")
+        blocks.append({"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}})
+    blocks.append({"type": "text", "text": question})
     return json.dumps({
         "type": "user",
-        "message": {
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}},
-                {"type": "text", "text": question},
-            ],
-        },
+        "message": {"role": "user", "content": blocks},
     }) + "\n"
 
 
@@ -173,6 +188,7 @@ class ChatBody(BaseModel):
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     question: str = Field(min_length=1)
     image_path: str | None = None
+    image_paths: list[str] = Field(default_factory=list, max_length=MAX_IMAGES_PER_MESSAGE)
     # Opt-in cross-date RAG (#395): searches past briefings via the
     # local-LLM chromadb index and injects matches into the new session's
     # system prompt alongside today's briefing. Off by default so existing
@@ -386,10 +402,10 @@ def post_chat(body: ChatBody, background_tasks: BackgroundTasks) -> ChatPostResp
             )
 
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    img_path = _validate_image_path(body.image_path)
+    img_paths = _resolve_image_paths(body.image_paths, body.image_path)
     image_message: str | None = None
-    if img_path:
-        image_message = _build_image_message(img_path, body.question)
+    if img_paths:
+        image_message = _build_image_message(img_paths, body.question)
         cmd = [*build_cmd(body.date, briefing_file, session_file, history_context, vault_context), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
     else:
         cmd = [*build_cmd(body.date, briefing_file, session_file, history_context, vault_context), "-p", body.question, *CHAT_STREAM_FLAGS]
@@ -412,6 +428,7 @@ class JournalChatBody(BaseModel):
     # How many most-recent journal days to load as brainstorm context.
     days: int = Field(default=7, ge=1, le=31)
     image_path: str | None = None
+    image_paths: list[str] = Field(default_factory=list, max_length=MAX_IMAGES_PER_MESSAGE)
 
 
 def _gather_journal_context(days: int, max_chars: int | None = None) -> str:
@@ -468,10 +485,10 @@ def post_journal_chat(
     session_file = sessions_dir / today
 
     trusted_write_dirs = config.get_journal_chat_trusted_write_dirs()
-    img_path = _validate_image_path(body.image_path)
+    img_paths = _resolve_image_paths(body.image_paths, body.image_path)
     image_message: str | None = None
-    if img_path:
-        image_message = _build_image_message(img_path, body.question)
+    if img_paths:
+        image_message = _build_image_message(img_paths, body.question)
         cmd = [*build_journal_cmd(today, context, session_file, trusted_write_dirs), "-p", *IMAGE_INPUT_FLAGS, *CHAT_STREAM_FLAGS]
     else:
         cmd = [*build_journal_cmd(today, context, session_file, trusted_write_dirs), "-p", body.question, *CHAT_STREAM_FLAGS]

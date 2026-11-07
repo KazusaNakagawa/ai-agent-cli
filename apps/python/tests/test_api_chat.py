@@ -13,9 +13,11 @@ returns the FakePopen has already completed and the job is ``done`` —
 which makes the GET-stream assertions deterministic without sleeps.
 """
 import asyncio
+import base64
 import io
 import json
 import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -1305,6 +1307,124 @@ class TestChatVision:
         )
         assert resp.status_code == 400
         assert "Invalid image path" in resp.json()["detail"]
+
+
+class TestChatMultipleImages:
+    @pytest.fixture
+    def images(self, tmp_path, monkeypatch):
+        images_root = tmp_path / "images"
+        date_dir = images_root / "2026-06-26"
+        date_dir.mkdir(parents=True)
+        monkeypatch.setattr("web.routers.chat.IMAGES_ROOT", images_root)
+
+        def make(count: int) -> list[str]:
+            paths = []
+            for i in range(count):
+                img = date_dir / f"img-{i}.png"
+                img.write_bytes(f"PNG_{i}".encode())
+                paths.append(str(img))
+            return paths
+
+        return make
+
+    @pytest.fixture
+    def built(self, monkeypatch):
+        """Records the image paths handed to the stream-json envelope."""
+        import web.routers.chat as chat_mod
+
+        calls: list[list] = []
+        real = chat_mod._build_image_message
+
+        def spy(img_paths, question):
+            calls.append(list(img_paths))
+            return real(img_paths, question)
+
+        monkeypatch.setattr("web.routers.chat._build_image_message", spy)
+        monkeypatch.setattr(
+            "web.routers.chat.subprocess.Popen",
+            lambda cmd, **kw: FakePopen(cmd, stdout_lines=[], **kw),
+        )
+        return calls
+
+    async def test_sends_every_image_in_order(self, authed_client, briefing_setup, images, built):
+        paths = images(2)
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_paths": paths},
+        )
+        assert resp.status_code == 202
+        assert [str(p) for p in built[0]] == [str(Path(p).resolve()) for p in paths]
+
+    async def test_accepts_the_maximum(self, authed_client, briefing_setup, images, built):
+        from web.routers.chat import MAX_IMAGES_PER_MESSAGE
+
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_paths": images(MAX_IMAGES_PER_MESSAGE)},
+        )
+        assert resp.status_code == 202
+        assert len(built[0]) == MAX_IMAGES_PER_MESSAGE
+
+    async def test_rejects_one_over_the_maximum(self, authed_client, briefing_setup, images, built):
+        from web.routers.chat import MAX_IMAGES_PER_MESSAGE
+
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_paths": images(MAX_IMAGES_PER_MESSAGE + 1)},
+        )
+        assert resp.status_code == 422
+        assert built == []
+
+    async def test_rejects_traversal_in_a_later_position(self, authed_client, briefing_setup, images, built):
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_paths": [*images(1), "/etc/passwd"]},
+        )
+        assert resp.status_code == 400
+        assert "Invalid image path" in resp.json()["detail"]
+        assert built == []
+
+    async def test_empty_list_runs_without_images(self, authed_client, briefing_setup, images, built):
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_paths": []},
+        )
+        assert resp.status_code == 202
+        assert built == []
+
+    async def test_legacy_single_image_path_still_works(self, authed_client, briefing_setup, images, built):
+        (path,) = images(1)
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_path": path},
+        )
+        assert resp.status_code == 202
+        assert [str(p) for p in built[0]] == [str(Path(path).resolve())]
+
+    async def test_rejects_both_fields_over_the_maximum(self, authed_client, briefing_setup, images, built):
+        from web.routers.chat import MAX_IMAGES_PER_MESSAGE
+
+        *many, extra = images(MAX_IMAGES_PER_MESSAGE + 1)
+        resp = await authed_client.post(
+            "/api/chat",
+            json={"date": "2026-05-30", "question": "Q", "image_paths": many, "image_path": extra},
+        )
+        assert resp.status_code == 400
+        assert built == []
+
+
+def test_image_message_has_one_block_per_image_then_the_question(tmp_path):
+    from web.routers.chat import _build_image_message
+
+    first, second = tmp_path / "a.png", tmp_path / "b.jpg"
+    first.write_bytes(b"A")
+    second.write_bytes(b"B")
+    content = json.loads(_build_image_message([first, second], "Q"))["message"]["content"]
+
+    assert [b["type"] for b in content] == ["image", "image", "text"]
+    assert [b["source"]["media_type"] for b in content[:2]] == ["image/png", "image/jpeg"]
+    assert [base64.b64decode(b["source"]["data"]) for b in content[:2]] == [b"A", b"B"]
+    assert content[2]["text"] == "Q"
 
 
 # ---------------------------------------------------------------------------

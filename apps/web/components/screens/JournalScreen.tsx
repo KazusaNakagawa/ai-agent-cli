@@ -1,20 +1,16 @@
 "use client"
-import { Mic, Square } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { CloseIcon } from "@/components/briefing/icons"
-import { ImageAttachArea } from "@/components/ui/ImageAttachArea"
-import { LoadingDots } from "@/components/ui/loading-dots"
+import { ChatComposer } from "@/components/chat/ChatComposer"
+import { JournalTurn } from "@/components/journal/JournalTurn"
 import { MarkdownView } from "@/components/ui/MarkdownView"
-import { useImageDrop } from "@/lib/hooks/useImageDrop"
-import { insertAtCursor } from "@/lib/insertAtCursor"
 import { useJournalChatJobState } from "@/lib/journalChatJobStore"
 import { useJournalChatState } from "@/lib/journalChatStore"
 import { useJournalNav } from "@/lib/journalNavStore"
 import { parseQaTranscript } from "@/lib/journalQa"
+import { useFollowTail } from "@/lib/hooks/useFollowTail"
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition"
-import type { ImageAttachment } from "@/lib/types/image"
-import { cn } from "@/lib/utils"
 
 const HEADER_BTN =
   "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -30,42 +26,16 @@ function stripTitleHeading(md: string): string {
   return md.replace(/^\s*# [^\n]*\n+/, "")
 }
 
-/**
- * One Q&A turn as chat bubbles: the user on the right, the AI on the left.
- * `answer` null shows the thinking indicator; an empty string omits the AI
- * bubble (a saved question that never got an answer).
- */
-function ChatTurn({ question, answer }: { question: string; answer: string | null }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="max-w-[85%] self-end rounded-2xl rounded-br-sm bg-muted px-4 py-2 text-foreground">
-        <MarkdownView content={question} breaks />
-      </div>
-      {answer === null ? (
-        <div className="self-start rounded-2xl rounded-bl-sm border bg-background px-4 py-2">
-          <LoadingDots label="Thinking…" data-testid="journal-chat-thinking" />
-        </div>
-      ) : (
-        answer && (
-          <div className="max-w-[85%] self-start rounded-2xl rounded-bl-sm border bg-background px-4 py-2">
-            <MarkdownView content={answer} />
-          </div>
-        )
-      )}
-    </div>
-  )
-}
-
 /** A saved entry: chat bubbles when it holds role-labelled Q&A, plain Markdown otherwise. */
 function EntryBody({ md }: { md: string }) {
   const body = stripTitleHeading(md)
   const transcript = parseQaTranscript(body)
   if (!transcript) return <MarkdownView content={body} breaks />
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {transcript.preamble && <MarkdownView content={transcript.preamble} breaks />}
       {transcript.turns.map((turn, i) => (
-        <ChatTurn key={i} question={turn.question} answer={turn.answer} />
+        <JournalTurn key={i} question={turn.question} answer={turn.answer} />
       ))}
     </div>
   )
@@ -87,12 +57,8 @@ export function JournalScreen() {
     purgeEntry,
   } = useJournalNav()
 
-  const brainstormRef = useRef<HTMLTextAreaElement>(null)
-  const [brainstormImage, setBrainstormImage] = useState<ImageAttachment | null>(null)
-  const { isDragging: isBrainstormDragging } = useImageDrop(brainstormRef, setBrainstormImage)
-
   const [question, setQuestion] = useState("")
-  const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
+  const { supportsMic, listening, toggle: toggleMic, stop: stopMic } = useSpeechRecognition({
     onTranscript: setQuestion,
   })
   const journalChat = useJournalChatState()
@@ -101,25 +67,64 @@ export function JournalScreen() {
   const chatError = job.error
   const brainstormEpoch = useRef(0)
 
-  const brainstorm = useCallback(async () => {
+  // The in-flight job only renders as a pending bubble while the view it
+  // was started from is still current — matches the pre-refactor behavior
+  // where switching entries/composing/trash cleared the visible transcript
+  // even though the backend job kept running in the background.
+  const showPendingTurn = job.jobId !== null && brainstormEpoch.current === viewEpoch.current
+  const displayTurns = useMemo(
+    () =>
+      showPendingTurn
+        ? [...journalChat.turns, { question: job.question, answer: job.assistantContent }]
+        : journalChat.turns,
+    [showPendingTurn, journalChat.turns, job.question, job.assistantContent],
+  )
+
+  const tailMessages = useMemo(
+    () =>
+      displayTurns.flatMap((turn) => [
+        { role: "user", content: turn.question },
+        { role: "assistant", content: turn.answer },
+      ]),
+    [displayTurns],
+  )
+  // Starts only when a brainstorm is sent, so opening an entry reads from the
+  // top. The user-message trigger is off because committing a turn briefly
+  // shows it next to its pending copy, which would look like a new question.
+  const {
+    ref: scrollRef,
+    onScroll: onScrollPanel,
+    follow: followTail,
+    stopFollowing,
+  } = useFollowTail(tailMessages, { followFromStart: false, followOnNewUserMessage: false })
+
+  // A different entry, a new draft, or a trash preview is a fresh read from
+  // the top; following restarts only with the next brainstorm.
+  useEffect(() => {
+    stopFollowing()
+  }, [selected, composing, trashPreview, stopFollowing])
+
+  // Called by ChatComposer, which holds the images and the send guards (empty
+  // input, uploads still in flight).
+  const brainstorm = useCallback(async (imagePaths: string[]) => {
     const q = question.trim()
     if (!q || brainstorming) return
+    stopMic()
     setQuestion("")
     brainstormEpoch.current = viewEpoch.current
+    followTail()
     await job.startJob({
       question: q,
-      imagePath: brainstormImage?.path ?? null,
+      // The composer clears its images on send, including when the job is later
+      // cancelled or fails — re-attaching images to a retyped question is a
+      // minor inconvenience compared to threading the outcome back.
+      imagePaths,
       targetEntryId: journalChat.entryId,
     })
-    // Cleared unconditionally (including on cancel/failure) — simpler than
-    // threading the outcome back through startJob's return value, and
-    // re-attaching an image to a retyped question is a minor inconvenience
-    // compared to the state this replaces.
-    setBrainstormImage(null)
     // viewEpoch is a ref (stable identity) read only for its .current value at
     // call time, so it's intentionally omitted from the dependency array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question, brainstorming, brainstormImage, job, journalChat.entryId])
+  }, [question, brainstorming, job, journalChat.entryId, followTail, stopMic])
 
   // Abort the in-flight brainstorm and terminate the backend job — works
   // whether or not the backend job_id has arrived yet (journalChatJobStore
@@ -144,14 +149,6 @@ export function JournalScreen() {
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [brainstorming, cancelBrainstorm])
 
-  // The in-flight job only renders as a pending bubble while the view it
-  // was started from is still current — matches the pre-refactor behavior
-  // where switching entries/composing/trash cleared the visible transcript
-  // even though the backend job kept running in the background.
-  const showPendingTurn = job.jobId !== null && brainstormEpoch.current === viewEpoch.current
-  const displayTurns = showPendingTurn
-    ? [...journalChat.turns, { question: job.question, answer: job.assistantContent }]
-    : journalChat.turns
 
   if (!panelOpen) {
     return (
@@ -252,8 +249,14 @@ export function JournalScreen() {
         </div>
       )}
 
-      {/* Panel body */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 pr-6">
+      {/* Panel body: the entry and the brainstorm turns scroll; the composer
+          below stays pinned to the bottom of the panel. */}
+      <div
+        ref={scrollRef}
+        onScroll={onScrollPanel}
+        className="scrollbar-slim flex-1 overflow-y-auto px-4 py-4 pr-6"
+        data-testid="journal-scroll"
+      >
         {trashPreview ? (
           /* Read-only preview of a trashed entry — no brainstorm here. */
           trashContent ? (
@@ -262,7 +265,7 @@ export function JournalScreen() {
             <p className="text-sm text-muted-foreground">Loading…</p>
           )
         ) : (
-          <div className="flex flex-col gap-6">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
             {/* Entry content (read view; hidden while composing a new entry) */}
             {selected && content && (
               <div data-testid="journal-content">
@@ -270,92 +273,38 @@ export function JournalScreen() {
               </div>
             )}
 
-            {/* Brainstorm with Claude */}
-            <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-              {displayTurns.length > 0 && (
-                <div className="flex flex-col gap-4">
-                  {displayTurns.map((turn, i) => (
-                    <ChatTurn key={i} question={turn.question} answer={turn.answer || null} />
-                  ))}
-                </div>
-              )}
-
-              <div className="flex flex-col gap-2">
-                <textarea
-                  ref={brainstormRef}
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault()
-                      void brainstorm()
-                    }
-                  }}
-                  placeholder="e.g. What should I focus on next based on this week?"
-                  rows={3}
-                  className={`w-full resize-y rounded-md border bg-background p-3 text-sm${isBrainstormDragging ? " ring-2 ring-primary" : ""}`}
-                />
-                <ImageAttachArea
-                  attachedImage={brainstormImage}
-                  onAttach={setBrainstormImage}
-                  onRemove={() => setBrainstormImage(null)}
-                  isDragging={isBrainstormDragging}
-                  onInsertFile={(markdown) =>
-                    setQuestion(insertAtCursor(brainstormRef.current, question, markdown))
-                  }
-                />
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => void brainstorm()}
-                    disabled={brainstorming || question.trim() === ""}
-                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-                  >
-                    {brainstorming ? "Thinking…" : "Brainstorm"}
-                  </button>
-                  {supportsMic && (
-                    <button
-                      type="button"
-                      onClick={() => toggleMic(question)}
-                      data-testid="mic-button"
-                      aria-label={listening ? "音声入力停止" : "音声入力開始"}
-                      aria-pressed={listening}
-                      title={listening ? "音声入力停止" : "音声入力開始 (ja-JP)"}
-                      className={cn(
-                        "rounded-md border px-3 py-2 text-sm transition-colors",
-                        listening
-                          ? "border-destructive bg-destructive text-destructive-foreground"
-                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                      )}
-                    >
-                      {listening ? <Square aria-hidden className="h-4 w-4" /> : <Mic aria-hidden className="h-4 w-4" />}
-                    </button>
-                  )}
-                  {brainstorming && (
-                    <button
-                      type="button"
-                      onClick={cancelBrainstorm}
-                      className="rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
-                      title="Cancel (Esc)"
-                    >
-                      Stop
-                    </button>
-                  )}
-                  {chatError && <span className="text-sm text-destructive">{chatError}</span>}
-                </div>
-                {!supportsMic && (
-                  <p
-                    className="text-xs text-muted-foreground"
-                    data-testid="mic-unsupported"
-                  >
-                    Voice input is unavailable in this browser (Chrome / Edge supported).
-                  </p>
-                )}
+            {displayTurns.length > 0 && (
+              <div className="flex flex-col gap-6">
+                {displayTurns.map((turn, i) => (
+                  <JournalTurn key={i} question={turn.question} answer={turn.answer || null} />
+                ))}
               </div>
-            </section>
+            )}
           </div>
         )}
       </div>
+
+      {/* Brainstorm with Claude */}
+      {!trashPreview && (
+        <div className="border-t px-4 pb-4 pt-3">
+          <ChatComposer
+            input={question}
+            setInput={setQuestion}
+            busy={brainstorming}
+            supportsMic={supportsMic}
+            listening={listening}
+            onToggleMic={toggleMic}
+            onSend={(imagePaths) => void brainstorm(imagePaths)}
+            onCancel={cancelBrainstorm}
+            placeholder="e.g. What should I focus on next based on this week?"
+            sendLabel="Brainstorm"
+            cancelLabel="Stop"
+          />
+          {chatError && (
+            <p className="mx-auto max-w-3xl px-3 pt-2 text-sm text-destructive">{chatError}</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

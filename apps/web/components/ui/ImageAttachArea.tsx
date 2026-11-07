@@ -5,23 +5,27 @@ import { ImageAttachmentPreview } from "@/components/ui/ImageAttachmentPreview"
 import { AttachMenu } from "@/components/ui/AttachMenu"
 
 type Props = {
-  attachedImage: ImageAttachment | null
+  attachedImages: ImageAttachment[]
   onAttach: (image: ImageAttachment) => void
-  onRemove: () => void
+  /** Called with the position of the image to drop. */
+  onRemove: (index: number) => void
   disabled?: boolean
   isDragging?: boolean
   // When provided, the "+" becomes a menu (image + generic file). The callback
   // receives the Markdown link to splice in at the caret.
   onInsertFile?: (markdown: string) => void
+  /** Forwarded to the picker: whether one of its uploads is in flight. */
+  onUploadingChange?: (uploading: boolean) => void
 }
 
 export function ImageAttachArea({
-  attachedImage,
+  attachedImages,
   onAttach,
   onRemove,
   disabled,
   isDragging,
   onInsertFile,
+  onUploadingChange,
 }: Props) {
   return (
     <div
@@ -32,13 +36,23 @@ export function ImageAttachArea({
           onAttachImage={onAttach}
           onInsertFile={onInsertFile}
           disabled={disabled}
+          onUploadingChange={onUploadingChange}
         />
       ) : (
-        <ImageInsertButton onAttach={onAttach} disabled={disabled} />
+        <ImageInsertButton
+          onAttach={onAttach}
+          disabled={disabled}
+          onUploadingChange={onUploadingChange}
+        />
       )}
-      {attachedImage && (
-        <ImageAttachmentPreview image={attachedImage} onRemove={onRemove} />
-      )}
+      {attachedImages.map((image, i) => (
+        <ImageAttachmentPreview
+          key={image.path}
+          image={image}
+          index={attachedImages.length > 1 ? i : undefined}
+          onRemove={() => onRemove(i)}
+        />
+      ))}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { JournalScreen } from "@/components/screens/JournalScreen"
@@ -102,5 +102,37 @@ describe("JournalScreen voice input", () => {
     expect(micButton).toHaveAttribute("aria-pressed", "false")
     expect(micButton).toHaveAttribute("aria-label", "音声入力開始")
     expect(micButton.querySelector("svg.lucide-mic")).toBeInTheDocument()
+  })
+
+  it("turns the mic off on Brainstorm so a late result can't refill the box", () => {
+    let live: { onresult: ((e: unknown) => void) | null } | null = null
+    class FakeRecognition {
+      lang = ""
+      continuous = false
+      interimResults = false
+      onresult: ((e: unknown) => void) | null = null
+      onend: (() => void) | null = null
+      onerror: ((e: unknown) => void) | null = null
+      start() {
+        live = this
+      }
+      stop() {}
+    }
+    vi.stubGlobal("SpeechRecognition", FakeRecognition)
+    renderJournalScreen()
+    fireEvent.click(screen.getByRole("button", { name: /new/i }))
+    const textarea = screen.getByPlaceholderText(/what should i focus on/i) as HTMLTextAreaElement
+    const mic = screen.getByTestId("mic-button")
+    const dictate = () =>
+      act(() => live!.onresult!({ results: [[{ transcript: "dictated idea" }]] }))
+
+    fireEvent.click(mic)
+    dictate()
+    expect(textarea.value).toBe("dictated idea")
+    fireEvent.click(screen.getByRole("button", { name: "Brainstorm" }))
+
+    expect(mic).toHaveAttribute("aria-pressed", "false")
+    dictate()
+    expect(textarea.value).toBe("")
   })
 })

@@ -28,6 +28,9 @@ export type ChatJobState = {
   date: string
   /** Whether this turn requested cross-date RAG (re-sent on stale_session retry). */
   searchHistory: boolean
+  /** Attached images (re-sent on stale_session retry). Absent in snapshots
+   * persisted before multi-image support, hence optional. */
+  imagePaths?: string[]
   /** Accumulating assistant content. NOT persisted — rebuilt from the GET stream's replay. */
   assistantContent: string
   error: string | null
@@ -40,7 +43,7 @@ export type ChatJobState = {
 export type ChatJobStartOpts = {
   question: string
   date: string
-  image_path?: string
+  image_paths?: string[]
   /** Opt-in cross-date RAG (#395): search past briefings via the local-LLM
    * chromadb index and inject matches into the new session's context. */
   search_history?: boolean
@@ -63,6 +66,7 @@ const initialState: ChatJobState = {
   question: "",
   date: "",
   searchHistory: false,
+  imagePaths: [],
   assistantContent: "",
   error: null,
   sessionExpired: false,
@@ -95,13 +99,14 @@ const { Provider, useStore } = createJobStoreProvider<
     staleSession: false,
   }),
 
-  start: async ({ question, date, image_path, search_history }, { setState }) => {
+  start: async ({ question, date, image_paths, search_history }, { setState }) => {
     setState(() => ({
       ...initialState,
       status: "pending",
       question,
       date,
       searchHistory: Boolean(search_history),
+      imagePaths: image_paths ?? [],
     }))
     try {
       const post = await fetch("/api/chat", {
@@ -111,7 +116,7 @@ const { Provider, useStore } = createJobStoreProvider<
         body: JSON.stringify({
           date,
           question,
-          ...(image_path ? { image_path } : {}),
+          ...(image_paths?.length ? { image_paths } : {}),
           ...(search_history ? { search_history: true } : {}),
         }),
       })
