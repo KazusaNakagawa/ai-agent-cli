@@ -1,6 +1,6 @@
 {
   "name": "brief-lens",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Personal market-intelligence briefing agent — local Web UI driven by the Claude Code CLI",
   "license": "MIT",
   "type": "module",
