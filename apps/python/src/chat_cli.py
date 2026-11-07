@@ -1,23 +1,17 @@
 """Interactive Q&A session using a daily briefing as context."""
 import argparse
-import os
 import subprocess
 import sys
 from datetime import date
 from pathlib import Path
 
 from src import paths
+from src import state as state_mod
 from src.chat_session import build_cmd, session_name_for
+from src.claude_runner import build_env
 
 BRIEFING_DIR = paths.OUTPUT_DIR / "briefing"
 SESSIONS_DIR = BRIEFING_DIR / ".sessions"
-
-
-def claude_env() -> dict[str, str]:
-    """Return the parent environment without Anthropic API credentials."""
-    env = os.environ.copy()
-    env.pop("ANTHROPIC_API_KEY", None)
-    return env
 
 
 def list_sessions(sessions_dir: Path) -> None:
@@ -28,6 +22,24 @@ def list_sessions(sessions_dir: Path) -> None:
     print("Saved chat sessions:")
     for f in files:
         print(f"  {f.name}  {f.read_text().strip()}")
+
+
+def _auth_mode() -> str:
+    """Return the configured auth_mode, falling back to "cli" with a warning.
+
+    The chat CLI never read state.json before auth_mode support, so a corrupt
+    file (JSONDecodeError) or an invalid auth_mode value (ValueError) must not
+    brick bin/chat.sh with a raw traceback — warn readably and run on the
+    OAuth session instead, matching the pre-change behaviour.
+    """
+    try:
+        return state_mod.read_state().auth_mode
+    except (ValueError, OSError) as exc:
+        print(
+            f"Warning: could not read state ({exc}); falling back to cli auth mode.",
+            file=sys.stderr,
+        )
+        return "cli"
 
 
 def _print_intro(target_date: str, session_file: Path, is_resume: bool) -> None:
@@ -46,7 +58,14 @@ def run_claude(target_date: str, briefing_file: Path, session_file: Path) -> int
     initial context for new sessions, and session_file stores the saved Claude
     session id. Returns the final subprocess exit code.
     """
-    env = claude_env()
+    auth_mode = _auth_mode()
+    env = build_env(auth_mode=auth_mode)
+    if auth_mode == "api" and "ANTHROPIC_API_KEY" not in env:
+        print(
+            "Warning: auth_mode is 'api' but no ANTHROPIC_API_KEY was found in "
+            "the Keychain or .env; the session will run on the OAuth subscription.",
+            file=sys.stderr,
+        )
 
     is_resume = session_file.exists()
     cmd = build_cmd(target_date, briefing_file, session_file)

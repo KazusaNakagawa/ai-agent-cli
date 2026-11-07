@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { AuthMode, WizardData } from "./Wizard"
 import { WizardShell } from "./wizard-shell"
@@ -9,6 +9,7 @@ type Props = {
   setData: (updater: (prev: WizardData) => WizardData) => void
   onNext: () => void
   step: 1 | 2 | 3 | 4
+  onBusyChange?: (busy: boolean) => void
 }
 
 const OPTIONS: { value: AuthMode; label: string; hint: string }[] = [
@@ -24,8 +25,13 @@ const OPTIONS: { value: AuthMode; label: string; hint: string }[] = [
   },
 ]
 
-export function Step1AuthMode({ data, setData, onNext, step }: Props) {
+export function Step1AuthMode({ data, setData, onNext, step, onBusyChange }: Props) {
   const [busy, setBusy] = useState(false)
+
+  // Lets the wizard hold back "Skip setup" while this step is saving.
+  useEffect(() => {
+    onBusyChange?.(busy)
+  }, [busy, onBusyChange])
   const [error, setError] = useState<string | null>(null)
 
   const submit = async () => {

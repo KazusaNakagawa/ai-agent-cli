@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -45,6 +46,7 @@
   }
 
   .dark {
+    color-scheme: dark;
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
@@ -116,6 +118,25 @@
    to plain white for legibility on the dark background. */
 .dark .prose {
   --tw-prose-invert-body: rgb(255 255 255);
+}
+
+/* Slim, theme-tinted scrollbar for dense scroll regions (chat log first).
+   Paired with the `color-scheme` declarations in @layer base above, which
+   keep the native scrollbar from rendering in the light scheme — a bright
+   white track — while the app is in dark mode. */
+.scrollbar-slim {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+}
+.scrollbar-slim::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-slim::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.35);
+  border-radius: 999px;
+}
+.scrollbar-slim::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Sidebar collapsed mode — kept OUTSIDE @layer base so Tailwind utilities

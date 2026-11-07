@@ -40,7 +40,7 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
   const [retrying, setRetrying] = useState(false)
   const [searchHistory, setSearchHistory] = useState(false)
   const { notionReady } = useNotionCredentials()
-  const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
+  const { supportsMic, listening, toggle: toggleMic, stop: stopMic } = useSpeechRecognition({
     onTranscript: setInput,
   })
   // Notion save targets committed turns only — never the in-flight one. It
@@ -100,19 +100,20 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
     [committedMessages, inFlightTurn],
   )
 
-  const send = useCallback((imagePath?: string) => {
+  const send = useCallback((imagePaths: string[] = []) => {
     const question = input.trim()
     if (!question || busy) return
+    stopMic()
     setInput("")
     setRetrying(false)
     retriedRef.current = false
     void chatJob.startJob({
       question,
       date: today(),
-      ...(imagePath ? { image_path: imagePath } : {}),
+      ...(imagePaths.length > 0 ? { image_paths: imagePaths } : {}),
       ...(searchHistory ? { search_history: true } : {}),
     })
-  }, [busy, chatJob, input, searchHistory, setInput])
+  }, [busy, chatJob, input, searchHistory, setInput, stopMic])
 
   // Cancel: terminate the backend job, commit the partial answer as a
   // cancelled turn to chat history, restore the question into the textarea
@@ -148,13 +149,19 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
 
     if (chatJob.staleSession && !retriedRef.current) {
       retriedRef.current = true
-      const { question, date, searchHistory: retrySearchHistory } = chatJob
+      const {
+        question,
+        date,
+        searchHistory: retrySearchHistory,
+        imagePaths: retryImagePaths = [],
+      } = chatJob
       setRetrying(true)
       chatJob.reset()
       void chatJob
         .startJob({
           question,
           date,
+          ...(retryImagePaths.length > 0 ? { image_paths: retryImagePaths } : {}),
           ...(retrySearchHistory ? { search_history: true } : {}),
         })
         .finally(() => {
@@ -205,6 +212,7 @@ export function ChatForm({ fill = false, onLocalSave }: ChatFormProps = {}) {
         notionState={notionState}
         onNotionSave={(idx) => void saveToNotion(idx)}
         fill={fill}
+        onSuggest={setInput}
       />
       <ChatComposer
         input={input}

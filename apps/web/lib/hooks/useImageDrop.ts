@@ -2,13 +2,16 @@
 import { useEffect, useRef, useState } from "react"
 import type { RefObject } from "react"
 import type { ImageAttachment } from "@/lib/types/image"
-import { uploadImage } from "@/lib/imageUpload"
+import { uploadImages } from "@/lib/uploadImages"
 
 export function useImageDrop(
   ref: RefObject<HTMLTextAreaElement>,
   onAttach: (image: ImageAttachment) => void
-): { isDragging: boolean } {
+): { isDragging: boolean; dropping: boolean } {
   const [isDragging, setIsDragging] = useState(false)
+  // Drops can overlap; `dropping` stays on until the last upload settles.
+  const [dropping, setDropping] = useState(false)
+  const pendingRef = useRef(0)
   const onAttachRef = useRef(onAttach)
   onAttachRef.current = onAttach
 
@@ -45,14 +48,17 @@ export function useImageDrop(
       e.preventDefault()
       setIsDragging(false)
       if (!insideTarget(e)) return
-      const file = e.dataTransfer?.files[0]
-      if (!file || !file.type.startsWith("image/")) return
-      try {
-        const attachment = await uploadImage(file)
-        onAttachRef.current(attachment)
-      } catch {
-        // Silent — no persistent UI anchor for drop errors
-      }
+      const files = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
+        f.type.startsWith("image/")
+      )
+      if (files.length === 0) return
+      pendingRef.current++
+      setDropping(true)
+      // Attached in drop order. Failures stay silent — there is no persistent
+      // UI anchor for drop errors.
+      const { attachments } = await uploadImages(files)
+      attachments.forEach((attachment) => onAttachRef.current(attachment))
+      if (--pendingRef.current === 0) setDropping(false)
     }
 
     document.addEventListener("dragover", onDragOver)
@@ -65,5 +71,5 @@ export function useImageDrop(
     }
   }, [ref])
 
-  return { isDragging }
+  return { isDragging, dropping }
 }

@@ -130,10 +130,12 @@ See [docs/guides/configuration.md](docs/guides/configuration.md) for all environ
 ```bash
 # Workflows — one entry point for every declared pipeline
 bin/workflow.sh                   # list what is registered
-bin/workflow.sh run daily         # the daily run: briefing, the weekly recap on its day, then the model-rate check
+bin/workflow.sh run daily         # the daily run: briefing, the weekly recap on its day, the chat archive, then the model-rate check
 bin/workflow.sh run briefing      # daily briefing on its own
 bin/workflow.sh run weekly        # weekly recap; skipped unless it is Friday, --force overrides
 bin/workflow.sh run model-rates   # fail if a Claude model in the transcripts has no rate
+bin/workflow.sh run chat-archive  # copy chat.sh conversations to output/chat_archive/ before Claude Code prunes them
+bin/workflow.sh run chat-insights # archive, then write a usage-trend report of recent chats to output/chat_insights/
 
 # Interactive Q&A on today's briefing
 bin/chat.sh            # new or resumed session
@@ -166,7 +168,7 @@ Thin wrappers that `exec` into `apps/python/bin/`. Each targets a specific task:
 
 | Script | Purpose |
 |---|---|
-| `workflow.sh` | The one entry point for declared workflows: `workflow.sh` lists them, `workflow.sh run <id>` runs one (`--force`, `--dry-run`). `run daily` is the daily job — the briefing, the weekly recap on its day, then the model-rate check — and **manual execution is the active schedule** on the maintainer machine; see [launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active). See [workflow-runner.md](docs/features/workflow-runner.md) |
+| `workflow.sh` | The one entry point for declared workflows: `workflow.sh` lists them, `workflow.sh run <id>` runs one (`--force`, `--dry-run`). `run daily` is the daily job — the briefing, the weekly recap on its day, the chat archive, then the model-rate check — and **manual execution is the active schedule** on the maintainer machine; see [launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active). See [workflow-runner.md](docs/features/workflow-runner.md) |
 | `chat.sh` | Interactive Q&A on a briefing session |
 | `serve.sh` | Launch the full Web UI — FastAPI + Next.js; `API_PORT` / `WEB_PORT` overridable |
 | `self_agent.sh` | Turn judgment-log entries into a persona profile and post it to Notion |
