@@ -343,8 +343,9 @@ describe("UsageDashboard", () => {
       // Trend chart: one date label per day.
       expect(await screen.findByTestId("usage-trend-x-label-0")).toHaveTextContent("06/23")
       expect(screen.getByTestId("usage-trend-x-label-1")).toHaveTextContent("06/24")
-      // Bar chart: run start time under each bar.
-      expect(screen.getByTestId("usage-bar-x-label-0")).toHaveTextContent("05:06")
+      // Bar chart: run start time under each bar. It renders from the per-day
+      // fetch, which resolves independently of the trend data, so wait for it.
+      expect(await screen.findByTestId("usage-bar-x-label-0")).toHaveTextContent("05:06")
       expect(screen.getByTestId("usage-bar-x-label-1")).toHaveTextContent("05:05")
     } finally {
       vi.useRealTimers()

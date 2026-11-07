@@ -5,7 +5,7 @@ import type { ImageAttachment } from "@/lib/types/image"
 import { uploadImages } from "@/lib/uploadImages"
 
 export function useImageDrop(
-  ref: RefObject<HTMLTextAreaElement>,
+  ref: RefObject<HTMLTextAreaElement | null>,
   onAttach: (image: ImageAttachment) => void
 ): { isDragging: boolean; dropping: boolean } {
   const [isDragging, setIsDragging] = useState(false)

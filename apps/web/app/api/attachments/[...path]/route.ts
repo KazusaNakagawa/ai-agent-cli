@@ -17,9 +17,9 @@ const MIME: Record<string, string> = {
 
 export async function GET(
   _req: Request,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
-  const relative = params.path.join("/")
+  const relative = (await params).path.join("/")
   const resolved = path.resolve(STORAGE_ROOT, relative)
 
   // Path traversal guard.

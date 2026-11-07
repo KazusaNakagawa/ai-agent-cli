@@ -359,8 +359,10 @@ describe("Wizard skip setup (#544)", () => {
     expect(screen.getByTestId("wizard-skip")).toBeDisabled()
 
     finish(new Response(JSON.stringify({ auth_mode: "cli" }), { status: 200 }))
-    await waitFor(() => expect(screen.getByText(/Step 2 \/ 4/)).toBeInTheDocument())
-    expect(screen.getByTestId("wizard-skip")).toBeEnabled()
+    await waitFor(() => {
+      expect(screen.getByText(/Step 2 \/ 4/)).toBeInTheDocument()
+      expect(screen.getByTestId("wizard-skip")).toBeEnabled()
+    })
   })
 
   it("can't be started during the Step 4 test run", async () => {
