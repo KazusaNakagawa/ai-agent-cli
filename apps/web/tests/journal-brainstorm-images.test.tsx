@@ -145,4 +145,17 @@ describe("journal brainstorm images", () => {
     await waitFor(() => expect(chatBodies).toHaveLength(1))
     expect(chatBodies[0].image_paths).toEqual(["/abs/picked.png"])
   })
+
+  it("uses the shared rounded composer without the chat's history toggle", () => {
+    renderJournal()
+    expect(screen.getByTestId("chat-input")).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/what should i focus on next/i),
+    )
+    expect(screen.getByRole("button", { name: "Brainstorm" })).toHaveAttribute(
+      "data-testid",
+      "send-button",
+    )
+    expect(screen.queryByTestId("search-history-toggle")).toBeNull()
+  })
 })

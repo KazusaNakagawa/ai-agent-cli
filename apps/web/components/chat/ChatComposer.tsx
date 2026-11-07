@@ -31,8 +31,13 @@ type Props = {
   onSend: (imagePaths: string[]) => void
   onCancel: () => void
   onHistoryKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
-  searchHistory: boolean
-  onToggleSearchHistory: (value: boolean) => void
+  /** The cross-date history toggle renders only when its handler is given. */
+  searchHistory?: boolean
+  onToggleSearchHistory?: (value: boolean) => void
+  placeholder?: string
+  /** Accessible name of the round send button. */
+  sendLabel?: string
+  cancelLabel?: string
 }
 
 export function ChatComposer({
@@ -45,8 +50,11 @@ export function ChatComposer({
   onSend,
   onCancel,
   onHistoryKeyDown,
-  searchHistory,
+  searchHistory = false,
   onToggleSearchHistory,
+  placeholder = "Ask about today's briefing…",
+  sendLabel = "Send",
+  cancelLabel = "Cancel",
 }: Props) {
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -109,7 +117,7 @@ export function ChatComposer({
               }
               onHistoryKeyDown?.(e)
             }}
-            placeholder="Ask about today's briefing…"
+            placeholder={placeholder}
             rows={2}
             className="w-full resize-none overflow-hidden bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground"
             data-testid="chat-input"
@@ -142,16 +150,18 @@ export function ChatComposer({
               {listening ? <Square aria-hidden className="h-4 w-4" /> : <Mic aria-hidden className="h-4 w-4" />}
             </Button>
           )}
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={searchHistory}
-              onChange={(e) => onToggleSearchHistory(e.target.checked)}
-              disabled={busy}
-              data-testid="search-history-toggle"
-            />
-            過去ブリーフィングを検索
-          </label>
+          {onToggleSearchHistory && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={searchHistory}
+                onChange={(e) => onToggleSearchHistory(e.target.checked)}
+                disabled={busy}
+                data-testid="search-history-toggle"
+              />
+              過去ブリーフィングを検索
+            </label>
+          )}
           <div className="flex-1" />
           {busy ? (
             <Button
@@ -162,7 +172,7 @@ export function ChatComposer({
               data-testid="cancel-button"
               title="送信中の応答を中止 (Esc)"
             >
-              Cancel
+              {cancelLabel}
             </Button>
           ) : (
             <Button
@@ -171,7 +181,7 @@ export function ChatComposer({
               data-testid="send-button"
               size="icon"
               className="shrink-0 rounded-full"
-              aria-label="Send"
+              aria-label={sendLabel}
             >
               <ArrowUp aria-hidden className="h-4 w-4" />
             </Button>
