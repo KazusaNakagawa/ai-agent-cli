@@ -301,6 +301,42 @@ describe("ChatForm", () => {
     expect(chatCalls).toHaveLength(1)
   })
 
+  it("turns the mic off on send so a late result can't refill the box", async () => {
+    let live: { onresult: ((e: unknown) => void) | null } | null = null
+    class FakeRecognition {
+      lang = ""
+      continuous = false
+      interimResults = false
+      onresult: ((e: unknown) => void) | null = null
+      onend: (() => void) | null = null
+      onerror: ((e: unknown) => void) | null = null
+      start() {
+        live = this
+      }
+      stop() {}
+    }
+    ;(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+      FakeRecognition
+    chatRoundtrip(() => sseResponse([{ data: "ok" }]))
+    renderChatForm()
+    const input = screen.getByTestId("chat-input") as HTMLTextAreaElement
+    const mic = screen.getByTestId("mic-button")
+    const dictate = () =>
+      act(() => live!.onresult!({ results: [[{ transcript: "dictated" }]] }))
+
+    fireEvent.click(mic)
+    dictate()
+    expect(input.value).toBe("dictated")
+    fireEvent.click(screen.getByTestId("send-button"))
+
+    expect(mic).toHaveAttribute("aria-pressed", "false")
+    dictate()
+    expect(input.value).toBe("")
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-msg-assistant")).toHaveTextContent("ok"),
+    )
+  })
+
   it("hides the mic button when SpeechRecognition is unavailable", () => {
     renderChatForm()
     expect(screen.queryByTestId("mic-button")).toBeNull()

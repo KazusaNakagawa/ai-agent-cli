@@ -38,6 +38,10 @@ export type UseSpeechRecognition = {
   // `prefix` is the textarea's current value at toggle-on time; new transcripts
   // are appended to it so the user doesn't lose what they had typed.
   toggle: (prefix: string) => void
+  // Ends the session now and drops anything it still delivers. Call on send:
+  // a continuous session re-sends its whole transcript with every result, so
+  // one landing after the box was cleared would write the sent text back.
+  stop: () => void
 }
 
 export function useSpeechRecognition({
@@ -79,7 +83,10 @@ export function useSpeechRecognition({
       rec.continuous = true
       rec.interimResults = true
       prefixRef.current = prefix
+      // Events from a session that is no longer current (stopped, or replaced
+      // by a newer one) are ignored.
       rec.onresult = (e) => {
+        if (recRef.current !== rec) return
         let transcript = ""
         for (let i = 0; i < e.results.length; i++) {
           transcript += e.results[i][0].transcript
@@ -88,19 +95,32 @@ export function useSpeechRecognition({
         const sep = p && !/\s$/.test(p) ? " " : ""
         callbackRef.current(p + sep + transcript)
       }
-      const stop = () => {
+      const ended = () => {
+        if (recRef.current !== rec) return
         if (mountedRef.current) setListening(false)
         recRef.current = null
         prefixRef.current = ""
       }
-      rec.onend = stop
-      rec.onerror = stop
-      rec.start()
+      rec.onend = ended
+      rec.onerror = ended
+      // Registered before start() so a result delivered during start() counts
+      // as the current session's.
       recRef.current = rec
+      rec.start()
       setListening(true)
     },
     [lang, listening],
   )
 
-  return { supportsMic, listening, toggle }
+  const stop = useCallback(() => {
+    const rec = recRef.current
+    if (!rec) return
+    // Detach first so the session's trailing results and onend are ignored.
+    recRef.current = null
+    prefixRef.current = ""
+    setListening(false)
+    rec.stop()
+  }, [])
+
+  return { supportsMic, listening, toggle, stop }
 }

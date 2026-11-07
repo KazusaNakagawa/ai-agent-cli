@@ -58,7 +58,7 @@ export function JournalScreen() {
   } = useJournalNav()
 
   const [question, setQuestion] = useState("")
-  const { supportsMic, listening, toggle: toggleMic } = useSpeechRecognition({
+  const { supportsMic, listening, toggle: toggleMic, stop: stopMic } = useSpeechRecognition({
     onTranscript: setQuestion,
   })
   const journalChat = useJournalChatState()
@@ -109,6 +109,7 @@ export function JournalScreen() {
   const brainstorm = useCallback(async (imagePaths: string[]) => {
     const q = question.trim()
     if (!q || brainstorming) return
+    stopMic()
     setQuestion("")
     brainstormEpoch.current = viewEpoch.current
     followTail()
@@ -123,7 +124,7 @@ export function JournalScreen() {
     // viewEpoch is a ref (stable identity) read only for its .current value at
     // call time, so it's intentionally omitted from the dependency array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question, brainstorming, job, journalChat.entryId, followTail])
+  }, [question, brainstorming, job, journalChat.entryId, followTail, stopMic])
 
   // Abort the in-flight brainstorm and terminate the backend job — works
   // whether or not the backend job_id has arrived yet (journalChatJobStore
