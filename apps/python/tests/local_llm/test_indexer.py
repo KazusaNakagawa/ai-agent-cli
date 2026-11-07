@@ -87,6 +87,95 @@ def test_chunk_file_chunk_id_changes_with_content(tmp_path):
     assert id1 != id2
 
 
+def test_chunk_file_splits_window_over_char_cap(tmp_path):
+    # 40 lines x 100 chars blows a 1000-char cap, so each window is re-split.
+    f = tmp_path / "wide.md"
+    f.write_text("\n".join(f"{i:03d}" + "x" * 96 for i in range(40)) + "\n")
+    cfg = dataclasses.replace(load_config(repo_root=tmp_path), chunk_max_chars=1000)
+
+    chunks = chunk_file(f, cfg)
+
+    assert len(chunks) > 1
+    assert all(len(c.text) <= 1000 for c in chunks)
+    # Sub-chunks tile the window: contiguous, no gaps, covering 1..40.
+    assert chunks[0].start_line == 1
+    assert chunks[-1].end_line == 40
+    for prev, nxt in zip(chunks, chunks[1:]):
+        assert nxt.start_line == prev.end_line + 1
+    for c in chunks:
+        assert c.text.splitlines()[0].startswith(f"{c.start_line - 1:03d}")
+
+
+def test_chunk_file_splits_single_line_over_char_cap(tmp_path):
+    f = tmp_path / "long.md"
+    # Period 7 does not divide the 1000-char cap, so every slice differs and
+    # none is dropped as a duplicate.
+    long_line = "".join(str(i % 7) for i in range(2500))
+    f.write_text("short\n" + long_line + "\n")
+    cfg = dataclasses.replace(load_config(repo_root=tmp_path), chunk_max_chars=1000)
+
+    chunks = chunk_file(f, cfg)
+
+    assert all(len(c.text) <= 1000 for c in chunks)
+    long_parts = [c for c in chunks if c.start_line == 2]
+    assert all(c.end_line == 2 for c in long_parts)
+    assert "".join(c.text for c in long_parts) == long_line
+
+
+def test_chunk_file_text_exactly_at_cap_is_not_split(tmp_path):
+    f = tmp_path / "edge.md"
+    f.write_text("a" * 499 + "\n" + "b" * 500 + "\n")  # joined = 1000 chars
+    cfg = dataclasses.replace(load_config(repo_root=tmp_path), chunk_max_chars=1000)
+
+    chunks = chunk_file(f, cfg)
+
+    assert len(chunks) == 1
+    assert (chunks[0].start_line, chunks[0].end_line) == (1, 2)
+
+
+def test_chunk_file_ids_unchanged_when_under_cap(tmp_path):
+    # Chunks under the cap must keep their pre-cap IDs so existing vectors
+    # are not re-embedded after the upgrade.
+    import hashlib
+
+    f = tmp_path / "x.py"
+    f.write_text("\n".join(f"line{i}" for i in range(150)) + "\n")
+    cfg = load_config(repo_root=tmp_path)
+
+    chunks = chunk_file(f, cfg)
+
+    for c in chunks:
+        expected = hashlib.sha256(
+            f"x.py:{c.start_line}-{c.end_line}:{c.text}".encode("utf-8")
+        ).hexdigest()
+        assert c.chunk_id == expected
+
+
+def test_chunk_file_overlapping_windows_yield_unique_ids(tmp_path):
+    # Overlapping windows can re-split into identical sub-chunks; upserting
+    # duplicate IDs in one batch fails in Chroma, so they must be deduped.
+    f = tmp_path / "dup.md"
+    f.write_text("\n".join("z" * 300 for _ in range(100)) + "\n")
+    cfg = dataclasses.replace(load_config(repo_root=tmp_path), chunk_max_chars=1000)
+
+    chunks = chunk_file(f, cfg)
+
+    ids = [c.chunk_id for c in chunks]
+    assert len(ids) == len(set(ids))
+    assert chunks[-1].end_line == 100
+
+
+def test_chunk_max_chars_rejects_non_positive(tmp_path):
+    import pytest
+
+    f = tmp_path / "x.md"
+    f.write_text("a\n")
+    cfg = dataclasses.replace(load_config(repo_root=tmp_path), chunk_max_chars=0)
+
+    with pytest.raises(ValueError):
+        chunk_file(f, cfg)
+
+
 class FakeCollection:
     def __init__(self):
         self.data: dict[str, dict] = {}

@@ -19,18 +19,18 @@ uv pip sync requirements.txt   # Install deps
 uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt  # Recompile deps
 
 # From repo root
-bin/workflow.sh run daily   # Daily briefing, the weekly recap on its day, then the model-rate check
+bin/workflow.sh run daily   # Daily briefing, the weekly recap on its day, the chat archive, then the model-rate check
 bin/chat.sh                 # Launch chat session
 ```
 
 ## Key Implementation Notes
 
 - **`apps/python/src/claude_runner.py`** is the single entry point for all claude CLI calls. Always use `run_claude()` — never call `subprocess.run(["claude", ...])` directly elsewhere.
-- **Subprocess env handling for `ANTHROPIC_API_KEY` is mode-dependent.** `run_claude()` calls `_build_env(auth_mode)` based on `state.read_state().auth_mode` (defaults to `"cli"`):
+- **Subprocess env handling for `ANTHROPIC_API_KEY` is mode-dependent.** `run_claude()` calls `build_env(auth_mode)` based on `state.read_state().auth_mode` (defaults to `"cli"`):
   - `cli`: the key is **stripped** so the claude CLI uses its OAuth session.
   - `api`: the key from `credentials.get_credential("ANTHROPIC_API_KEY")` (Keychain → `.env` fallback) is **injected** into the subprocess env.
 
-  Route new subprocess calls to claude through `_build_env(state.read_state().auth_mode)`. Never set `ANTHROPIC_API_KEY` directly in the subprocess env outside this helper.
+  Route new subprocess calls to claude through `build_env(state.read_state().auth_mode)`. Never set `ANTHROPIC_API_KEY` directly in the subprocess env outside this helper.
 - **`apps/python/requirements.txt` is auto-generated** — only edit `requirements.in`, then recompile. Always recompile with `--universal --python-version 3.11`: the supported range is 3.11–3.13 (`apps/python/pyproject.toml`), and a lock resolved for one interpreter drops the backports the older CI legs need.
 - **`src.config.CONFIG` is lazy.** A module-level `__getattr__` calls `load_config()` on first attribute access — importing `src.config` does **not** read `briefing.json`. Tests that call `load_config()` directly must patch `src.config.CONFIG_PATH`.
 

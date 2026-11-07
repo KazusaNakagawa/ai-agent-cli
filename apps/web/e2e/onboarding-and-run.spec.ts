@@ -277,3 +277,325 @@ test("chat: the cross-date history toggle sends search_history:true (#395)", asy
     await context.unrouteAll({ behavior: "ignoreErrors" })
   }
 })
+
+test("chat: the log follows a streaming reply and pauses when scrolled up (#560)", async ({
+  page,
+}) => {
+  // route.fulfill delivers a body in one piece, so the chat backend is faked
+  // inside the page: each token is pushed from the test, making "the reply
+  // grew" an explicit step rather than a timing race.
+  await page.addInitScript(() => {
+    const realFetch = window.fetch
+    const encoder = new TextEncoder()
+    const json = { "content-type": "application/json" }
+    const w = window as unknown as Record<string, unknown>
+    let controller: ReadableStreamDefaultController<Uint8Array>
+    let jobs = 0
+    window.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith("/api/chat") && init?.method === "POST") {
+        jobs++
+        return new Response(
+          JSON.stringify({ job_id: `e2e-follow-${jobs}`, status: "pending" }),
+          { status: 202, headers: json },
+        )
+      }
+      if (/\/api\/chat\/e2e-follow-\d+\/stream$/.test(url)) {
+        const body = new ReadableStream<Uint8Array>({
+          start(c) {
+            controller = c
+            w.__streams = ((w.__streams as number) ?? 0) + 1
+          },
+        })
+        return new Response(body, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        })
+      }
+      return realFetch(input, init)
+    }
+    w.__push = (text: string) =>
+      controller.enqueue(encoder.encode(`data: ${text}\n\n`))
+    w.__end = () => controller.close()
+  })
+
+  const log = page.getByTestId("chat-log")
+  const scrollTop = () => log.evaluate((el) => el.scrollTop)
+  const distance = () =>
+    log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
+  const push = (text: string) =>
+    page.evaluate((t) => {
+      ;(window as unknown as { __push: (s: string) => void }).__push(t)
+    }, text)
+  const end = () =>
+    page.evaluate(() => {
+      ;(window as unknown as { __end: () => void }).__end()
+    })
+  const streamOpened = (count: number) =>
+    expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as unknown as { __streams?: number }).__streams,
+        ),
+      )
+      .toBe(count)
+  const filler = (marker: string) => `${marker} ${"長い応答のテキストです。".repeat(300)}`
+
+  await page.goto("/chat")
+  await page.getByTestId("chat-input").fill("first question")
+  await page.getByTestId("send-button").click()
+  await streamOpened(1)
+
+  // Following: every token leaves the log at its end.
+  await push(filler("TOKEN-A"))
+  await expect(log).toContainText("TOKEN-A")
+  await push(filler("TOKEN-B"))
+  await expect(log).toContainText("TOKEN-B")
+  expect(await log.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  await expect.poll(distance).toBeLessThanOrEqual(40)
+
+  // Paused: a real wheel gesture holds the position against further tokens,
+  // and the commit at the end of the stream does not disturb it.
+  await log.hover()
+  await page.mouse.wheel(0, -400)
+  await expect.poll(distance).toBeGreaterThan(40)
+  const held = await scrollTop()
+  await push(filler("TOKEN-C"))
+  await expect(log).toContainText("TOKEN-C")
+  expect(await scrollTop()).toBe(held)
+  await end()
+  await expect(page.getByTestId("send-button")).toBeVisible()
+  expect(await scrollTop()).toBe(held)
+
+  // A new question resumes following from wherever the reader was.
+  await page.getByTestId("chat-input").fill("second question")
+  await page.getByTestId("send-button").click()
+  await streamOpened(2)
+  await push(filler("TOKEN-D"))
+  await expect(log).toContainText("TOKEN-D")
+  await expect.poll(distance).toBeLessThanOrEqual(40)
+  await end()
+  await expect(page.getByTestId("send-button")).toBeVisible()
+
+  // A restored history opens at its end.
+  await page.reload()
+  await expect(log).toContainText("TOKEN-D")
+  await expect.poll(distance).toBeLessThanOrEqual(40)
+})
+
+test("chat: real clipboard pastes add images and send them all (#559)", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"])
+  // Only the chat call is mocked: the paste and the upload route are real.
+  let capturedBody: Record<string, unknown> | null = null
+  await context.route("**/api/chat", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback()
+    }
+    capturedBody = route.request().postDataJSON()
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ job_id: "e2e-paste", status: "pending" }),
+    })
+  })
+  await context.route("**/api/chat/e2e-paste/stream", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: "data: saw the image\n\n",
+    })
+  })
+
+  const writeClipboard = (withText: boolean, color: string) =>
+    page.evaluate(async ([text, fill]) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = canvas.height = 8
+      const ctx = canvas.getContext("2d")!
+      ctx.fillStyle = fill
+      ctx.fillRect(0, 0, 8, 8)
+      const png = await new Promise<Blob>((resolve) =>
+        canvas.toBlob((b) => resolve(b!), "image/png"),
+      )
+      const items: Record<string, Blob> = { "image/png": png }
+      if (text) items["text/plain"] = new Blob([text], { type: "text/plain" })
+      await navigator.clipboard.write([new ClipboardItem(items)])
+    }, [withText ? "pasted caption" : "", color] as const)
+
+  const input = page.getByTestId("chat-input")
+  const previews = page.getByRole("img", { name: "Attached image" })
+  try {
+    await page.goto("/chat")
+
+    // Plain text attaches nothing.
+    await page.evaluate(() => navigator.clipboard.writeText("plain words"))
+    await input.focus()
+    await page.keyboard.press("ControlOrMeta+V")
+    await expect(input).toHaveValue("plain words")
+    await expect(previews).toHaveCount(0)
+
+    // Image and text together: the text lands and the image attaches.
+    await input.fill("")
+    await writeClipboard(true, "red")
+    await input.focus()
+    await page.keyboard.press("ControlOrMeta+V")
+    await expect(previews).toHaveCount(1)
+    await expect(input).toHaveValue("pasted caption")
+
+    // A second paste adds to the first instead of replacing it.
+    await writeClipboard(false, "blue")
+    await input.focus()
+    await page.keyboard.press("ControlOrMeta+V")
+    await expect(previews).toHaveCount(2)
+    for (const img of await previews.all()) {
+      await expect
+        .poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth))
+        .toBeGreaterThan(0)
+    }
+
+    await page.getByTestId("send-button").click()
+    await expect(page.getByTestId("chat-msg-assistant")).toContainText("saw the image")
+    expect(capturedBody).toMatchObject({ question: "pasted caption" })
+    const paths = (capturedBody as unknown as { image_paths: string[] }).image_paths
+    expect(paths).toHaveLength(2)
+    expect(new Set(paths).size).toBe(2)
+    for (const path of paths) expect(path).toMatch(/\.png$/)
+    await expect(previews).toHaveCount(0)
+  } finally {
+    await context.unrouteAll({ behavior: "ignoreErrors" })
+  }
+})
+
+test("chat: the image picker attaches several files at once (#562)", async ({
+  page,
+  context,
+}) => {
+  let capturedBody: Record<string, unknown> | null = null
+  await context.route("**/api/chat", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback()
+    }
+    capturedBody = route.request().postDataJSON()
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ job_id: "e2e-picker", status: "pending" }),
+    })
+  })
+  await context.route("**/api/chat/e2e-picker/stream", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: "data: saw both\n\n",
+    })
+  })
+
+  // A 1x1 PNG; the upload route is real.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64",
+  )
+  try {
+    await page.goto("/chat")
+    await page.getByRole("button", { name: "Attach" }).click()
+    const chooser = page.waitForEvent("filechooser")
+    await page.getByRole("menuitem", { name: /insert image/i }).click()
+    const fileChooser = await chooser
+    expect(fileChooser.isMultiple()).toBe(true)
+    await fileChooser.setFiles([
+      { name: "one.png", mimeType: "image/png", buffer: png },
+      { name: "two.png", mimeType: "image/png", buffer: png },
+    ])
+    await expect(page.getByRole("img", { name: "Attached image" })).toHaveCount(2)
+
+    await page.getByTestId("chat-input").fill("two from the picker")
+    await page.getByTestId("send-button").click()
+    await expect(page.getByTestId("chat-msg-assistant")).toContainText("saw both")
+    const paths = (capturedBody as unknown as { image_paths: string[] }).image_paths
+    expect(paths).toHaveLength(2)
+    expect(new Set(paths).size).toBe(2)
+  } finally {
+    await context.unrouteAll({ behavior: "ignoreErrors" })
+  }
+})
+
+test("journal: an entry opens at the top and a brainstorm is followed", async ({
+  page,
+  context,
+}) => {
+  const entry = { id: "2026-11-07_101500", date: "2026-11-07", size: 10, item: "Long entry", notion_url: "" }
+  const longBody = Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1} of the entry.`).join("\n\n")
+  // Journal endpoints are faked so the test neither reads nor writes entries.
+  await context.route("**/api/journal**", async (route) => {
+    const req = route.request()
+    const path = new URL(req.url()).pathname
+    const json = (body: unknown, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) })
+    if (path === "/api/journal" && req.method() === "GET") return json({ entries: [entry] })
+    if (path === "/api/journal/trash") return json({ entries: [] })
+    if (path === `/api/journal/${entry.id}` && req.method() === "GET") {
+      return json({ content: `# Journal 2026-11-07\n\n${longBody}` })
+    }
+    return json({ ok: true, id: entry.id })
+  })
+  // The brainstorm stream is pushed token by token from the test.
+  await page.addInitScript(() => {
+    const realFetch = window.fetch
+    const encoder = new TextEncoder()
+    const w = window as unknown as Record<string, unknown>
+    let controller: ReadableStreamDefaultController<Uint8Array>
+    window.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith("/api/journal/chat") && init?.method === "POST") {
+        return new Response(JSON.stringify({ job_id: "e2e-journal-follow" }), {
+          status: 202,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      if (url.endsWith("/api/chat/e2e-journal-follow/stream")) {
+        const body = new ReadableStream<Uint8Array>({
+          start(c) {
+            controller = c
+            w.__streams = ((w.__streams as number) ?? 0) + 1
+          },
+        })
+        return new Response(body, { headers: { "content-type": "text/event-stream" } })
+      }
+      return realFetch(input, init)
+    }
+    w.__push = (text: string) => controller.enqueue(encoder.encode(`data: ${text}\n\n`))
+  })
+
+  const area = page.getByTestId("journal-scroll")
+  const scrollTop = () => area.evaluate((el) => el.scrollTop)
+  const distance = () => area.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
+  const push = (text: string) =>
+    page.evaluate((t) => (window as unknown as { __push: (s: string) => void }).__push(t), text)
+
+  await page.goto("/journal")
+  await page.getByText("Long entry").click()
+  await expect(page.getByTestId("journal-content")).toContainText("Paragraph 60")
+  expect(await area.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  // Opening an entry reads from the top.
+  expect(await scrollTop()).toBe(0)
+
+  await page.getByTestId("chat-input").fill("what next?")
+  await page.getByRole("button", { name: "Brainstorm" }).click()
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __streams?: number }).__streams))
+    .toBe(1)
+  await push(`TOKEN-A ${"An idea worth writing down. ".repeat(80)}`)
+  await expect(area).toContainText("TOKEN-A")
+  await expect.poll(distance).toBeLessThanOrEqual(40)
+
+  // Scrolling up holds the position while the answer keeps growing.
+  await area.hover()
+  await page.mouse.wheel(0, -500)
+  await expect.poll(distance).toBeGreaterThan(40)
+  const held = await scrollTop()
+  await push(`TOKEN-B ${"Another idea. ".repeat(80)}`)
+  await expect(area).toContainText("TOKEN-B")
+  expect(await scrollTop()).toBe(held)
+})

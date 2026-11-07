@@ -1,4 +1,5 @@
 """Tests for src/chat_cli.py — session management and command building."""
+import json
 import subprocess
 import uuid
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from src import chat_cli as chat
+from src import credentials, state as state_mod
 
 
 class TestListSessions:
@@ -91,7 +93,8 @@ class TestBuildCmd:
 
 
 class TestRunClaude:
-    def test_claude_subprocess_strips_anthropic_api_key(self, tmp_path, monkeypatch):
+    def test_claude_subprocess_strips_anthropic_api_key(self, tmp_path, monkeypatch, isolated_state):
+        state_mod.write_state(state_mod.State(auth_mode="cli"))
         briefing = tmp_path / "briefing_2026-05-16.md"
         briefing.write_text("本文テスト")
         session_file = tmp_path / "2026-05-16"
@@ -109,7 +112,106 @@ class TestRunClaude:
         assert exit_code == 0
         assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") is None
 
-    def test_stale_resume_session_falls_back_to_new_session(self, tmp_path, monkeypatch, capsys):
+    def test_claude_subprocess_injects_anthropic_api_key_in_api_mode(
+        self, tmp_path, monkeypatch, isolated_state
+    ):
+        state_mod.write_state(state_mod.State(auth_mode="api"))
+        credentials.set_credential("ANTHROPIC_API_KEY", "secret-api-key")
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        monkeypatch.setattr(chat.subprocess, "run", fake_run)
+
+        exit_code = chat.run_claude("2026-05-16", briefing, session_file)
+
+        assert exit_code == 0
+        assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") == "secret-api-key"
+
+    def test_api_mode_without_key_warns_about_oauth_fallback(
+        self, tmp_path, monkeypatch, capsys, isolated_state
+    ):
+        state_mod.write_state(state_mod.State(auth_mode="api"))
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        monkeypatch.setattr(chat.subprocess, "run", fake_run)
+
+        exit_code = chat.run_claude("2026-05-16", briefing, session_file)
+
+        assert exit_code == 0
+        assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") is None
+        err = capsys.readouterr().err
+        assert "auth_mode is 'api'" in err
+        assert "OAuth subscription" in err
+
+    def test_api_mode_resume_uses_injected_key(self, tmp_path, monkeypatch, isolated_state):
+        state_mod.write_state(state_mod.State(auth_mode="api"))
+        credentials.set_credential("ANTHROPIC_API_KEY", "secret-api-key")
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        session_file.write_text("saved-uuid")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        monkeypatch.setattr(chat.subprocess, "run", fake_run)
+
+        exit_code = chat.run_claude("2026-05-16", briefing, session_file)
+
+        assert exit_code == 0
+        assert "--resume" in calls[0][0]
+        assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") == "secret-api-key"
+
+    def test_api_mode_stale_session_fallback_keeps_injected_key(
+        self, tmp_path, monkeypatch, isolated_state
+    ):
+        state_mod.write_state(state_mod.State(auth_mode="api"))
+        credentials.set_credential("ANTHROPIC_API_KEY", "secret-api-key")
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        session_file.write_text("stale-uuid")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            if "--resume" in cmd:
+                return subprocess.CompletedProcess(
+                    cmd,
+                    1,
+                    stderr="No conversation found with session ID: stale-uuid\n",
+                )
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        monkeypatch.setattr(chat.subprocess, "run", fake_run)
+
+        exit_code = chat.run_claude("2026-05-16", briefing, session_file)
+
+        assert exit_code == 0
+        assert len(calls) == 2
+        assert all(
+            call[1]["env"].get("ANTHROPIC_API_KEY") == "secret-api-key" for call in calls
+        )
+
+    def test_stale_resume_session_falls_back_to_new_session(
+        self, tmp_path, monkeypatch, capsys, isolated_state
+    ):
+        state_mod.write_state(state_mod.State(auth_mode="cli"))
         briefing = tmp_path / "briefing_2026-05-16.md"
         briefing.write_text("本文テスト")
         session_file = tmp_path / "2026-05-16"
@@ -137,3 +239,49 @@ class TestRunClaude:
         assert all(call[1]["env"].get("ANTHROPIC_API_KEY") is None for call in calls)
         uuid.UUID(session_file.read_text().strip())
         assert "Saved session is stale; starting a new session." in capsys.readouterr().err
+
+    def test_corrupt_state_falls_back_to_cli_with_warning(
+        self, tmp_path, monkeypatch, capsys, isolated_state
+    ):
+        state_mod.STATE_FILE.write_text("{not json", encoding="utf-8")
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+        monkeypatch.setattr(chat.subprocess, "run", fake_run)
+
+        exit_code = chat.run_claude("2026-05-16", briefing, session_file)
+
+        assert exit_code == 0
+        assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") is None
+        assert "falling back to cli auth mode" in capsys.readouterr().err
+
+    def test_invalid_auth_mode_falls_back_to_cli_with_warning(
+        self, tmp_path, monkeypatch, capsys, isolated_state
+    ):
+        state_mod.STATE_FILE.write_text(
+            json.dumps({"auth_mode": "bogus"}), encoding="utf-8"
+        )
+        briefing = tmp_path / "briefing_2026-05-16.md"
+        briefing.write_text("本文テスト")
+        session_file = tmp_path / "2026-05-16"
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+        monkeypatch.setattr(chat.subprocess, "run", fake_run)
+
+        exit_code = chat.run_claude("2026-05-16", briefing, session_file)
+
+        assert exit_code == 0
+        assert calls[0][1]["env"].get("ANTHROPIC_API_KEY") is None
+        assert "falling back to cli auth mode" in capsys.readouterr().err
