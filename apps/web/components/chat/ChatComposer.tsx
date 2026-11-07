@@ -57,7 +57,8 @@ export function ChatComposer({
     take: takeImages,
     error: attachError,
     isDragging,
-    pasting,
+    uploading,
+    onPickerUploadingChange,
   } = useImageAttachments(textareaRef)
 
   // Covers height updates from sources other than direct typing (history
@@ -72,7 +73,7 @@ export function ChatComposer({
     // this the Enter key would clear the attachment without ever sending it.
     // Sending mid-upload would lose the image from this message and leave it
     // attached to the next one.
-    if (input.trim().length === 0 || pasting) return
+    if (input.trim().length === 0 || uploading) return
     onSend(takeImages())
   }
 
@@ -119,6 +120,7 @@ export function ChatComposer({
             attachedImages={attachedImages}
             onAttach={attachImage}
             onRemove={removeImage}
+            onUploadingChange={onPickerUploadingChange}
             disabled={busy}
             isDragging={isDragging}
             onInsertFile={(markdown) =>
@@ -165,7 +167,7 @@ export function ChatComposer({
           ) : (
             <Button
               onClick={handleSend}
-              disabled={input.trim().length === 0 || pasting}
+              disabled={input.trim().length === 0 || uploading}
               data-testid="send-button"
               size="icon"
               className="shrink-0 rounded-full"

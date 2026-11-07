@@ -10,6 +10,9 @@ type Props = {
   // Receives the Markdown link to splice in at the caret, e.g. "[report.csv](/api/attachments/…)".
   onInsertFile: (markdown: string) => void
   disabled?: boolean
+  /** Told when an upload (image or file) starts and settles, so the host can
+   * hold back a send that would otherwise race it. */
+  onUploadingChange?: (uploading: boolean) => void
 }
 
 /**
@@ -17,12 +20,16 @@ type Props = {
  * flow) or "Attach file" (generic file → Markdown link inserted at the caret).
  * Images and files are routed to their own upload endpoints.
  */
-export function AttachMenu({ onAttachImage, onInsertFile, disabled }: Props) {
+export function AttachMenu({ onAttachImage, onInsertFile, disabled, onUploadingChange }: Props) {
   const imageInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusyState] = useState(false)
+  function setBusy(value: boolean) {
+    setBusyState(value)
+    onUploadingChange?.(value)
+  }
   const [error, setError] = useState<string | null>(null)
 
   // Close the menu on outside click or Escape.

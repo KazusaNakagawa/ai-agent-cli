@@ -120,4 +120,29 @@ describe("journal brainstorm images", () => {
     )
     expect(previews()).toHaveLength(MAX_IMAGES_PER_MESSAGE)
   })
+
+  it("holds back the brainstorm while a picked image uploads", async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((r) => { release = r })
+    const base = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/images/upload") await gate
+      return base(input, init)
+    })
+    renderJournal()
+    const picker = document.querySelector(
+      'input[accept="image/jpeg,image/png,image/gif,image/webp"]'
+    ) as HTMLInputElement
+    fireEvent.change(picker, {
+      target: { files: [new File(["p"], "picked.png", { type: "image/png" })] },
+    })
+    const button = screen.getByRole("button", { name: "Brainstorm" })
+    await waitFor(() => expect(button).toBeDisabled())
+    release()
+    await waitFor(() => expect(previews()).toHaveLength(1))
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    await waitFor(() => expect(chatBodies).toHaveLength(1))
+    expect(chatBodies[0].image_paths).toEqual(["/abs/picked.png"])
+  })
 })

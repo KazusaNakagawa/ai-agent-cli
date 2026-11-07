@@ -94,7 +94,8 @@ export function JournalScreen() {
     take: takeBrainstormImages,
     error: brainstormImageError,
     isDragging: isBrainstormDragging,
-    pasting: brainstormPasting,
+    uploading: brainstormUploading,
+    onPickerUploadingChange: onBrainstormPickerUploadingChange,
   } = useImageAttachments(brainstormRef)
 
   const [question, setQuestion] = useState("")
@@ -109,7 +110,7 @@ export function JournalScreen() {
 
   const brainstorm = useCallback(async () => {
     const q = question.trim()
-    if (!q || brainstorming || brainstormPasting) return
+    if (!q || brainstorming || brainstormUploading) return
     setQuestion("")
     brainstormEpoch.current = viewEpoch.current
     await job.startJob({
@@ -124,7 +125,7 @@ export function JournalScreen() {
     // viewEpoch is a ref (stable identity) read only for its .current value at
     // call time, so it's intentionally omitted from the dependency array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question, brainstorming, brainstormPasting, takeBrainstormImages, job, journalChat.entryId])
+  }, [question, brainstorming, brainstormUploading, takeBrainstormImages, job, journalChat.entryId])
 
   // Abort the in-flight brainstorm and terminate the backend job — works
   // whether or not the backend job_id has arrived yet (journalChatJobStore
@@ -304,6 +305,7 @@ export function JournalScreen() {
                   attachedImages={brainstormImages}
                   onAttach={attachBrainstormImage}
                   onRemove={removeBrainstormImage}
+                  onUploadingChange={onBrainstormPickerUploadingChange}
                   isDragging={isBrainstormDragging}
                   onInsertFile={(markdown) =>
                     setQuestion(insertAtCursor(brainstormRef.current, question, markdown))
@@ -318,7 +320,7 @@ export function JournalScreen() {
                   <button
                     type="button"
                     onClick={() => void brainstorm()}
-                    disabled={brainstorming || brainstormPasting || question.trim() === ""}
+                    disabled={brainstorming || brainstormUploading || question.trim() === ""}
                     className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
                   >
                     {brainstorming ? "Thinking…" : "Brainstorm"}

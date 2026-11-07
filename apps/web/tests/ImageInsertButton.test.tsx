@@ -92,4 +92,19 @@ describe("ImageInsertButton", () => {
     expect(onAttach).toHaveBeenCalledTimes(1)
     expect(onAttach).toHaveBeenCalledWith({ url: "/api/images/good.png", path: "/abs/good.png" })
   })
+
+  it("reports when an image upload starts and settles", async () => {
+    let finish: () => void = () => {}
+    vi.mocked(uploadImage).mockImplementationOnce(
+      () => new Promise((r) => { finish = () => r({ url: "/u.png", path: "/abs/u.png" }) }),
+    )
+    const onUploadingChange = vi.fn()
+    render(<ImageInsertButton onAttach={vi.fn()} onUploadingChange={onUploadingChange} />)
+    fireEvent.change(imageInput(), {
+      target: { files: [new File(["a"], "u.png", { type: "image/png" })] },
+    })
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
+    finish()
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false))
+  })
 })

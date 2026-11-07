@@ -101,4 +101,31 @@ describe("AttachMenu", () => {
     expect(onAttach).toHaveBeenCalledTimes(1)
     expect(onAttach).toHaveBeenCalledWith({ url: "/api/images/good.png", path: "/abs/good.png" })
   })
+
+  it("reports when an image upload starts and settles", async () => {
+    let finish: () => void = () => {}
+    vi.mocked(uploadImage).mockImplementationOnce(
+      () => new Promise((r) => { finish = () => r({ url: "/u.png", path: "/abs/u.png" }) }),
+    )
+    const onUploadingChange = vi.fn()
+    render(<AttachMenu onAttachImage={vi.fn()} onInsertFile={vi.fn()} onUploadingChange={onUploadingChange} />)
+    fireEvent.change(imageInput(), {
+      target: { files: [new File(["a"], "u.png", { type: "image/png" })] },
+    })
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
+    finish()
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false))
+  })
+
+  it("reports a generic file upload too, and settles after a failure", async () => {
+    vi.mocked(uploadFile).mockRejectedValueOnce(new Error("nope"))
+    const onUploadingChange = vi.fn()
+    render(<AttachMenu onAttachImage={vi.fn()} onInsertFile={vi.fn()} onUploadingChange={onUploadingChange} />)
+    const fileInput = document.querySelector('input[accept=".pdf,.csv,.txt,.md"]') as HTMLInputElement
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["x"], "r.csv", { type: "text/csv" })] },
+    })
+    expect(await screen.findByText("nope")).toBeInTheDocument()
+    expect(onUploadingChange.mock.calls.map(([v]) => v)).toEqual([true, false])
+  })
 })

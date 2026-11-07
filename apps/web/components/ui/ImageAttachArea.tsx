@@ -14,6 +14,8 @@ type Props = {
   // When provided, the "+" becomes a menu (image + generic file). The callback
   // receives the Markdown link to splice in at the caret.
   onInsertFile?: (markdown: string) => void
+  /** Forwarded to the picker: whether one of its uploads is in flight. */
+  onUploadingChange?: (uploading: boolean) => void
 }
 
 export function ImageAttachArea({
@@ -23,6 +25,7 @@ export function ImageAttachArea({
   disabled,
   isDragging,
   onInsertFile,
+  onUploadingChange,
 }: Props) {
   return (
     <div
@@ -33,9 +36,14 @@ export function ImageAttachArea({
           onAttachImage={onAttach}
           onInsertFile={onInsertFile}
           disabled={disabled}
+          onUploadingChange={onUploadingChange}
         />
       ) : (
-        <ImageInsertButton onAttach={onAttach} disabled={disabled} />
+        <ImageInsertButton
+          onAttach={onAttach}
+          disabled={disabled}
+          onUploadingChange={onUploadingChange}
+        />
       )}
       {attachedImages.map((image, i) => (
         <ImageAttachmentPreview

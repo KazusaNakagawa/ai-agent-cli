@@ -6,12 +6,19 @@ import { uploadImages } from "@/lib/uploadImages"
 type Props = {
   onAttach: (image: ImageAttachment) => void
   disabled?: boolean
+  /** Told when an upload starts and settles, so the host can hold back a
+   * send that would otherwise race it. */
+  onUploadingChange?: (uploading: boolean) => void
 }
 
-export function ImageInsertButton({ onAttach, disabled }: Props) {
+export function ImageInsertButton({ onAttach, disabled, onUploadingChange }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
+  const [uploading, setUploadingState] = useState(false)
+  function setUploading(value: boolean) {
+    setUploadingState(value)
+    onUploadingChange?.(value)
+  }
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
