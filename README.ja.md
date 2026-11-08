@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| **技術スタック** | Python 3.11–3.13 · FastAPI · Next.js 14 · TypeScript · Tailwind |
+| **技術スタック** | Python 3.11–3.13 · FastAPI · Next.js 15 · React 19 · TypeScript · Tailwind |
 | **エージェント層** | Claude Code CLI（subprocess + WebSearch）、プロンプトの並列オーケストレーション、オプトインのローカル LLM モード（Ollama + Chroma） |
 | **運用** | launchd/cron スケジューリング、デグレードモード配信、スリープ復帰後の再実行、使用量・コスト監視 |
 
@@ -107,6 +107,8 @@ npx brief-lens            # 初回は ~/.brief-lens と Python バックエン�
 
 データは checkout とは別の `~/.brief-lens/` に保存されます。オプション、アップグレード、リリース手順は [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md) を参照。
 
+画面ごとの使い方は[ユーザーガイド](https://kazusanakagawa.github.io/ai-agent-cli/)にまとめています。
+
 ### ソースから
 
 **前提:** Python 3.11〜3.13（すべて CI で実行）、[uv](https://github.com/astral-sh/uv)、認証済みの [Claude Code CLI](https://claude.ai/code)、Discord Bot、Notion インテグレーション。
@@ -202,7 +204,7 @@ GitHub Actions は `dev` と `main` 向けのすべての Pull Request で 3 つ
 
 | トピック | リンク |
 |---|---|
-| リポジトリ解説（公開ページ） | [kazusanakagawa.github.io/ai-agent-cli](https://kazusanakagawa.github.io/ai-agent-cli/) |
+| ユーザーガイド（画面の使い方、セットアップ、運用、仕組み） | [kazusanakagawa.github.io/ai-agent-cli](https://kazusanakagawa.github.io/ai-agent-cli/) |
 | 設定（環境変数、設定スキーマ、プロンプト） | [docs/guides/configuration.md](docs/guides/configuration.md) |
 | 日次ブリーフィング（手動 `./bin/workflow.sh run daily`、任意で launchd） | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
 | スケジュール実行（cron + pmset、代替手段） | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |

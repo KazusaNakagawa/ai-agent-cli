@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="configuration" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>設定ファイル — brief-lens ガイド</title>
+<meta name="description" content="briefing.json の項目、環境変数、認証情報の優先順位のリファレンス。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>設定ファイル</h1>
+<p class="lead">ブリーフィングの対象は、すべて <code>briefing.json</code> で決まります。コードを変えずに、銘柄・セクター・地政学リスク・為替などを差し替えられます。画面から編集できるのは一部の項目だけで、残りはこのファイルを直接編集します。</p>
+
+<h2 id="location">ファイルの場所</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>使い方</th><th>場所</th></tr></thead>
+  <tbody>
+    <tr><td>npx 版</td><td><code>~/.brief-lens/config/briefing.json</code></td></tr>
+    <tr><td>clone した環境</td><td><code>apps/python/config/briefing.json</code>（Git の管理外）</td></tr>
+  </tbody>
+</table></div>
+<p>テンプレートはリポジトリの <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/apps/python/config/briefing.json.example">briefing.json.example</a> です。編集は、テキストエディタで直接行うか、<a href="settings.html#config-file">Config → Config file</a> で書き出して読み込み直します。保存した内容は次の実行から使われます。</p>
+
+<h2 id="keys">briefing.json の項目</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>キー</th><th>内容</th><th>画面</th></tr></thead>
+  <tbody>
+    <tr><td><code>portfolio</code></td><td><code>tickers</code>（銘柄コード）と <code>themes</code>（テーマ）</td><td>Portfolio</td></tr>
+    <tr><td><code>watch_sectors</code></td><td>セクターごとの <code>sector</code>・<code>tickers</code>・<code>notes</code>。1 つ以上必要</td><td>Watch Sectors</td></tr>
+    <tr><td><code>geopolitical.conflicts</code></td><td>地政学リスクごとの <code>name</code>・<code>affected_sectors</code>・<code>related_tickers</code>・<code>notes</code></td><td>Geopolitical Risks</td></tr>
+    <tr><td><code>watch_events</code></td><td>起きたら影響が大きいイベント。<code>name</code>・<code>trigger</code>（何が起きたら注目するか）・<code>affected_sectors</code>・<code>related_tickers</code>・<code>notes</code></td><td>—</td></tr>
+    <tr><td><code>fx</code></td><td>為替。<code>pairs</code>（通貨ペアと注意する水準 <code>band_low</code> / <code>band_high</code>）、<code>usd_asset_share</code>（ドル建て資産の割合 0〜1）、<code>scenario_rates</code>（影響を試算するドル円の水準）。<code>pairs</code> が空なら為替の項目は出ません</td><td>—</td></tr>
+    <tr><td><code>model</code></td><td>Claude Code CLI に渡すモデル</td><td>—</td></tr>
+    <tr><td><code>fallback_model</code></td><td>メインのモデルが混雑・利用不可のときに切り替えるモデル（カンマ区切りで複数可）</td><td>—</td></tr>
+    <tr><td><code>obsidian</code></td><td>Obsidian の Vault との連携（ジャーナルの書き出しなど）。<code>vault_path</code>・<code>journal_subdir</code>・<code>exclude_dirs</code></td><td>—</td></tr>
+    <tr><td><code>journal_chat</code></td><td>ジャーナルのブレインストーミングで、Claude にファイルの書き込みを許すフォルダー（<code>trusted_write_dirs</code>）</td><td>—</td></tr>
+    <tr><td><code>speech</code></td><td>読み上げ用の原稿。<code>audio</code> を <code>true</code> にすると macOS の <code>say</code> で音声ファイルも作る。<code>voice</code>・<code>max_chars</code></td><td>—</td></tr>
+    <tr><td><code>slides</code></td><td>スライド（Marp）の設定。<code>max_claims</code> は 1 枚に載せる論点の数</td><td>—</td></tr>
+  </tbody>
+</table></div>
+
+<h3 id="example">最小の例</h3>
+<pre><code>{
+  "portfolio": {
+    "tickers": ["AAPL", "MSFT"],
+    "themes": ["AI規制", "金融政策"]
+  },
+  "watch_sectors": [
+    { "sector": "AI・クラウド", "tickers": ["MSFT", "AMZN", "GOOGL"], "notes": "設備投資の動向" }
+  ],
+  "geopolitical": {
+    "conflicts": [
+      {
+        "name": "米中の技術規制",
+        "affected_sectors": ["半導体"],
+        "related_tickers": ["TSM"],
+        "notes": "輸出管理の対象拡大に注目"
+      }
+    ]
+  }
+}</code></pre>
+<p>銘柄は説明用の例です。</p>
+
+<h2 id="env">環境変数</h2>
+<p>clone した環境ではリポジトリ直下の <code>.env</code>、npx 版では <code>~/.brief-lens/.env</code> に書きます。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>変数</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>DISCORD_TOKEN</code> / <code>CHANNEL_ID</code></td><td>Discord への配信</td></tr>
+    <tr><td><code>NOTION_API_KEY</code> / <code>NOTION_DATABASE_ID</code></td><td>Notion への配信とチャットの追記</td></tr>
+    <tr><td><code>NOTION_DATABASE_ID_JOURNAL</code></td><td>ジャーナルの Notion 同期</td></tr>
+    <tr><td><code>ANTHROPIC_API_KEY</code></td><td>API モードのときだけ使う。CLI モードでは子プロセスに渡さない</td></tr>
+    <tr><td><code>CLAUDE_MODEL</code></td><td><code>model</code> より優先して使うモデル</td></tr>
+    <tr><td><code>CLAUDE_FALLBACK_MODEL</code></td><td><code>fallback_model</code> より優先する切り替え先のモデル</td></tr>
+    <tr><td><code>BRAVE_API_KEY</code></td><td>ローカル LLM モードの Web 検索</td></tr>
+    <tr><td><code>RCLONE_REMOTE</code></td><td>アーカイブのアップロード先（rclone のリモート名）</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="credentials">認証情報の優先順位</h2>
+<p>Discord・Notion・Anthropic の認証情報は、<strong>OS のキーチェーン → <code>.env</code></strong> の順に探します。キーチェーンに値があると、<code>.env</code> を書き換えても反映されません。値を変えたいときは、<a href="settings.html#credentials">Config → Credentials</a> で登録し直してください。</p>
+
+<h2 id="other-files">そのほかの設定ファイル（clone した環境）</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>ファイル</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>config/holdings.json</code></td><td><code>bin/portfolio.sh</code> が読む保有ポジション</td></tr>
+    <tr><td><code>config/money_rules.json</code></td><td><code>bin/money.sh</code> が使う取引の分類・振替ルール</td></tr>
+    <tr><td><code>config/self_agent_profile.md</code></td><td><code>bin/self_agent.sh</code> が更新するペルソナのプロファイル</td></tr>
+    <tr><td><code>apps/python/prompts/briefing_*.md</code></td><td>ブリーフィングのプロンプトのテンプレート（本文・保有銘柄・セクターなど、セクションごとに分かれています）</td></tr>
+  </tbody>
+</table></div>
+<p>個人のデータを含むファイルは Git にコミットしません。リポジトリには、形式を示す <code>.example</code> だけがあります。</p>
+
+</main>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="settings" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Config（設定画面） — brief-lens ガイド</title>
+<meta name="description" content="Config の 7 つのタブ（Usage・Appearance・Config file・Export data・Credentials・Auth・Setup）の使い方。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>Config（設定画面）</h1>
+<p class="lead">サイドバーの一番下にある <span class="ui">Config</span> を押すと、設定画面が開きます。左に 7 つのタブが並び、右上の <span class="ui">×</span> で閉じます。どのサービスを開いていても同じ設定画面です。</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>タブ</th><th>できること</th></tr></thead>
+  <tbody>
+    <tr><td><a href="#usage"><span class="ui">Usage</span></a></td><td>brief-lens の実行ごとの利用量とコスト</td></tr>
+    <tr><td><a href="#appearance"><span class="ui">Appearance</span></a></td><td>画面のテーマと背景</td></tr>
+    <tr><td><a href="#config-file"><span class="ui">Config file</span></a></td><td>設定ファイル <code>briefing.json</code> の書き出し・読み込み</td></tr>
+    <tr><td><a href="#export"><span class="ui">Export data</span></a></td><td>生成物と添付ファイルを zip でダウンロード</td></tr>
+    <tr><td><a href="#credentials"><span class="ui">Credentials</span></a></td><td>Discord・Notion・Anthropic の認証情報の登録</td></tr>
+    <tr><td><a href="#auth"><span class="ui">Auth</span></a></td><td>Claude の呼び出し方（CLI / API キー）の切り替え</td></tr>
+    <tr><td><a href="#setup"><span class="ui">Setup</span></a></td><td>セットアップウィザードのやり直し</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="usage">Usage</h2>
+<p>brief-lens が Claude を呼び出した分の利用量を、実行ごと・日別に表示します。Claude Code 全体の利用量を見る Monitor との違いも含めて、<a href="monitor.html#usage">Monitor と Usage</a> で説明しています。</p>
+
+<h2 id="appearance">Appearance</h2>
+<p><span class="ui">Theme</span> で <span class="ui">Light</span> と <span class="ui">Dark</span> を、背景で <span class="ui">Default</span> と <span class="ui">Soft</span> を選べます。設定はブラウザに保存されます。</p>
+
+<h2 id="config-file">Config file</h2>
+<p>設定ファイル <code>briefing.json</code> を丸ごと扱います。画面から編集できない項目（為替のバンド、使用するモデルなど）を変えたいときに使います。</p>
+<ul>
+  <li><span class="ui">Export</span> — 今の <code>briefing.json</code> をダウンロードします。</li>
+  <li><span class="ui">Import</span> — 編集した JSON ファイルを選んで読み込みます。JSON として読めないファイルや、設定の形式に合わないファイルは、エラーを表示して読み込みません（今の設定は変わりません）。</li>
+</ul>
+<p>項目の意味は<a href="configuration.html">設定ファイル</a>を参照してください。</p>
+
+<h2 id="export">Export data</h2>
+<p><span class="ui">Download archive zip</span> を押すと、データの保存場所の <code>output/</code>（ブリーフィング、ジャーナルなど）と <code>input/</code>（チャットで添付した画像など）をまとめた zip をダウンロードします。バックアップや、別のマシンへの移行に使います。</p>
+
+<h2 id="credentials">Credentials</h2>
+<figure>
+  <img src="img/config-credentials.png" alt="Credentials タブ。認証情報ごとに Not set の表示と Set・Delete ボタンが並ぶ" loading="lazy">
+  <figcaption>Credentials タブ。値は表示されず、設定済みかどうかだけが分かります</figcaption>
+</figure>
+<p>各項目の <span class="ui">Set</span> で値を入力して保存し、<span class="ui">Delete</span> で削除します。値は OS のキーチェーンに保存され、画面には <span class="ui">Set</span>（設定済み）か <span class="ui">Not set</span>（未設定）だけが表示されます。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>キー</th><th>用途</th><th>必要になるとき</th></tr></thead>
+  <tbody>
+    <tr><td><code>DISCORD_TOKEN</code></td><td>Discord Bot のトークン</td><td>ブリーフィングを Discord に配信する</td></tr>
+    <tr><td><code>CHANNEL_ID</code></td><td>配信先の Discord チャンネル ID</td><td>同上</td></tr>
+    <tr><td><code>NOTION_API_KEY</code></td><td>Notion インテグレーションのキー</td><td>Notion への配信、チャットの追記、ジャーナルの同期</td></tr>
+    <tr><td><code>NOTION_DATABASE_ID</code></td><td>ブリーフィング用の Notion データベース</td><td>ブリーフィングの配信、チャットの追記</td></tr>
+    <tr><td><code>NOTION_DATABASE_ID_JOURNAL</code></td><td>ジャーナル用の Notion データベース</td><td>ジャーナルの同期</td></tr>
+    <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Anthropic の API キー</td><td>Auth を API モードにする</td></tr>
+  </tbody>
+</table></div>
+<p>キーチェーンに値がないときは、データの保存場所の <code>.env</code> にある同名の変数が使われます。</p>
+
+<h2 id="auth">Auth</h2>
+<p>Claude の呼び出し方を切り替えます。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>モード</th><th>動き</th><th>料金</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ui">Claude Pro / Max subscription (CLI)</span></td><td><code>claude login</code> のセッションを使う。API キーは子プロセスに渡さない</td><td>プランの定額の範囲内</td></tr>
+    <tr><td><span class="ui">Anthropic API key</span></td><td>キーチェーン（なければ <code>.env</code>）の <code>ANTHROPIC_API_KEY</code> を Claude Code CLI に渡す</td><td>API の従量課金</td></tr>
+  </tbody>
+</table></div>
+<p>API モードに切り替える前に、Credentials で <code>ANTHROPIC_API_KEY</code> を登録しておく必要があります。切り替えは次の実行から反映され、アプリの再起動は要りません。</p>
+
+<h2 id="setup">Setup</h2>
+<p><span class="ui">Re-run setup wizard</span> を押すと、<a href="getting-started.html#wizard">セットアップウィザード</a>をもう一度開きます。今の設定を初期値として始まり、ウォッチセクターや地政学リスクの定義はそのまま残ります。途中で画面を閉じても、アプリが使えなくなることはありません。</p>
+
+</main>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="getting-started" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>インストールと初回セットアップ — brief-lens ガイド</title>
+<meta name="description" content="npx brief-lens で brief-lens を起動し、セットアップウィザードを終えるまでの手順。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>インストールと初回セットアップ</h1>
+<p class="lead">リポジトリを clone しなくても、<code>npx brief-lens</code> の 1 行で Web UI を起動できます。初回はデータの保存場所と Python の実行環境を自動で用意し、ブラウザでセットアップウィザードを開きます。</p>
+
+<h2 id="prerequisites">事前に用意するもの</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>必要なもの</th><th>理由</th><th>入れ方</th></tr></thead>
+  <tbody>
+    <tr><td>Node.js 18 以上</td><td>ランチャーと Web UI を動かす</td><td><a href="https://nodejs.org/">nodejs.org</a></td></tr>
+    <tr><td><a href="https://docs.astral.sh/uv/">uv</a></td><td>バックエンド（Python）の実行環境を作る</td><td><code>brew install uv</code> など</td></tr>
+    <tr><td>Claude Code CLI（ログイン済み）</td><td>Claude の呼び出しはすべて CLI を通る</td><td><code>npm install -g @anthropic-ai/claude-code</code> のあと、<code>claude</code> を一度起動してログイン</td></tr>
+    <tr><td>有料の Claude プラン（Pro / Max）</td><td>アプリは CLI のログインセッションを使う。無料プランでは動かない</td><td>—</td></tr>
+    <tr><td>macOS または Linux</td><td>ランチャーとバックエンドのスクリプトが POSIX 環境を前提にしている</td><td>—</td></tr>
+  </tbody>
+</table></div>
+<p>足りないものがあると、ランチャーはディスクに何も書かずに、不足している項目とインストール方法を一覧にして終了します。</p>
+
+<h2 id="first-run">起動する</h2>
+<pre><code>npx brief-lens</code></pre>
+<p>初回は次の順に進みます。</p>
+<ol class="steps">
+  <li><strong>事前チェック</strong> — Node.js、<code>uv</code>、<code>claude</code> がそろっているかを確かめます。</li>
+  <li><strong>データの保存場所を作る</strong> — <code>~/.brief-lens/</code> を作り、設定ファイル <code>config/briefing.json</code> をテンプレートからコピーし、セッショントークン（パーミッション 0600）を生成します。</li>
+  <li><strong>Python 環境を作る</strong> — <code>~/.brief-lens/runtime/venv</code> に依存パッケージを入れます。uv のキャッシュが空だと数分かかります。2 回目以降は、新しいバージョンで依存が変わったときだけ入れ直します。</li>
+  <li><strong>サーバーを起動する</strong> — API（<code>127.0.0.1:8000</code>）と Web UI（<code>localhost:3000</code>）を起動し、両方が応答したらブラウザを開きます。</li>
+</ol>
+<p>止めるときは、ターミナルで <kbd>Ctrl</kbd> + <kbd>C</kbd> を押します。API と Web UI の両方が終了します。</p>
+<div class="callout">
+  <span class="callout__title">サーバーは自分のマシンからしか見えません。</span>
+  API も Web UI も localhost だけで待ち受けるので、同じ LAN の他の端末からは接続できません。
+</div>
+
+<h3 id="options">起動オプション</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>オプション</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td><code>--port &lt;n&gt;</code></td><td>Web UI のポート（既定 3000）</td></tr>
+    <tr><td><code>--api-port &lt;n&gt;</code></td><td>API のポート（既定 8000）</td></tr>
+    <tr><td><code>--home &lt;dir&gt;</code></td><td>データの保存場所（既定は <code>$BRIEF_LENS_HOME</code>、なければ <code>~/.brief-lens</code>）</td></tr>
+    <tr><td><code>--no-browser</code></td><td>ブラウザを開かない（環境変数 <code>CI</code> があるときも開きません）</td></tr>
+    <tr><td><code>-v</code>, <code>--version</code></td><td>バージョンを表示して終了</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="wizard">セットアップウィザード</h2>
+<p>初めてブラウザを開くと、4 ステップのセットアップウィザードが表示されます。各ステップで <span class="ui">Next</span> を押すと、入力した内容がその場で保存されます。</p>
+
+<figure>
+  <img src="img/wizard-step1.png" alt="セットアップウィザードの Step 1。Claude の呼び出し方を選ぶ画面" loading="lazy">
+  <figcaption>Step 1: Claude の呼び出し方を選ぶ</figcaption>
+</figure>
+
+<h3 id="step1">Step 1 — Claude の呼び出し方</h3>
+<ul>
+  <li><span class="ui">Claude Pro / Max subscription (CLI)</span> — <code>claude login</code> のセッションを使います。API キーの従量課金はかかりません。通常はこちらを選びます。</li>
+  <li><span class="ui">Anthropic API key</span> — <code>ANTHROPIC_API_KEY</code> を使う従量課金です。キーは Step 3 で入力します。</li>
+</ul>
+<p>あとから <a href="settings.html#auth">Config → Auth</a> で切り替えられます。</p>
+
+<h3 id="step2">Step 2 — ポートフォリオの基本</h3>
+<p><span class="ui">Tickers</span>（銘柄コード）と <span class="ui">Themes</span>（追いかけたいテーマ）をカンマ区切りで入力します。ウォッチするセクターや地政学リスクは、セットアップのあとで <a href="lens.html">Watch Sectors / Geopolitical Risks</a> から追加します。</p>
+<figure>
+  <img src="img/wizard-step2.png" alt="Step 2。Tickers と Themes を入力する画面" loading="lazy">
+  <figcaption>Step 2: 銘柄とテーマを入力する（画面の銘柄はサンプルです）</figcaption>
+</figure>
+
+<h3 id="step3">Step 3 — 通知と認証情報</h3>
+<p>Discord と Notion に配信したい場合に、Bot トークンやデータベース ID を入力します。使わない項目は空欄のままで構いません。Step 1 で API モードを選んだ場合は、ここで <code>ANTHROPIC_API_KEY</code> も入力します。値は OS のキーチェーンに保存され、画面に再表示されることはありません。</p>
+
+<h3 id="step4">Step 4 — 動作確認</h3>
+<p>ドライランを実行して、設定と認証情報に問題がないかを確かめます。Claude は呼び出さないので、利用枠は消費しません。終わったら <span class="ui">Finish</span> を押します。</p>
+
+<h3 id="skip">セットアップを飛ばす</h3>
+<p>右上の <span class="ui">Skip setup</span> を押すと確認が表示され、もう一度 <span class="ui">Skip setup</span> を押すと残りのステップを飛ばして既定の設定で始めます。すでに保存したステップの内容は残ります。入力内容を保存している最中は押せません。</p>
+<figure>
+  <img src="img/wizard-skip-confirm.png" alt="Skip setup を押したときの確認表示" loading="lazy">
+  <figcaption>Skip setup の確認。<span class="ui">Continue setup</span> でウィザードに戻ります</figcaption>
+</figure>
+<p>ウィザードは、あとから <a href="settings.html#setup">Config → Setup</a> の <span class="ui">Re-run setup wizard</span> でやり直せます。やり直すときは現在の設定から始まり、セクターや地政学リスクの定義はそのまま残ります。</p>
+
+<h2 id="side-by-side">clone したリポジトリと併用する</h2>
+<p>npx で入れた brief-lens と、リポジトリを clone して <code>bin/serve.sh</code> で起動する環境は、データもキーチェーンも完全に別です。ただし既定のポートが同じなので、同時に動かすときはどちらかのポートを変えます。</p>
+<pre><code>npx brief-lens --port 3100 --api-port 8100</code></pre>
+
+<h2 id="upgrade">アップデートとアンインストール</h2>
+<pre><code>npx brief-lens@latest          # 最新版で起動（Python の依存は変わったときだけ入れ直す）
+
+rm -rf ~/.brief-lens           # データ・実行環境・トークンをすべて削除
+# キーチェーンの項目は保存した認証情報ごとに削除する（例）
+security delete-generic-password -s brief-lens -a NOTION_API_KEY</code></pre>
+<div class="callout callout--warn">
+  <span class="callout__title"><code>~/.brief-lens</code> を消すと、ブリーフィングやジャーナルも消えます。</span>
+  残したいものがあれば、先に <a href="settings.html#export">Config → Export data</a> で zip をダウンロードしてください。
+</div>
+
+<h2 id="limits">npx 版でできないこと</h2>
+<ul>
+  <li><strong>毎朝の自動実行</strong>（launchd / cron、スリープ復帰後の再実行）は、今のところリポジトリを clone した環境だけで使えます。<a href="source.html">ソースから使う・毎日の運用</a>を参照してください。</li>
+  <li>Q&amp;A Chat の <strong>Notion への追記</strong>は、Claude Code に <code>/notion-import</code> スキルが入っている場合に動きます。入っていなくても、ローカルの Markdown への追記は行われます。</li>
+</ul>
+
+</main>
+</div>
+</div>
+</body>
+</html>
