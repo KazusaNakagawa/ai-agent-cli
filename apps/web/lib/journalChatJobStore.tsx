@@ -249,7 +249,7 @@ export function JournalChatJobStateProvider({ children }: { children: ReactNode 
       const text = await post.text().catch(() => "")
       const message =
         post.status === 404
-          ? "No journal entries yet — record something first."
+          ? "No journal entries yet — save an entry first, then brainstorm."
           : `Brainstorm failed (HTTP ${post.status}): ${text}`
       setState((prev) => ({ ...prev, status: "failed", error: message }))
       return

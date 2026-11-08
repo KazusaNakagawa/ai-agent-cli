@@ -34,6 +34,9 @@ export type JournalEntry = {
 export type JournalNavContextValue = {
   entries: JournalEntry[]
   sortedEntries: JournalEntry[]
+  /** True once the entry list has loaded successfully at least once, so an
+   *  empty `entries` can be told apart from "not fetched yet". */
+  entriesLoaded: boolean
   entriesError: string | null
   trash: JournalEntry[]
   showTrash: boolean
@@ -64,6 +67,7 @@ const JournalNavContext = createContext<JournalNavContextValue | null>(null)
 
 export function JournalNavProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<JournalEntry[]>([])
+  const [entriesLoaded, setEntriesLoaded] = useState(false)
   const [entriesError, setEntriesError] = useState<string | null>(null)
   const [trash, setTrash] = useState<JournalEntry[]>([])
   const [showTrash, setShowTrash] = useState(false)
@@ -98,6 +102,7 @@ export function JournalNavProvider({ children }: { children: ReactNode }) {
       }
       const data = (await res.json()) as { entries: JournalEntry[] }
       setEntries(data.entries)
+      setEntriesLoaded(true)
       return data.entries
     } catch (e) {
       setEntriesError(`Failed to load entries: ${String(e)}`)
@@ -279,6 +284,7 @@ export function JournalNavProvider({ children }: { children: ReactNode }) {
     () => ({
       entries,
       sortedEntries,
+      entriesLoaded,
       entriesError,
       trash,
       showTrash,
@@ -305,6 +311,7 @@ export function JournalNavProvider({ children }: { children: ReactNode }) {
     [
       entries,
       sortedEntries,
+      entriesLoaded,
       entriesError,
       trash,
       showTrash,
