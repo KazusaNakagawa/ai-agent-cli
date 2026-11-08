@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="basics" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>画面の基本 — brief-lens ガイド</title>
+<meta name="description" content="brief-lens の画面構成（サービスのタブ、サイドバー、Config）とデータの保存場所。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>画面の基本</h1>
+<p class="lead">brief-lens の画面は、上部の<strong>サービスのタブ</strong>、左の<strong>サイドバー</strong>、右の<strong>メインエリア</strong>の 3 つでできています。サービスを選ぶとサイドバーの中身が切り替わり、サイドバーで選んだ画面がメインエリアに表示されます。</p>
+
+<figure>
+  <img src="img/portfolio.png" alt="Briefing サービスを開いた状態の画面全体。左にサイドバー、上部に 4 つのアイコンタブ、右に Portfolio 画面" loading="lazy">
+  <figcaption>Briefing サービスで Portfolio を開いたところ（データはサンプルです）</figcaption>
+</figure>
+
+<h2 id="services">サービスのタブ</h2>
+<p>画面上部のアイコンが、4 つのサービスへの切り替えタブです。アイコンにマウスを重ねるとサービス名を確認できます。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>サービス</th><th>サイドバーに並ぶ画面</th><th>使いどころ</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ui">Briefing</span>（本のアイコン）</td><td>Portfolio、Watch Sectors、Geopolitical Risks、Run、Q&amp;A Chat、Briefing</td><td>視点の設定、ブリーフィングの生成・閲覧・質問</td></tr>
+    <tr><td><span class="ui">Journal</span>（ノートとペン）</td><td>Journal とエントリの一覧</td><td>日々の記録と、それをもとにしたブレインストーミング</td></tr>
+    <tr><td><span class="ui">Monitor</span>（波形）</td><td>Monitor</td><td>Claude Code 全体の利用量とコストの確認</td></tr>
+    <tr><td><span class="ui">Workspace</span>（フォルダーのツリー）</td><td>Workspace</td><td>手元のフォルダーのファイルを開いて読む・編集する</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="sidebar">サイドバー</h2>
+<ul>
+  <li>上部の <span class="ui">‹</span> ボタンで、サイドバーをアイコンだけの細い表示に折りたためます。もう一度押すと元に戻ります。</li>
+  <li>サイドバーの右端をドラッグすると幅を変えられます。</li>
+  <li>ブリーフィングの生成中は、<span class="ui">Run</span> の横に点が表示されます。別の画面に移っても生成は続きます。</li>
+  <li>一番下の <span class="ui">Config</span> を押すと、設定画面が開きます（<a href="settings.html">Config（設定画面）</a>）。</li>
+</ul>
+
+<h2 id="data-home">データの保存場所</h2>
+<p>アプリが書き込むものは、すべて 1 つのディレクトリにまとまります。npx 版の既定は <code>~/.brief-lens/</code> です（<code>--home</code> または環境変数 <code>BRIEF_LENS_HOME</code> で変更できます）。</p>
+<pre><code>~/.brief-lens/
+  config/briefing.json   # ポートフォリオ、ウォッチセクター、地政学リスクなどの設定
+  output/                # 生成したブリーフィング、ジャーナル、エクスポート
+  input/                 # チャットでアップロードした画像や添付ファイル
+  log/                   # アプリのログと利用量のログ
+  runtime/venv/          # Python の実行環境（消しても次回起動時に作り直される）
+  session-token          # API と Web UI が共有するトークン
+  .env                   # 任意: 認証情報の予備の置き場所</code></pre>
+<p>ポートフォリオなどの設定は、画面から編集しても <code>config/briefing.json</code> を直接編集しても構いません。項目の意味は<a href="configuration.html">設定ファイル</a>にまとめています。</p>
+
+<h2 id="credentials">認証情報の扱い</h2>
+<p>Discord や Notion のトークンは、<a href="settings.html#credentials">Config → Credentials</a> から OS のキーチェーンに保存します。npx 版はキーチェーンのサービス名 <code>brief-lens</code> を使い、clone した環境（<code>ai-agent</code>）とは別に管理されます。キーチェーンに値がない場合は、<code>~/.brief-lens/.env</code> にある同名の変数が読まれます。</p>
+<div class="callout">
+  <span class="callout__title">保存した値は画面に表示されません。</span>
+  Credentials の画面に出るのは、各項目が設定済み（Set）か未設定（Not set）かだけです。
+</div>
+
+<h2 id="security">ローカル専用の設計</h2>
+<p>API は <code>127.0.0.1</code> だけで待ち受け、すべてのリクエストにセッショントークン（Bearer トークン）を要求します。Web UI はこのトークンを使って API を呼び出します。インターネットに公開して使うことは想定していません。</p>
+
+</main>
+</div>
+</div>
+</body>
+</html>

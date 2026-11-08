@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="briefing" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ブリーフィングを読む（Briefing） — brief-lens ガイド</title>
+<meta name="description" content="Briefing 画面で過去のブリーフィングと週次リキャップを検索し、目次付きで読む方法。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>ブリーフィングを読む（Briefing）</h1>
+<p class="lead"><span class="ui">Briefing</span> 画面には、これまでに生成したブリーフィングと週次リキャップが新しい順に並びます。行を選ぶと右側に本文が開き、見出しの目次から読みたい箇所へ移れます。</p>
+
+<figure>
+  <img src="img/briefing.png" alt="Briefing 画面。左にファイル一覧、右に選んだブリーフィングの本文" loading="lazy">
+  <figcaption>一覧からファイルを選ぶと、右に本文が開きます（内容はサンプルです）</figcaption>
+</figure>
+
+<h2 id="list">一覧</h2>
+<p>一覧には <span class="ui">Name</span>（ファイル名）、<span class="ui">Type</span>（種類）、<span class="ui">Date</span>（日付）が並びます。</p>
+<ul>
+  <li><strong>検索</strong> — 上部の <span class="ui">Search name or content…</span> に入力すると、ファイル名と本文の両方から部分一致で絞り込みます。</li>
+  <li><strong>種類で絞り込む</strong> — <span class="ui">All</span> / <span class="ui">Briefing</span> / <span class="ui">Weekly</span> のタブで、日次のブリーフィングと週次リキャップを切り替えます。</li>
+  <li>一覧と本文の境目をドラッグすると、一覧の幅を変えられます。</li>
+</ul>
+<div class="table-wrap"><table>
+  <thead><tr><th>種類</th><th>ファイル名</th><th>中身</th></tr></thead>
+  <tbody>
+    <tr><td>Briefing</td><td><code>briefing_YYYY-MM-DD.md</code></td><td>日次のブリーフィング</td></tr>
+    <tr><td>Weekly</td><td><code>weekly_YYYY-MM-DD.md</code></td><td>週次リキャップ（金曜日に生成）</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="viewer">本文を読む</h2>
+<p>本文の上部には、種類・日付・ファイルサイズが表示されます。右上のボタンで表示を切り替えます。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>ボタン</th><th>動き</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ui">目次</span></td><td>見出しの一覧を表示し、選んだ見出しへ移動します</td></tr>
+    <tr><td>拡大（<span class="ui">⤢</span>）</td><td>本文を画面いっぱいに広げます</td></tr>
+    <tr><td>閉じる（<span class="ui">×</span>）</td><td>本文を閉じて一覧だけに戻ります</td></tr>
+  </tbody>
+</table></div>
+<p>表や見出しは Markdown のまま整形して表示されます。読みながら質問したいときは、<a href="chat.html">Q&amp;A Chat</a> を使うと本文を横に並べたまま質問できます。</p>
+
+<h2 id="archive">先月分をアーカイブする</h2>
+<p><span class="ui">Archive last month</span> を押すと、先月分のブリーフィングを zip にまとめて Google Drive へアップロードします。アップロードには <a href="https://rclone.org/">rclone</a> の設定が必要です。手順はリポジトリの <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/briefing-archive.md">briefing-archive.md</a> を参照してください。</p>
+<div class="callout callout--tip">
+  <span class="callout__title">手元に残すだけなら Export data で。</span>
+  rclone を使わずにブリーフィングやジャーナルをまとめて保存したいときは、<a href="settings.html#export">Config → Export data</a> から zip をダウンロードできます。
+</div>
+
+<h2 id="files">ファイルの場所</h2>
+<p>ブリーフィングは Markdown ファイルとして、データの保存場所の <code>output/briefing/</code> にあります（npx 版なら <code>~/.brief-lens/output/briefing/</code>）。エディタで直接開いても構いません。</p>
+
+</main>
+</div>
+</div>
+</body>
+</html>

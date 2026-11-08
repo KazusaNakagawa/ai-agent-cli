@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="chat" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>質問する（Q&amp;A Chat） — brief-lens ガイド</title>
+<meta name="description" content="Q&A Chat でブリーフィングを横に表示したまま Claude に質問し、回答を Notion に追記する方法。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>質問する（Q&amp;A Chat）</h1>
+<p class="lead"><span class="ui">Q&amp;A Chat</span> では、ブリーフィングの本文を右に表示したまま、左のチャットで Claude に質問できます。回答は届いた分から順に表示されます。「この銘柄への影響をもう少し詳しく」のように、読みながら掘り下げるための画面です。</p>
+
+<figure>
+  <img src="img/chat.png" alt="Q&A Chat 画面。左に質問の候補と入力欄、右にブリーフィングの本文" loading="lazy">
+  <figcaption>左がチャット、右が質問の対象になるブリーフィング（内容はサンプルです）</figcaption>
+</figure>
+
+<h2 id="ask">質問する</h2>
+<ol class="steps">
+  <li>右上の <span class="ui">Document</span> で、質問の対象にするブリーフィングを選びます。最初は最新のものが選ばれています。</li>
+  <li>下の入力欄（<span class="ui">Ask about today's briefing…</span>）に質問を書いて、送信ボタン（↑）を押します。入力欄の上に並ぶ候補を押すと、その質問をそのまま入力できます。</li>
+  <li>回答が届き始めます。続けて質問すると、同じ会話の続きとして扱われます。</li>
+</ol>
+<p>回答を途中で止めたいときは <kbd>Esc</kbd> を押します。</p>
+
+<h3 id="composer">入力欄のボタン</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>ボタン</th><th>動き</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ui">+</span></td><td>画像を添付します。チャートのスクリーンショットなどを見せて質問できます。入力欄へのドラッグ＆ドロップや貼り付けでも添付できます</td></tr>
+    <tr><td>マイク</td><td>音声で入力します（日本語。Chrome / Edge で使えます）</td></tr>
+    <tr><td><span class="ui">過去ブリーフィングを検索</span></td><td>選んでいる日付だけでなく、過去のブリーフィング全体から関連する部分を探して回答に使います。下の注意を参照してください</td></tr>
+  </tbody>
+</table></div>
+<div class="callout callout--warn">
+  <span class="callout__title">過去ブリーフィングの検索にはローカル LLM が必要です。</span>
+  この機能は、Ollama と Chroma で作った過去ブリーフィングの索引を使います。ローカル LLM モードを用意していない環境でチェックを入れると、検索が使えないというエラーになります。セットアップはリポジトリの <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/features/local-llm.md">local-llm.md</a> を参照してください。
+</div>
+
+<h2 id="notion">回答を Notion に追記する</h2>
+<p>Notion の認証情報（<code>NOTION_API_KEY</code> と <code>NOTION_DATABASE_ID</code>）を登録していると、回答が届き終わるたびに、その日の Notion のブリーフィングページへ自動で追記されます。各回答の下にあるボタンの表示で状態が分かります。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>表示</th><th>状態</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ui">Notion ブリーフィングに追記</span></td><td>まだ追記していません。押すと追記します</td></tr>
+    <tr><td><span class="ui">追記中…</span></td><td>追記しています</td></tr>
+    <tr><td><span class="ui">✓ Notion に追記済</span></td><td>追記できました。<span class="ui">ページを開く</span> で Notion のページを開けます</td></tr>
+    <tr><td><span class="ui">追記を再試行</span></td><td>失敗しました。押すともう一度試します</td></tr>
+  </tbody>
+</table></div>
+<p>Notion への追記と同時に、ローカルの <code>briefing_YYYY-MM-DD.md</code> にも質問と回答が追記されます（<span class="ui">ローカル md にも追記済</span> と表示されます）。</p>
+<div class="callout">
+  <span class="callout__title">Notion への追記は Claude Code のスキルで行います。</span>
+  追記は、Claude Code に入っている <code>/notion-import</code> スキルを呼び出して行います。スキルが入っていない環境では、ローカルの Markdown への追記だけが行われます。追記のときに Claude に許可するのは、ファイルの読み書きと Notion の検索・ページ作成・ページ更新だけです。
+</div>
+
+<h2 id="cli">ターミナルで質問する</h2>
+<p>リポジトリを clone した環境では、ターミナルから同じように質問できます。</p>
+<pre><code>bin/chat.sh             # 当日のブリーフィングで新規に始めるか、続きから再開する
+bin/chat.sh 2026-05-16  # 過去の特定の日のブリーフィングで質問する
+bin/chat.sh --list      # 保存されているセッションの一覧</code></pre>
+
+</main>
+</div>
+</div>
+</body>
+</html>

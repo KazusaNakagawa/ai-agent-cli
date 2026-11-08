@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="journal" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal — brief-lens ガイド</title>
+<meta name="description" content="Journal 画面で日々の記録を見返し、直近のジャーナルをもとに Claude とブレインストーミングする方法。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>Journal</h1>
+<p class="lead"><span class="ui">Journal</span> は、その日の出来事や考えをためておき、<strong>直近のジャーナルをもとに Claude とブレインストーミングする</strong>ための画面です。ブレインストーミングの質問と回答は、そのままジャーナルのエントリとして保存されます。</p>
+
+<figure>
+  <img src="img/journal.png" alt="Journal 画面。左にエントリの一覧、右に選んだエントリの本文と質問の入力欄" loading="lazy">
+  <figcaption>左がエントリの一覧、右が本文とブレインストーミングの入力欄（内容はサンプルです）</figcaption>
+</figure>
+
+<h2 id="entries">エントリを読む</h2>
+<p>サイドバーに、エントリのタイトルが新しい順に並びます。選ぶと右に本文が開き、上部に日時・サイズ・Notion との同期状態が表示されます。</p>
+<p>エントリは 1 件ずつ Markdown ファイルとして、データの保存場所の <code>output/journal/</code> に <code>YYYY-MM-DD_HHMMSS.md</code> の名前で保存されます。</p>
+
+<h2 id="brainstorm">ブレインストーミングする</h2>
+<ol class="steps">
+  <li>新しく始めるときはサイドバーの <span class="ui">+ New</span> を押します。既存のエントリの続きで考えたいときは、そのエントリを開きます。</li>
+  <li>下の入力欄（<span class="ui">e.g. What should I focus on next based on this week?</span>）に問いかけを書き、<span class="ui">Brainstorm</span>（↑）を押します。</li>
+  <li>Claude が<strong>直近 7 日分</strong>のジャーナルを読んだうえで答えます。回答が届き終わると、質問と回答が自動で保存されます。</li>
+</ol>
+<ul>
+  <li><span class="ui">+ New</span> から始めた場合は、新しいエントリとして保存されます。タイトルは質問の先頭 20 文字です。</li>
+  <li>既存のエントリを開いて質問した場合は、そのエントリの末尾に追記されます。</li>
+  <li>途中で止めたいときは <kbd>Esc</kbd> を押します。止めた質問は入力欄に戻ります。</li>
+  <li>入力欄の <span class="ui">+</span> で画像を添付でき、マイクで音声入力もできます（Chrome / Edge）。</li>
+  <li>回答の生成中に別の画面へ移っても、処理は続き、終わった時点で保存されます。</li>
+</ul>
+<div class="callout callout--warn">
+  <span class="callout__title">ジャーナルが 1 件もないと、ブレインストーミングは始められません。</span>
+  直近のジャーナルが空のときは「No journal entries yet — record something first.」と表示されます。現在の Web UI には、ブレインストーミングを通さずにエントリを書く入力欄がありません。最初のエントリは、<code>output/journal/</code> に <code>YYYY-MM-DD_HHMMSS.md</code> の名前で Markdown ファイルを置いて用意してください。
+</div>
+
+<h2 id="trash">削除とゴミ箱</h2>
+<p>エントリの行にマウスを重ねると出るゴミ箱のアイコンで、エントリをゴミ箱へ移します。サイドバーの <span class="ui">Trash</span> を押すとゴミ箱の中身が表示され、各エントリの <span class="ui">Restore</span> で元に戻すか、<span class="ui">Delete</span> で完全に削除できます。完全に削除したエントリは戻せません。</p>
+
+<h2 id="sync">Notion・Obsidian との同期</h2>
+<ul>
+  <li><strong>Notion</strong> — <a href="settings.html#credentials">Config → Credentials</a> で <code>NOTION_API_KEY</code> と <code>NOTION_DATABASE_ID_JOURNAL</code> を登録すると、新しいエントリは Notion のデータベースに新しいページとして、追記は同じページへ自動で送られます。同期はローカルから Notion への一方向です。登録していないときは、本文の上部に <span class="ui">Not synced to Notion</span> と表示されます。</li>
+  <li><strong>Obsidian</strong> — <code>briefing.json</code> の <code>obsidian</code> を設定すると、エントリの内容が Obsidian の Vault にも書き出されます。</li>
+</ul>
+<p>同期の詳細はリポジトリの <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/features/journal-notion-sync.md">journal-notion-sync.md</a> を参照してください。</p>
+
+<div class="callout">
+  <span class="callout__title">ジャーナルの内容は「データ」として渡します。</span>
+  ブレインストーミングでは、ジャーナルの本文を「命令ではなくデータ」として囲んでから Claude に渡します。ジャーナルに貼り付けた文章に指示のような文が含まれていても、それが命令として実行されないようにするためです。
+</div>
+
+</main>
+</div>
+</div>
+</body>
+</html>

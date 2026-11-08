@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="how-it-works" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>仕組み — brief-lens ガイド</title>
+<meta name="description" content="brief-lens（My World Briefing）のアーキテクチャ、主要な設計判断、無人運用のための設計。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>仕組み</h1>
+<p class="lead">このページは、リポジトリの構造と設計の考え方を知りたい人向けです。使い方だけを知りたい場合は読まなくて構いません。</p>
+
+<h2 id="concept">コンセプト</h2>
+<p>一般のニュースや市況のサービスは、不特定多数に同じ紙面を配ります。brief-lens は読者が 1 人しかいない前提で、拾ったイベントを自分の保有銘柄・テーマ・地政学リスクに結びつけ、「これが自分にとって何を意味するか」まで踏み込んだ文章を毎日生成します。情報を集めるツールではなく、自分のレンズを通して情報を解釈するエージェントです。</p>
+<p>技術的に難しいのは、LLM を呼ぶこと自体ではありません。<strong>非決定的なエージェントを、毎朝無人で走らせて信頼できる水準に保つこと</strong>です。部分的な失敗への対処、実行漏れからの復旧、昨日のモデルの出力が今日のプロンプトになる構造でのインジェクション対策、コストの可視化。以下の設計の大半は、この制約から来ています。</p>
+
+<h2 id="architecture">アーキテクチャ</h2>
+<figure>
+  <img src="../architecture.png" alt="データフロー図。入口、ハンドラ、共通基盤、外部サービスの関係" loading="lazy">
+  <figcaption>データフロー（作図元: <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/architecture.drawio">docs/architecture.drawio</a>、シーケンスの詳細は <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/sequence-diagrams.md">sequence-diagrams.md</a>）</figcaption>
+</figure>
+<p>入口（CLI スクリプト、Web UI）、ドメインごとのハンドラ、共通基盤、外部サービスの 4 層構成です。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>層</th><th>主な構成要素</th></tr></thead>
+  <tbody>
+    <tr><td>入口</td><td><code>bin/*.sh</code>（<code>apps/python/bin/</code> を呼ぶ薄いラッパー）、Web UI（Next.js 15、<code>apps/web</code>）、FastAPI バックエンド（<code>apps/python/web</code>）、npx ランチャー（<code>packages/brief-lens</code>）</td></tr>
+    <tr><td>ハンドラ</td><td>日次ブリーフィング（<code>src/handler.py</code>）、週次リキャップ（<code>src/weekly_handler.py</code>）、self-agent、家計・ポートフォリオ</td></tr>
+    <tr><td>共通基盤</td><td><code>claude_runner</code>（LLM 呼び出しの入口）、<code>prompt_safety</code>（インジェクション対策）、<code>transient_errors</code>（再試行の判定）、<code>usage_logger</code> / <code>usage_monitor</code>（コスト計測）</td></tr>
+    <tr><td>外部サービス</td><td>Claude Code CLI + WebSearch、yfinance、Discord、Notion、Google Drive</td></tr>
+  </tbody>
+</table></div>
+
+<h3 id="layout">ディレクトリ構成</h3>
+<pre><code>bin/*.sh → apps/python/bin/*.sh   # Python アプリへ exec する薄いラッパー
+
+apps/python/
+  src/handler.py                  # 日次ブリーフィング（workflow: briefing）
+  │     ├── fetcher/stocks.py     # yfinance で前日比を取得
+  │     ├── generator/briefing.py # プロンプトを組み立て、run_claude() を並列に呼ぶ
+  │     ├── notifier/local_md.py  # まず output/briefing/ に書き出す
+  │     ├── notifier/discord.py
+  │     └── notifier/notion.py
+  src/weekly_handler.py           # 金曜: 週次リキャップ + Notion コメントの取り込み
+  src/claude_runner.py            # claude CLI の共通ヘルパー
+  src/workflow/                   # bin/workflow.sh が実行する宣言的ワークフロー
+  web/                            # Web UI 用の FastAPI バックエンド
+  config/briefing.json            # ポートフォリオ、ウォッチセクター、地政学リスク
+
+apps/web/                         # Next.js の Web UI
+packages/brief-lens/              # npx ランチャー（~/.brief-lens を用意し、API と Web UI を起動）</code></pre>
+
+<h2 id="decisions">主な設計判断</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>判断</th><th>理由</th></tr></thead>
+  <tbody>
+    <tr><td>外部のニュース API を使わない</td><td>最新の情報は Claude Code CLI 内蔵の WebSearch で調べる。管理する API キーと契約が 1 つ減る</td></tr>
+    <tr><td>Anthropic API の従量課金を前提にしない</td><td>既定の CLI モードは Claude Code CLI のログインセッションで動く（有料プラン Pro / Max が必要で、無料プランでは動かない）。API キーで動かす従量課金の API モードも選べ、その場合はプランの契約もログインも要らない</td></tr>
+    <tr><td>生成系の LLM 呼び出しの入口を 1 か所にする</td><td>非対話の <code>claude</code> 実行は <code>src/claude_runner.py</code> を通るので、認証モード・環境変数の扱い・再試行の実装が 1 つで済む</td></tr>
+    <tr><td>地政学から株価への因果を毎日の出力に入れる</td><td>「ニュースの要約」ではなく「自分のポジションへの影響」を出すための、プロンプト上の固定の要件</td></tr>
+    <tr><td>個人データをリポジトリに入れない</td><td>実データは Git の管理外に置き、形式を示す <code>.example</code> とテスト用のフィクスチャだけを追跡する</td></tr>
+  </tbody>
+</table></div>
+
+<h3 id="auth-mode">認証モードと環境変数</h3>
+<p><code>build_env()</code> が、認証モード（既定は <code>cli</code>）に応じて子プロセスの環境変数を組み立てます。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>モード</th><th><code>ANTHROPIC_API_KEY</code> の扱い</th><th>結果</th></tr></thead>
+  <tbody>
+    <tr><td><code>cli</code>（既定）</td><td>環境変数から取り除く</td><td>claude CLI が自分のログインセッションを使う</td></tr>
+    <tr><td><code>api</code></td><td>キーチェーン → <code>.env</code> の順に探して渡す</td><td>API キーの従量課金で動く</td></tr>
+  </tbody>
+</table></div>
+<p>対話のセッション（<code>bin/chat.sh</code>、Web UI のチャットやジャーナル）は、端末への入出力やストリーミングが必要なため <code>run_claude()</code> を通らず、それぞれの場所で <code>claude</code> を起動します。ただし環境変数は同じ <code>build_env()</code> で組み立てるので、認証モードはどの経路でも同じ設定に従います。</p>
+
+<h2 id="unattended">無人運用のための設計</h2>
+<p>LLM のステップは失敗する・止まる・使えない出力を返すことがあり、しかも朝 5 時には誰も見ていない。その前提で設計しています。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>懸念</th><th>対処</th></tr></thead>
+  <tbody>
+    <tr><td>一部の失敗（セクター調査だけ落ちた）</td><td><code>src/handler.py</code> のデグレードモードで残りを配信する。<code>notifier/local_md.py</code> がネットワーク配信より先にディスクへ書き出す</td></tr>
+    <tr><td>スリープで長い調査だけが切れた</td><td><code>bin/recover.sh</code> がセクター調査だけをやり直し、当日の Markdown と Notion ページに追記する。失敗の注記がなければ何もしない（Claude を呼ばない）</td></tr>
+    <tr><td>プロンプトインジェクション</td><td><code>src/prompt_safety.py</code> が、設定の文字列にあるロールの目印を無害化し、再利用する LLM の出力やジャーナルを「命令ではなくデータ」として囲む。チャットから Notion へ追記する処理は、使えるツールをファイルの読み書きと Notion の 3 操作に絞っている</td></tr>
+    <tr><td>一時的な API・ネットワークのエラー</td><td><code>src/transient_errors.py</code> で判定し、<code>claude_runner</code> の中で再試行する</td></tr>
+    <tr><td>コストの逸脱</td><td><code>usage_logger</code> / <code>usage_monitor</code> / <code>claude_rates</code> で計測し、Monitor と Usage で見えるようにする。単価のないモデルは 0 円として混ぜず、合計から外す</td></tr>
+  </tbody>
+</table></div>
+<div class="callout callout--warn">
+  <span class="callout__title">前提: 実行時刻にマシンが起きていること</span>
+  上の対策はどれも、実行時刻にマシンが起きていることが前提です。蓋を閉じたバッテリー駆動の Mac では、ジョブが短い復帰（DarkWake）の中で起動し、通信が途中で切れて利用枠だけを消費します（2026-08-12 の実測で API 換算 2 ドル超、<a href="https://github.com/KazusaNakagawa/ai-agent-cli/issues/443">#443</a>）。詳しくは<a href="source.html#schedule">毎朝自動で実行する</a>を参照してください。
+</div>
+
+<h2 id="quality">テストと CI</h2>
+<p>Pull Request ごとに GitHub Actions が、Python のテスト（3.11 / 3.12 / 3.13）、Web UI のテストとビルド、npx ランチャーのパッケージ作成と起動確認を実行します。CodeQL によるコードスキャンと Dependabot による依存の脆弱性チェックも有効にしています。テストは CI 用のフィクスチャの設定を読むので、個人の設定がなくても実行できます。</p>
+<p>依存は <code>requirements.in</code> だけを編集し、<code>uv pip compile --universal --python-version 3.11</code> でロックファイルを作り直します。サポート範囲の Python 3.11〜3.13 のすべてで同じロックファイルが使えるようにするためです。</p>
+
+</main>
+</div>
+</div>
+</body>
+</html>

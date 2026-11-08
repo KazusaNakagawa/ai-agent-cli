@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="run" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ブリーフィングを生成する（Run） — brief-lens ガイド</title>
+<meta name="description" content="Run 画面からブリーフィングを生成する方法と、生成の流れ・所要時間・ドライラン。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>ブリーフィングを生成する（Run）</h1>
+<p class="lead"><span class="ui">Run</span> 画面の <span class="ui">Run briefing</span> を押すと、その場で当日のブリーフィングを生成します。生成には数分かかりますが、別の画面に移っても処理は続きます。</p>
+
+<figure>
+  <img src="img/run.png" alt="Run 画面。Dry run のチェックボックスと Run briefing ボタン" loading="lazy">
+  <figcaption>Run 画面</figcaption>
+</figure>
+
+<h2 id="how">使い方</h2>
+<ol class="steps">
+  <li><span class="ui">Briefing</span> サービスのサイドバーで <span class="ui">Run</span> を開きます。</li>
+  <li><span class="ui">Run briefing</span> を押します。ボタンが <span class="ui">Running…</span> に変わり、下に <span class="ui">Status</span>（<code>pending</code> → <code>running</code> → <code>done</code>）と開始・終了時刻が表示されます。</li>
+  <li><code>done</code> になったら、<a href="briefing.html">Briefing</a> 画面に新しいファイルが並びます。</li>
+</ol>
+<p>生成中はサイドバーの <span class="ui">Run</span> の横に点が付きます。画面を移ってもジョブは止まらず、戻ると進み具合が表示されます。</p>
+
+<h2 id="dry-run">ドライラン</h2>
+<p><span class="ui">Dry run</span> にチェックを入れて実行すると、認証情報の確認だけを行って終了します。Claude・Discord・Notion はどれも呼び出さないので、利用枠を消費せずに設定を確かめられます。結果には <code>dry_run</code> の印が付きます。</p>
+
+<h2 id="pipeline">生成の流れ</h2>
+<p>1 回の生成で、次のことが順に起きます。</p>
+<ol class="steps">
+  <li><strong>市況データの収集</strong> — 保有銘柄とウォッチ銘柄の前日比を yfinance から取得します。</li>
+  <li><strong>並列生成</strong> — セクションごとのプロンプトを組み立て、Claude を並列に呼び出します。最新のニュースは Claude Code の WebSearch で調べます。外部のニュース API は使いません。</li>
+  <li><strong>ローカルに保存</strong> — <code>output/briefing/briefing_YYYY-MM-DD.md</code> に書き出します。Discord や Notion が落ちていても生成物を失わないよう、配信より<strong>先に</strong>ディスクへ保存します。</li>
+  <li><strong>配信</strong> — Discord と Notion の認証情報があれば、それぞれに配信します。片方が失敗しても、もう片方は届きます。</li>
+  <li><strong>記録</strong> — 使ったトークン量とコストを記録します。<a href="monitor.html#usage">Config → Usage</a> で確認できます。</li>
+</ol>
+<div class="callout">
+  <span class="callout__title">一部が失敗しても、ブリーフィングは届きます。</span>
+  セクター調査など一部の生成が失敗しても、残りの部分でブリーフィングを完成させて配信します（デグレードモード）。失敗した部分は本文に注記されます。
+</div>
+
+<h2 id="cost">時間と利用枠</h2>
+<p>生成は Web 検索を何度も行うため、数分かかることがあります。途中で進み具合が止まって見えても、多くの場合は検索の応答を待っているだけです。途中で止めると、それまでに使った利用枠は戻らないうえ、もう一度最初からやり直すことになります。</p>
+<p>Claude Pro / Max プランで使う場合、料金は定額ですが、プランの利用上限の一部を使います。1 回あたりの目安は <a href="monitor.html">Monitor と Usage</a> で確認できます。</p>
+
+<h2 id="schedule">毎朝自動で生成したいとき</h2>
+<p>Run 画面は手動で実行するためのものです。毎朝決まった時刻に生成するには、リポジトリを clone した環境で launchd や cron を設定します。ノート PC で使う場合の注意点も含めて、<a href="source.html#schedule">ソースから使う・毎日の運用</a>にまとめています。</p>
+
+</main>
+</div>
+</div>
+</body>
+</html>
