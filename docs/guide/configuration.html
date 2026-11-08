@@ -58,24 +58,24 @@
 <h3 id="example">最小の例</h3>
 <pre><code>{
   "portfolio": {
-    "tickers": ["AAPL", "MSFT"],
+    "tickers": ["AAA", "BBB"],
     "themes": ["AI規制", "金融政策"]
   },
   "watch_sectors": [
-    { "sector": "AI・クラウド", "tickers": ["MSFT", "AMZN", "GOOGL"], "notes": "設備投資の動向" }
+    { "sector": "AI・クラウド", "tickers": ["BBB", "CCC", "DDD"], "notes": "設備投資の動向" }
   ],
   "geopolitical": {
     "conflicts": [
       {
         "name": "米中の技術規制",
         "affected_sectors": ["半導体"],
-        "related_tickers": ["TSM"],
+        "related_tickers": ["EEE"],
         "notes": "輸出管理の対象拡大に注目"
       }
     ]
   }
 }</code></pre>
-<p>銘柄は説明用の例です。</p>
+<p><code>AAA</code> などは説明用の架空の銘柄コードです。</p>
 
 <h2 id="env">環境変数</h2>
 <p>clone した環境ではリポジトリ直下の <code>.env</code>、npx 版では <code>~/.brief-lens/.env</code> に書きます。</p>

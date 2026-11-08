@@ -31,14 +31,14 @@
 <p>ブリーフィングで取り上げてほしい<strong>銘柄コード</strong>（<span class="ui">Tickers</span>）と、Claude に意識させたい<strong>テーマ</strong>（<span class="ui">Themes</span>）を登録します。</p>
 <figure>
   <img src="img/portfolio.png" alt="Portfolio 画面。Tickers と Themes がチップで並び、下に Save ボタン" loading="lazy">
-  <figcaption>Portfolio 画面（銘柄とテーマはサンプルです）</figcaption>
+  <figcaption>Portfolio 画面（銘柄コードは架空のサンプルです）</figcaption>
 </figure>
 <ul>
   <li>入力欄に文字を打ち、<kbd>Enter</kbd> かカンマ（<kbd>,</kbd>）で確定するとチップになります。</li>
   <li>チップの <span class="ui">×</span> で削除できます。入力欄が空のときに <kbd>Backspace</kbd> を押すと、最後のチップが消えます。</li>
   <li>最後に <span class="ui">Save</span> を押すと <code>briefing.json</code> に保存されます。押すまでは保存されません。</li>
 </ul>
-<p>銘柄コードは yfinance で株価を取得できる形式で書きます（米国株は <code>AAPL</code>、東証は <code>7203.T</code> のように末尾に市場コードを付けます）。</p>
+<p>銘柄コードは yfinance で株価を取得できる形式で書きます（米国株はティッカーをそのまま、東証は <code>XXXX.T</code> のように 4 桁のコードの末尾に <code>.T</code> を付けます）。</p>
 
 <h2 id="watch-sectors">Watch Sectors — まとめて見るセクター</h2>
 <p>Claude にまとめて分析させたい<strong>銘柄のグループ</strong>を、セクター単位で登録します。保有していない銘柄も入れられるので、業界全体の動きを追うのに使います。<strong>少なくとも 1 つは必要</strong>です。</p>
