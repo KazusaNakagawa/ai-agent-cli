@@ -107,8 +107,18 @@ def _merge_sidecar(entry_id: str, updates: dict) -> None:
 MAX_ITEM_LENGTH = 20  # shared limit for sidebar titles / item labels
 
 _LEADING_MARKUP_RE = re.compile(r"^[\s#*_>-]+")
-_TRAILING_MARKUP_RE = re.compile(r"[\s#*_>:]+$")
+# Trailing markup is stripped with a scan, not `[\s#*_>:]+$`: re.sub retries
+# that pattern from every start position, which is quadratic on a long run of
+# those characters followed by anything else.
+_TRAILING_MARKUP_CHARS = frozenset("#*_>:")
 _LABEL_ONLY_LINES = {"you", "ai"}  # matches USER_LABEL/AI_LABEL in journalQa.ts
+
+
+def _strip_trailing_markup(text: str) -> str:
+    end = len(text)
+    while end and (text[end - 1].isspace() or text[end - 1] in _TRAILING_MARKUP_CHARS):
+        end -= 1
+    return text[:end]
 
 
 def derive_title(content: str) -> str:
@@ -120,7 +130,7 @@ def derive_title(content: str) -> str:
     labels like ``**You:**``, list bullets) before truncating.
     """
     for line in content.splitlines():
-        text = _TRAILING_MARKUP_RE.sub("", _LEADING_MARKUP_RE.sub("", line)).strip()
+        text = _strip_trailing_markup(_LEADING_MARKUP_RE.sub("", line)).strip()
         if text and text.lower() not in _LABEL_ONLY_LINES:
             return text[:MAX_ITEM_LENGTH].rstrip()
     return ""

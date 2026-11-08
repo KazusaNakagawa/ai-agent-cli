@@ -823,13 +823,23 @@ async def test_chat_notion_import_success_invokes_skill_and_extracts_url(
     assert payload["local_error"] is None
 
     # The CLI invocation must carry the slash command, the model selection,
-    # bypass perms, stream-json output, and an --add-dir for skill discovery.
+    # stream-json output, and an --add-dir for skill discovery.
     cmd = factory.calls[0]["cmd"]
     prompt = cmd[cmd.index("-p") + 1]
     assert "/notion-import chat-2026-05-30" in prompt
     assert "半導体セクターの新着リスクは？" in prompt
     assert "TSMC" in prompt
-    assert "bypassPermissions" in cmd
+    # The Q&A text is untrusted (answers can quote web pages), so the run must
+    # not bypass permissions: built-in tools are cut down to what the skill
+    # needs and only its three Notion MCP tools are pre-approved.
+    assert "bypassPermissions" not in cmd
+    assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
+    assert set(cmd[cmd.index("--tools") + 1].split(",")) == {"Skill", "Write", "Read"}
+    assert set(cmd[cmd.index("--allowedTools") + 1].split(",")) == {
+        "mcp__claude_ai_Notion__notion-search",
+        "mcp__claude_ai_Notion__notion-create-pages",
+        "mcp__claude_ai_Notion__notion-update-page",
+    }
     assert "stream-json" in cmd
     assert cmd[cmd.index("--model") + 1] == "opus"
     assert "--add-dir" in cmd
