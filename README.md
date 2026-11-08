@@ -151,7 +151,7 @@ bin/portfolio.sh --stdout   # print instead of writing
 # Price comparison chart — every holding rebased to 100, on a log axis
 bin/chart.sh price                                  # portfolio tickers, last 3 months
 bin/chart.sh price --period 1y                      # the window the briefing attaches
-bin/chart.sh price --tickers PLTR NVDA --period 5y  # any tickers instead of the portfolio
+bin/chart.sh price --tickers AAA BBB --period 5y    # any tickers instead of the portfolio
 # writes apps/python/output/charts/price-comparison-<date>.png
 
 # Web UI — FastAPI (:8000) + Next.js (:3000), opens the browser

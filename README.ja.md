@@ -151,7 +151,7 @@ bin/portfolio.sh --stdout   # ファイル出力せず標準出力へ
 # 株価比較チャート — 全保有銘柄を 100 起点に指数化、対数軸
 bin/chart.sh price                                  # 保有銘柄・直近3か月
 bin/chart.sh price --period 1y                      # ブリーフィングが添付する期間
-bin/chart.sh price --tickers PLTR NVDA --period 5y  # 保有銘柄の代わりに任意の銘柄を指定
+bin/chart.sh price --tickers AAA BBB --period 5y    # 保有銘柄の代わりに任意の銘柄を指定
 # apps/python/output/charts/price-comparison-<date>.png へ出力
 
 # Web UI — FastAPI (:8000) + Next.js (:3000)、ブラウザを自動で開く
