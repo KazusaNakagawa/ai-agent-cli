@@ -1,6 +1,10 @@
 import { act, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+// A brainstorm needs at least one recent entry to read (#589), so these
+// tests start from a journal that already has one.
+const EARLIER_ENTRY = { id: "2026-11-01_080000", date: "2026-11-01", size: 40, item: "Earlier note", notion_url: "" }
+
 import { JournalScreen } from "@/components/screens/JournalScreen"
 import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
 import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
@@ -36,7 +40,7 @@ describe("JournalScreen voice input", () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === "/api/journal" && (!init || !init.method || init.method === "GET")) {
-        return Promise.resolve(jsonResponse({ entries: [] }))
+        return Promise.resolve(jsonResponse({ entries: [EARLIER_ENTRY] }))
       }
       return Promise.resolve(jsonResponse({}, 404))
     })

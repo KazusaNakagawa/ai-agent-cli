@@ -1,6 +1,10 @@
 import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+// A brainstorm needs at least one recent entry to read (#589), so these
+// tests start from a journal that already has one.
+const EARLIER_ENTRY = { id: "2026-11-01_080000", date: "2026-11-01", size: 40, item: "Earlier note", notion_url: "" }
+
 import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
 import { JournalScreen } from "@/components/screens/JournalScreen"
 import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
@@ -50,7 +54,7 @@ describe("journal brainstorm images", () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === "/api/journal" && (!init?.method || init.method === "GET")) {
-        return jsonResponse({ entries: [] })
+        return jsonResponse({ entries: [EARLIER_ENTRY] })
       }
       if (url === "/api/images/upload") {
         const file = (init!.body as FormData).get("file") as File

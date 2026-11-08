@@ -52,6 +52,10 @@ export function JournalScreen() {
     selectedMeta,
     trashMeta,
     viewEpoch,
+    sortedEntries,
+    entriesLoaded,
+    loadDates,
+    loadEntry,
     closePanel,
     restoreEntry,
     purgeEntry,
@@ -125,6 +129,50 @@ export function JournalScreen() {
     // call time, so it's intentionally omitted from the dependency array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question, brainstorming, job, journalChat.entryId, followTail, stopMic])
+
+  // Save the typed text as a plain entry, without calling Claude: a new entry
+  // from + New, or an append to the entry that is open. This is also the only
+  // way to start a journal, since a brainstorm needs recent entries to read.
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const saveEntry = useCallback(async () => {
+    const text = question.trim()
+    if (!text || saving || brainstorming) return
+    setSaving(true)
+    setSaveError(null)
+    const target = journalChat.entryId
+    try {
+      const res = target
+        ? await fetch(`/api/journal/${target}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ content: text }),
+          })
+        : await fetch("/api/journal", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ content: text }),
+          })
+      if (!res.ok) {
+        setSaveError(`Save failed (HTTP ${res.status})`)
+        return
+      }
+      const entryId = target ?? ((await res.json()) as { id: string }).id
+      stopMic()
+      setQuestion("")
+      await loadDates()
+      await loadEntry(entryId)
+    } catch (e) {
+      setSaveError(`Save failed: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setSaving(false)
+    }
+  }, [question, saving, brainstorming, journalChat.entryId, stopMic, loadDates, loadEntry])
+
+  // A brainstorm reads recent entries, so with none it can only fail; point
+  // the user at Save instead of letting them hit that error. Only after the
+  // list has loaded, so the composer doesn't flicker into this state on mount.
+  const journalEmpty = entriesLoaded && sortedEntries.length === 0
 
   // Abort the in-flight brainstorm and terminate the backend job — works
   // whether or not the backend job_id has arrived yet (journalChatJobStore
@@ -296,10 +344,33 @@ export function JournalScreen() {
             onToggleMic={toggleMic}
             onSend={(imagePaths) => void brainstorm(imagePaths)}
             onCancel={cancelBrainstorm}
-            placeholder="e.g. What should I focus on next based on this week?"
+            placeholder={
+              journalEmpty
+                ? "Write what happened today, then Save."
+                : "e.g. What should I focus on next based on this week?"
+            }
             sendLabel="Brainstorm"
             cancelLabel="Stop"
+            sendDisabled={journalEmpty}
+            secondaryAction={{
+              label: saving ? "Saving…" : "Save",
+              onClick: () => void saveEntry(),
+              disabled: saving,
+            }}
           />
+          {journalEmpty && (
+            <p
+              className="mx-auto max-w-3xl px-3 pt-2 text-xs text-muted-foreground"
+              data-testid="journal-empty-hint"
+            >
+              Your journal is empty. Save a first entry — Brainstorm works from your recent entries.
+            </p>
+          )}
+          {saveError && (
+            <p className="mx-auto max-w-3xl px-3 pt-2 text-sm text-destructive" role="alert">
+              {saveError}
+            </p>
+          )}
           {chatError && (
             <p className="mx-auto max-w-3xl px-3 pt-2 text-sm text-destructive">{chatError}</p>
           )}

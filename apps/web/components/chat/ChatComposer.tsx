@@ -38,6 +38,18 @@ type Props = {
   /** Accessible name of the round send button. */
   sendLabel?: string
   cancelLabel?: string
+  /** Disables the send button even with text typed (e.g. nothing to brainstorm over yet). */
+  sendDisabled?: boolean
+  /**
+   * An extra text action next to the send button (Journal's "Save"). It takes
+   * the typed text only, so it is disabled while images are attached rather
+   * than silently dropping them.
+   */
+  secondaryAction?: {
+    label: string
+    onClick: () => void
+    disabled?: boolean
+  }
 }
 
 export function ChatComposer({
@@ -55,6 +67,8 @@ export function ChatComposer({
   placeholder = "Ask about today's briefing…",
   sendLabel = "Send",
   cancelLabel = "Cancel",
+  sendDisabled = false,
+  secondaryAction,
 }: Props) {
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -81,9 +95,12 @@ export function ChatComposer({
     // this the Enter key would clear the attachment without ever sending it.
     // Sending mid-upload would lose the image from this message and leave it
     // attached to the next one.
-    if (input.trim().length === 0 || uploading) return
+    if (input.trim().length === 0 || uploading || sendDisabled) return
     onSend(takeImages())
   }
+
+  const hasText = input.trim().length > 0
+  const hasImages = attachedImages.length > 0
 
   return (
     <div className="mx-auto w-full max-w-3xl px-1">
@@ -175,16 +192,32 @@ export function ChatComposer({
               {cancelLabel}
             </Button>
           ) : (
-            <Button
-              onClick={handleSend}
-              disabled={input.trim().length === 0 || uploading}
-              data-testid="send-button"
-              size="icon"
-              className="shrink-0 rounded-full"
-              aria-label={sendLabel}
-            >
-              <ArrowUp aria-hidden className="h-4 w-4" />
-            </Button>
+            <>
+              {secondaryAction && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 rounded-full"
+                  onClick={secondaryAction.onClick}
+                  disabled={!hasText || uploading || hasImages || Boolean(secondaryAction.disabled)}
+                  title={hasImages ? "Remove attached images to save as text" : undefined}
+                  data-testid="secondary-action-button"
+                >
+                  {secondaryAction.label}
+                </Button>
+              )}
+              <Button
+                onClick={handleSend}
+                disabled={!hasText || uploading || sendDisabled}
+                data-testid="send-button"
+                size="icon"
+                className="shrink-0 rounded-full"
+                aria-label={sendLabel}
+              >
+                <ArrowUp aria-hidden className="h-4 w-4" />
+              </Button>
+            </>
           )}
         </div>
       </div>
