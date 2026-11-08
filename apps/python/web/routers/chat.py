@@ -545,6 +545,19 @@ class ChatNotionImportBody(BaseModel):
     model: ChatNotionImportModel = "sonnet"
 
 
+# The /notion-import run feeds untrusted Q&A text (answers can quote web pages)
+# to `claude -p`, so it must not bypass permissions. `--tools` cuts the
+# built-in tools down to what the skill declares — `--allowedTools` alone only
+# adds approvals, and the operator's settings may already allow `Bash(*)` — and
+# only the skill's three Notion MCP tools are pre-approved.
+NOTION_IMPORT_BUILTIN_TOOLS = ("Skill", "Write", "Read")
+NOTION_IMPORT_MCP_TOOLS = (
+    "mcp__claude_ai_Notion__notion-search",
+    "mcp__claude_ai_Notion__notion-create-pages",
+    "mcp__claude_ai_Notion__notion-update-page",
+)
+
+
 class ChatNotionImportResponse(BaseModel):
     url: str
     summary: str = ""
@@ -741,7 +754,9 @@ def post_chat_notion_import(body: ChatNotionImportBody) -> ChatNotionImportRespo
         claude_path,
         "-p",
         _build_skill_prompt(body),
-        "--permission-mode", "bypassPermissions",
+        "--permission-mode", "acceptEdits",
+        "--tools", ",".join(NOTION_IMPORT_BUILTIN_TOOLS),
+        "--allowedTools", ",".join(NOTION_IMPORT_MCP_TOOLS),
         "--output-format", "stream-json",
         "--verbose",
         "--add-dir", str(workdir),

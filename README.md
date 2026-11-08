@@ -8,7 +8,7 @@ An LLM agent system that collects geopolitical events, stock moves, and sector t
 
 | | |
 |---|---|
-| **Stack** | Python 3.11–3.13 · FastAPI · Next.js 14 · TypeScript · Tailwind |
+| **Stack** | Python 3.11–3.13 · FastAPI · Next.js 15 · React 19 · TypeScript · Tailwind |
 | **Agent layer** | Claude Code CLI (subprocess + WebSearch), parallel prompt orchestration, opt-in local LLM mode (Ollama + Chroma) |
 | **Ops** | launchd/cron scheduling, degraded-mode delivery, sleep-recovery re-run, usage & cost monitoring |
 
@@ -107,6 +107,8 @@ npx brief-lens            # first run sets up ~/.brief-lens and the Python backe
 
 Data lives in `~/.brief-lens/`, separate from a checkout. Options, upgrade and release steps: [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md).
 
+A screen-by-screen walkthrough (Japanese) is in the [user guide](https://kazusanakagawa.github.io/ai-agent-cli/).
+
 ### From source
 
 **Prerequisites:** Python 3.11–3.13 (every version runs in CI), [uv](https://github.com/astral-sh/uv), [Claude Code CLI](https://claude.ai/code) authenticated, Discord Bot, Notion integration.
@@ -149,7 +151,7 @@ bin/portfolio.sh --stdout   # print instead of writing
 # Price comparison chart — every holding rebased to 100, on a log axis
 bin/chart.sh price                                  # portfolio tickers, last 3 months
 bin/chart.sh price --period 1y                      # the window the briefing attaches
-bin/chart.sh price --tickers PLTR NVDA --period 5y  # any tickers instead of the portfolio
+bin/chart.sh price --tickers AAA BBB --period 5y    # any tickers instead of the portfolio
 # writes apps/python/output/charts/price-comparison-<date>.png
 
 # Web UI — FastAPI (:8000) + Next.js (:3000), opens the browser
@@ -202,7 +204,7 @@ GitHub Actions starts all three workflows on every pull request to `dev` or `mai
 
 | Topic | Link |
 |---|---|
-| Repository overview (rendered site) | [kazusanakagawa.github.io/ai-agent-cli](https://kazusanakagawa.github.io/ai-agent-cli/) |
+| User guide (Japanese; screens, setup, operation, architecture) | [kazusanakagawa.github.io/ai-agent-cli](https://kazusanakagawa.github.io/ai-agent-cli/) |
 | Configuration (env vars, config schema, prompts) | [docs/guides/configuration.md](docs/guides/configuration.md) |
 | Daily briefing (manual `./bin/workflow.sh run daily`; optional launchd) | [docs/guides/launchd-setup.md](docs/guides/launchd-setup.md) |
 | Scheduled execution (cron + pmset, alternative) | [docs/guides/cron-setup.md](docs/guides/cron-setup.md) |

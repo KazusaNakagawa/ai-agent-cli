@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="monitor" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor と Usage — brief-lens ガイド</title>
+<meta name="description" content="Monitor（Claude Code 全体の利用量）と Config → Usage（brief-lens の実行分）の違いと見方。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>Monitor と Usage</h1>
+<p class="lead">利用量を見る画面は 2 つあります。<span class="ui">Monitor</span> は<strong>Claude Code 全体</strong>の利用量を、<span class="ui">Config → Usage</span> は<strong>brief-lens が実行した分だけ</strong>を表示します。データの出どころが違うので、数字は一致しません。</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th></th><th>Monitor</th><th>Config → Usage</th></tr></thead>
+  <tbody>
+    <tr><td>対象</td><td>このマシンの Claude Code の利用すべて（ほかのプロジェクトでの作業も含む）</td><td>brief-lens のブリーフィング生成やチャットなど、アプリが呼び出した分</td></tr>
+    <tr><td>データの出どころ</td><td><code>~/.claude/projects/</code> にある Claude Code の会話記録</td><td>データの保存場所の <code>log/usage/</code></td></tr>
+    <tr><td>内訳</td><td>日別・モデル別・プロジェクト別</td><td>実行 1 回ごと、日別の推移</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="monitor">Monitor</h2>
+<figure>
+  <img src="img/monitor.png" alt="Monitor 画面。モデル別に積み上げた日別の棒グラフと、モデル別・プロジェクト別の合計" loading="lazy">
+  <figcaption>Monitor 画面（数値とプロジェクトはサンプルです）</figcaption>
+</figure>
+<ul>
+  <li><span class="ui">Metric</span> で <span class="ui">Cost (USD)</span>（API 換算のコスト）と <span class="ui">Tokens</span>（トークン数）を切り替えます。</li>
+  <li><span class="ui">Range</span> で <span class="ui">Last 7 days</span> / <span class="ui">Last 30 days</span> / <span class="ui">All time</span> を選びます。右上に期間の合計が出ます。</li>
+  <li>グラフはモデル別の積み上げです。下の <span class="ui">By model</span> と <span class="ui">By project</span> に、期間内の合計が並びます。</li>
+</ul>
+<div class="callout">
+  <span class="callout__title">請求額ではなく、目安です。</span>
+  Pro / Max プランは定額なので、ここに出るのは「API で使ったらいくらになるか」を換算した数字です。規模や傾向をつかむために使ってください。単価は公表されている料金表から手で写したもので、料金表の改定がすぐには反映されません。単価が登録されていないモデルは、0 円として合計に混ぜず、<span class="ui">Unpriced models (excluded from cost)</span> として別に表示します。
+</div>
+
+<h2 id="usage">Config → Usage</h2>
+<p>サイドバー下の <span class="ui">Config</span> を開き、<span class="ui">Usage</span> タブを選びます。</p>
+<figure>
+  <img src="img/config-usage.png" alt="Config の Usage タブ。選んだ日の実行ごとのコストと、期間の合計" loading="lazy">
+  <figcaption>Usage タブ（数値はサンプルです）</figcaption>
+</figure>
+<ul>
+  <li>上の <span class="ui">Date</span> で日付を選ぶと、その日の実行ごとのコスト（またはトークン数）がグラフになります。</li>
+  <li>下の <span class="ui">Range</span> で選んだ期間について、<span class="ui">Total cost</span>、<span class="ui">Total tokens</span>、<span class="ui">Calls</span>（呼び出し回数）、<span class="ui">Days logged</span>（記録のある日数）と日別の推移を表示します。</li>
+</ul>
+
+<h2 id="tips">使い方のヒント</h2>
+<ul>
+  <li>ブリーフィング 1 回あたりのコストの目安は、Usage で生成した日の合計を見ると分かります。</li>
+  <li>Monitor の <span class="ui">By project</span> を見ると、brief-lens 以外の作業がどれだけ利用量を占めているかが分かります。Pro / Max プランの利用上限に近づいているかを判断する材料になります。</li>
+</ul>
+<p>集計の仕組みや単価表の更新方法は、リポジトリの <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/usage-monitoring.md">usage-monitoring.md</a> にあります。</p>
+
+</main>
+</div>
+</div>
+</body>
+</html>

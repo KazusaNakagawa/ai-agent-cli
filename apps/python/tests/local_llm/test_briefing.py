@@ -917,8 +917,8 @@ def test_collect_references_matches_url_inside_markdown_link():
         "と [Other](https://e.com/other)"
     )
     md = collect_references(ctx, body)
-    assert "reuters.com" in md
-    assert "e.com/other" in md
+    assert "https://www.reuters.com/world/ukraine-russia-war/" in md
+    assert "https://e.com/other" in md
     assert "pre-fetch 外" not in md
 
 

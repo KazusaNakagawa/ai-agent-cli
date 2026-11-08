@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="source" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ソースから使う・毎日の運用 — brief-lens ガイド</title>
+<meta name="description" content="リポジトリを clone して使う手順、bin/ のコマンド、毎朝の自動実行とノート PC での注意点。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>ソースから使う・毎日の運用</h1>
+<p class="lead">リポジトリを clone すると、Web UI に加えて、毎朝の自動実行、週次リキャップ、ターミナルからの Q&amp;A、ポートフォリオのスナップショットなどのコマンドが使えます。</p>
+
+<h2 id="setup">セットアップ</h2>
+<p>必要なもの: Python 3.11〜3.13、<a href="https://docs.astral.sh/uv/">uv</a>、Claude Code CLI と Claude の認証（Pro / Max で <code>claude login</code> 済み、または Anthropic の API キー）。Discord や Notion に配信する場合は、Discord Bot と Notion インテグレーションも用意します。</p>
+<pre><code>git clone https://github.com/KazusaNakagawa/ai-agent-cli.git
+cd ai-agent-cli
+cp .env.example .env      # 必要に応じて DISCORD_TOKEN、NOTION_API_KEY などを書く
+
+cd apps/python
+uv venv .venv
+uv pip sync requirements.txt
+
+cd ../web && npm install  # Web UI を使う場合だけ</code></pre>
+<p>clone した環境では、設定ファイルは <code>apps/python/config/briefing.json</code>、生成物は <code>apps/python/output/</code> に置かれます。認証情報はキーチェーンのサービス名 <code>ai-agent</code> に保存されます（npx 版の <code>brief-lens</code> とは別です）。</p>
+
+<h2 id="web-ui">Web UI を起動する</h2>
+<pre><code>bin/serve.sh               # API（:8000）と Web UI（:3000）を起動し、ブラウザを開く
+bin/serve.sh --no-browser  # ブラウザを開かない</code></pre>
+<p>ポートは環境変数 <code>API_PORT</code> / <code>WEB_PORT</code> で変えられます。<kbd>Ctrl</kbd> + <kbd>C</kbd> で両方とも止まります。</p>
+
+<h2 id="workflows">日次の実行（workflow.sh）</h2>
+<p>定型の処理は <code>bin/workflow.sh</code> にまとまっています。</p>
+<pre><code>bin/workflow.sh                   # 登録されているワークフローの一覧
+bin/workflow.sh run daily         # 日次の実行（下の表を参照）
+bin/workflow.sh run briefing      # 日次ブリーフィングだけ
+bin/workflow.sh run weekly        # 週次リキャップ（金曜以外はスキップ。--force で強制実行）
+bin/workflow.sh run daily --dry-run   # 認証情報の確認だけ</code></pre>
+<p><code>run daily</code> は、次の処理を順に行います。</p>
+<ol class="steps">
+  <li>日次ブリーフィングを生成して配信する</li>
+  <li>金曜日なら、週次リキャップを生成する</li>
+  <li><code>bin/chat.sh</code> の会話を <code>output/chat_archive/</code> に保存する（Claude Code が古い会話記録を消す前に残すため）</li>
+  <li>Claude Code の会話記録に、単価が登録されていないモデルがないかを確認する</li>
+</ol>
+
+<h2 id="commands">そのほかのコマンド</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>コマンド</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>bin/chat.sh</code></td><td>ブリーフィングに対してターミナルで質問する（<code>bin/chat.sh 2026-05-16</code> で過去の日付、<code>--list</code> でセッション一覧）</td></tr>
+    <tr><td><code>bin/portfolio.sh</code></td><td><code>config/holdings.json</code> から、構成比・為替エクスポージャー・配分ルールの検査を含むスナップショットを作る</td></tr>
+    <tr><td><code>bin/chart.sh price</code></td><td>保有銘柄の株価を 100 起点に揃えた比較チャートを作る（<code>--period 1y</code>、<code>--tickers</code> で指定）</td></tr>
+    <tr><td><code>bin/money.sh</code></td><td>銀行明細の CSV を取り込み、月次の収支をレポートする（<code>import</code> / <code>report</code> / <code>review</code>）</td></tr>
+    <tr><td><code>bin/archive.sh</code></td><td>先月分のブリーフィングを zip にして rclone で Google Drive にアップロードする</td></tr>
+    <tr><td><code>bin/recover.sh</code></td><td>スリープの影響でセクター調査が欠けた日のブリーフィングを補う。当日分が完成していれば何もしない</td></tr>
+    <tr><td><code>bin/self_agent.sh</code></td><td>判断ログからペルソナのプロファイルを作り、Notion に投稿する</td></tr>
+    <tr><td><code>bin/local_llm.sh</code></td><td>ローカル LLM モード（Ollama + Chroma）</td></tr>
+  </tbody>
+</table></div>
+<p>どれも <code>apps/python/bin/</code> にある本体を呼び出す薄いラッパーです。全コマンドの一覧は <a href="https://github.com/KazusaNakagawa/ai-agent-cli#readme">README</a> にあります。</p>
+
+<h2 id="schedule">毎朝自動で実行する</h2>
+<p>macOS では launchd、Linux などでは cron で、<code>bin/workflow.sh run daily</code> を毎朝決まった時刻に実行できます。設定手順はリポジトリの <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/launchd-setup.md">launchd-setup.md</a> と <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/cron-setup.md">cron-setup.md</a> を参照してください。</p>
+<div class="callout callout--warn">
+  <span class="callout__title">スリープ中の Mac は、どのスケジューラでも動かせません。</span>
+  <p>無人で実行するには、実行時刻に Mac が起きている必要があります。つまり、<strong>蓋を開けたまま AC アダプタにつないでおく</strong>必要があります。蓋を閉じると、電源の種類に関係なくスリープします。</p>
+  <p>蓋を閉じたバッテリー駆動の Mac では、ジョブは数十秒しか続かない短い復帰（DarkWake）の中で起動します。Claude との通信が途中で切れ、再試行を繰り返すうちに、ブリーフィングを 1 つも作らないまま利用枠だけを消費します。<code>caffeinate -ims</code> でも防げません（<code>-s</code> は AC 電源のときだけ有効なため）。</p>
+  <p>この条件を満たせない場合は、朝に手動で <code>bin/workflow.sh run daily</code> を実行する運用をおすすめします。メンテナ自身も現在は手動で実行しています。</p>
+</div>
+
+<h2 id="dev">開発する</h2>
+<pre><code>cd apps/python && .venv/bin/pytest -v   # Python のテスト
+cd apps/web && npm test                 # Web UI のユニット・コンポーネントテスト
+cd apps/web && npm run test:e2e         # Playwright の E2E テスト
+cd packages/brief-lens && npm test      # npx ランチャーのテスト</code></pre>
+<p>テストは <code>apps/python/tests/config/briefing.json</code> を読むので、個人の設定がなくても実行できます。依存の更新方法やブランチの運用は、リポジトリの <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/testing.md">testing.md</a> と <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/CLAUDE.md">CLAUDE.md</a> にあります。</p>
+
+</main>
+</div>
+</div>
+</body>
+</html>

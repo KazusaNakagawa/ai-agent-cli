@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="workspace" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workspace — brief-lens ガイド</title>
+<meta name="description" content="Workspace 画面で手元のフォルダーを開き、Markdown やコードを読んで編集する方法。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content" data-no-toc>
+
+<h1>Workspace</h1>
+<p class="lead"><span class="ui">Workspace</span> は、手元のフォルダーをブラウザで開き、ファイルを読んだり編集したりする画面です。ブリーフィングやジャーナルの Markdown を整形して読む、メモを書き直す、といった用途に使えます。</p>
+
+<figure>
+  <img src="img/workspace.png" alt="Workspace 画面。フォルダーを開く前の状態" loading="lazy">
+  <figcaption>フォルダーを開く前の Workspace 画面</figcaption>
+</figure>
+
+<div class="callout callout--warn">
+  <span class="callout__title">Chrome または Edge で使ってください。</span>
+  Workspace はブラウザの File System Access API を使ってフォルダーを読み書きします。この API がないブラウザ（Safari、Firefox など）では、フォルダーを開けません。
+</div>
+
+<h2 id="open">フォルダーを開く</h2>
+<ol class="steps">
+  <li>サイドバーの <span class="ui">Open Folder…</span> を押し、開きたいフォルダーを選びます。</li>
+  <li>ブラウザが読み書きの許可を求めるので、許可します。</li>
+  <li>サイドバーにフォルダーのツリーが表示されます。<span class="ui">Filter by filename…</span> でファイル名を絞り込めます。<span class="ui">Expand all</span> / <span class="ui">Collapse all</span> でツリーをまとめて開閉します。</li>
+</ol>
+<p><code>node_modules</code> や <code>.git</code> など、中身を見る必要のないフォルダーはツリーに出ません。</p>
+
+<h2 id="view">読む・編集する</h2>
+<p>ツリーでファイルを選ぶと、右に中身が開きます。</p>
+<ul>
+  <li><strong>Markdown、ログ、コード</strong>は、最初は整形した表示（<span class="ui">Preview</span>）で開きます。<span class="ui">Edit</span> に切り替えると書き換えられます。</li>
+  <li>そのほかのテキストは <span class="ui">Edit</span> で開きます。</li>
+  <li>画像と PDF はそのまま表示します。</li>
+  <li>書き換えたら <span class="ui">Save</span> を押します。元のファイルに上書き保存されます。</li>
+</ul>
+<div class="callout">
+  <span class="callout__title">ファイルはブラウザから直接読み書きします。</span>
+  Workspace はファイルの中身を brief-lens のサーバーに送りません。開いたフォルダーの中身は、ブラウザがあなたのディスクから直接読み書きします。
+</div>
+
+</main>
+</div>
+</div>
+</body>
+</html>

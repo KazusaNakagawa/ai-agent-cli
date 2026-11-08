@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja" data-root="../" data-page="lens" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>視点を設定する — brief-lens ガイド</title>
+<meta name="description" content="Portfolio・Watch Sectors・Geopolitical Risks で、ブリーフィングの視点になる銘柄・テーマ・セクター・地政学リスクを登録する。">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("guide-theme"); } catch (e) { /* storage may be unavailable */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+})();
+</script>
+<link rel="stylesheet" href="../assets/guide.css">
+<script defer src="../assets/guide.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#content">本文へスキップ</a>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="ガイドの目次"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<main id="content" class="content">
+
+<h1>視点を設定する</h1>
+<p class="lead">brief-lens のブリーフィングは、ここで登録した銘柄・テーマ・セクター・地政学リスクを軸に書かれます。同じニュースでも、<strong>自分のポジションにどう効くか</strong>という視点で解釈させるための設定です。どの画面も <span class="ui">Briefing</span> サービスのサイドバーにあります。</p>
+
+<h2 id="portfolio">Portfolio — 銘柄とテーマ</h2>
+<p>ブリーフィングで取り上げてほしい<strong>銘柄コード</strong>（<span class="ui">Tickers</span>）と、Claude に意識させたい<strong>テーマ</strong>（<span class="ui">Themes</span>）を登録します。</p>
+<figure>
+  <img src="img/portfolio.png" alt="Portfolio 画面。Tickers と Themes がチップで並び、下に Save ボタン" loading="lazy">
+  <figcaption>Portfolio 画面（銘柄コードは架空のサンプルです）</figcaption>
+</figure>
+<ul>
+  <li>入力欄に文字を打ち、<kbd>Enter</kbd> かカンマ（<kbd>,</kbd>）で確定するとチップになります。</li>
+  <li>チップの <span class="ui">×</span> で削除できます。入力欄が空のときに <kbd>Backspace</kbd> を押すと、最後のチップが消えます。</li>
+  <li>最後に <span class="ui">Save</span> を押すと <code>briefing.json</code> に保存されます。押すまでは保存されません。</li>
+</ul>
+<p>銘柄コードは yfinance で株価を取得できる形式で書きます（米国株はティッカーをそのまま、東証は <code>XXXX.T</code> のように 4 桁のコードの末尾に <code>.T</code> を付けます）。</p>
+
+<h2 id="watch-sectors">Watch Sectors — まとめて見るセクター</h2>
+<p>Claude にまとめて分析させたい<strong>銘柄のグループ</strong>を、セクター単位で登録します。保有していない銘柄も入れられるので、業界全体の動きを追うのに使います。<strong>少なくとも 1 つは必要</strong>です。</p>
+<figure>
+  <img src="img/watch-sectors.png" alt="Watch Sectors 画面。セクターごとに名前・銘柄・メモの入力欄が並ぶ" loading="lazy">
+  <figcaption>Watch Sectors 画面（サンプル）</figcaption>
+</figure>
+<div class="table-wrap"><table>
+  <thead><tr><th>項目</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ui">Sector name</span></td><td>セクターの名前（例: AI・クラウド）</td></tr>
+    <tr><td><span class="ui">Tickers</span></td><td>そのセクターで見る銘柄コード</td></tr>
+    <tr><td><span class="ui">Notes</span></td><td>任意のメモ。何に注目しているかを書いておくと、分析の観点として使われます</td></tr>
+  </tbody>
+</table></div>
+<p><span class="ui">+ Add sector</span> で行を追加し、各行の <span class="ui">Delete</span> で削除します。最後に <span class="ui">Save</span> を押します。</p>
+
+<h2 id="geopolitical">Geopolitical Risks — 地政学リスク</h2>
+<p>ブリーフィングに織り込んでほしい<strong>紛争や地政学イベント</strong>を登録します。登録は任意です。brief-lens は、登録したリスクと株価の因果関係を毎日の出力に入れるように作られています。</p>
+<figure>
+  <img src="img/geopolitical.png" alt="Geopolitical Risks 画面。リスクごとに名前・影響セクター・関連銘柄・メモの入力欄が並ぶ" loading="lazy">
+  <figcaption>Geopolitical Risks 画面（サンプル）</figcaption>
+</figure>
+<div class="table-wrap"><table>
+  <thead><tr><th>項目</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td><span class="ui">Name</span></td><td>リスクの名前（例: 米中の技術規制）</td></tr>
+    <tr><td><span class="ui">Affected sectors</span></td><td>影響を受けるセクター</td></tr>
+    <tr><td><span class="ui">Related tickers</span></td><td>関連する銘柄コード</td></tr>
+    <tr><td><span class="ui">Notes</span></td><td>任意のメモ。注目している論点を書きます</td></tr>
+  </tbody>
+</table></div>
+<p><span class="ui">+ Add conflict</span> で追加し、<span class="ui">Save</span> で保存します。</p>
+
+<h2 id="when-applied">設定が反映されるタイミング</h2>
+<p>保存した内容は、<strong>次にブリーフィングを生成したとき</strong>から使われます。生成のたびに設定ファイルを読み直すので、アプリの再起動は要りません。</p>
+<div class="callout callout--tip">
+  <span class="callout__title">画面にない項目は設定ファイルで。</span>
+  為替のバンドや使用するモデルなど、画面から編集できない項目もあります。<a href="settings.html#config-file">Config → Config file</a> で <code>briefing.json</code> を書き出して編集し、読み込み直すこともできます。項目の一覧は<a href="configuration.html">設定ファイル</a>を参照してください。
+</div>
+<div class="callout">
+  <span class="callout__title">設定ファイルがないときは</span>
+  「briefing.json is missing」と表示された場合は、<a href="settings.html#setup">Config → Setup</a> でセットアップウィザードをやり直してください。
+</div>
+
+</main>
+</div>
+</div>
+</body>
+</html>

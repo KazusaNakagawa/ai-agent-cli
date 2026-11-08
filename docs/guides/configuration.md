@@ -7,13 +7,13 @@ All monitoring targets are managed here — no code changes needed.
 ```json
 {
   "portfolio": {
-    "tickers": ["PLTR", "NVDA"],
+    "tickers": ["AAA", "BBB"],
     "themes": ["AI regulation", "US-China relations", "semiconductors"]
   },
   "watch_sectors": [
     {
       "sector": "AI & Cloud",
-      "tickers": ["NVDA", "MSFT", "GOOGL", "META", "AMZN"],
+      "tickers": ["BBB", "CCC", "DDD"],
       "notes": "AI capex cycle, model competition, and regulation are the main drivers"
     }
   ],
@@ -22,13 +22,15 @@ All monitoring targets are managed here — no code changes needed.
       {
         "name": "Russia-Ukraine War",
         "affected_sectors": ["Energy", "Defense", "Grains"],
-        "related_tickers": ["LMT", "RTX", "XOM"],
-        "notes": "NATO defense spending increase is a tailwind for LMT/RTX"
+        "related_tickers": ["EEE", "FFF"],
+        "notes": "NATO defense spending increase is a tailwind for EEE/FFF"
       }
     ]
   }
 }
 ```
+
+`AAA`, `BBB` and the other symbols above are placeholders — use real tickers that yfinance can fetch (e.g. `XXXX.T` for a Tokyo listing).
 
 ### Model fallback
 
