@@ -28,7 +28,7 @@
 <p class="lead">リポジトリを clone すると、Web UI に加えて、毎朝の自動実行、週次リキャップ、ターミナルからの Q&amp;A、ポートフォリオのスナップショットなどのコマンドが使えます。</p>
 
 <h2 id="setup">セットアップ</h2>
-<p>必要なもの: Python 3.11〜3.13、<a href="https://docs.astral.sh/uv/">uv</a>、ログイン済みの Claude Code CLI。Discord や Notion に配信する場合は、Discord Bot と Notion インテグレーションも用意します。</p>
+<p>必要なもの: Python 3.11〜3.13、<a href="https://docs.astral.sh/uv/">uv</a>、Claude Code CLI と Claude の認証（Pro / Max で <code>claude login</code> 済み、または Anthropic の API キー）。Discord や Notion に配信する場合は、Discord Bot と Notion インテグレーションも用意します。</p>
 <pre><code>git clone https://github.com/KazusaNakagawa/ai-agent-cli.git
 cd ai-agent-cli
 cp .env.example .env      # 必要に応じて DISCORD_TOKEN、NOTION_API_KEY などを書く

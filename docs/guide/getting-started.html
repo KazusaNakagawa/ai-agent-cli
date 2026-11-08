@@ -33,8 +33,8 @@
   <tbody>
     <tr><td>Node.js 18 以上</td><td>ランチャーと Web UI を動かす</td><td><a href="https://nodejs.org/">nodejs.org</a></td></tr>
     <tr><td><a href="https://docs.astral.sh/uv/">uv</a></td><td>バックエンド（Python）の実行環境を作る</td><td><code>brew install uv</code> など</td></tr>
-    <tr><td>Claude Code CLI（ログイン済み）</td><td>Claude の呼び出しはすべて CLI を通る</td><td><code>npm install -g @anthropic-ai/claude-code</code> のあと、<code>claude</code> を一度起動してログイン</td></tr>
-    <tr><td>有料の Claude プラン（Pro / Max）</td><td>アプリは CLI のログインセッションを使う。無料プランでは動かない</td><td>—</td></tr>
+    <tr><td>Claude Code CLI</td><td>Claude の呼び出しはすべて CLI を通る</td><td><code>npm install -g @anthropic-ai/claude-code</code></td></tr>
+    <tr><td>Claude の認証（どちらか）</td><td><strong>有料の Claude プラン（Pro / Max）</strong>で <code>claude login</code> 済みの CLI（既定の CLI モード。無料プランでは動かない）、または <strong>Anthropic の API キー</strong>（従量課金の API モード）</td><td>CLI モードは <code>claude</code> を一度起動してログイン。API モードは <a href="#step1">Step 1</a> で選び、<a href="#step3">Step 3</a> でキーを入力</td></tr>
     <tr><td>macOS または Linux</td><td>ランチャーとバックエンドのスクリプトが POSIX 環境を前提にしている</td><td>—</td></tr>
   </tbody>
 </table></div>

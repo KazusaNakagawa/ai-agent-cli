@@ -71,7 +71,13 @@
 <ul>
   <li>macOS または Linux（Windows には対応していません）</li>
   <li>Node.js 18 以上と <a href="https://docs.astral.sh/uv/">uv</a></li>
-  <li>ログイン済みの <a href="https://claude.ai/code">Claude Code CLI</a> と、<strong>有料の Claude プラン（Pro / Max）</strong>。アプリは CLI のログインセッションを使って Claude を呼び出すため、無料プランでは動きません</li>
+  <li><a href="https://claude.ai/code">Claude Code CLI</a>（Claude の呼び出しはすべて CLI を通ります）</li>
+  <li>Claude の認証として、次のどちらか
+    <ul>
+      <li><strong>有料の Claude プラン（Pro / Max）</strong>で <code>claude login</code> 済みの CLI（通常はこちら。無料プランでは動きません）</li>
+      <li><strong>Anthropic の API キー</strong>（従量課金。<a href="guide/settings.html#auth">Auth</a> を API モードにして使います）</li>
+    </ul>
+  </li>
 </ul>
 <p>Discord や Notion への配信は任意です。使う場合だけ、あとから認証情報を登録します。</p>
 
