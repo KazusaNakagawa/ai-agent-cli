@@ -327,6 +327,7 @@ def diff_upstream(
 def fetch_pricing_doc(timeout: float = 30) -> str:
     # The docs host answers urllib's default User-Agent with 403.
     request = urllib.request.Request(PRICING_URL, headers={"User-Agent": "ai-agent-cli rate_check"})
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- request URL is the fixed https PRICING_URL constant
     with urllib.request.urlopen(request, timeout=timeout) as resp:  # noqa: S310 — fixed https URL
         return resp.read().decode("utf-8")
 

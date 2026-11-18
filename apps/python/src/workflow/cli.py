@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Any, Sequence
+from typing import Sequence
 
 from src.private_files import warn_loose_permissions
 from src.workflow import registry
