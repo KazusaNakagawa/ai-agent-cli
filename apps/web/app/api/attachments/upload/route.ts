@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "fs/promises"
 import { NextResponse } from "next/server"
 import path from "path"
 
+import { rejectForeignRequest } from "@/lib/request-guard"
 import { inputRoot } from "@/lib/storage"
 
 // Generic (non-image) file attachments. Images keep their own dedicated route
@@ -14,6 +15,9 @@ const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
 const STORAGE_ROOT = path.join(inputRoot(), "attachments")
 
 export async function POST(req: Request) {
+  const rejected = rejectForeignRequest(req)
+  if (rejected) return rejected
+
   // Reject oversized requests before buffering the body.
   const contentLength = Number(req.headers.get("content-length") ?? 0)
   if (contentLength > MAX_BYTES) {

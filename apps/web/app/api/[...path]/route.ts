@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api"
+import { rejectForeignRequest } from "@/lib/request-guard"
 
 const HOP_BY_HOP = new Set([
   "connection",
@@ -17,6 +18,9 @@ async function handle(
   req: Request,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
+  const rejected = rejectForeignRequest(req)
+  if (rejected) return rejected
+
   const upstreamPath = "/api/" + (await params).path.join("/")
   const url = new URL(req.url)
   const target = upstreamPath + url.search

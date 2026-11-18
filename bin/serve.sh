@@ -89,7 +89,7 @@ trap cleanup INT TERM EXIT
 
 echo "ai-agent UI starting..."
 echo "  API:  http://127.0.0.1:$API_PORT"
-echo "  Web:  http://localhost:$WEB_PORT"
+echo "  Web:  http://127.0.0.1:$WEB_PORT"
 echo "  Press Ctrl-C to stop both"
 echo
 
@@ -123,8 +123,8 @@ if [ "$NO_BROWSER" = false ] && [ -z "${CI:-}" ] && command -v open >/dev/null 2
     # never comes up the loop times out and we don't open anything.
     (
         for _ in $(seq 1 30); do
-            if curl -fsS --max-time 1 "http://localhost:$WEB_PORT/" >/dev/null 2>&1; then
-                open "http://localhost:$WEB_PORT" >/dev/null 2>&1 || true
+            if curl -fsS --max-time 1 "http://127.0.0.1:$WEB_PORT/" >/dev/null 2>&1; then
+                open "http://127.0.0.1:$WEB_PORT" >/dev/null 2>&1 || true
                 exit 0
             fi
             sleep 1
