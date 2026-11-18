@@ -95,3 +95,26 @@ def test_briefing_md_written_owner_only(tmp_path):
     written = out / "briefing_2026-01-02.md"
     assert _mode(written) == 0o600
     assert _mode(out) == 0o700
+
+
+def test_warn_loose_permissions_survives_path_vanishing_after_check(tmp_path, monkeypatch, caplog):
+    loose = tmp_path / "holdings.json"
+    loose.write_text("{}")
+    loose.chmod(0o644)
+
+    real_stat = type(loose).stat
+    calls = {"n": 0}
+
+    def flaky_stat(self, *args, **kwargs):
+        if self == loose:
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise FileNotFoundError(self)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(loose), "stat", flaky_stat)
+    with caplog.at_level(logging.WARNING, logger=private_files.logger.name):
+        found = private_files.warn_loose_permissions([loose])
+    assert found == [loose]
+    assert calls["n"] == 1, "one stat per path"
+    assert str(loose) in caplog.text

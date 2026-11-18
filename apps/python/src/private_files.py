@@ -52,28 +52,36 @@ def personal_paths() -> list[Path]:
     return [*files, paths.INPUT_DIR, paths.OUTPUT_DIR]
 
 
-def find_loose_paths(candidates: Iterable[Path]) -> list[Path]:
-    """Return existing paths readable/writable by group or others."""
+def _loose_entries(candidates: Iterable[Path]) -> list[tuple[Path, int, bool]]:
+    """Return ``(path, mode, is_dir)`` for existing paths open to group/others.
+
+    Each path is stat'ed once, so a path removed mid-check cannot raise later.
+    """
     loose = []
     for path in candidates:
         try:
-            mode = stat.S_IMODE(path.stat().st_mode)
+            st = path.stat()
         except FileNotFoundError:
             continue
+        mode = stat.S_IMODE(st.st_mode)
         if mode & _LOOSE_BITS:
-            loose.append(path)
+            loose.append((path, mode, stat.S_ISDIR(st.st_mode)))
     return loose
+
+
+def find_loose_paths(candidates: Iterable[Path]) -> list[Path]:
+    """Return existing paths readable/writable by group or others."""
+    return [path for path, _, _ in _loose_entries(candidates)]
 
 
 def warn_loose_permissions(candidates: Iterable[Path] | None = None) -> list[Path]:
     """Log one warning per loose path (path and mode only) and return them."""
-    loose = find_loose_paths(personal_paths() if candidates is None else candidates)
-    for path in loose:
-        mode = stat.S_IMODE(path.stat().st_mode)
-        expected = PRIVATE_DIR_MODE if path.is_dir() else PRIVATE_FILE_MODE
+    entries = _loose_entries(personal_paths() if candidates is None else candidates)
+    for path, mode, is_dir in entries:
+        expected = PRIVATE_DIR_MODE if is_dir else PRIVATE_FILE_MODE
         logger.warning(
             "personal data is accessible to other users: %s has mode %03o (expected %03o); "
             "fix with: chmod %03o %s",
             path, mode, expected, expected, path,
         )
-    return loose
+    return [path for path, _, _ in entries]
