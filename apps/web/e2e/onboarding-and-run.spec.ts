@@ -12,18 +12,18 @@ test("first-time user can complete onboarding and reach the sidebar", async ({ p
 
   // Step 1 — Auth mode. "cli" is preselected; just advance.
   await expect(page.getByText("Choose how to call Claude")).toBeVisible()
-  await page.getByRole("button", { name: "Next" }).click()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
 
   // Step 2 — Portfolio. Tickers field is the only required input.
   await expect(page.getByText("Portfolio basics")).toBeVisible()
   await page.getByTestId("tickers-input").fill("PLTR, NVDA")
-  await page.getByRole("button", { name: "Next" }).click()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
 
   // Step 3 — Notifications. All blank so the wizard sends zero PUT
   // /api/credentials/* writes (the form filters empty values), keeping the
   // real Keychain untouched.
   await expect(page.getByText("Notifications and credentials")).toBeVisible()
-  await page.getByRole("button", { name: "Next" }).click()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
 
   // Step 4 — Dry-run pipeline check. Backend returns 202 immediately, then
   // job_store flips the status to "done" once lambda_handler(dry_run=True)
@@ -58,10 +58,10 @@ test("an onboarded user can re-run the setup wizard and back out (#543)", async 
   // The wizard opens prefilled from the current settings.
   await expect(page).toHaveURL(/\/\?rerun=1$/)
   await expect(page.getByText("Choose how to call Claude")).toBeVisible()
-  await page.getByRole("button", { name: "Next" }).click()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
   await expect(page.getByTestId("tickers-input")).toHaveValue("MSFT, GOOGL")
   await page.getByTestId("tickers-input").fill("PLTR")
-  await page.getByRole("button", { name: "Next" }).click()
+  await page.getByRole("button", { name: "Next", exact: true }).click()
   await expect(page.getByText("Notifications and credentials")).toBeVisible()
 
   // Cancel puts the saved config back and returns to the app. The onboarded
