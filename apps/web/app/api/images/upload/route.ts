@@ -50,8 +50,8 @@ export async function POST(req: Request) {
   const dir = path.join(STORAGE_ROOT, today)
   const filepath = path.join(dir, filename)
 
-  await mkdir(dir, { recursive: true })
-  await writeFile(filepath, Buffer.from(bytes))
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  await writeFile(filepath, Buffer.from(bytes), { mode: 0o600 })
 
   const url = `/api/images/${today}/${filename}`
   return NextResponse.json({ url, path: filepath })

@@ -13,6 +13,7 @@ from .importer import ImportSummary, import_paths, rebuild
 from .models import OUTPUT_DIR, RULES_PATH, STORE_PATH, MoneyError, Transaction
 from .rules import Rules, load_rules
 from .transfers import unpaired_transfer_candidates
+from src.private_files import write_private_text
 
 
 def _print_import(summary: ImportSummary) -> None:
@@ -117,9 +118,8 @@ def _cmd_report(args: argparse.Namespace, rules: Rules) -> None:
     if args.stdout:
         print(text, end="")
         return
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / out_name
-    out.write_text(text, encoding="utf-8")
+    write_private_text(out, text)
     print(f"wrote {out}")
 
 

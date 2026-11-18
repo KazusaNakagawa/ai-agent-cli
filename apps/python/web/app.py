@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from src.private_files import warn_loose_permissions
+
 from web.routers import (
     archive,
     auth_mode,
@@ -16,6 +18,7 @@ from web.routers import (
 )
 
 app = FastAPI(title="ai-agent Web API", version="0.1.0")
+app.router.on_startup.append(warn_loose_permissions)
 app.include_router(health.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(credentials.router, prefix="/api")
