@@ -50,6 +50,7 @@ bin/chat.sh                 # Launch chat session
 
 - `apps/python/config/briefing.json`, `holdings.json` and `money_rules.json` are **never committed**.
   Neither is anything under `input/` or `output/` — raw statements and generated reports stay local.
+- **Expected modes:** personal files (`briefing.json`, `holdings.json`, `money_rules.json`, `self_agent_profile.md`, generated reports, chat archives, uploads) are `0600`; `input/` and `output/` are `0700`. New files are written that way via `src/private_files.py` (`write_private_text`, `ensure_private_dir`). On startup (`bin/workflow.sh`, the web API) a group/world-accessible personal path logs a warning naming the path and mode, and is never changed silently — fix with `chmod 600 <file>` / `chmod 700 <dir>`.
 - CI and local `pytest` always load `apps/python/tests/config/briefing.json` — `conftest.py` sets `BRIEFING_CONFIG_PATH` before any import of `src.config`.
 - When adding or changing config schema, update both `.example` and `tests/config/briefing.json`.
 

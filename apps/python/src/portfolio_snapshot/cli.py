@@ -7,6 +7,7 @@ from pathlib import Path
 from .models import HOLDINGS_PATH, OUTPUT_DIR, HoldingsError, load_holdings
 from .render import render_snapshot
 from .valuation import FX_FALLBACK, build_snapshot
+from src.private_files import write_private_text
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -38,7 +39,6 @@ def main(argv: list[str] | None = None) -> None:
     if args.stdout:
         print(text)
         return
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / f"snapshot_{holdings.as_of}.md"
-    out.write_text(text, encoding="utf-8")
+    write_private_text(out, text)
     print(f"wrote {out}")

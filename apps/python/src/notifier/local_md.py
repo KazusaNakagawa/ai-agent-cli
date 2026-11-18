@@ -4,6 +4,7 @@ from pathlib import Path
 
 from src.generator.briefscript_schema import BriefingDocument
 from src.logger import get_logger
+from src.private_files import write_private_text
 
 logger = get_logger(__name__)
 
@@ -31,9 +32,8 @@ def save_briefing_md(
         )
 
     today = today or date.today()
-    output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"briefing_{today.strftime('%Y-%m-%d')}.md"
-    path.write_text(text, encoding="utf-8")
+    write_private_text(path, text)
     logger.info("local MD written: %s (%d chars)", path, len(text))
 
     if rotation_enabled:

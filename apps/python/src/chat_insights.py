@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Iterable
 
 from src import paths
+from src.private_files import ensure_private_dir, write_private_text
 
 SESSIONS_DIR = paths.OUTPUT_DIR / "briefing" / ".sessions"
 ARCHIVE_DIR = paths.OUTPUT_DIR / "chat_archive"
@@ -122,7 +123,7 @@ def archive_sessions(
     result = ArchiveResult()
     if not sessions_dir.is_dir():
         return result
-    archive_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(archive_dir)
     for session_file in sorted(p for p in sessions_dir.iterdir() if p.is_file()):
         session_date = session_file.name
         transcript = _find_transcript(session_file.read_text().strip(), transcripts_dir)
@@ -133,7 +134,7 @@ def archive_sessions(
         if not turns:
             continue
         out = archive_dir / f"{session_date}.jsonl"
-        out.write_text("\n".join(json.dumps(t, ensure_ascii=False) for t in turns) + "\n", encoding="utf-8")
+        write_private_text(out, "\n".join(json.dumps(t, ensure_ascii=False) for t in turns) + "\n")
         result.archived.append(session_date)
     return result
 
