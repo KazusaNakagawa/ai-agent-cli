@@ -4,7 +4,6 @@ The subprocess call is patched so these tests stay fast and host-independent.
 """
 import subprocess
 
-from web.routers import archive as archive_router
 
 
 def _fake_run(returncode=0, stdout="", stderr=""):

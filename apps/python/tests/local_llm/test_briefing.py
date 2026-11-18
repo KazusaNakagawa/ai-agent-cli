@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 
@@ -14,7 +13,6 @@ from src.config import (
 from src.local_llm import cli
 from src.local_llm.briefing import (
     OVERFETCH_EXTRA,
-    STALE_ARTICLE_DAYS,
     PER_GEO_RESULTS,
     PER_MACRO_RESULTS,
     PER_TICKER_RESULTS,
@@ -295,7 +293,6 @@ def test_extract_url_date_common_patterns():
 
 
 def test_prefetch_drops_stale_articles():
-    from datetime import date
     cfg = _minimal_cfg(tickers=["PLTR"])
     stale = SearchResult("Old", "https://www.cnbc.com/2026/06/01/old-news.html", "d")
     fresh = SearchResult("New", "https://www.cnbc.com/2026/06/13/new-news.html", "d")

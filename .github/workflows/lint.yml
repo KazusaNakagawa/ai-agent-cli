@@ -1,0 +1,56 @@
+name: lint
+
+# Static checks: Ruff (Python correctness lint) and Semgrep (security rules).
+# Not path-filtered and not a required check — both are fast, and a skipped
+# path-filtered workflow would leave nothing to report (see pytest.yml, #447).
+# Tool versions are pinned so a new release cannot turn CI red on its own;
+# bump them deliberately.
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Rules and excludes live in apps/python/pyproject.toml ([tool.ruff]).
+      - name: Ruff check
+        working-directory: apps/python
+        run: |
+          pip install ruff==0.17.5
+          ruff check .
+
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Registry rulesets are fetched at run time; metrics are off so nothing
+      # about the repo is reported back. A reviewed false positive is silenced
+      # in code with `# nosemgrep: <rule-id> -- <reason>`.
+      - name: Semgrep scan
+        run: |
+          pip install semgrep==1.186.0
+          semgrep scan \
+            --config p/python --config p/typescript --config p/security-audit \
+            --metrics=off --error --quiet \
+            --exclude node_modules --exclude .venv --exclude .next

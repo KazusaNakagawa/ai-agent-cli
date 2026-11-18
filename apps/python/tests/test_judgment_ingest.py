@@ -2,7 +2,6 @@
 import subprocess
 from unittest.mock import patch
 
-import pytest
 
 from src import judgment_ingest
 
@@ -44,14 +43,22 @@ class TestRecordCommentAsJudgment:
         assert cmd[1] == "note"
         assert "--domain" in cmd
         assert cmd[cmd.index("--domain") + 1] == "brief-gen"
-        assert "--reason" in cmd
-        assert cmd[cmd.index("--reason") + 1] == "この分析はおかしい"
-        assert "--context" in cmd
-        context = cmd[cmd.index("--context") + 1]
+        assert "--reason=この分析はおかしい" in cmd
+        context = next(a for a in cmd if a.startswith("--context=")).removeprefix("--context=")
         assert "2026-07-14" in context
         assert "マーケットブリーフィング — 2026-07-14" in context
         assert "--tags" in cmd
         assert cmd[cmd.index("--tags") + 1] == "notion-comment"
+
+    def test_dash_leading_comment_stays_one_argument(self):
+        # A comment like "--domain evil" must not be parsed as an option.
+        with patch("src.judgment_ingest.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+            judgment_ingest.record_comment_as_judgment(_comment(text="--domain evil"))
+
+        cmd = mock_run.call_args.args[0]
+        assert "--reason=--domain evil" in cmd
+        assert "--domain evil" not in cmd
 
     def test_blank_text_is_skipped_without_invoking_judge(self):
         with patch("src.judgment_ingest.subprocess.run") as mock_run:

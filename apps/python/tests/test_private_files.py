@@ -1,7 +1,6 @@
 import logging
 import stat
 
-import pytest
 
 from src import private_files
 

@@ -41,11 +41,14 @@ def record_comment_as_judgment(comment: dict) -> bool:
     cmd = [
         str(JUDGE_BIN), "note",
         "--domain", JUDGE_DOMAIN,
-        "--reason", reason,
-        "--context", context,
+        # `--flag=value` keeps a comment that starts with "-" from being read
+        # as another option by judge's argument parser.
+        f"--reason={reason}",
+        f"--context={context}",
         "--tags", "notion-comment",
     ]
     try:
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args -- argv list, no shell; user text is a single --flag=value argument
         subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=JUDGE_TIMEOUT_SEC)
     except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as exc:
         logger.warning("judge note failed for comment %s: %s", comment.get("comment_id"), exc)

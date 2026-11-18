@@ -8,7 +8,6 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-import pytest
 
 ARCHIVE_SCRIPT = Path(__file__).parents[1] / "bin" / "archive.sh"
 

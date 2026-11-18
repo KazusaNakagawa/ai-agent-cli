@@ -18,7 +18,6 @@ from src.generator.briefing import (
     looks_like_briefing,
     merge_recovered_sectors,
 )
-from src.generator.briefscript_render import splice_holdings
 
 
 def _sectors_json(text: str = "セクター結果。", sector: str = "Tech") -> str:

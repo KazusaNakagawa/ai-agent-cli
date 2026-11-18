@@ -16,6 +16,7 @@ Python sources live under `apps/python/`. Root-level `bin/*.sh` scripts (e.g. `b
 uv venv .venv                  # Create venv (first time only)
 uv pip sync requirements.txt   # Install deps
 .venv/bin/pytest -v            # Run tests
+uvx ruff check .              # Lint (rules in pyproject.toml; CI: .github/workflows/lint.yml, also runs Semgrep)
 uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt  # Recompile deps
 
 # From repo root
