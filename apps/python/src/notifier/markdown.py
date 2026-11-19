@@ -179,7 +179,9 @@ def _split_label_colon(line: str) -> list[str]:
         # The colon sits inside an unclosed Markdown link label
         # (e.g. "- [heading:body](url)"); splitting here would tear the link in two.
         return [line]
-    label = label_part.strip("* ").rstrip("\uFF1A:")
+    # Drop the colon before the ** markers: the colon may sit inside the bold
+    # ("**label\uFF1A**") or after it ("**label**\uFF1A"), and both must strip cleanly.
+    label = label_part.rstrip("\uFF1A:").strip("* ")
     if not label:
         return [line]
     content = re.sub(r"^\*+\s*|\s*\*+$", "", m.group(3).strip())
