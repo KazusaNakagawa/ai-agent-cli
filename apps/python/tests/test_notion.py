@@ -212,6 +212,17 @@ class TestLabelColonSplit:
         texts = [rt["text"]["content"] for rt in label_block[label_block["type"]]["rich_text"]]
         assert "：" not in "".join(texts)
 
+    def test_colon_outside_bold_leaves_no_stray_asterisks(self):
+        """A colon after the closing ** must not leave "**" glued to the label."""
+        md = "- **金利（悪化）**：インフレ指標の上振れが続いた。"
+        blocks = _markdown_to_blocks(md)
+        label_block = blocks[0]
+        texts = [rt["text"]["content"] for rt in label_block[label_block["type"]]["rich_text"]]
+        assert "".join(texts) == "金利（悪化）"
+        body_block = blocks[1]
+        body = "".join(rt["text"]["content"] for rt in body_block[body_block["type"]]["rich_text"])
+        assert body == "インフレ指標の上振れが続いた。"
+
     def test_colon_inside_link_label_not_split(self):
         """リンクラベル内の「：」は分割対象外であること（リンクが分断されないこと）。"""
         md = "- [ブレント原油$90突破：米イラン衝突激化（Bloomberg、7/19）](https://example.com/a)"
