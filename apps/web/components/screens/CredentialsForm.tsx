@@ -1,6 +1,6 @@
 "use client"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { type CredentialSource, fetchCredentialSources } from "@/lib/credentials"
 
 type Props = { initial: Record<string, boolean> }
 
@@ -37,6 +38,22 @@ export function CredentialsForm({ initial }: Props) {
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sources, setSources] = useState<Record<string, CredentialSource>>({})
+
+  // Best effort: the source badge is advisory, so a failed fetch just hides it.
+  const refreshSources = useCallback(() => {
+    fetchCredentialSources()
+      .then((next) => {
+        setSources(next)
+        // Deleting the keychain entry can leave an .env value in effect, so
+        // "set" follows the resolved source rather than the last mutation.
+        setStatus(
+          Object.fromEntries(Object.entries(next).map(([k, v]) => [k, v !== null])),
+        )
+      })
+      .catch(() => setSources({}))
+  }, [])
+  useEffect(refreshSources, [refreshSources])
 
   const openEdit = (f: Field) => {
     setEditing(f)
@@ -71,6 +88,7 @@ export function CredentialsForm({ initial }: Props) {
       return
     }
     setStatus((prev) => ({ ...prev, [editing.name]: true }))
+    refreshSources()
     closeEdit()
     router.refresh()
   }
@@ -87,6 +105,7 @@ export function CredentialsForm({ initial }: Props) {
       return
     }
     setStatus((prev) => ({ ...prev, [name]: false }))
+    refreshSources()
     router.refresh()
   }
 
@@ -104,6 +123,15 @@ export function CredentialsForm({ initial }: Props) {
                 </p>
               </div>
               <div className="flex items-center gap-3">
+                {sources[f.name] === "env" && (
+                  <Badge
+                    variant="outline"
+                    title="Read from .env or the shell, not the OS keychain. Set it here, then remove it from .env."
+                    data-testid={`source-env-${f.name}`}
+                  >
+                    From .env
+                  </Badge>
+                )}
                 <Badge
                   variant={set ? "default" : "secondary"}
                   data-testid={`status-${f.name}`}
@@ -123,7 +151,8 @@ export function CredentialsForm({ initial }: Props) {
                   variant="ghost"
                   size="sm"
                   onClick={() => void remove(f.name)}
-                  disabled={!set || busy === f.name}
+                  // An .env value has no keychain entry to delete.
+                  disabled={!set || sources[f.name] === "env" || busy === f.name}
                   data-testid={`delete-${f.name}`}
                 >
                   Delete
