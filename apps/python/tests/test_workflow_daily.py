@@ -49,7 +49,7 @@ def _stub_registry(children: dict[str, Workflow]):
 
 def _children(calls: list, **overrides: Workflow) -> dict[str, Workflow]:
     """One stub per child of ``daily``; ``overrides`` replaces individual ones."""
-    children = {wid: _child(wid, calls) for wid in ("briefing", "weekly", "chat-archive", "model-rates")}
+    children = {wid: _child(wid, calls) for wid in ("briefing", "weekly", "chat-archive", "input-prune", "model-rates")}
     children.update({wid.replace("_", "-"): wf for wid, wf in overrides.items()})
     return children
 
@@ -65,10 +65,10 @@ def test_runs_the_briefing_the_weekly_recap_then_the_model_rate_check(calls):
     with _stub_registry(_children(calls)):
         record = run_workflow(_daily())
 
-    assert calls == ["briefing", "weekly", "chat-archive", "model-rates"]
+    assert calls == ["briefing", "weekly", "chat-archive", "input-prune", "model-rates"]
     assert record.status == "done"
     assert [s.id for s in record.steps if s.status == "done"] == [
-        "preflight", "briefing", "weekly", "chat-archive", "model-rates",
+        "preflight", "briefing", "weekly", "chat-archive", "input-prune", "model-rates",
     ]
 
 
@@ -112,7 +112,7 @@ def test_a_failed_model_rate_check_fails_the_run_after_the_deliveries(calls):
     with _stub_registry(children), pytest.raises(RuntimeError, match="model-rates blew up") as exc:
         run_workflow(_daily())
 
-    assert calls == ["briefing", "weekly", "chat-archive"]
+    assert calls == ["briefing", "weekly", "chat-archive", "input-prune"]
     record = exc.value.workflow_run_record
     assert record.status == "failed"
     assert record.steps[-1].id == "model-rates"
@@ -126,9 +126,22 @@ def test_a_failed_chat_archive_does_not_stop_the_model_rate_check(calls):
     with _stub_registry(children):
         record = run_workflow(_daily())
 
-    assert calls == ["briefing", "weekly", "model-rates"]
+    assert calls == ["briefing", "weekly", "input-prune", "model-rates"]
     assert record.status == "done"
     assert {s.id: s.status for s in record.steps}["chat-archive"] == "failed"
+
+
+def test_a_failed_input_prune_does_not_stop_the_model_rate_check(calls):
+    """Failure: pruning raw inputs is housekeeping; a file it could not delete
+    today is retried tomorrow, so it must not cost the rate check (#605)."""
+    children = _children(calls, input_prune=_child("input-prune", calls, fail=True))
+
+    with _stub_registry(children):
+        record = run_workflow(_daily())
+
+    assert calls == ["briefing", "weekly", "chat-archive", "model-rates"]
+    assert record.status == "done"
+    assert {s.id: s.status for s in record.steps}["input-prune"] == "failed"
 
 
 def test_force_reaches_the_children(calls):
@@ -146,7 +159,7 @@ def test_force_reaches_the_children(calls):
     with _stub_registry(children):
         run_workflow(_daily(), force=True)
 
-    assert calls == ["briefing", "weekly", "chat-archive", "model-rates"]
+    assert calls == ["briefing", "weekly", "chat-archive", "input-prune", "model-rates"]
 
 
 def test_without_force_each_child_still_consults_its_own_guard(calls):
@@ -161,7 +174,7 @@ def test_without_force_each_child_still_consults_its_own_guard(calls):
     with _stub_registry(children):
         record = run_workflow(_daily())
 
-    assert calls == ["chat-archive", "model-rates"]
+    assert calls == ["chat-archive", "input-prune", "model-rates"]
     assert record.status == "done"
     assert record.results["briefing"].status == "skipped"
     assert record.results["weekly"].status == "skipped"

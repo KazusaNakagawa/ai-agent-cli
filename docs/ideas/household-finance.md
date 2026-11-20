@@ -390,7 +390,19 @@ bin/money.sh report --range 2025-08:2026-07 # 期間サマリー + 前年同月�
 bin/money.sh report --compare-securities    # 証券入金の扱い A/B を併記（決定2）
 bin/money.sh recurring                      # 定期支出一覧（年額換算つき）
 bin/money.sh review                         # 未分類 / 振替候補 / カバー期間の穴を要確認リストで出す
+bin/money.sh prune --dry-run                # 保持期間を過ぎた生ファイルを一覧（削除はしない）
 ```
+
+### 生ファイルの保持期間（#598 / #605）
+
+取り込みが成功すると、ファイルごとにパス・ハッシュ・パーサー・日時を `output/money/imports.jsonl` に記録する。
+`input/money/` 内の CSV は取り込みから 3 日（`INPUT_RETENTION_DAYS`）経つと、日次の `input-prune` で削除される。
+台帳に全行（`desc_raw` を含む）が残り、同じファイルを再取り込みしても重複しないため、必要になったら銀行から再取得すればよい。
+
+- `manual`（手入力の転記ファイル）は再取得元がないので削除しない。
+- 取り込み後に内容が変わったファイル（再ダウンロード・手直し）はハッシュが一致しないので削除しない。
+- `input/` の外から取り込んだファイルには触れない。
+- チャット・ジャーナルの添付（`input/images/`・`input/attachments/`）も同じ日数で削除するが、`output/` 配下から `/api/...` URL で参照されているもの（保存済みジャーナルの添付など）は残す。
 
 ---
 

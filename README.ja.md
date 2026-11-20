@@ -132,7 +132,7 @@ cd ../web && npm install  # Web UI を使う場合のみ
 ```bash
 # ワークフロー — 宣言済みパイプライン共通の入口
 bin/workflow.sh                   # 登録済みワークフロー一覧
-bin/workflow.sh run daily         # 日次の実行: ブリーフィング → 週次リキャップ（その日のみ）→ チャットのアーカイブ → モデル単価チェック
+bin/workflow.sh run daily         # 日次の実行: ブリーフィング → 週次リキャップ（その日のみ）→ チャットのアーカイブ → 入力ファイルの削除 → モデル単価チェック
 bin/workflow.sh run briefing      # 日次ブリーフィング単体
 bin/workflow.sh run weekly        # 週次リキャップ。金曜以外はスキップ、--force で強制実行
 bin/workflow.sh run model-rates   # transcript に単価未登録の Claude モデルがあれば失敗
@@ -170,14 +170,14 @@ cd apps/python
 
 | スクリプト | 用途 |
 |---|---|
-| `workflow.sh` | 宣言済みワークフロー共通の入口。`workflow.sh` で一覧、`workflow.sh run <id>` で実行（`--force` / `--dry-run`）。`run daily` が日次のジョブ（ブリーフィング → その日なら週次リキャップ → チャットのアーカイブ → モデル単価チェック）で、メンテナのマシンでは**手動実行が現行の運用**（[launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active) 参照）。[workflow-runner.md](docs/features/workflow-runner.md) 参照 |
+| `workflow.sh` | 宣言済みワークフロー共通の入口。`workflow.sh` で一覧、`workflow.sh run <id>` で実行（`--force` / `--dry-run`）。`run daily` が日次のジョブ（ブリーフィング → その日なら週次リキャップ → チャットのアーカイブ → 入力ファイルの削除 → モデル単価チェック）で、メンテナのマシンでは**手動実行が現行の運用**（[launchd-setup.md](docs/guides/launchd-setup.md#manual-execution-active) 参照）。[workflow-runner.md](docs/features/workflow-runner.md) 参照 |
 | `chat.sh` | ブリーフィングセッションに対する対話 Q&A |
 | `serve.sh` | Web UI 一式（FastAPI + Next.js）の起動。`API_PORT` / `WEB_PORT` で上書き可 |
 | `self_agent.sh` | 判断ログをペルソナプロファイル化して Notion へ投稿 |
 | `briefing_api.sh` | API エントリポイント経由でブリーフィングを生成 |
 | `chart.sh` | `chart.sh price` で保有銘柄の株価比較チャートを `apps/python/output/charts/` へ生成（`--tickers` で銘柄指定、`--period` の既定は `3mo`）。日次ブリーフィングは同じチャートを1年で生成し Discord メッセージに添付する |
 | `portfolio.sh` | `config/holdings.json` からポートフォリオ・スナップショット（構成比、ルックスルーの為替エクスポージャー、配分ルール検査）を生成 |
-| `money.sh` | 銀行明細 CSV を取り込み、月次収支をレポート — `import` / `report` / `review`。設計は [household-finance.md](docs/ideas/household-finance.md) |
+| `money.sh` | 銀行明細 CSV を取り込み、月次収支をレポート — `import` / `report` / `review` / `prune`（取り込んだ CSV は 3 日後に削除。必要なら銀行から再取得）。設計は [household-finance.md](docs/ideas/household-finance.md) |
 | `gen_wordset.sh` | ワードセット JSON の生成（Stage 1） |
 | `evaluate.sh` | ブリーフィング評価パイプラインの実行 |
 | `eval_report.sh` | 抽出 → スコアリング → 評価レポート出力 |

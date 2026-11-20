@@ -20,7 +20,7 @@ uvx ruff check .              # Lint (rules in pyproject.toml; CI: .github/workf
 uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt  # Recompile deps
 
 # From repo root
-bin/workflow.sh run daily   # Daily briefing, the weekly recap on its day, the chat archive, then the model-rate check
+bin/workflow.sh run daily   # Daily briefing, the weekly recap on its day, the chat archive, the input prune, then the model-rate check
 bin/chat.sh                 # Launch chat session
 ```
 
