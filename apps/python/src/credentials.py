@@ -109,7 +109,9 @@ def get_credential(name: str) -> str | None:
             )
     if source == "env" and name not in _fallback_logged:
         _fallback_logged.add(name)
-        logger.warning(
+        # The rule fires on the word "credential" in the message; the value is
+        # never passed (pinned by test_env_fallback_logs_key_and_source_but_not_value).
+        logger.warning(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure -- logs the key name only
             "credential %s read from the environment, not the OS keychain; "
             "store it in the keychain and remove it from .env",
             name,
