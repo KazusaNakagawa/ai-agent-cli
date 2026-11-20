@@ -173,3 +173,39 @@ class TestReport:
         text = report_mod.render_range(transactions, ["2026-01", "2026-02"])
         assert "2026-01" in text and "2026-02" in text
         assert "平均月支出" in text
+
+
+class TestImportLog:
+    """Each real import is recorded so raw files can be pruned later (#605)."""
+
+    def _log(self, store_path):
+        import json
+
+        path = store_path.with_name("imports.jsonl")
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text().splitlines()]
+
+    def test_a_real_import_records_each_file_with_its_parser(
+        self, rakuten_csv, manual_csv, store_path, rules
+    ):
+        import_paths([rakuten_csv, manual_csv], store_path=store_path, rules=rules)
+        by_name = {e["path"].rsplit("/", 1)[-1]: e["parser"] for e in self._log(store_path)}
+        assert by_name == {rakuten_csv.name: "rakuten_bank", manual_csv.name: "manual"}
+
+    def test_a_dry_run_records_nothing(self, rakuten_csv, store_path, rules):
+        import_paths([rakuten_csv], store_path=store_path, rules=rules, dry_run=True)
+        assert self._log(store_path) == []
+
+    def test_a_failed_import_records_nothing(self, rakuten_csv, store_path, rules, tmp_path):
+        broken = tmp_path / "broken.csv"
+        broken.write_bytes(
+            (
+                "取引日,入出金(円),取引後残高(円),入出金内容\r\n"
+                "20260105,300000,1300000,ヤマダ\r\n"
+                "20260127,-12000,999,ホケン\r\n"
+            ).encode("cp932")
+        )
+        with pytest.raises(MoneyError):
+            import_paths([rakuten_csv, broken], store_path=store_path, rules=rules)
+        assert self._log(store_path) == []

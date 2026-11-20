@@ -8,7 +8,10 @@ matching half of a transfer is regularly imported later than the first.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+
+from src import input_retention
 
 from . import store
 from .categorize import categorize
@@ -83,6 +86,7 @@ def import_paths(
     store_path: Path,
     rules: Rules,
     dry_run: bool = False,
+    import_log: Path | None = None,
 ) -> ImportSummary:
     summary = ImportSummary(dry_run=dry_run)
     existing = store.load(store_path)
@@ -115,4 +119,16 @@ def import_paths(
     summary.stored = len(merged)
     if not dry_run:
         store.save(store_path, merged)
+        # Recorded only after the store is saved: a file is prunable once its
+        # rows are safely in the ledger, never before.
+        input_retention.record_imports(
+            import_log or import_log_path(store_path),
+            [(f.path, f.parser) for f in summary.files],
+            now=datetime.now(),
+        )
     return summary
+
+
+def import_log_path(store_path: Path) -> Path:
+    """Where imports into ``store_path`` are recorded: beside the ledger."""
+    return store_path.with_name("imports.jsonl")

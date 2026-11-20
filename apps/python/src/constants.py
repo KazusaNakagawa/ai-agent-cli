@@ -76,6 +76,11 @@ BRIEFING_CHART_PERIOD = "1y"
 
 # Briefing local MD retention (number of newest dated files to keep)
 BRIEFING_MD_RETENTION_DAYS = 7
+
+# Raw inputs (imported bank CSVs, unreferenced chat/journal uploads) are deleted
+# this many days after processing (#605, policy in #598). Recovery for a
+# statement is re-downloading it from the bank; the ledger keeps every row.
+INPUT_RETENTION_DAYS = 3
 # When False, _prune_old is skipped and all dated files are kept indefinitely
 BRIEFING_MD_ROTATION_ENABLED = False
 # When True, skip the pipeline if today's briefing MD already exists (prevents

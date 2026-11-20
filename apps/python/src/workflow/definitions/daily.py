@@ -49,7 +49,7 @@ def _child(workflow_id: str) -> Callable[[StepContext], Any]:
 
 DAILY = Workflow(
     id="daily",
-    title="Daily briefing, the weekly recap on its day, the chat archive, then the model-rate check",
+    title="Daily briefing, the weekly recap on its day, the chat archive, the input prune, then the model-rate check",
     steps=(
         Step("preflight", _preflight, preamble=True),
         # Not ``best_effort``: bin/run.sh ran under ``set -e``, so a failed
@@ -60,6 +60,9 @@ DAILY = Workflow(
         # best_effort: copying chat transcripts must never cost the morning its
         # model-rate check. It runs daily because Claude Code prunes them.
         Step("chat-archive", _child("chat-archive"), best_effort=True),
+        # best_effort: housekeeping. A file it could not delete today is
+        # retried tomorrow, so it must not cost the model-rate check (#605).
+        Step("input-prune", _child("input-prune"), best_effort=True),
         # Last on purpose (#475): an unpriced model fails the run so it is
         # noticed the next morning, but only after both deliveries went out.
         Step("model-rates", _child("model-rates")),
