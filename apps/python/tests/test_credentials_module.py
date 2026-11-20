@@ -109,3 +109,106 @@ def test_env_fallback_when_keychain_is_locked(monkeypatch):
     monkeypatch.setattr(credentials, "_backend", _Locked())
     monkeypatch.setenv("NOTION_API_KEY", "from-env")
     assert credentials.get_credential("NOTION_API_KEY") == "from-env"
+
+
+# --- credential source visibility and strict mode (#597) ---
+
+STRICT_ENV = "BRIEF_LENS_STRICT_CREDENTIALS"
+
+
+@pytest.fixture
+def fresh_fallback_log(monkeypatch):
+    """Forget which keys already logged a fallback so each test sees its own warning."""
+    monkeypatch.setattr(credentials, "_fallback_logged", set())
+
+
+def test_env_fallback_logs_key_and_source_but_not_value(monkeypatch, caplog, fresh_fallback_log):
+    monkeypatch.setenv("NOTION_API_KEY", "secret-from-env")
+    with caplog.at_level("WARNING", logger="src.credentials"):
+        assert credentials.get_credential("NOTION_API_KEY") == "secret-from-env"
+    text = caplog.text
+    assert "NOTION_API_KEY" in text
+    assert "environment" in text
+    assert "secret-from-env" not in text
+
+
+def test_env_fallback_logs_once_per_key(monkeypatch, caplog, fresh_fallback_log):
+    monkeypatch.setenv("NOTION_API_KEY", "v")
+    with caplog.at_level("WARNING", logger="src.credentials"):
+        credentials.get_credential("NOTION_API_KEY")
+        credentials.get_credential("NOTION_API_KEY")
+    assert len([r for r in caplog.records if "NOTION_API_KEY" in r.getMessage()]) == 1
+
+
+def test_keychain_read_does_not_log(caplog, fresh_fallback_log):
+    credentials.set_credential("NOTION_API_KEY", "k")
+    with caplog.at_level("WARNING", logger="src.credentials"):
+        credentials.get_credential("NOTION_API_KEY")
+    assert caplog.records == []
+
+
+def test_sources_report_keychain_env_and_unset(monkeypatch, fresh_fallback_log):
+    credentials.set_credential("DISCORD_TOKEN", "x")
+    monkeypatch.setenv("NOTION_API_KEY", "from-env")
+    sources = credentials.credential_sources()
+    assert sources["DISCORD_TOKEN"] == "keychain"
+    assert sources["NOTION_API_KEY"] == "env"
+    assert sources["CHANNEL_ID"] is None
+    assert set(sources) == set(credentials.ALLOWED_KEYS)
+
+
+def test_empty_env_value_counts_as_unset(monkeypatch):
+    monkeypatch.setenv("NOTION_API_KEY", "")
+    assert credentials.credential_sources()["NOTION_API_KEY"] is None
+
+
+def test_strict_mode_rejects_env_fallback(monkeypatch, fresh_fallback_log):
+    monkeypatch.setenv(STRICT_ENV, "1")
+    monkeypatch.setenv("NOTION_API_KEY", "from-env")
+    with pytest.raises(credentials.CredentialSourceError, match="NOTION_API_KEY"):
+        credentials.get_credential("NOTION_API_KEY")
+
+
+def test_strict_mode_error_does_not_contain_value(monkeypatch):
+    monkeypatch.setenv(STRICT_ENV, "1")
+    monkeypatch.setenv("NOTION_API_KEY", "secret-from-env")
+    with pytest.raises(credentials.CredentialSourceError) as exc:
+        credentials.get_credential("NOTION_API_KEY")
+    assert "secret-from-env" not in str(exc.value)
+
+
+def test_strict_mode_rejects_locked_keychain(monkeypatch):
+    class _Locked:
+        def get_password(self, service, name):
+            raise keyring.errors.KeyringLocked("cancelled")
+
+    monkeypatch.setattr(credentials, "_backend", _Locked())
+    monkeypatch.setenv(STRICT_ENV, "1")
+    with pytest.raises(credentials.CredentialSourceError, match="keychain"):
+        credentials.get_credential("NOTION_API_KEY")
+
+
+def test_strict_mode_still_reads_keychain(monkeypatch):
+    monkeypatch.setenv(STRICT_ENV, "1")
+    monkeypatch.setenv("NOTION_API_KEY", "from-env")
+    credentials.set_credential("NOTION_API_KEY", "from-keychain")
+    assert credentials.get_credential("NOTION_API_KEY") == "from-keychain"
+
+
+def test_strict_mode_returns_none_when_unset_everywhere(monkeypatch):
+    # Optional keys (e.g. Discord for a Notion-only user) must not break config loading.
+    monkeypatch.setenv(STRICT_ENV, "1")
+    assert credentials.get_credential("CHANNEL_ID") is None
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "no"])
+def test_strict_mode_off_values_keep_fallback(monkeypatch, value):
+    monkeypatch.setenv(STRICT_ENV, value)
+    monkeypatch.setenv("NOTION_API_KEY", "from-env")
+    assert credentials.get_credential("NOTION_API_KEY") == "from-env"
+
+
+def test_list_credentials_does_not_raise_in_strict_mode(monkeypatch):
+    monkeypatch.setenv(STRICT_ENV, "1")
+    monkeypatch.setenv("NOTION_API_KEY", "from-env")
+    assert credentials.list_credentials()["NOTION_API_KEY"] is True

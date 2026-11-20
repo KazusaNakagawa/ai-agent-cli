@@ -102,6 +102,8 @@ def clear_credential_env(monkeypatch):
     """
     for name in credentials.ALLOWED_KEYS:
         monkeypatch.delenv(name, raising=False)
+    # Tests rely on the env fallback; a developer's own strict mode must not leak in.
+    monkeypatch.delenv(credentials.STRICT_ENV, raising=False)
 
 
 @pytest.fixture

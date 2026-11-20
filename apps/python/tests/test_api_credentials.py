@@ -70,3 +70,20 @@ async def test_put_credential_requires_bearer(async_client):
 async def test_delete_credential_requires_bearer(async_client):
     response = await async_client.delete("/api/credentials/NOTION_API_KEY")
     assert response.status_code == 401
+
+
+async def test_get_credential_sources_reports_where_each_value_comes_from(authed_client, monkeypatch):
+    credentials.set_credential("DISCORD_TOKEN", "x")
+    monkeypatch.setenv("NOTION_API_KEY", "secret-from-env")
+    response = await authed_client.get("/api/credentials/sources")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["DISCORD_TOKEN"] == "keychain"
+    assert body["NOTION_API_KEY"] == "env"
+    assert body["CHANNEL_ID"] is None
+    assert "secret-from-env" not in response.text
+
+
+async def test_get_credential_sources_requires_bearer(async_client):
+    response = await async_client.get("/api/credentials/sources")
+    assert response.status_code == 401
