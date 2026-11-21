@@ -47,9 +47,9 @@ def write_private_text(path: Path, text: str, encoding: str = "utf-8") -> None:
 
 
 def personal_paths() -> list[Path]:
-    """Files and directories that hold personal data."""
+    """Files and directories that hold personal data or credentials."""
     files = [paths.CONFIG_DIR / name for name in PERSONAL_CONFIG_FILES]
-    return [*files, paths.INPUT_DIR, paths.OUTPUT_DIR]
+    return [*files, *paths.dotenv_paths(), paths.INPUT_DIR, paths.OUTPUT_DIR]
 
 
 def _loose_entries(candidates: Iterable[Path]) -> list[tuple[Path, int, bool]]:
