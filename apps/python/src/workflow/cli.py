@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Any, Sequence
+from typing import Sequence
 
+from src.private_files import warn_loose_permissions
 from src.workflow import registry
 from src.workflow.model import Workflow
 from src.workflow.runner import WorkflowInputError, run_workflow
@@ -141,6 +142,7 @@ def _cmd_run(workflow_id: str | None, options: Sequence[str]) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    warn_loose_permissions()
     # Bare `workflow` answers the question someone running it is actually
     # asking — what can I run? — instead of an argparse usage error.
     if not argv:

@@ -9,16 +9,14 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }))
 
+type Source = "keychain" | "env" | null
+
 describe("CredentialsForm", () => {
   const fetchMock = vi.fn()
-
-  beforeEach(() => {
-    fetchMock.mockReset()
-    vi.stubGlobal("fetch", fetchMock)
-  })
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
+  // Mirrors what GET /api/credentials/sources would answer; PUT/DELETE update
+  // it the way the backend would, so a post-mutation refetch stays consistent.
+  let sources: Record<string, Source>
+  let sourcesFail: boolean
 
   const initial = {
     DISCORD_TOKEN: true,
@@ -27,6 +25,31 @@ describe("CredentialsForm", () => {
     NOTION_DATABASE_ID: true,
     ANTHROPIC_API_KEY: false,
   }
+
+  const writes = () =>
+    fetchMock.mock.calls.filter(([url]) => url !== "/api/credentials/sources")
+
+  beforeEach(() => {
+    sourcesFail = false
+    sources = Object.fromEntries(
+      Object.entries(initial).map(([k, v]) => [k, v ? "keychain" : null]),
+    )
+    fetchMock.mockReset()
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/credentials/sources") {
+        if (sourcesFail) return new Response(null, { status: 500 })
+        return Response.json(sources)
+      }
+      const name = decodeURIComponent(url.split("/").pop() ?? "")
+      if (init?.method === "PUT") sources = { ...sources, [name]: "keychain" }
+      if (init?.method === "DELETE") sources = { ...sources, [name]: null }
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
 
   it("renders Set / Not set badges from status", () => {
     render(<CredentialsForm initial={initial} />)
@@ -38,7 +61,6 @@ describe("CredentialsForm", () => {
   })
 
   it("PUTs masked value when the dialog Save is clicked", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
     const user = userEvent.setup()
     render(<CredentialsForm initial={initial} />)
 
@@ -76,7 +98,6 @@ describe("CredentialsForm", () => {
   })
 
   it("DELETEs the credential and flips the badge to Not set", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
     const user = userEvent.setup()
     render(<CredentialsForm initial={initial} />)
 
@@ -104,9 +125,52 @@ describe("CredentialsForm", () => {
     render(<CredentialsForm initial={initial} />)
     await user.click(screen.getByTestId("update-ANTHROPIC_API_KEY"))
     await user.click(screen.getByTestId("credential-save"))
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(writes()).toEqual([])
     expect(screen.getByTestId("credential-error")).toHaveTextContent(
       /required/i,
     )
+  })
+
+  it("marks a key read from .env and disables its Delete", async () => {
+    sources = { ...sources, NOTION_API_KEY: "env" }
+    render(<CredentialsForm initial={initial} />)
+    expect(await screen.findByTestId("source-env-NOTION_API_KEY")).toHaveTextContent(
+      "From .env",
+    )
+    expect(screen.getByTestId("status-NOTION_API_KEY")).toHaveTextContent("Set")
+    expect(
+      (screen.getByTestId("delete-NOTION_API_KEY") as HTMLButtonElement).disabled,
+    ).toBe(true)
+    // Keychain-backed keys get no badge.
+    expect(screen.queryByTestId("source-env-DISCORD_TOKEN")).toBeNull()
+  })
+
+  it("keeps a key Set after delete when .env still supplies it", async () => {
+    const user = userEvent.setup()
+    render(<CredentialsForm initial={initial} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    // The keychain entry goes away but the environment still has a value.
+    fetchMock.mockImplementationOnce(async () => {
+      sources = { ...sources, DISCORD_TOKEN: "env" }
+      return new Response(null, { status: 204 })
+    })
+    await user.click(screen.getByTestId("delete-DISCORD_TOKEN"))
+    expect(await screen.findByTestId("source-env-DISCORD_TOKEN")).toBeInTheDocument()
+    expect(screen.getByTestId("status-DISCORD_TOKEN")).toHaveTextContent("Set")
+  })
+
+  it("shows no source badge when the sources request fails", async () => {
+    sourcesFail = true
+    sources = { ...sources, NOTION_API_KEY: "env" }
+    render(<CredentialsForm initial={initial} />)
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/credentials/sources",
+        expect.anything(),
+      ),
+    )
+    expect(screen.queryByTestId("source-env-NOTION_API_KEY")).toBeNull()
+    // The server-rendered status stays as it was.
+    expect(screen.getByTestId("status-DISCORD_TOKEN")).toHaveTextContent("Set")
   })
 })

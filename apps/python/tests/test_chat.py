@@ -2,9 +2,7 @@
 import json
 import subprocess
 import uuid
-from pathlib import Path
 
-import pytest
 
 from src import chat_cli as chat
 from src import credentials, state as state_mod

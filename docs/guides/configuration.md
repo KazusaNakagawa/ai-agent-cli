@@ -111,6 +111,20 @@ cp .env.example .env
 
 Place `.env` at the repository root (`/work/ai-agent/.env`). `apps/python/.env` is not read.
 
+Treat `.env` as a migration aid for the allow-listed keys: it is plaintext on
+disk. Once a key is in the keychain (Config → Credentials, or option A), delete
+its line from `.env`.
+
+- **Visibility.** The first time a key is read from the environment, a warning
+  names the key (never the value). Config → Credentials marks such keys
+  **From .env**; `GET /api/credentials/sources` returns `keychain`, `env`, or
+  `null` per key.
+- **Strict mode.** Set `BRIEF_LENS_STRICT_CREDENTIALS=1` to forbid the fallback
+  for allow-listed keys. Reading one that exists only in the environment, or
+  any read while the keychain is locked or unavailable, then raises
+  `CredentialSourceError`. A key set nowhere still reads as unset, so optional
+  integrations keep working. Tests and CI leave it off.
+
 ### Troubleshooting: 401 Unauthorized (Notion)
 
 Steps to investigate `API token is invalid`:

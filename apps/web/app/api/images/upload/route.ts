@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "fs/promises"
 import { NextResponse } from "next/server"
 import path from "path"
 
+import { rejectForeignRequest } from "@/lib/request-guard"
 import { inputRoot } from "@/lib/storage"
 
 const ALLOWED_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp"])
@@ -12,6 +13,9 @@ const MAX_BYTES = 5 * 1024 * 1024 // 5 MB
 const STORAGE_ROOT = path.join(inputRoot(), "images")
 
 export async function POST(req: Request) {
+  const rejected = rejectForeignRequest(req)
+  if (rejected) return rejected
+
   // Reject oversized requests before buffering the body
   const contentLength = Number(req.headers.get("content-length") ?? 0)
   if (contentLength > MAX_BYTES) {
@@ -46,8 +50,8 @@ export async function POST(req: Request) {
   const dir = path.join(STORAGE_ROOT, today)
   const filepath = path.join(dir, filename)
 
-  await mkdir(dir, { recursive: true })
-  await writeFile(filepath, Buffer.from(bytes))
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  await writeFile(filepath, Buffer.from(bytes), { mode: 0o600 })
 
   const url = `/api/images/${today}/${filename}`
   return NextResponse.json({ url, path: filepath })

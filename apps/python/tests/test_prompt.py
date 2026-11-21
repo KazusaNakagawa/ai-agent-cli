@@ -8,7 +8,6 @@ reach a format-string position that supports attribute walks like
 import ast
 from pathlib import Path
 
-import pytest
 
 from src.generator import prompt as prompt_mod
 from src.generator.prompt import render

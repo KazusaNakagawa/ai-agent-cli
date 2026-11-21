@@ -1,5 +1,4 @@
 """Tests for /api/auth/mode — CLI/API mode switching."""
-import json
 
 import pytest
 

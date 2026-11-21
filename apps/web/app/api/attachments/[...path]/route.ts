@@ -2,6 +2,7 @@ import { readFile } from "fs/promises"
 import { NextResponse } from "next/server"
 import path from "path"
 
+import { rejectForeignRequest } from "@/lib/request-guard"
 import { inputRoot } from "@/lib/storage"
 
 const STORAGE_ROOT = path.join(inputRoot(), "attachments")
@@ -16,9 +17,12 @@ const MIME: Record<string, string> = {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
+  const rejected = rejectForeignRequest(req)
+  if (rejected) return rejected
+
   const relative = (await params).path.join("/")
   const resolved = path.resolve(STORAGE_ROOT, relative)
 

@@ -61,6 +61,7 @@ def generate_local_briefing(
             num_ctx,
         )
     else:
+        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure -- "tokens" is a count, not a credential
         logger.info(
             "[briefing] prompt est. %d tokens (%d chars) / num_ctx=%s",
             est_tokens,

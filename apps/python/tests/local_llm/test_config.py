@@ -1,5 +1,3 @@
-import os
-from pathlib import Path
 
 from src.local_llm.config import LocalLLMConfig, load_config
 

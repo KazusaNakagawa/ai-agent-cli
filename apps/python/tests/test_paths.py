@@ -119,7 +119,10 @@ def test_dotenv_files_use_the_repo_env_in_the_clone_layout(monkeypatch):
     from src import config
 
     monkeypatch.setattr(paths, "DATA_HOME", paths.APP_ROOT)
-    assert config.dotenv_files() == [APP_ROOT.parent / ".env"]
+    repo_root = APP_ROOT.parents[1]
+    assert config.dotenv_files() == [repo_root / ".env"]
+    # The repo root is the directory holding apps/ (and bin/), not apps/ itself.
+    assert (repo_root / "apps" / "python") == APP_ROOT
 
 
 def test_dotenv_files_use_only_the_data_home_env_when_relocated(monkeypatch, tmp_path):

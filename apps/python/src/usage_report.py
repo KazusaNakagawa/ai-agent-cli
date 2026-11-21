@@ -1,7 +1,6 @@
 """Aggregate log/usage/*.jsonl and print token/cost totals per label and per day."""
 import argparse
 import json
-import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path

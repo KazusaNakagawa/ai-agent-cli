@@ -22,6 +22,12 @@ def list_credentials() -> dict[str, bool]:
     return cred_mod.list_credentials()
 
 
+@router.get("/credentials/sources")
+def credential_sources() -> dict[str, str | None]:
+    """Where each key resolves from ("keychain", "env" or null) — never the value."""
+    return cred_mod.credential_sources()
+
+
 @router.put("/credentials/{name}", status_code=status.HTTP_204_NO_CONTENT)
 def put_credential(name: str, body: CredentialBody) -> None:
     try:

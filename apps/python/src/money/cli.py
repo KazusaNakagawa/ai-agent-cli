@@ -4,15 +4,19 @@ from __future__ import annotations
 import argparse
 import re
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 from . import report as report_mod
 from . import store
 from .categorize import uncategorized
-from .importer import ImportSummary, import_paths, rebuild
+from .importer import ImportSummary, import_log_path, import_paths, rebuild
 from .models import OUTPUT_DIR, RULES_PATH, STORE_PATH, MoneyError, Transaction
 from .rules import Rules, load_rules
 from .transfers import unpaired_transfer_candidates
+from src import input_retention, paths
+from src.constants import INPUT_RETENTION_DAYS
+from src.private_files import write_private_text
 
 
 def _print_import(summary: ImportSummary) -> None:
@@ -117,9 +121,8 @@ def _cmd_report(args: argparse.Namespace, rules: Rules) -> None:
     if args.stdout:
         print(text, end="")
         return
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / out_name
-    out.write_text(text, encoding="utf-8")
+    write_private_text(out, text)
     print(f"wrote {out}")
 
 
@@ -157,6 +160,26 @@ def _cmd_review(args: argparse.Namespace, rules: Rules) -> None:
         )
 
 
+def _cmd_prune(args: argparse.Namespace, rules: Rules) -> None:
+    result = input_retention.prune(
+        input_dir=paths.INPUT_DIR,
+        output_dir=paths.OUTPUT_DIR,
+        import_log=import_log_path(args.store),
+        now=datetime.now(),
+        retention_days=INPUT_RETENTION_DAYS,
+        dry_run=args.dry_run,
+    )
+    if not result.deleted:
+        print("削除対象はありません")
+        return
+    for path in result.deleted:
+        print(f"  {path}")
+    verb = "削除対象" if args.dry_run else "削除しました"
+    print(f"\n{verb}: {len(result.deleted)} 件（処理から {INPUT_RETENTION_DAYS} 日経過）")
+    if args.dry_run:
+        print("(--dry-run のため削除していません)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="money", description="Import bank statements and report monthly cash flow."
@@ -183,6 +206,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     reviewer = sub.add_parser("review", help="what still needs a human: unclassified, unpaired")
     reviewer.set_defaults(func=_cmd_review)
+
+    pruner = sub.add_parser(
+        "prune",
+        help=f"delete imported statements and unreferenced uploads after {INPUT_RETENTION_DAYS} days",
+    )
+    pruner.add_argument("--dry-run", action="store_true", help="list what would be deleted")
+    pruner.set_defaults(func=_cmd_prune)
     return parser
 
 

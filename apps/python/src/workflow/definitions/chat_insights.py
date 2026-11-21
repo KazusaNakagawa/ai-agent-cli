@@ -11,6 +11,7 @@ module's directories at a fixture tree.
 from datetime import date
 from typing import Any
 
+from src.private_files import write_private_text
 from src.workflow.model import Step, StepContext, Workflow
 
 ANALYZE_TIMEOUT_SEC = 600
@@ -58,9 +59,8 @@ def persist(ctx: StepContext) -> str:
     from src import chat_insights
 
     today = date.today().isoformat()
-    chat_insights.REPORT_DIR.mkdir(parents=True, exist_ok=True)
     out = chat_insights.REPORT_DIR / f"chat-insights_{today}.md"
-    out.write_text(f"# チャット傾向レポート ({today})\n\n{ctx.results['analyze']}\n", encoding="utf-8")
+    write_private_text(out, f"# チャット傾向レポート ({today})\n\n{ctx.results['analyze']}\n")
     ctx.logger.info("chat insights written: %s", out)
     return str(out)
 

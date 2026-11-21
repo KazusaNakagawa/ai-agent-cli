@@ -120,3 +120,40 @@ class TestReviewCommand:
         assert "2026-01-05 〜 2026-02-10" in out
         assert "未分類" in out
         assert "振替候補" in out
+
+
+class TestPruneCommand:
+    @pytest.fixture
+    def dirs(self, tmp_path, monkeypatch):
+        from src import paths
+
+        input_dir, output_dir = tmp_path / "input", tmp_path / "output"
+        input_dir.mkdir()
+        output_dir.mkdir()
+        monkeypatch.setattr(paths, "INPUT_DIR", input_dir)
+        monkeypatch.setattr(paths, "OUTPUT_DIR", output_dir)
+        return input_dir
+
+    def _old_upload(self, input_dir):
+        path = input_dir / "images" / "2020-01-01" / "a.png"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"x")
+        return path
+
+    def test_dry_run_lists_without_deleting(self, dirs, store_path, capsys):
+        upload = self._old_upload(dirs)
+        _run(["prune", "--dry-run"], store_path)
+        out = capsys.readouterr().out
+        assert str(upload) in out
+        assert "--dry-run" in out
+        assert upload.exists()
+
+    def test_prune_deletes_and_reports_the_count(self, dirs, store_path, capsys):
+        upload = self._old_upload(dirs)
+        _run(["prune"], store_path)
+        assert "1 件" in capsys.readouterr().out
+        assert not upload.exists()
+
+    def test_nothing_to_prune_says_so(self, dirs, store_path, capsys):
+        _run(["prune"], store_path)
+        assert "削除対象はありません" in capsys.readouterr().out

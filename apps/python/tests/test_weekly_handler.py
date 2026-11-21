@@ -1,6 +1,6 @@
 """週次ハンドラと Notion ページ取得のテスト。"""
 from datetime import date, datetime, timezone
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,7 +13,7 @@ from src.notifier.notion import (
     fetch_new_comments,
     fetch_weekly_pages,
 )
-from src.generator.weekly_summary import _format_briefings, week_label, generate_weekly_summary
+from src.generator.weekly_summary import _format_briefings, generate_weekly_summary
 
 # テスト内で固定する「現在時刻」: ページ日付 2026-04-25 が days=7 の範囲内に収まる値
 _FIXED_NOW = datetime(2026, 4, 26, 12, 0, 0, tzinfo=timezone.utc)
@@ -608,7 +608,6 @@ class TestIngestNotionComments:
         assert notion_comment_state.read_seen_ids() == {"c1"}
 
     def test_no_state_write_when_nothing_new(self):
-        from src import notion_comment_state
         from src.weekly_handler import _ingest_notion_comments
 
         pages = [{"page_id": "p1", "title": "T", "date": "2026-04-25"}]

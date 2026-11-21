@@ -1,7 +1,6 @@
 import logging
 
 from src.local_llm.articles import (
-    MAX_ARTICLE_CHARS,
     _fetch_article_text,
     count_article_fetches,
     enrich_with_article_text,

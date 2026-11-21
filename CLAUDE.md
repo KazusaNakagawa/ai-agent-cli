@@ -16,10 +16,11 @@ Python sources live under `apps/python/`. Root-level `bin/*.sh` scripts (e.g. `b
 uv venv .venv                  # Create venv (first time only)
 uv pip sync requirements.txt   # Install deps
 .venv/bin/pytest -v            # Run tests
+uvx ruff check .              # Lint (rules in pyproject.toml; CI: .github/workflows/lint.yml, also runs Semgrep)
 uv pip compile requirements.in --universal --python-version 3.11 -o requirements.txt  # Recompile deps
 
 # From repo root
-bin/workflow.sh run daily   # Daily briefing, the weekly recap on its day, the chat archive, then the model-rate check
+bin/workflow.sh run daily   # Daily briefing, the weekly recap on its day, the chat archive, the input prune, then the model-rate check
 bin/chat.sh                 # Launch chat session
 ```
 
@@ -50,6 +51,7 @@ bin/chat.sh                 # Launch chat session
 
 - `apps/python/config/briefing.json`, `holdings.json` and `money_rules.json` are **never committed**.
   Neither is anything under `input/` or `output/` — raw statements and generated reports stay local.
+- **Expected modes:** personal files (`briefing.json`, `holdings.json`, `money_rules.json`, `self_agent_profile.md`, the loaded `.env`, generated reports, chat archives, uploads) are `0600`; `input/` and `output/` are `0700`. New files are written that way via `src/private_files.py` (`write_private_text`, `ensure_private_dir`). On startup (`bin/workflow.sh`, the web API) a group/world-accessible personal path logs a warning naming the path and mode, and is never changed silently — fix with `chmod 600 <file>` / `chmod 700 <dir>`.
 - CI and local `pytest` always load `apps/python/tests/config/briefing.json` — `conftest.py` sets `BRIEFING_CONFIG_PATH` before any import of `src.config`.
 - When adding or changing config schema, update both `.example` and `tests/config/briefing.json`.
 
