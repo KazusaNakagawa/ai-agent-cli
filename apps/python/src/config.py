@@ -31,14 +31,12 @@ logger = get_logger(__name__)
 def dotenv_files() -> list[Path]:
     """Return the .env files to load, in order.
 
-    Clone layout: the repo-root .env (one level above apps/python/). With a
+    Clone layout: the repo-root .env (two levels above apps/python/). With a
     relocated data home (``BRIEF_LENS_HOME``) only the data-home .env is used —
     load_dotenv never overrides a variable that is already set, so also
     loading the repo file first would silently shadow the data-home values.
     """
-    if paths.DATA_HOME != paths.APP_ROOT:
-        return [paths.DATA_HOME / ".env"]
-    return [paths.APP_ROOT.parent / ".env"]
+    return paths.dotenv_paths()
 
 
 # Since credentials.get_credential() prefers values already in the keychain,

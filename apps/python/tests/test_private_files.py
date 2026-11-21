@@ -84,6 +84,38 @@ def test_personal_paths_covers_config_and_data_dirs(tmp_path, monkeypatch):
             "self_agent_profile.md", "input", "output"} <= names
 
 
+def test_personal_paths_covers_the_loaded_dotenv(tmp_path, monkeypatch):
+    monkeypatch.setattr(private_files.paths, "DATA_HOME", tmp_path)
+    assert tmp_path / ".env" in private_files.personal_paths()
+
+
+def test_warn_loose_permissions_flags_world_readable_dotenv(tmp_path, monkeypatch, caplog):
+    for name in ("CONFIG_DIR", "INPUT_DIR", "OUTPUT_DIR"):
+        monkeypatch.setattr(private_files.paths, name, tmp_path / name.lower())
+    monkeypatch.setattr(private_files.paths, "DATA_HOME", tmp_path)
+    env = tmp_path / ".env"
+    env.write_text("SECRET_TOKEN=do-not-log\n")
+    env.chmod(0o644)
+    with caplog.at_level(logging.WARNING):
+        assert private_files.warn_loose_permissions() == [env]
+    assert str(env) in caplog.text
+    assert "do-not-log" not in caplog.text
+
+    caplog.clear()
+    env.chmod(0o600)
+    with caplog.at_level(logging.WARNING):
+        assert private_files.warn_loose_permissions() == []
+    assert caplog.text == ""
+
+
+def test_personal_paths_skips_missing_dotenv(tmp_path, monkeypatch, caplog):
+    for name in ("CONFIG_DIR", "INPUT_DIR", "OUTPUT_DIR"):
+        monkeypatch.setattr(private_files.paths, name, tmp_path / name.lower())
+    monkeypatch.setattr(private_files.paths, "DATA_HOME", tmp_path)
+    with caplog.at_level(logging.WARNING):
+        assert private_files.warn_loose_permissions() == []
+
+
 def test_briefing_md_written_owner_only(tmp_path):
     from datetime import date
 

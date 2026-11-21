@@ -42,6 +42,19 @@ def resolve_state_dir(env: Mapping[str, str] = os.environ) -> Path:
 
 
 DATA_HOME = resolve_data_home()
+
+
+def dotenv_paths() -> list[Path]:
+    """Return the .env files the app loads (see ``config.dotenv_files``).
+
+    Clone layout: the repo-root .env, i.e. the directory holding ``apps/``.
+    Relocated data home: only ``$BRIEF_LENS_HOME/.env``.
+    """
+    if DATA_HOME != APP_ROOT:
+        return [DATA_HOME / ".env"]
+    return [APP_ROOT.parents[1] / ".env"]
+
+
 CONFIG_DIR = DATA_HOME / "config"
 OUTPUT_DIR = DATA_HOME / "output"
 LOG_DIR = DATA_HOME / "log"
