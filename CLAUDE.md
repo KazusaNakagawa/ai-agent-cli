@@ -3,7 +3,6 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > Project overview and user-facing docs: [README.md](README.md) (日本語版: [README.ja.md](README.ja.md)) and [docs/](docs/).
-> Custom Claude Code skills: [.claude/skills/](.claude/skills/README.md).
 
 ## Layout
 
