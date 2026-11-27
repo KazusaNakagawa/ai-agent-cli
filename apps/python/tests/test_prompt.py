@@ -100,11 +100,12 @@ class TestExistingTemplates:
             assert f"${name}" not in out
 
     def test_briefing_sectors_renders_all_placeholders(self):
-        out = render("briefing_sectors", watch_sectors="SECT", stocks="STK")
+        out = render("briefing_sectors", watch_sectors="SECT", stocks="STK", today="2026-01-02")
         assert "SECT" in out
         assert "STK" in out
         assert "$watch_sectors" not in out
         assert "$stocks" not in out
+        assert "2026-01-02" in out and "$today" not in out
 
     def test_weekly_summary_renders_all_placeholders(self):
         out = render("weekly_summary", briefings="BRF", week_label="W22")

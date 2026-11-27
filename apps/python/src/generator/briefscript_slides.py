@@ -20,7 +20,7 @@ from src.generator.briefscript_render import (
     _CONFIDENCE_MARKERS,
     _FAILED_NOTE,
     _MISSING_NOTE,
-    _QUIET_SECTOR_NOTE,
+    _empty_sector_note,
     FX_HEADING,
     GEOPOLITICS_HEADING,
     _heading,
@@ -118,7 +118,9 @@ def _holdings(deck: _Deck, block: HoldingsBlock, market: MarketSnapshot) -> None
 
 def _sectors(deck: _Deck, block: SectorsBlock) -> None:
     notes = {note.sector: note for note in block.content.sectors}
-    moved, quiet = [], []
+    moved: list[str] = []
+    # Sector names per empty-note label, so unconfirmed ones are not listed as quiet.
+    empty: dict[str, list[str]] = {}
     for sector in dict.fromkeys(" ".join(s.split()) for s in block.sectors if s.strip()):
         note = notes.get(sector)
         if note is None:
@@ -127,10 +129,10 @@ def _sectors(deck: _Deck, block: SectorsBlock) -> None:
             # One claim per sector: the deck is an overview, the page has the rest.
             moved.append(f"- {_text(sector)}：{deck.claim(note.claims[0], block.content.sources)}")
         else:
-            quiet.append(_text(sector))
-    slides = _chunks(moved, deck.max_claims) or ([[]] if quiet else [])
-    if quiet:
-        slides[-1] = [*slides[-1], f"- {_QUIET_SECTOR_NOTE}：{', '.join(quiet)}"]
+            empty.setdefault(_empty_sector_note(note), []).append(_text(sector))
+    slides = _chunks(moved, deck.max_claims) or ([[]] if empty else [])
+    if empty:
+        slides[-1] = [*slides[-1], *(f"- {label}：{', '.join(names)}" for label, names in empty.items())]
     for lines in slides:
         deck.add(_SECTORS_TITLE, lines)
 

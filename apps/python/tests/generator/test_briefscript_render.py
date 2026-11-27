@@ -322,6 +322,8 @@ def test_snapshot_drops_fields_it_does_not_know():
 
 # --- sectors (#514) ---
 
+import pytest  # noqa: E402
+
 from src.generator.briefscript_render import render_sectors_markdown  # noqa: E402
 from src.generator.briefscript_schema import SectorsBlock, parse_sectors_section  # noqa: E402
 
@@ -467,3 +469,15 @@ def test_main_holdings_sources_are_numbered_after_the_main_sources():
     assert "- 保有の事実。［3］" in out
     assert "- ［3］[保有記事](https://example.com/h1)" in out
     assert out.count("［1］") == 2  # one claim marker, one reference entry
+
+
+@pytest.mark.parametrize(("extra", "expected"), [
+    ({"empty_reason": "quiet"}, "動き限定的"),
+    ({"empty_reason": "unverified"}, "〔未確認〕今日の動きは確認できませんでした。"),
+    ({}, "〔未確認〕今日の動きは確認できませんでした。"),
+])
+def test_empty_sector_is_quiet_only_when_marked_quiet(extra, expected):
+    section = parse_sectors_section(
+        {"sectors": [{"sector": "防衛", "claims": [], **extra}]}, sectors=["防衛"],
+    )
+    assert render_sectors_markdown(section, ["防衛"]).endswith(f"#### 防衛\n- {expected}")

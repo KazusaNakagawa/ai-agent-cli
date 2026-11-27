@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +14,7 @@ from src.generator.briefing import (
     build_watch_sectors_context,
     generate_briefing,
     generate_sectors,
+    generate_sectors_section,
     is_degraded_briefing,
     load_briefing_few_shot,
     looks_like_briefing,
@@ -647,8 +649,20 @@ class TestSectorsBriefScript:
             out = generate_briefing("x", self._config())
         return out, calls
 
+    def test_sweep_prompt_states_the_run_date(self):
+        calls = []
+        payload = self._payload()
+
+        def mock(prompt, label, timeout, **kwargs):
+            calls.append(prompt)
+            return payload
+
+        with patch("src.generator.briefing.run_claude", side_effect=mock):
+            generate_sectors_section("x", self._config(), today=date(2026, 1, 2))
+        assert "2026-01-02" in calls[0] and "$today" not in calls[0]
+
     def test_every_configured_sector_rendered_once_in_order(self):
-        quiet = {"sector": "防衛", "claims": []}
+        quiet = {"sector": "防衛", "claims": [], "empty_reason": "quiet"}
         out, calls = self._run([self._payload(extra=(quiet,))])
         assert out.count("#### AI・クラウド") == 1 and out.count("#### 防衛") == 1
         assert out.index("#### AI・クラウド") < out.index("#### 防衛")

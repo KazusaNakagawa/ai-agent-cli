@@ -515,3 +515,10 @@ def test_main_geopolitics_bound_follows_the_config():
     assert "enum" not in empty["$defs"]["GeoImpact"]["properties"]["risk"]
     with pytest.raises(TypeError):
         main_json_schema("リスクA")
+
+
+def test_sector_empty_reason_defaults_to_none_and_rejects_other_values():
+    assert SectorNote(sector="x").empty_reason is None
+    assert SectorNote(sector="x", empty_reason="quiet").empty_reason == "quiet"
+    with pytest.raises(ValidationError):
+        SectorNote(sector="x", empty_reason="calm")

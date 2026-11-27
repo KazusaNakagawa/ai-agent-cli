@@ -35,6 +35,7 @@ _CLOSING = "以上です。"
 _SPOKEN_CONFIDENCE = {"confirmed": "", "inferred": "推測ですが、", "unknown": "未確認ですが、"}
 _QUOTE_FAILED = "株価を取得できませんでした"
 _QUIET_SECTOR = "目立った動きはありませんでした"
+_UNVERIFIED_SECTOR = "今日の動きを確認できませんでした"
 
 # Written-only marks: emphasis, code, heading hashes, ［n］ citations and the
 # 〔推測〕 / 〔未確認〕 markers the page versions carry.
@@ -110,7 +111,8 @@ def _sectors(block: SectorsBlock) -> list[list[str]]:
             continue
         name = _say(sector)
         if not note.claims:
-            paragraphs.append([f"{name.rstrip('。')}は、{_QUIET_SECTOR}。"])
+            said = _QUIET_SECTOR if note.empty_reason == "quiet" else _UNVERIFIED_SECTOR
+            paragraphs.append([f"{name.rstrip('。')}は、{said}。"])
         else:
             paragraphs.append([name, *(_claim(c) for c in note.claims)])
     return paragraphs
