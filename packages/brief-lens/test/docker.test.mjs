@@ -34,8 +34,18 @@ test("compose and Dockerfile do not carry an API key or a credentials file", { s
 })
 
 test("the credentials mount is read-only and never created by Docker", { skip }, () => {
-  const text = readFileSync(composePath, "utf8")
-  const block = text.match(/- type: bind\n(?:\s+.*\n)+?(?=\s*(?:#|-|\w+:\s*$)|$)/)?.[0] ?? text
+  // Read the bind entry line by line: its keys are the lines indented deeper than
+  // the `- type: bind` line, up to the next entry or key.
+  const lines = readFileSync(composePath, "utf8").split("\n")
+  const start = lines.findIndex((l) => l.trim() === "- type: bind")
+  assert.notEqual(start, -1, "compose.yaml must declare the credentials bind mount")
+  const indent = lines[start].search(/\S/)
+  const entry = []
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() !== "" && line.search(/\S/) <= indent) break
+    entry.push(line)
+  }
+  const block = entry.join("\n")
   assert.match(block, /target: \/run\/claude-auth\b/)
   assert.match(block, /read_only: true/)
   // A missing source must fail loudly, not become a root-owned directory.
@@ -55,6 +65,14 @@ test("the app runs as a non-root user without capabilities", { skip }, () => {
 test("compose adds back only the capabilities the entrypoint needs", { skip }, () => {
   const text = readFileSync(composePath, "utf8")
   assert.match(text, /cap_drop:\s*\n\s+- ALL/)
-  const added = [...text.matchAll(/^\s+cap_add:\s*\n((?:\s+- \w+\n)+)/gm)].flatMap((m) => m[1].match(/\w+/g))
+  const lines = text.split("\n")
+  const start = lines.findIndex((l) => l.trim() === "cap_add:")
+  assert.notEqual(start, -1, "compose.yaml must add back the capabilities the entrypoint needs")
+  const added = []
+  for (const line of lines.slice(start + 1)) {
+    const item = line.match(/^ *- (\w+) *$/)
+    if (!item) break
+    added.push(item[1])
+  }
   assert.deepEqual(added.sort(), ["CHOWN", "DAC_OVERRIDE", "SETGID", "SETUID"])
 })
