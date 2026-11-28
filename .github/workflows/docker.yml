@@ -126,6 +126,7 @@ jobs:
         run: |
           out="$RUNNER_TEMP/output"
           mkdir "$out"
+          chmod 700 "$out"
           sudo chown 1000:1000 "$out"
           export BRIEF_LENS_OUTPUT_DIR="$out"
           dc() { docker compose -f compose.yaml -f compose.output.yaml "$@"; }
@@ -134,6 +135,8 @@ jobs:
             curl -fsS "http://127.0.0.1:${BRIEF_LENS_PORT}/api/health" >/dev/null 2>&1 && break
             sleep 3
           done
+          # Fail here if the loop timed out: the exec checks below do not need the app.
+          curl -fsS "http://127.0.0.1:${BRIEF_LENS_PORT}/api/health" >/dev/null
           dc exec -T -u node brief-lens sh -c 'umask 077; echo from-container > /data/output/probe.md'
           sudo grep -qx from-container "$out/probe.md"
           echo from-host | sudo tee "$out/probe.md" >/dev/null

@@ -1,7 +1,7 @@
 # Optional: show the container's output folder (briefings, journal, charts) on
 # the host, so the Web UI's Workspace screen can open it.
 #
-#   mkdir -p ~/brief-lens-output
+#   mkdir -p ~/brief-lens-output && chmod 700 ~/brief-lens-output
 #   docker compose -f compose.yaml -f compose.output.yaml up
 #
 # See docs/guides/docker.md, "Opening the output folder on the host".

@@ -98,7 +98,7 @@ browse and edit the container's briefings, journal and charts, add the
 from `~/brief-lens-output`, or from `BRIEF_LENS_OUTPUT_DIR`:
 
 ```bash
-mkdir -p ~/brief-lens-output
+mkdir -p ~/brief-lens-output && chmod 700 ~/brief-lens-output
 # Only if the container already has output you want to keep (it must be running):
 docker compose cp brief-lens:/data/output/. ~/brief-lens-output/
 docker compose -f compose.yaml -f compose.output.yaml up -d
@@ -110,6 +110,7 @@ Then press the folder button in Workspace and choose `~/brief-lens-output`.
   starting without the override shows it again. Copy first as above to carry it over.
 - Pass both `-f` options each time, or `export COMPOSE_FILE=compose.yaml:compose.output.yaml`.
 - Create the folder yourself first: compose stops rather than create it as root.
+- Keep it 0700: it becomes `/data/output`, and the app warns on start when others can read it.
 - **macOS:** checked with Rancher Desktop, where the container and your user can read and
   edit each other's files. A file created on the host may take a moment to appear in a
   directory listing inside the container. Docker Desktop is not checked.
