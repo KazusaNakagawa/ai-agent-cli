@@ -5,7 +5,7 @@ machine. No `ANTHROPIC_API_KEY` is involved: the container's `claude` CLI uses t
 OAuth login (paid Claude plan) as the one on the host.
 
 > **Status:** written for [#622](https://github.com/KazusaNakagawa/ai-agent-cli/issues/622).
-> The image has **not yet been built or run on a macOS host** — see
+> The image has **not yet been built or run on a macOS host** (it has been built and booted in a Linux sandbox; see below) — see
 > [Verification status](#verification-status) for what is still unproven.
 
 ## Quick start
@@ -103,13 +103,34 @@ docker compose restart
 
 ## Verification status
 
-Done without a Docker daemon (the authoring environment had none): the launcher's
-`--host` option and the compose guards are unit-tested, and `sync-claude-auth.sh` and
-the entrypoint were exercised against a throwaway `HOME`.
+Checked in a Linux sandbox with a Docker daemon (image built from this `Dockerfile` with
+three substitutions, listed below; run with the capability set from `compose.yaml`):
+
+- The build stage (`npm ci` + `scripts/build.mjs`), the pinned `claude` CLI install, and the
+  first-run Python environment (`uv` with `UV_PYTHON_PREFERENCE=only-system`) all work.
+- The app comes up and the container reports `healthy`.
+- The entrypoint reads credentials from a read-only mount owned by another uid, installs them
+  for `node`, and then drops to `node`: the launcher, uvicorn and Next.js all run as uid 1000
+  with an empty capability set. (A first version left the login unreadable and then in the
+  wrong home directory; both were found this way and fixed.)
+- The API listens on `127.0.0.1` only; the Web UI on `0.0.0.0` inside the container.
+- The Web UI answers for `Host: localhost` and returns 403 for a LAN address and for
+  `host.docker.internal`.
+- The Linux `claude` treats a `.credentials.json` in the Keychain's JSON shape as an OAuth
+  login and tries to use it. With a fake token it ends in "OAuth session expired and could
+  not be refreshed", not "Not logged in". Whether a *real* login is accepted is not proven.
+
+Not covered by that run, because of the sandbox: `apt-get` (the network policy blocked
+`deb.debian.org`) was replaced by copying Python 3.11 and its libraries from the official
+`python` image, so the `python3` / `fonts-noto-cjk` install line is untested; `uv` came from the
+host instead of `ghcr.io/astral-sh/uv` (blocked), so that pull is untested; and the container
+used host networking, so the `127.0.0.1:3000:3000` publish was not exercised. The launcher's
+`--host` option, the compose guards and the shell scripts are also covered by unit tests and
+by running them against a throwaway `HOME`.
 
 Still to prove on a macOS host with Docker Desktop:
 
-1. `docker compose up --build` builds and the Web UI opens from the host browser.
+1. `docker compose up --build` builds as written (apt packages, the `uv` image pull) and the Web UI opens from the host browser through the published port.
 2. The Linux `claude` accepts the exported Keychain login (a similar attempt is reported
    not to work in [anthropics/claude-code#10039](https://github.com/anthropics/claude-code/issues/10039);
    MulmoClaude's approach suggests it does). One real briefing run and one Q&A chat.

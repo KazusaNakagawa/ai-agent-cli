@@ -43,6 +43,8 @@ test("the app runs as a non-root user without capabilities", { skip }, () => {
   assert.match(entrypoint, /--bounding-set=-all/)
   assert.match(entrypoint, /--no-new-privs/)
   assert.match(entrypoint, /^APP_USER=node$/m)
+  // Root's HOME is /root, but the login must land in the app user's home.
+  assert.match(entrypoint, /HOME="\$\(getent passwd "\$APP_USER"/)
 })
 
 test("compose adds back only the capabilities the entrypoint needs", { skip }, () => {

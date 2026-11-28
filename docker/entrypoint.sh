@@ -3,9 +3,15 @@
 set -eu
 
 AUTH_SRC="${CLAUDE_AUTH_DIR:-/run/claude-auth}/.credentials.json"
+APP_USER=node
+
+# As root, HOME is /root; the files below must land where `node` will look.
+if [ "$(id -u)" = 0 ]; then
+  HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
+  export HOME
+fi
 CLAUDE_HOME="$HOME/.claude"
 
-APP_USER=node
 umask 077
 mkdir -p "$CLAUDE_HOME"
 
