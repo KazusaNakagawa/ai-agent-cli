@@ -94,20 +94,20 @@ does have a Markdown version, and `--check-upstream` already parses it
 (`parse_pricing_table`, `diff_upstream`), so writing the table from it is technically
 possible. It was rejected on purpose. The core argument: **a missing rate is
 detectable, a wrong rate is not.** A model with no entry costs $0 and is caught by
-`rate_check` — the daily `model-rates` workflow fails, as it did on 2026-10-28 for
+`rate_check` — the daily `model-rates` workflow fails, as it did for
 `claude-haiku-5-5` (#528). A wrongly auto-written rate produces a
 plausible number that nothing flags, and the drift check compares against a
 5-minute/1-hour cache-write bracket, so small errors pass.
 
-Concrete ways an auto-writer would go wrong. The figures below are what the pricing doc
-showed when it was fetched on 2026-11-28; they are examples of the doc's *shape*, so
-re-check them against the doc rather than treating them as current prices:
+Concrete ways an auto-writer would go wrong. These describe the *shape* of the pricing
+doc, not its current prices (which change), so re-check the doc before relying on any
+detail:
 
 | Risk | What the doc actually does |
 |---|---|
-| Rows from a different table | `Claude Haiku 5.5` appears in both `## Model pricing` and `### Batch processing` (its batch input was $0.05 / MTok against $0.10 for the standard row). Today's `parse_pricing_rows` reads only the first table — it starts at the header containing `5m cache writes` and stops at the first line that is not a table row — so the batch rows are not picked up. The risk is a wider scan: a model on several rows is classified as tiered, so a batch row would silently join the tiers and could end up as the "lowest tier" stored for the model |
-| Tiered pricing | Haiku 5.5 was listed in two tiers, with every category 5x higher once the prompt exceeds 100k tokens; the table holds one rate set per model, so someone has to choose a tier |
-| Conditional multipliers | `inference_geo: "us"` applied 1.1x to every category (on Haiku 5.5 also to the over-100k prices); whether it applies depends on prose and platform notes outside the tables |
+| Rows from a different table | A model can appear in more than one table (for example a batch-processing table priced below the standard one). A parser that reads more than the main table would see the model on several rows and treat it as tiered, so the cheaper batch row could end up as the stored rate. See `rate_check.parse_pricing_rows` for which rows it reads today |
+| Tiered pricing | Some models list several tiers by prompt length, each with higher rates; the table holds one rate set per model, so someone has to choose a tier |
+| Conditional multipliers | Options such as `inference_geo` apply a multiplier to every category; whether it applies depends on prose and platform notes outside the tables |
 | Rewriting history | `usage_monitor.py` recomputes cost from transcripts with the *current* table on every view, so auto-applying a price change re-prices all past usage |
 | Silent format changes | The doc is not a versioned API; a renamed column could make the parser read the wrong one without failing |
 
