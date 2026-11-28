@@ -2,6 +2,8 @@ import { spawn } from "node:child_process"
 import { join } from "node:path"
 import { createServer } from "node:net"
 
+import { isLoopbackHost } from "./args.mjs"
+
 /** Run a command to completion with inherited stdio; reject on failure. */
 export function runCommand(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -81,7 +83,7 @@ export async function serve({ layout, opts, uvicorn, tokenPath, log }) {
       ...process.env,
       NODE_ENV: "production",
       PORT: String(opts.port),
-      HOSTNAME: "127.0.0.1",
+      HOSTNAME: opts.host,
       API_BASE: apiUrl,
       AI_AGENT_TOKEN_PATH: tokenPath,
       AI_AGENT_INPUT_DIR: join(opts.home, "input"),
@@ -120,6 +122,9 @@ export async function serve({ layout, opts, uvicorn, tokenPath, log }) {
   }
 
   log(`\nbrief-lens is running:\n  Web UI:    ${webUrl}\n  API:       ${apiUrl}\n  Data home: ${opts.home}\nPress Ctrl-C to stop.\n`)
+  if (!isLoopbackHost(opts.host)) {
+    log(`Note: the Web UI is bound to ${opts.host}, so other machines can reach it unless the port is published to loopback only.\n`)
+  }
   if (opts.browser) openBrowser(webUrl)
 
   await exited

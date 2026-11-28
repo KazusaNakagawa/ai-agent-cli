@@ -1,0 +1,34 @@
+# brief-lens in Docker.  Usage (see docs/guides/docker.md):
+#
+#   docker/sync-claude-auth.sh        # once, and again when the login changes
+#   docker compose up --build
+#
+# The Web UI is published to the host's loopback only, so it is not reachable
+# from the LAN. The API is not published at all.
+name: brief-lens
+
+services:
+  brief-lens:
+    build: .
+    image: brief-lens:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${BRIEF_LENS_PORT:-3000}:3000"
+    volumes:
+      # Briefings, journal, config, venv, session token.
+      - brief-lens-data:/data
+      # The container's own Claude state (transcripts the Monitor screen reads).
+      - claude-state:/home/node/.claude
+      # Credentials prepared by docker/sync-claude-auth.sh; read-only.
+      - ${BRIEF_LENS_AUTH_DIR:-${HOME}/.brief-lens-docker/claude-auth}:/run/claude-auth:ro
+    # No ANTHROPIC_API_KEY is passed on purpose: in `cli` auth mode the claude
+    # CLI must use the OAuth login above.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  brief-lens-data:
+  claude-state:

@@ -51,13 +51,17 @@ servers.
 ```
 --port <n>       Web UI port (default: 3000)
 --api-port <n>   API port (default: 8000)
+--host <addr>    Address the Web UI binds to (default: $BRIEF_LENS_HOST or 127.0.0.1)
 --home <dir>     Data home (default: $BRIEF_LENS_HOME or ~/.brief-lens)
 --no-browser     Do not open the browser (also skipped when $CI is set)
 -v, --version    Print the version and exit
 -h, --help       Show this help and exit
 ```
 
-Both servers listen on localhost only; they are not reachable from your LAN.
+Both servers listen on localhost only; they are not reachable from your LAN. `--host`
+exists for the [Docker setup](docker.md), which needs the Web UI bound inside the container;
+leave it at the default when running directly on your machine. The API always stays on
+`127.0.0.1`.
 
 ## Data home
 

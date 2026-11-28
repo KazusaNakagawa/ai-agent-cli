@@ -1,0 +1,22 @@
+# Keep personal data, secrets and build output out of the image context.
+.git
+.github
+.env
+.env.*
+!.env.example
+**/node_modules
+**/.next
+**/.next-pack
+**/.venv
+**/__pycache__
+**/*.pyc
+apps/python/config/*
+!apps/python/config/*.example
+apps/python/input
+apps/python/output
+apps/python/log
+input
+output
+log
+packages/brief-lens/dist
+docs
