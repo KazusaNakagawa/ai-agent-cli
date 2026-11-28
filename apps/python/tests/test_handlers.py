@@ -383,6 +383,59 @@ class TestBriefingHandler:
         assert mock_notion.call_count == 1
 
 
+class TestFooterNamesTheAnsweringModel:
+    """After a --fallback-model switch the footer names the model that answered (#532)."""
+
+    @staticmethod
+    def _footer(fallback_models):
+        import json
+
+        from src import claude_runner
+
+        def fake_generate(*args, **kwargs):
+            # The real generator calls run_claude on pool threads; one call is
+            # enough to exercise the recording path end to end.
+            def fake_stream(cmd, env, timeout, label):
+                return claude_runner._StreamResult(
+                    returncode=0, stdout=json.dumps({"result": "ok"}), stderr="",
+                    fallback_models=fallback_models,
+                )
+
+            with (
+                patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"),
+                patch("src.claude_runner._stream_claude", side_effect=fake_stream),
+                patch("src.claude_runner.log_usage_from_result", return_value=True),
+            ):
+                claude_runner.run_claude("prompt", "メイン分析", max_attempts=1)
+            return _doc(_VALID_BRIEFING)
+
+        with (
+            patch("src.handler.fetch_stock_snapshot", return_value=("PLTR: ↑1.0%", {})),
+            patch("src.handler.generate_briefing_document", side_effect=fake_generate),
+            patch("src.handler.CONFIG") as mock_cfg,
+            patch("src.handler.send_to_discord"),
+            patch("src.handler.send_to_notion", return_value="https://notion.so/p") as mock_notion,
+            patch("src.handler.get_model", return_value="claude-primary-1"),
+            patch("src.handler.save_briefing_md"),
+            patch("src.handler.save_briefing_document"),
+        ):
+            mock_cfg.portfolio.tickers = ["PLTR"]
+            mock_cfg.discord_token = "tok"
+            mock_cfg.discord_channel_id = "ch"
+            mock_cfg.notion_api_key = "key"
+            mock_cfg.notion_database_id = "db"
+            briefing_handler()
+        return mock_notion.call_args[0][0].rsplit("\n", 1)[-1]
+
+    def test_a_fallback_is_named_in_the_footer(self):
+        assert self._footer(("claude-haiku-5-5",)) == (
+            "Model: claude-haiku-5-5 (fallback from claude-primary-1)"
+        )
+
+    def test_without_a_fallback_the_footer_is_unchanged(self):
+        assert self._footer(()) == "Model: claude-primary-1"
+
+
 class TestDeliverNotionFallback:
     """step_deliver_notion retries with the Markdown conversion (#516)."""
 

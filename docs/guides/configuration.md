@@ -49,6 +49,12 @@ per-model usage breakdown, is the evidence: the CLI also uses helper models
 internally, so a Haiku id in the usage breakdown does not mean a fallback
 happened.
 
+The briefing's Notion footer names the model that actually answered. Without a
+fallback it reads `Model: <model>`; if any call of that run fell back it reads
+`Model: <fallback> (fallback from <model>)` (several fallbacks are listed in the
+order they were first used). The weekly summary's `weekly summary generated
+(model=...)` log line follows the same wording.
+
 ## `prompts/briefing.md`
 
 Prompt template for the briefing agent. Variables: `{tickers}` `{themes}` `{geopolitical}` `{watch_sectors}` `{stocks}`. Edit this file to change Claude's output behavior.

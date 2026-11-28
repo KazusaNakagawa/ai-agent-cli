@@ -1,3 +1,4 @@
+import contextvars
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
@@ -348,6 +349,16 @@ def _sectors_block(section: SectorsSection, config: BriefingConfig) -> SectorsBl
     return SectorsBlock(sectors=_watch_sector_names(config), content=section)
 
 
+def _submit(executor: ThreadPoolExecutor, fn, /, *args, **kwargs):
+    """Submit ``fn`` to run in a copy of the caller's context.
+
+    ``ThreadPoolExecutor`` does not carry context variables into its workers, so
+    without this a ``record_fallbacks`` scope opened around the briefing would
+    miss every call made on the pool threads.
+    """
+    return executor.submit(contextvars.copy_context().run, fn, *args, **kwargs)
+
+
 def generate_briefing_document(
     stocks: str,
     config: BriefingConfig,
@@ -385,18 +396,18 @@ def generate_briefing_document(
     )
     with ThreadPoolExecutor(max_workers=3) as executor:
         if briefscript:
-            main = executor.submit(generate_main_section, render("briefing_main", **main_parts), config)
+            main = _submit(executor, generate_main_section, render("briefing_main", **main_parts), config)
         else:
-            main = executor.submit(
-                run_claude, render("briefing", **main_parts), "メイン分析", TIMEOUT_BRIEFING_MAIN,
+            main = _submit(
+                executor, run_claude, render("briefing", **main_parts), "メイン分析", TIMEOUT_BRIEFING_MAIN,
                 max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
             )
         futures = {
             main: "main",
-            executor.submit(generate_sectors_section, stocks, config, today): "sectors",
+            _submit(executor, generate_sectors_section, stocks, config, today): "sectors",
         }
         if briefscript:
-            futures[executor.submit(generate_holdings, stocks, config)] = "holdings"
+            futures[_submit(executor, generate_holdings, stocks, config)] = "holdings"
         results: dict = {}
         errors: dict[str, str] = {}
         for future in as_completed(futures):

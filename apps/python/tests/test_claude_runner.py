@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -601,6 +602,110 @@ class TestFallbackModel:
         monkeypatch.setattr(claude_runner, "_config_fallback_model", lambda: "claude-backup-1")
         self._run()
         assert "fell back" not in caplog.text
+
+
+class TestRecordFallbacks:
+    """``record_fallbacks`` surfaces which model answered without changing run_claude's str result (#532)."""
+
+    @staticmethod
+    def _call(fallback_models=(), returncode=0):
+        def fake_stream(cmd, env, timeout, label):
+            return claude_runner._StreamResult(
+                returncode=returncode, stdout=json.dumps({"result": "ok"}), stderr="",
+                fallback_models=fallback_models,
+            )
+
+        with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
+            with patch("src.claude_runner._stream_claude", side_effect=fake_stream):
+                with patch("src.claude_runner.log_usage_from_result", return_value=True):
+                    return run_claude("prompt", "test", max_attempts=1)
+
+    def test_collects_the_models_the_cli_switched_to(self):
+        with claude_runner.record_fallbacks() as report:
+            result = self._call(("claude-backup-1",))
+        assert report.models == ("claude-backup-1",)
+        assert result == "ok"  # the str contract is untouched
+
+    def test_no_fallback_leaves_the_report_empty(self):
+        with claude_runner.record_fallbacks() as report:
+            self._call()
+        assert report.models == ()
+
+    def test_calls_outside_a_scope_are_not_recorded(self):
+        with claude_runner.record_fallbacks() as report:
+            pass
+        self._call(("claude-backup-1",))
+        assert report.models == ()
+
+    def test_a_failed_call_is_not_recorded(self):
+        with claude_runner.record_fallbacks() as report:
+            with pytest.raises(RuntimeError):
+                self._call(("claude-backup-1",), returncode=1)
+        assert report.models == ()
+
+    def test_models_are_distinct_and_in_first_use_order(self):
+        with claude_runner.record_fallbacks() as report:
+            self._call(("claude-b-1",))
+            self._call(("claude-a-1", "claude-b-1"))
+        assert report.models == ("claude-b-1", "claude-a-1")
+
+    def test_an_inner_scope_also_reports_to_the_outer_one(self):
+        with claude_runner.record_fallbacks() as outer:
+            with claude_runner.record_fallbacks() as inner:
+                self._call(("claude-backup-1",))
+        assert inner.models == ("claude-backup-1",)
+        assert outer.models == ("claude-backup-1",)
+
+    def test_a_thread_needs_the_copied_context_to_report(self):
+        """ThreadPoolExecutor does not carry context variables, hence generator.briefing._submit."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        from src.generator.briefing import _submit
+
+        with claude_runner.record_fallbacks() as report:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(self._call, ("claude-plain-1",)).result()
+                assert report.models == ()
+                _submit(pool, self._call, ("claude-copied-1",)).result()
+        assert report.models == ("claude-copied-1",)
+
+    def test_concurrent_scopes_do_not_see_each_other(self):
+        """Two runs in one process (a briefing and a chat answer) keep separate reports."""
+        import contextvars
+
+        reports = {}
+
+        def run(name, models):
+            with claude_runner.record_fallbacks() as report:
+                self._call(models)
+            reports[name] = report.models
+
+        threads = [
+            threading.Thread(target=contextvars.copy_context().run, args=(run, "a", ("claude-a-1",))),
+            threading.Thread(target=contextvars.copy_context().run, args=(run, "b", ())),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert reports == {"a": ("claude-a-1",), "b": ()}
+
+
+class TestDescribeModel:
+    def test_without_a_fallback_it_is_the_primary(self):
+        assert claude_runner.describe_model("claude-primary-1") == "claude-primary-1"
+        assert claude_runner.describe_model("claude-primary-1", ()) == "claude-primary-1"
+
+    def test_a_fallback_is_named_with_the_primary(self):
+        assert (
+            claude_runner.describe_model("claude-primary-1", ("claude-haiku-5-5",))
+            == "claude-haiku-5-5 (fallback from claude-primary-1)"
+        )
+
+    def test_several_fallbacks_are_listed(self):
+        assert (
+            claude_runner.describe_model("p", ["a", "b"]) == "a, b (fallback from p)"
+        )
 
 
 class TestBuildEnv:

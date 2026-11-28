@@ -10,7 +10,7 @@ existing tests.
 from datetime import date
 
 from src.charts.price_comparison import generate_price_comparison
-from src.claude_runner import get_model
+from src.claude_runner import describe_model, get_model, record_fallbacks
 from src.config import CONFIG
 from src.constants import (
     BRIEFING_CHART_PERIOD,
@@ -116,12 +116,20 @@ def _briefing_md(ctx) -> str:
     return render_document_markdown(ctx.results["generate"])
 
 
+def _model_label(ctx) -> str:
+    """The model that answered, naming any fallback the CLI switched to (#532)."""
+    used = getattr(ctx.results["generate"], "fallback_models", ())
+    return describe_model(get_model(), used if isinstance(used, tuple) else ())
+
+
 def step_generate(ctx) -> BriefingDocument:
     """The briefing as IR (#513); deliveries render it on the way out."""
     logger.info("generating briefing (WebSearch)...")
     fx, fx_change_pct = ctx.results["fx"]
     stocks, quotes = ctx.results["stocks"]
-    doc = generate_briefing_document(stocks, CONFIG, fx, quotes=quotes, fx_change_pct=fx_change_pct)
+    with record_fallbacks() as fallbacks:
+        doc = generate_briefing_document(stocks, CONFIG, fx, quotes=quotes, fx_change_pct=fx_change_pct)
+    doc.set_fallback_models(fallbacks.models)
     briefing = render_document_markdown(doc)
     logger.debug("briefing generated (length=%d)", len(briefing))
 
@@ -235,7 +243,7 @@ def skip_notion(ctx) -> bool:
 def step_deliver_notion(ctx) -> str | None:
     logger.info("creating Notion page...")
     briefing = _briefing_md(ctx)
-    footer = f"---\nModel: {get_model()}"
+    footer = f"---\nModel: {_model_label(ctx)}"
     notion_text = f"{briefing}\n\n{footer}"
     metrics = extract_briefing_metrics(briefing, CONFIG.portfolio.tickers)
     page = dict(

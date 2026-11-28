@@ -4,6 +4,9 @@ import shutil
 import subprocess
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -293,6 +296,71 @@ def _warn_if_fell_back(result: _StreamResult, model: str, label: str) -> None:
         )
 
 
+class FallbackReport:
+    """The models the claude CLI switched to while a ``record_fallbacks`` scope was open.
+
+    ``run_claude`` returns only text, so which model actually answered has no
+    other way out of it. Appends come from worker threads, hence the lock.
+    """
+
+    def __init__(self, parent: "FallbackReport | None" = None) -> None:
+        self._models: list[str] = []
+        self._lock = threading.Lock()
+        self._parent = parent
+
+    def add(self, models: tuple[str, ...]) -> None:
+        with self._lock:
+            for model in models:
+                if model not in self._models:
+                    self._models.append(model)
+        if self._parent is not None:
+            self._parent.add(models)
+
+    @property
+    def models(self) -> tuple[str, ...]:
+        """Distinct fallback models in the order they were first used."""
+        with self._lock:
+            return tuple(self._models)
+
+
+# Context-local, so two runs in one process (a briefing and a chat answer in the
+# web server) never see each other's fallbacks. Threads started inside a scope
+# do not inherit it on their own; see ``generator.briefing._submit``.
+_fallback_report: ContextVar["FallbackReport | None"] = ContextVar("claude_fallback_report", default=None)
+
+
+@contextmanager
+def record_fallbacks() -> Iterator[FallbackReport]:
+    """Collect the fallback models used by every ``run_claude`` call made inside.
+
+    Scopes nest: an inner scope also reports to the one around it.
+    """
+    report = FallbackReport(parent=_fallback_report.get())
+    token = _fallback_report.set(report)
+    try:
+        yield report
+    finally:
+        _fallback_report.reset(token)
+
+
+def describe_model(primary: str, fallbacks: tuple[str, ...] | list[str] = ()) -> str:
+    """Name the model(s) that answered, e.g. for a footer or a log line.
+
+    Without a fallback this is just ``primary``; otherwise
+    ``claude-haiku-5-5 (fallback from <primary>)``.
+    """
+    if not fallbacks:
+        return primary
+    return f"{', '.join(fallbacks)} (fallback from {primary})"
+
+
+def _record_fallbacks(result: _StreamResult) -> None:
+    used = getattr(result, "fallback_models", ())
+    report = _fallback_report.get()
+    if report is not None and isinstance(used, tuple) and used:
+        report.add(used)
+
+
 def _backoff_delay(attempt: int) -> float:
     """Return the seconds to wait before the ``attempt``-th retry (1-indexed)."""
     return RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** (attempt - 1))
@@ -396,6 +464,7 @@ def run_claude(
         if result.returncode == 0:
             logger.info("claude CLI done: %s (%d chars)", label, len(result.stdout))
             _warn_if_fell_back(result, model, label)
+            _record_fallbacks(result)
             return _parse_and_log_usage(result.stdout, label, structured=json_schema is not None)
 
         logger.error(
