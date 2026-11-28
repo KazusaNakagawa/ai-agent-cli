@@ -89,6 +89,31 @@ price field, and no other pricing endpoint exists. The table is therefore
 hand-maintained, and [`src/rate_check.py`](../../apps/python/src/rate_check.py)
 is what stops that from failing silently.
 
+**Why the table is not auto-updated from the pricing doc either.** The pricing doc
+does have a Markdown version, and `--check-upstream` already parses it
+(`parse_pricing_table`, `diff_upstream`), so writing the table from it is technically
+possible. It was rejected on purpose. The core argument: **a missing rate is
+detectable, a wrong rate is not.** A model with no entry costs $0 and is caught by
+`rate_check` — the daily `model-rates` workflow fails, as it did on 2026-10-28 and
+2026-10-29 for `claude-haiku-5-5` (#528). A wrongly auto-written rate produces a
+plausible number that nothing flags, and the drift check compares against a
+5-minute/1-hour cache-write bracket, so small errors pass.
+
+Concrete ways an auto-writer would go wrong, observed in the pricing doc at the time of
+writing:
+
+| Risk | What the doc actually does |
+|---|---|
+| Picking up a row from the wrong table | `Claude Haiku 5.5` appears in both `## Model pricing` and `### Batch processing`; the batch row is half price ($0.05 / MTok input) |
+| Tiered pricing | Haiku 5.5 charges 5x once the prompt exceeds 100k tokens; the table holds one rate set per model, so someone has to choose a tier |
+| Conditional multipliers | `inference_geo` (US-only inference) applies 1.1x to every category; which rate applies depends on prose outside the tables |
+| Rewriting history | `usage_monitor.py` recomputes cost from transcripts with the *current* table on every view, so auto-applying a price change re-prices all past usage |
+| Silent format changes | The doc is not a versioned API; a renamed column could make the parser read the wrong one without failing |
+
+A possible follow-up is a semi-automatic mode that opens a PR with the proposed diff for
+human review, never writing the table directly. `--check-upstream` itself stays
+report-only.
+
 Cache writes are billed by TTL: a 1-hour write costs **2x** input where a
 5-minute write costs 1.25x. `usage_cost()` splits
 `cache_creation_input_tokens` using the `usage.cache_creation` breakdown that
