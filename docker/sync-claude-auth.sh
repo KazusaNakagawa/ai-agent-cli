@@ -31,7 +31,8 @@ if ! creds="$(read_credentials)" || [ -z "$creds" ]; then
   exit 1
 fi
 
-# Optional sanity check (needs python3): valid JSON, and the access token not
+# Optional sanity check (needs python3): the expected JSON with an access and a
+# refresh token (without them the CLI only says "Not logged in"), and the access token not
 # yet expired. An expired token is still copied — the CLI refreshes it with the
 # refresh token — but say so, because a refresh inside the container is the one
 # thing this setup has not been verified to survive (see docs/guides/docker.md).
@@ -40,6 +41,8 @@ if command -v python3 >/dev/null 2>&1; then
 import json, sys, time
 try:
     oauth = json.load(sys.stdin)["claudeAiOauth"]
+    if not (oauth.get("accessToken") and oauth.get("refreshToken")):
+        raise KeyError("token")
 except Exception:
     print("invalid"); raise SystemExit
 exp = oauth.get("expiresAt")
@@ -47,7 +50,7 @@ print("expired" if isinstance(exp, (int, float)) and exp / 1000 < time.time() el
 ')"
   case "$status" in
     invalid)
-      echo "sync-claude-auth: the stored login is not the expected JSON; not copying it." >&2
+      echo "sync-claude-auth: the stored login is not the expected JSON (no OAuth access/refresh token); not copying it." >&2
       exit 1 ;;
     expired)
       echo "sync-claude-auth: the access token has expired. Copying anyway; if requests fail," >&2

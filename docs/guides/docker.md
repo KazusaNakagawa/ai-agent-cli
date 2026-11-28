@@ -120,7 +120,13 @@ three substitutions, listed below; run with the capability set from `compose.yam
   login and tries to use it. With a fake token it ends in "OAuth session expired and could
   not be refreshed", not "Not logged in". Whether a *real* login is accepted is not proven.
 
-Not covered by that run, because of the sandbox: `apt-get` (the network policy blocked
+The `docker` workflow (`.github/workflows/docker.yml`) repeats the build and boot on every
+relevant PR with the real `Dockerfile` and `compose.yaml` — including the `apt` and `uv`
+layers — and checks the published port, that the runner's LAN address is refused, the host
+guard, the privilege drop, the installed login, Python 3.11-3.13, the `claude` CLI and the CJK
+fonts. It never calls Claude, so a real login is still the part only a macOS host can prove.
+
+Not covered by the manual sandbox run, because of the sandbox: `apt-get` (the network policy blocked
 `deb.debian.org`) was replaced by copying Python 3.11 and its libraries from the official
 `python` image, so the `python3` / `fonts-noto-cjk` install line is untested; `uv` came from the
 host instead of `ghcr.io/astral-sh/uv` (blocked), so that pull is untested; and the container
