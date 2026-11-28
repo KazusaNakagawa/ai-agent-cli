@@ -306,12 +306,16 @@ class FallbackReport:
     hence the lock.
     """
 
-    def __init__(self, parent: "FallbackReport | None" = None) -> None:
+    def __init__(self, parent: "FallbackReport | None" = None, *, deferred: bool = False) -> None:
         self._models: list[str] = []
         self._calls = 0
         self._fallback_calls = 0
         self._lock = threading.Lock()
         self._parent = parent
+        # A deferred report keeps its calls to itself until ``commit()``, for
+        # callers that may still reject a response after run_claude returned it.
+        self._deferred = deferred
+        self._log: list[tuple[str, ...]] = []
 
     def add_call(self, models: tuple[str, ...]) -> None:
         """Record one successful call and the fallback models it switched to."""
@@ -322,8 +326,20 @@ class FallbackReport:
             for model in models:
                 if model not in self._models:
                     self._models.append(model)
-        if self._parent is not None:
+            self._log.append(models)
+        if self._parent is not None and not self._deferred:
             self._parent.add_call(models)
+
+    def commit(self) -> None:
+        """Hand the calls of a deferred report to the enclosing scope (no-op otherwise)."""
+        with self._lock:
+            if not self._deferred:
+                return
+            self._deferred = False
+            log = list(self._log)
+        if self._parent is not None:
+            for models in log:
+                self._parent.add_call(models)
 
     @property
     def models(self) -> tuple[str, ...]:
@@ -351,6 +367,21 @@ def record_fallbacks() -> Iterator[FallbackReport]:
     Scopes nest: an inner scope also reports to the one around it.
     """
     report = FallbackReport(parent=_fallback_report.get())
+    token = _fallback_report.set(report)
+    try:
+        yield report
+    finally:
+        _fallback_report.reset(token)
+
+
+@contextmanager
+def tentative_fallbacks() -> Iterator[FallbackReport]:
+    """Like ``record_fallbacks``, but the enclosing scope only sees the calls after ``commit()``.
+
+    Use it around a call whose response the caller may still reject (schema
+    validation, retry), so a discarded attempt leaves no fallback model behind.
+    """
+    report = FallbackReport(parent=_fallback_report.get(), deferred=True)
     token = _fallback_report.set(report)
     try:
         yield report

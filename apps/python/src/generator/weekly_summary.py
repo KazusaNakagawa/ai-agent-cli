@@ -42,5 +42,8 @@ def generate_weekly_summary(pages: list[dict]) -> str:
     with record_fallbacks() as fallbacks:
         summary = run_claude(prompt, "週次サマリー生成", TIMEOUT_WEEKLY_SUMMARY)
     # The line above names the model asked for; this one names the model that answered.
-    logger.info("weekly summary generated (model=%s)", describe_model(get_model(), fallbacks.models, partial=fallbacks.partial))
+    logger.info(
+        "weekly summary generated (model=%s)",
+        describe_model(get_model(), fallbacks.models, partial=fallbacks.partial),
+    )
     return summary

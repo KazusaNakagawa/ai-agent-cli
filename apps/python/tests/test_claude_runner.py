@@ -667,6 +667,36 @@ class TestRecordFallbacks:
         assert inner.models == ("claude-backup-1",)
         assert outer.models == ("claude-backup-1",)
 
+    def test_a_tentative_scope_reports_to_the_outer_one_only_on_commit(self):
+        with claude_runner.record_fallbacks() as outer:
+            with claude_runner.tentative_fallbacks() as attempt:
+                self._call(("claude-rejected-1",))
+            assert attempt.models == ("claude-rejected-1",)
+            assert outer.models == ()  # never committed: the attempt was discarded
+            with claude_runner.tentative_fallbacks() as attempt:
+                self._call(("claude-kept-1",))
+                attempt.commit()
+        assert outer.models == ("claude-kept-1",)
+
+    def test_a_rejected_validation_attempt_leaves_no_fallback_behind(self):
+        """The first attempt falls back and fails validation; the retry on the primary is accepted."""
+        from src.generator import briefing
+
+        outputs = iter([("claude-rejected-1", "not json"), ((), json.dumps({"ok": 1}))])
+
+        def fake_run_claude(prompt, label, timeout, **kwargs):
+            models, raw = next(outputs)
+            report = claude_runner._fallback_report.get()
+            report.add_call(models)
+            return raw
+
+        with patch("src.generator.briefing.run_claude", side_effect=fake_run_claude):
+            with claude_runner.record_fallbacks() as report:
+                result = briefing._generate_validated("p", "label", 1, {}, lambda d: d)
+        assert result == {"ok": 1}
+        assert report.models == ()
+        assert report.partial is False
+
     def test_a_thread_needs_the_copied_context_to_report(self):
         """ThreadPoolExecutor does not carry context variables, hence generator.briefing._submit."""
         from concurrent.futures import ThreadPoolExecutor

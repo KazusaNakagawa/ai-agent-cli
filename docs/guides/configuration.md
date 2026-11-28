@@ -60,7 +60,8 @@ on how many of them fell back:
 | only some calls fell back | `Model: <model> (some calls fell back to <fallback>)` |
 
 Several fallbacks are listed in the order they were first used. Only calls whose response
-was accepted count. The weekly summary's `weekly summary generated (model=...)` log line
+was accepted count: a BriefScript attempt that fails validation and is retried leaves no fallback
+behind. The wording is per run, not per call, so it does not say which section fell back. The weekly summary's `weekly summary generated (model=...)` log line
 uses the same wording. These are the only places that name the model; the Discord message
 and the saved Markdown do not.
 
