@@ -27,8 +27,10 @@ test("probe URLs for every accepted --host spelling are valid", () => {
   }
 })
 
-test("displayHost shows localhost for loopback IPv4 and wildcard binds, the address otherwise", () => {
-  for (const h of ["127.0.0.1", "127.5.5.5", "0.0.0.0", "::", "localhost"]) assert.equal(displayHost(h), "localhost", h)
+test("displayHost shows localhost for 127.0.0.1 and wildcard binds, the address otherwise", () => {
+  for (const h of ["127.0.0.1", "0.0.0.0", "::", "localhost"]) assert.equal(displayHost(h), "localhost", h)
+  // Another 127.x address is not answered on 127.0.0.1, so it must be shown as bound.
+  assert.equal(displayHost("127.5.5.5"), "127.5.5.5")
   assert.equal(displayHost("::1"), "[::1]")
   assert.equal(displayHost("192.168.1.5"), "192.168.1.5")
 })

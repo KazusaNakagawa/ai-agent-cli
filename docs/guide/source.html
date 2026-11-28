@@ -77,7 +77,7 @@ bin/workflow.sh run daily --dry-run   # 認証情報の確認だけ</code></pre>
 <p>どれも <code>apps/python/bin/</code> にある本体を呼び出す薄いラッパーです。全コマンドの一覧は <a href="https://github.com/KazusaNakagawa/ai-agent-cli#readme">README</a> にあります。</p>
 
 <h2 id="schedule">毎朝自動で実行する</h2>
-<p>macOS では launchd または cron で、<code>bin/workflow.sh run daily</code> を毎朝決まった時刻に実行できます。設定手順はリポジトリの <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/launchd-setup.md">launchd-setup.md</a> と <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/cron-setup.md">cron-setup.md</a> を参照してください。</p>
+<p>macOS では launchd、Linux などでは cron で、<code>bin/workflow.sh run daily</code> を毎朝決まった時刻に実行できます。設定手順はリポジトリの <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/launchd-setup.md">launchd-setup.md</a> と <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/cron-setup.md">cron-setup.md</a> を参照してください。</p>
 <div class="callout callout--warn">
   <span class="callout__title">スリープ中の Mac は、どのスケジューラでも動かせません。</span>
   <p>無人で実行するには、実行時刻に Mac が起きている必要があります。つまり、<strong>蓋を開けたまま AC アダプタにつないでおく</strong>必要があります。蓋を閉じると、電源の種類に関係なくスリープします。</p>

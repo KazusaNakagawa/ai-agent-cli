@@ -1,9 +1,9 @@
 # Keep personal data, secrets and build output out of the image context.
 .git
 .github
-.env
-.env.*
-!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 **/node_modules
 **/.next
 **/.next-pack

@@ -33,7 +33,12 @@ set -- node /opt/brief-lens/bin/brief-lens.mjs --host 0.0.0.0 --no-browser --hom
 if [ "$(id -u)" = 0 ]; then
   # Hand the copied files to the app user, then give up root and every
   # capability before anything else runs.
-  chown "$APP_USER:$APP_USER" "$CLAUDE_HOME" "$CLAUDE_HOME/.credentials.json" "$HOME/.claude.json" 2>/dev/null || true
+  # A file that is absent is skipped; a chown that fails is reported, since the app
+  # would otherwise start and then fail with "Not logged in" and no hint in the log.
+  for path in "$CLAUDE_HOME" "$CLAUDE_HOME/.credentials.json" "$HOME/.claude.json"; do
+    [ -e "$path" ] || continue
+    chown "$APP_USER:$APP_USER" "$path" || echo "entrypoint: could not hand $path to $APP_USER" >&2
+  done
   exec setpriv --reuid="$APP_USER" --regid="$APP_USER" --init-groups \
     --inh-caps=-all --bounding-set=-all --no-new-privs "$@"
 fi

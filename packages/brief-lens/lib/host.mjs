@@ -44,11 +44,12 @@ export function urlHost(host) {
 }
 
 /**
- * Address to show the user. Wildcard and IPv4 loopback binds are reached as
- * `localhost` (what the Web UI's host check expects); anything else is shown as bound.
+ * Address to show the user. Wildcard binds and 127.0.0.1 answer on `localhost`
+ * (what the Web UI's host check expects); anything else, including another
+ * 127.x.y.z address that 127.0.0.1 does not reach, is shown as bound.
  */
 export function displayHost(host) {
   const h = normalizeHost(host)
-  if (h === "0.0.0.0" || h === "::" || h === "localhost" || (isIPv4(h) && h.startsWith("127."))) return "localhost"
+  if (h === "0.0.0.0" || h === "::" || h === "localhost" || h === "127.0.0.1") return "localhost"
   return urlHost(h)
 }

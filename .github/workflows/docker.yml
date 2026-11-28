@@ -93,6 +93,7 @@ jobs:
         if: steps.changed.outputs.changed == 'true'
         run: |
           docker compose exec -T brief-lens sh -c '
+            seen=0
             for pid in $(ls /proc | grep -E "^[0-9]+$"); do
               [ "$pid" = "$$" ] && continue
               cmd=$(tr "\0" " " < /proc/$pid/cmdline 2>/dev/null)
@@ -101,9 +102,12 @@ jobs:
                   uid=$(awk "/^Uid/{print \$2}" /proc/$pid/status)
                   cap=$(awk "/^CapEff/{print \$2}" /proc/$pid/status)
                   echo "pid=$pid uid=$uid cap=$cap"
+                  seen=$((seen + 1))
                   [ "$uid" = 1000 ] && [ "$cap" = 0000000000000000 ] || exit 1 ;;
               esac
-            done'
+            done
+            # Launcher, uvicorn and next-server: a rename must not turn this check into a no-op.
+            [ "$seen" -ge 3 ] || { echo "only $seen app processes matched, expected 3+"; exit 1; }'
 
       - name: Login installed and tools present
         if: steps.changed.outputs.changed == 'true'

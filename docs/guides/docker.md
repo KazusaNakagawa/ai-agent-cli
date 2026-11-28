@@ -144,9 +144,9 @@ used host networking, so the `127.0.0.1:3000:3000` publish was not exercised. Th
 `--host` option, the compose guards and the shell scripts are also covered by unit tests and
 by running them against a throwaway `HOME`.
 
-Confirmed by the `docker` workflow on a Linux runner (first green run on PR #623): the image
-builds as written (`apt` packages and the `uv` image pull included), the Web UI answers on the
-published loopback port, and the runner's LAN address is refused.
+The `docker` workflow checks this on a Linux runner: the image builds as written (`apt`
+packages and the `uv` image pull included), the Web UI answers on the published loopback
+port, and the runner's LAN address is refused.
 
 Still to prove on a macOS host with Docker Desktop:
 
