@@ -118,8 +118,8 @@ def _briefing_md(ctx) -> str:
 
 def _model_label(ctx) -> str:
     """The model that answered, naming any fallback the CLI switched to (#532)."""
-    used = getattr(ctx.results["generate"], "fallback_models", ())
-    return describe_model(get_model(), used if isinstance(used, tuple) else ())
+    doc = ctx.results["generate"]
+    return describe_model(get_model(), doc.fallback_models, partial=doc.fallback_partial)
 
 
 def step_generate(ctx) -> BriefingDocument:
@@ -129,7 +129,7 @@ def step_generate(ctx) -> BriefingDocument:
     stocks, quotes = ctx.results["stocks"]
     with record_fallbacks() as fallbacks:
         doc = generate_briefing_document(stocks, CONFIG, fx, quotes=quotes, fx_change_pct=fx_change_pct)
-    doc.set_fallback_models(fallbacks.models)
+    doc.set_fallbacks(fallbacks.models, fallbacks.partial)
     briefing = render_document_markdown(doc)
     logger.debug("briefing generated (length=%d)", len(briefing))
 

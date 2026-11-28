@@ -49,11 +49,20 @@ per-model usage breakdown, is the evidence: the CLI also uses helper models
 internally, so a Haiku id in the usage breakdown does not mean a fallback
 happened.
 
-The briefing's Notion footer names the model that actually answered. Without a
-fallback it reads `Model: <model>`; if any call of that run fell back it reads
-`Model: <fallback> (fallback from <model>)` (several fallbacks are listed in the
-order they were first used). The weekly summary's `weekly summary generated
-(model=...)` log line follows the same wording.
+The briefing's Notion footer names the model that actually answered. A briefing is
+several `claude` calls (main analysis, sector sweep, holdings), so the wording depends
+on how many of them fell back:
+
+| What happened | Footer |
+|---|---|
+| no call fell back | `Model: <model>` |
+| every call fell back | `Model: <fallback> (fallback from <model>)` |
+| only some calls fell back | `Model: <model> (some calls fell back to <fallback>)` |
+
+Several fallbacks are listed in the order they were first used. Only calls whose response
+was accepted count. The weekly summary's `weekly summary generated (model=...)` log line
+uses the same wording. These are the only places that name the model; the Discord message
+and the saved Markdown do not.
 
 ## `prompts/briefing.md`
 

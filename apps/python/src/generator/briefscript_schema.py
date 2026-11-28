@@ -354,14 +354,21 @@ class BriefingDocument(BaseModel):
     # How this run was produced, not part of the briefing: kept out of the
     # schema and the serialized form, and read by the deliveries for the footer.
     _fallback_models: tuple[str, ...] = PrivateAttr(default=())
+    _fallback_partial: bool = PrivateAttr(default=False)
 
     @property
     def fallback_models(self) -> tuple[str, ...]:
         """Models the claude CLI fell back to while generating this briefing."""
         return self._fallback_models
 
-    def set_fallback_models(self, models: tuple[str, ...]) -> None:
+    @property
+    def fallback_partial(self) -> bool:
+        """True when only some of the generation calls fell back."""
+        return self._fallback_partial
+
+    def set_fallbacks(self, models: tuple[str, ...], partial: bool = False) -> None:
         self._fallback_models = tuple(models)
+        self._fallback_partial = partial
 
 
 def _fold(name: str, *, upper: bool) -> str:

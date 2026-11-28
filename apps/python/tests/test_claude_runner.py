@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import threading
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -608,17 +609,27 @@ class TestRecordFallbacks:
     """``record_fallbacks`` surfaces which model answered without changing run_claude's str result (#532)."""
 
     @staticmethod
-    def _call(fallback_models=(), returncode=0):
+    @contextmanager
+    def _fake_cli(models_by_label=None, default=(), returncode=0):
+        """Patch the CLI layer once. ``patch`` swaps module globals, so it must not be
+        entered from several threads at once (restores would land out of order)."""
+        models_by_label = models_by_label or {}
+
         def fake_stream(cmd, env, timeout, label):
             return claude_runner._StreamResult(
                 returncode=returncode, stdout=json.dumps({"result": "ok"}), stderr="",
-                fallback_models=fallback_models,
+                fallback_models=models_by_label.get(label, default),
             )
 
         with patch("src.claude_runner.shutil.which", return_value="/usr/bin/claude"):
             with patch("src.claude_runner._stream_claude", side_effect=fake_stream):
                 with patch("src.claude_runner.log_usage_from_result", return_value=True):
-                    return run_claude("prompt", "test", max_attempts=1)
+                    yield
+
+    @classmethod
+    def _call(cls, fallback_models=(), returncode=0, label="test"):
+        with cls._fake_cli(default=fallback_models, returncode=returncode):
+            return run_claude("prompt", label, max_attempts=1)
 
     def test_collects_the_models_the_cli_switched_to(self):
         with claude_runner.record_fallbacks() as report:
@@ -674,21 +685,60 @@ class TestRecordFallbacks:
         import contextvars
 
         reports = {}
+        barrier = threading.Barrier(2)
 
-        def run(name, models):
+        def run(name):
             with claude_runner.record_fallbacks() as report:
-                self._call(models)
+                barrier.wait(timeout=10)  # both scopes are open before either calls
+                run_claude("prompt", name, max_attempts=1)
+                barrier.wait(timeout=10)  # and both calls are done before either closes
             reports[name] = report.models
 
-        threads = [
-            threading.Thread(target=contextvars.copy_context().run, args=(run, "a", ("claude-a-1",))),
-            threading.Thread(target=contextvars.copy_context().run, args=(run, "b", ())),
-        ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        with self._fake_cli({"a": ("claude-a-1",)}):
+            threads = [
+                threading.Thread(target=contextvars.copy_context().run, args=(run, name))
+                for name in ("a", "b")
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
         assert reports == {"a": ("claude-a-1",), "b": ()}
+
+    def test_a_response_that_fails_to_parse_is_not_recorded(self):
+        """The call exits 0 but its output is rejected, so its fallback must not count."""
+        with claude_runner.record_fallbacks() as report:
+            with patch("src.claude_runner._parse_and_log_usage", side_effect=ValueError("bad output")):
+                with pytest.raises(ValueError):
+                    self._call(("claude-backup-1",))
+        assert report.models == ()
+
+    def test_some_calls_falling_back_is_partial(self):
+        with claude_runner.record_fallbacks() as report:
+            self._call(())
+            self._call(("claude-backup-1",))
+        assert report.models == ("claude-backup-1",)
+        assert report.partial is True
+
+    def test_every_call_falling_back_is_not_partial(self):
+        with claude_runner.record_fallbacks() as report:
+            self._call(("claude-backup-1",))
+            self._call(("claude-backup-1",))
+        assert report.partial is False
+
+    def test_no_fallback_is_not_partial(self):
+        with claude_runner.record_fallbacks() as report:
+            self._call(())
+        assert report.partial is False
+
+    def test_a_list_of_fallback_models_is_not_dropped(self):
+        """get_fallback_models() returns a list; only a tuple used to be accepted."""
+        result = claude_runner._StreamResult(
+            returncode=0, stdout="", stderr="", fallback_models=["claude-backup-1"],
+        )
+        with claude_runner.record_fallbacks() as report:
+            claude_runner._record_call(result)
+        assert report.models == ("claude-backup-1",)
 
 
 class TestDescribeModel:
@@ -706,6 +756,15 @@ class TestDescribeModel:
         assert (
             claude_runner.describe_model("p", ["a", "b"]) == "a, b (fallback from p)"
         )
+
+    def test_a_partial_fallback_does_not_claim_the_whole_run(self):
+        assert (
+            claude_runner.describe_model("claude-primary-1", ("claude-haiku-5-5",), partial=True)
+            == "claude-primary-1 (some calls fell back to claude-haiku-5-5)"
+        )
+
+    def test_partial_without_a_fallback_is_just_the_primary(self):
+        assert claude_runner.describe_model("p", (), partial=True) == "p"
 
 
 class TestBuildEnv:

@@ -146,7 +146,7 @@ class TestGenerateWeeklySummary:
 
         def fake_run(*args, **kwargs):
             # Stand in for run_claude noticing a CLI fallback inside the scope.
-            claude_runner._fallback_report.get().add(("claude-backup-1",))
+            claude_runner._fallback_report.get().add_call(("claude-backup-1",))
             return "summary"
 
         with (
