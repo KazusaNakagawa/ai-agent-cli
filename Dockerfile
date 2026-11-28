@@ -45,6 +45,7 @@ ENV UV_PYTHON_PREFERENCE=only-system \
     UV_PYTHON_DOWNLOADS=never \
     UV_CACHE_DIR=/data/runtime/uv-cache \
     BRIEF_LENS_HOME=/data \
+    BRIEF_LENS_RUNTIME=docker \
     CLAUDE_CODE_DISABLE_AUTOUPDATE=1
 
 # The entrypoint starts as root only to read the mounted credentials (their owner

@@ -10,6 +10,7 @@ import { JobStateProvider } from "@/lib/jobStore"
 import { JournalChatJobStateProvider } from "@/lib/journalChatJobStore"
 import { JournalChatStateProvider } from "@/lib/journalChatStore"
 import { JournalNavProvider } from "@/lib/journalNavStore"
+import { isDockerRuntime } from "@/lib/runtime"
 import { WorkspaceStateProvider } from "@/lib/workspaceStore"
 
 async function isOnboarded(): Promise<boolean> {
@@ -42,7 +43,7 @@ export default async function MainLayout({
                 <WorkspaceStateProvider>
                   <JournalChatBridge />
                   <div className="flex h-dvh overflow-hidden">
-                    <Sidebar />
+                    <Sidebar inDocker={isDockerRuntime(process.env)} />
                     <main className="flex flex-1 flex-col overflow-hidden">
                       <ServiceTabs />
                       <div className="flex-1 overflow-y-auto p-8">{children}</div>

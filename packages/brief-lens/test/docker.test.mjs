@@ -76,3 +76,7 @@ test("compose adds back only the capabilities the entrypoint needs", { skip }, (
   }
   assert.deepEqual(added.sort(), ["CHOWN", "DAC_OVERRIDE", "SETGID", "SETUID"])
 })
+
+test("the image marks itself as a container for the Web UI badge", { skip }, () => {
+  assert.match(readFileSync(dockerfilePath, "utf8"), /^(ENV|\s)[^#]*\bBRIEF_LENS_RUNTIME=docker\b/m)
+})
