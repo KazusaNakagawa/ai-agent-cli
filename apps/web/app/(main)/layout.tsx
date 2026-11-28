@@ -43,9 +43,9 @@ export default async function MainLayout({
                 <WorkspaceStateProvider>
                   <JournalChatBridge />
                   <div className="flex h-dvh overflow-hidden">
-                    <Sidebar inDocker={isDockerRuntime(process.env)} />
+                    <Sidebar />
                     <main className="flex flex-1 flex-col overflow-hidden">
-                      <ServiceTabs />
+                      <ServiceTabs inDocker={isDockerRuntime(process.env)} />
                       <div className="flex-1 overflow-y-auto p-8">{children}</div>
                     </main>
                   </div>

@@ -1,7 +1,6 @@
 "use client"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Container } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 
 import { JournalSidebarList } from "@/components/journal/JournalSidebarList"
@@ -21,7 +20,7 @@ import {
 import { serviceForPath } from "@/lib/services"
 import { cn } from "@/lib/utils"
 
-export function Sidebar({ inDocker = false }: { inDocker?: boolean }) {
+export function Sidebar() {
   const pathname = usePathname()
   const items = serviceForPath(pathname).items
   const onWorkspace =
@@ -128,20 +127,6 @@ export function Sidebar({ inDocker = false }: { inDocker?: boolean }) {
           <span aria-hidden data-sidebar-toggle-icon />
         </button>
       </div>
-
-      {inDocker && (
-        // Only the icon is left when the rail is collapsed.
-        <div
-          data-testid="runtime-badge"
-          data-sidebar-row
-          title="Running in Docker"
-          className="-mt-2 flex shrink-0 items-center gap-1 self-start rounded-md border px-2 py-0.5 text-xs text-muted-foreground"
-        >
-          <Container aria-hidden className="h-3.5 w-3.5 shrink-0" />
-          <span data-sidebar-label>Docker</span>
-          <span className="sr-only">Running in Docker</span>
-        </div>
-      )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
       <section className="flex shrink-0 flex-col gap-1">

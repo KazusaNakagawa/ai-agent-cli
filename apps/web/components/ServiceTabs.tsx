@@ -1,11 +1,12 @@
 "use client"
+import { Container } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
 import { SERVICES, serviceForPath } from "@/lib/services"
 import { cn } from "@/lib/utils"
 
-export function ServiceTabs() {
+export function ServiceTabs({ inDocker = false }: { inDocker?: boolean }) {
   const pathname = usePathname()
   const activeId = serviceForPath(pathname).id
 
@@ -35,6 +36,16 @@ export function ServiceTabs() {
           </Link>
         )
       })}
+      {inDocker && (
+        <span
+          data-testid="runtime-badge"
+          title="Running in Docker"
+          className="ml-auto flex items-center px-1 text-muted-foreground"
+        >
+          <Container aria-hidden className="h-4 w-4" />
+          <span className="sr-only">Running in Docker</span>
+        </span>
+      )}
     </nav>
   )
 }
