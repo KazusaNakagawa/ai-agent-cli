@@ -90,8 +90,10 @@ class SectorNote(BaseModel):
     model_config = _STRICT
 
     sector: str = Field(min_length=1)
-    # Empty means no material move today; the renderer says so.
     claims: list[Claim] = Field(default_factory=list, max_length=3)
+    # Why claims is empty (#613); ignored when there are claims. Only an explicit
+    # "quiet" is reported as a quiet day, so a missing value is not a retry.
+    empty_reason: Literal["quiet", "unverified"] | None = None
     related_tickers: list[str] = Field(default_factory=list, max_length=5)
 
 

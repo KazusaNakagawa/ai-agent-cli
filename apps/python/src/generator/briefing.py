@@ -206,13 +206,16 @@ def _watch_sector_names(config: BriefingConfig) -> list[str]:
     ))
 
 
-def generate_sectors_section(stocks: str, config: BriefingConfig) -> SectorsSection:
+def generate_sectors_section(
+    stocks: str, config: BriefingConfig, today: date | None = None,
+) -> SectorsSection:
     """Run the sector sweep as validated BriefScript (#514)."""
     sectors = _watch_sector_names(config)
     prompt = render(
         "briefing_sectors",
         watch_sectors=build_watch_sectors_context(config),
         stocks=stocks,
+        today=(today or date.today()).isoformat(),
     )
     return _generate_validated(
         prompt, "セクタースイープ", TIMEOUT_BRIEFING_SECTORS, sectors_json_schema(sectors),
@@ -390,7 +393,7 @@ def generate_briefing_document(
             )
         futures = {
             main: "main",
-            executor.submit(generate_sectors_section, stocks, config): "sectors",
+            executor.submit(generate_sectors_section, stocks, config, today): "sectors",
         }
         if briefscript:
             futures[executor.submit(generate_holdings, stocks, config)] = "holdings"

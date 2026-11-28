@@ -100,11 +100,19 @@ class TestExistingTemplates:
             assert f"${name}" not in out
 
     def test_briefing_sectors_renders_all_placeholders(self):
-        out = render("briefing_sectors", watch_sectors="SECT", stocks="STK")
+        out = render("briefing_sectors", watch_sectors="SECT", stocks="STK", today="2026-01-02")
         assert "SECT" in out
         assert "STK" in out
         assert "$watch_sectors" not in out
         assert "$stocks" not in out
+        assert "2026-01-02" in out and "$today" not in out
+
+    def test_sector_prompts_cover_closed_markets_and_uncovered_sectors(self):
+        # A Monday run must still reach the last session before the weekend.
+        sweep = render("briefing_sectors", watch_sectors="S", stocks="K", today="2026-01-05")
+        assert "直前の取引日" in sweep and "直近 3 日" not in sweep
+        api = render("briefing_sectors_api", watch_sectors="S", stocks="K", context="C")
+        assert "〔未確認〕今日の動きは確認できませんでした。" in api
 
     def test_weekly_summary_renders_all_placeholders(self):
         out = render("weekly_summary", briefings="BRF", week_label="W22")

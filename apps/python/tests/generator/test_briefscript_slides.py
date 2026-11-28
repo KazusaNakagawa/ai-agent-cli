@@ -136,3 +136,15 @@ def test_model_text_cannot_split_or_style_the_deck():
 def test_max_claims_below_one_is_rejected():
     with pytest.raises(ValueError):
         render_document_slides(_full_doc(), max_claims=0)
+
+
+def test_unverified_sectors_are_not_listed_as_quiet():
+    names = ["Sec1", "Sec2"]
+    block = SectorsBlock(sectors=names, content=parse_sectors_section({"sectors": [
+        {"sector": "Sec1", "claims": [], "empty_reason": "unverified"},
+        {"sector": "Sec2", "claims": []},
+    ]}, sectors=names))
+
+    deck = render_document_slides(_doc(block))
+    assert "- 〔未確認〕今日の動きは確認できませんでした。：Sec1, Sec2" in deck
+    assert "動き限定的" not in deck

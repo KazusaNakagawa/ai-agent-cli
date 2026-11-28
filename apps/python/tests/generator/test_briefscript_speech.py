@@ -125,3 +125,18 @@ def test_empty_document_is_just_the_opening_and_close():
 def test_holdings_claim_is_spoken_once():
     speech = render_document_speech(_doc(*[_holdings("一度だけ。")]))
     assert speech.count("一度だけ。") == 1
+
+
+def test_unverified_sectors_are_not_read_as_quiet():
+    from src.generator.briefscript_schema import SectorsBlock, parse_sectors_section
+
+    names = ["Sec1", "Sec2"]
+    block = SectorsBlock(sectors=names, content=parse_sectors_section({"sectors": [
+        {"sector": "Sec1", "claims": [], "empty_reason": "unverified"},
+        {"sector": "Sec2", "claims": []},
+    ]}, sectors=names))
+
+    speech = render_document_speech(_doc(block))
+    assert "Sec1は、今日の動きを確認できませんでした。" in speech
+    assert "Sec2は、今日の動きを確認できませんでした。" in speech
+    assert "目立った動き" not in speech

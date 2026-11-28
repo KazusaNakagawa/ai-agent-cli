@@ -22,6 +22,7 @@ from src.generator.briefscript_schema import (
     MarketSnapshot,
     QuoteSnapshot,
     SectorsBlock,
+    SectorNote,
     SectorsSection,
     Source,
 )
@@ -47,7 +48,8 @@ _MISSING_NOTE = "〔未確認〕今日の材料は確認できませんでした
 _FAILED_NOTE = "〔未確認〕本日の示唆は生成できませんでした。"
 # Bullet for a sector with no claims: the model found no material move.
 _QUIET_SECTOR_NOTE = "動き限定的"
-# Bullet for a configured sector the LLM returned nothing for.
+# Bullet for a configured sector whose current news could not be confirmed:
+# either nothing was returned for it, or its empty note is not marked quiet.
 _MISSING_SECTOR_NOTE = "〔未確認〕今日の動きは確認できませんでした。"
 
 _LEADING_HASHES = re.compile(r"^\s*#+\s*")
@@ -162,6 +164,10 @@ def render_holdings_markdown(
     return "\n\n".join(blocks + _source_list(numbers, section.sources))
 
 
+def _empty_sector_note(note: SectorNote) -> str:
+    return _QUIET_SECTOR_NOTE if note.empty_reason == "quiet" else _MISSING_SECTOR_NOTE
+
+
 def render_sectors_markdown(section: SectorsSection, sectors: list[str]) -> str:
     """The sector sweep: every configured sector once, in configured order.
 
@@ -178,7 +184,7 @@ def render_sectors_markdown(section: SectorsSection, sectors: list[str]) -> str:
         if note is None:
             bullets = [f"- {_MISSING_SECTOR_NOTE}"]
         elif not note.claims:
-            bullets = [f"- {_QUIET_SECTOR_NOTE}"]
+            bullets = [f"- {_empty_sector_note(note)}"]
         else:
             bullets = [_bullet(c, numbers) for c in note.claims]
         tickers = [t for t in (_plain(x) for x in (note.related_tickers if note else ())) if t]

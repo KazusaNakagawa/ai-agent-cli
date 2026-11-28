@@ -54,7 +54,7 @@ def _sectors() -> SectorsBlock:
             {"sector": "Sec1", "claims": [
                 {"text": "投資拡大。", "confidence": "confirmed", "source_ids": ["x1"]}],
              "related_tickers": ["A", "B"]},
-            {"sector": "Sec2", "claims": []},
+            {"sector": "Sec2", "claims": [], "empty_reason": "quiet"},
         ],
         "sources": [{"id": "x1", "title": "セクター記事", "url": "https://example.com/x1"}],
     }, sectors=["Sec1", "Sec2", "Sec3"]))
@@ -222,3 +222,12 @@ def test_golden_document_matches_its_markdown_headings_and_links():
     assert _headings(blocks) == _md_headings(markdown)
     assert set(_links(blocks)) == set(_links(markdown_to_notion_blocks(markdown)))
     assert not any(re.search(r"\*\*", _plain_text(b)) for b in blocks if b["type"] != "table")
+
+
+def test_sector_without_a_quiet_mark_is_unconfirmed():
+    block = SectorsBlock(sectors=["Sec1"], content=parse_sectors_section(
+        {"sectors": [{"sector": "Sec1", "claims": [], "empty_reason": "unverified"}]},
+        sectors=["Sec1"],
+    ))
+    texts = [_plain_text(b) for b in render_document_notion(_doc(block))]
+    assert "〔未確認〕今日の動きは確認できませんでした。" in texts and "動き限定的" not in texts

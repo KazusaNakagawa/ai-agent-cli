@@ -19,7 +19,6 @@ from src.generator.briefscript_render import (
     _FAILED_NOTE,
     _MISSING_NOTE,
     _MISSING_SECTOR_NOTE,
-    _QUIET_SECTOR_NOTE,
     FX_HEADING,
     GEOPOLITICS_HEADING,
     HOLDINGS_HEADING,
@@ -27,6 +26,7 @@ from src.generator.briefscript_render import (
     SECTORS_SECTION_HEADING,
     STORIES_HEADING,
     SUMMARY_HEADING,
+    _empty_sector_note,
     _heading,
     _number_sources,
     _plain,
@@ -151,7 +151,7 @@ def _sectors_blocks(block: SectorsBlock) -> list[dict]:
         if note is None:
             blocks.append(_bullet(_text(_MISSING_SECTOR_NOTE)))
         elif not note.claims:
-            blocks.append(_bullet(_text(_QUIET_SECTOR_NOTE)))
+            blocks.append(_bullet(_text(_empty_sector_note(note))))
         else:
             blocks += _claim_bullets(note.claims, numbers, section.sources)
         tickers = [t for t in (_plain(x) for x in (note.related_tickers if note else ())) if t]
