@@ -74,7 +74,11 @@ long-lived token to manage). API-key mode stays a fallback only; compose never p
 - No secret is baked into the image; `.dockerignore` keeps personal config, `.env`,
   `input/` and `output/` out of the build context.
 - The exported login is a plaintext file on the host (mode 0600, like the CLI's own
-  file on Linux). Delete it with `rm -r ~/.brief-lens-docker/claude-auth` when done.
+  file on Linux). The container keeps a second copy in the `claude-state` volume, which
+  `docker compose down` does not delete. To remove both when done:
+  `docker compose down`, `docker volume rm brief-lens_claude-state` (this also deletes the
+  container's Claude transcripts, which the Monitor screen reads), then
+  `rm -r ~/.brief-lens-docker/claude-auth`.
 
 ## Data
 
@@ -92,11 +96,13 @@ There is no keyring in the container, so saving them from the Web UI is explaine
 unavailable (#616). Use the `.env` route instead:
 
 ```bash
-docker compose exec -T brief-lens sh -c 'umask 077; cat > /data/.env' < my.env
+docker compose exec -T -u node brief-lens sh -c 'umask 077; cat > /data/.env' < my.env
 docker compose restart
 ```
 
-`my.env` uses the variable names of [`.env.example`](../../.env.example).
+`-u node` matters: without it the file belongs to root with mode 0600 and the app
+cannot read it. `my.env` uses the variable names of [`.env.example`](../../.env.example).
+Put only the services you want the container to post to in it.
 
 ## Parity with a macOS install
 
