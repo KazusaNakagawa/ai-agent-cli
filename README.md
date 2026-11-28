@@ -99,7 +99,7 @@ This is why **manual execution is the maintainer's current schedule** rather tha
 
 ### Quick start with npx
 
-Just the Web UI, no clone — published on npm as [`brief-lens`](https://www.npmjs.com/package/brief-lens). Needs macOS or Linux, Node.js 18.18+ (19.x needs 19.8+), [uv](https://github.com/astral-sh/uv) and a logged-in [Claude Code CLI](https://claude.ai/code) on a paid Claude plan (Pro/Max).
+Just the Web UI, no clone — published on npm as [`brief-lens`](https://www.npmjs.com/package/brief-lens). Needs macOS, Node.js 18.18+ (19.x needs 19.8+), [uv](https://github.com/astral-sh/uv) and a logged-in [Claude Code CLI](https://claude.ai/code) on a paid Claude plan (Pro/Max).
 
 ```bash
 npx brief-lens            # first run sets up ~/.brief-lens and the Python backend
@@ -108,6 +108,17 @@ npx brief-lens            # first run sets up ~/.brief-lens and the Python backe
 Data lives in `~/.brief-lens/`, separate from a checkout. Options, upgrade and release steps: [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md).
 
 A screen-by-screen walkthrough (Japanese) is in the [user guide](https://kazusanakagawa.github.io/ai-agent-cli/).
+
+### Docker (for Linux)
+
+The npx install is developed and used on macOS. On Linux, run the Web UI in a container instead; it uses your host's Claude login, so no API key is needed.
+
+```bash
+docker/sync-claude-auth.sh   # export the host's Claude login (again whenever it changes)
+docker compose up --build   # then open http://localhost:3000
+```
+
+The Web UI is published to the host's loopback only. Design, security notes and what is not verified yet: [docs/guides/docker.md](docs/guides/docker.md).
 
 ### From source
 
@@ -211,6 +222,7 @@ GitHub Actions starts all three workflows on every pull request to `dev` or `mai
 | Briefing archive (monthly zip → Google Drive via rclone) | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | Testing & dependency management | [docs/guides/testing.md](docs/guides/testing.md) |
 | Quick start with npx (`npx brief-lens`, data home, releasing) | [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md) |
+| Run in Docker (Linux; host Claude login, loopback-only Web UI, verification status) | [docs/guides/docker.md](docs/guides/docker.md) |
 | Web UI setup | [docs/guides/web-ui-setup.md](docs/guides/web-ui-setup.md) |
 | Usage monitoring (Monitor tab, Settings > Usage, cost estimates) | [docs/guides/usage-monitoring.md](docs/guides/usage-monitoring.md) |
 | Briefing evaluation pipeline | [docs/features/evaluation.md](docs/features/evaluation.md) |

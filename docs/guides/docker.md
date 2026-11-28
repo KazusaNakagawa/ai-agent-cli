@@ -52,6 +52,9 @@ long-lived token to manage). API-key mode stays a fallback only; compose never p
   published port cannot reach a process bound to the container's loopback. That is only
   safe together with the loopback-only publish above — don't change the `ports` entry to
   `"3000:3000"`. A test (`packages/brief-lens/test/docker.test.mjs`) fails if it does.
+- The Web UI's own request guard (`apps/web/lib/request-guard.ts`) rejects any request whose
+  `Host` is not `localhost`, `127.0.0.1` or `[::1]`. Open `http://localhost:3000`; a LAN
+  address or `host.docker.internal` gets a 403 even if the port were published more widely.
 - Runs as the non-root `node` user, with all capabilities dropped and
   `no-new-privileges`.
 - No secret is baked into the image; `.dockerignore` keeps personal config, `.env`,
@@ -112,7 +115,7 @@ Still to prove on a macOS host with Docker Desktop:
    container could leave the host's Keychain copy stale. Watch whether the host `claude`
    still works after the container has refreshed. If it does not, the fix is to keep
    refreshing on the host only and re-run the sync script.
-4. From another device on the LAN, `http://<host-ip>:3000` is refused.
+4. From another device on the LAN, `http://<host-ip>:3000` is refused (the port is not reachable, and the request guard above is a second layer).
 
 ## Troubleshooting
 

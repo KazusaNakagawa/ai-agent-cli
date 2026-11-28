@@ -99,7 +99,7 @@ packages/brief-lens/              # `npx brief-lens` ランチャー — ~/.brie
 
 ### npx でクイックスタート
 
-Web UI だけなら clone 不要です。npm に [`brief-lens`](https://www.npmjs.com/package/brief-lens) として公開しています。macOS または Linux、Node.js 18.18 以上（19.x は 19.8 以上）、[uv](https://github.com/astral-sh/uv)、有料の Claude プラン（Pro/Max）でログイン済みの [Claude Code CLI](https://claude.ai/code) が必要です。
+Web UI だけなら clone 不要です。npm に [`brief-lens`](https://www.npmjs.com/package/brief-lens) として公開しています。macOS、Node.js 18.18 以上（19.x は 19.8 以上）、[uv](https://github.com/astral-sh/uv)、有料の Claude プラン（Pro/Max）でログイン済みの [Claude Code CLI](https://claude.ai/code) が必要です。
 
 ```bash
 npx brief-lens            # 初回は ~/.brief-lens と Python バックエンドを自動セットアップ
@@ -108,6 +108,17 @@ npx brief-lens            # 初回は ~/.brief-lens と Python バックエン�
 データは checkout とは別の `~/.brief-lens/` に保存されます。オプション、アップグレード、リリース手順は [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md) を参照。
 
 画面ごとの使い方は[ユーザーガイド](https://kazusanakagawa.github.io/ai-agent-cli/)にまとめています。
+
+### Docker（Linux 向け）
+
+npx 版は macOS で開発・利用しています。Linux ではホストに直接入れず、コンテナで Web UI を動かします。ホストの Claude ログインを使うので、API キーは不要です。
+
+```bash
+docker/sync-claude-auth.sh   # ホストの Claude ログインを書き出す（ログインが変わったら再実行）
+docker compose up --build   # そのあと http://localhost:3000 を開く
+```
+
+Web UI はホストのループバックにだけ公開されます。設計、セキュリティ、未検証の項目は [docs/guides/docker.md](docs/guides/docker.md) を参照。
 
 ### ソースから
 
@@ -211,6 +222,7 @@ GitHub Actions は `dev` と `main` 向けのすべての Pull Request で 3 つ
 | ブリーフィングのアーカイブ（月次 zip → rclone で Google Drive） | [docs/guides/briefing-archive.md](docs/guides/briefing-archive.md) |
 | テストと依存関係の管理 | [docs/guides/testing.md](docs/guides/testing.md) |
 | npx でクイックスタート（`npx brief-lens`、データホーム、リリース手順） | [docs/guides/npx-quickstart.md](docs/guides/npx-quickstart.md) |
+| Docker で動かす（Linux 向け。ホストの Claude ログイン、ループバック限定の Web UI、検証状況） | [docs/guides/docker.md](docs/guides/docker.md) |
 | Web UI のセットアップ | [docs/guides/web-ui-setup.md](docs/guides/web-ui-setup.md) |
 | 使用量モニタリング（Monitor タブ、Settings > Usage、コスト試算） | [docs/guides/usage-monitoring.md](docs/guides/usage-monitoring.md) |
 | ブリーフィング評価パイプライン | [docs/features/evaluation.md](docs/features/evaluation.md) |

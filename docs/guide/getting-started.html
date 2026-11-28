@@ -35,7 +35,7 @@
     <tr><td><a href="https://docs.astral.sh/uv/">uv</a></td><td>バックエンド（Python）の実行環境を作る</td><td><code>brew install uv</code> など</td></tr>
     <tr><td>Claude Code CLI</td><td>Claude の呼び出しはすべて CLI を通る</td><td><code>npm install -g @anthropic-ai/claude-code</code></td></tr>
     <tr><td>Claude の認証（どちらか）</td><td><strong>有料の Claude プラン（Pro / Max）</strong>で <code>claude login</code> 済みの CLI（既定の CLI モード。無料プランでは動かない）、または <strong>Anthropic の API キー</strong>（従量課金の API モード）</td><td>CLI モードは <code>claude</code> を一度起動してログイン。API モードは <a href="#step1">Step 1</a> で選び、<a href="#step3">Step 3</a> でキーを入力</td></tr>
-    <tr><td>macOS または Linux</td><td>ランチャーとバックエンドのスクリプトが POSIX 環境を前提にしている</td><td>—</td></tr>
+    <tr><td>macOS</td><td>macOS で開発・利用している。Linux では<a href="#docker">Docker コンテナ</a>で動かす</td><td>—</td></tr>
   </tbody>
 </table></div>
 <p>足りないものがあると、ランチャーはディスクに何も書かずに、不足している項目とインストール方法を一覧にして終了します。</p>
@@ -52,7 +52,7 @@
 <p>止めるときは、ターミナルで <kbd>Ctrl</kbd> + <kbd>C</kbd> を押します。API と Web UI の両方が終了します。</p>
 <div class="callout">
   <span class="callout__title">サーバーは自分のマシンからしか見えません。</span>
-  API も Web UI も localhost だけで待ち受けるので、同じ LAN の他の端末からは接続できません。
+  API も Web UI も localhost だけで待ち受けるので、同じ LAN の他の端末からは接続できません。<code>--host</code> を変えない限りこの状態が保たれます。
 </div>
 
 <h3 id="options">起動オプション</h3>
@@ -61,6 +61,7 @@
   <tbody>
     <tr><td><code>--port &lt;n&gt;</code></td><td>Web UI のポート（既定 3000）</td></tr>
     <tr><td><code>--api-port &lt;n&gt;</code></td><td>API のポート（既定 8000）</td></tr>
+    <tr><td><code>--host &lt;addr&gt;</code></td><td>Web UI の待ち受けアドレス（既定は <code>$BRIEF_LENS_HOST</code>、なければ <code>127.0.0.1</code>）。Docker 用のオプションで、通常は変えません。API は常に <code>127.0.0.1</code> です</td></tr>
     <tr><td><code>--home &lt;dir&gt;</code></td><td>データの保存場所（既定は <code>$BRIEF_LENS_HOME</code>、なければ <code>~/.brief-lens</code>）</td></tr>
     <tr><td><code>--no-browser</code></td><td>ブラウザを開かない（環境変数 <code>CI</code> があるときも開きません）</td></tr>
     <tr><td><code>-v</code>, <code>--version</code></td><td>バージョンを表示して終了</td></tr>
@@ -103,6 +104,21 @@
 </figure>
 <p>ウィザードは、あとから <a href="settings.html#setup">Config → Setup</a> の <span class="ui">Re-run setup wizard</span> でやり直せます。やり直すときは現在の設定から始まり、セクターや地政学リスクの定義はそのまま残ります。</p>
 
+<h2 id="docker">Docker で動かす（Linux 向け）</h2>
+<p>Linux では、ホストに直接入れず Docker コンテナで動かします。コンテナ内の Claude Code CLI は、ホストの Claude ログインを使います。API キーは要りません。リポジトリを clone して、次の 2 行を実行します。</p>
+<pre><code>docker/sync-claude-auth.sh      # ホストの Claude ログインを書き出す（ログインが変わったら再実行）
+docker compose up --build</code></pre>
+<p>ブラウザで <code>http://localhost:3000</code> を開きます。初回は Python 環境をデータ用ボリュームに入れるため、数分かかります。ポートを変えるときは <code>BRIEF_LENS_PORT=3100 docker compose up</code> のように指定します。</p>
+<ul>
+  <li><strong>公開範囲</strong> — Web UI はホストの <code>127.0.0.1</code> にだけ公開します。LAN の他の端末からは届かず、API は公開しません。また Web UI は、<code>localhost</code> と <code>127.0.0.1</code> 以外の宛先へのリクエストを拒否するので、IP アドレスや <code>host.docker.internal</code> ではなく <code>localhost</code> で開いてください。</li>
+  <li><strong>認証情報</strong> — Discord / Notion の認証情報はコンテナにキーチェーンがないため、データ用ボリュームの <code>/data/.env</code> に書きます（手順は <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/docker.md#discord--notion-credentials">docker.md</a>）。</li>
+  <li><strong>Monitor</strong> — コンテナ自身の Claude Code の利用分だけが表示され、ホストの利用分は含まれません。</li>
+</ul>
+<div class="callout callout--warn">
+  <span class="callout__title">macOS ホストでの動作確認はまだ終わっていません。</span>
+  トークンの更新後もホストの <code>claude</code> が使えるか、ブリーフィングと Q&amp;A がコンテナで通るかなど、未検証の項目は <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/docker.md#verification-status">docs/guides/docker.md</a> にまとめています。
+</div>
+
 <h2 id="side-by-side">clone したリポジトリと併用する</h2>
 <p>npx で入れた brief-lens と、リポジトリを clone して <code>bin/serve.sh</code> で起動する環境は、データもキーチェーンも完全に別です。ただし既定のポートが同じなので、同時に動かすときはどちらかのポートを変えます。</p>
 <pre><code>npx brief-lens --port 3100 --api-port 8100</code></pre>
@@ -120,7 +136,7 @@ security delete-generic-password -s brief-lens -a NOTION_API_KEY</code></pre>
 
 <h2 id="limits">npx 版でできないこと</h2>
 <ul>
-  <li><strong>毎朝の自動実行</strong>（launchd / cron、スリープ復帰後の再実行）は、今のところリポジトリを clone した環境だけで使えます。<a href="source.html">ソースから使う・毎日の運用</a>を参照してください。</li>
+  <li><strong>毎朝の自動実行</strong>（launchd / cron、スリープ復帰後の再実行）は、今のところリポジトリを clone した環境だけで使えます。Docker 版でも使えません。<a href="source.html">ソースから使う・毎日の運用</a>を参照してください。</li>
   <li>Q&amp;A Chat の <strong>Notion への追記</strong>は、Claude Code に <code>/notion-import</code> スキルが入っている場合に動きます。入っていなくても、ローカルの Markdown への追記は行われます。</li>
 </ul>
 

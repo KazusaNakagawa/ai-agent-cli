@@ -18,13 +18,14 @@ then starts the API and Web UI and opens your browser.
 - Node.js 18.18+ (19.x needs 19.8+)
 - [uv](https://docs.astral.sh/uv/)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI, logged in, on a paid Claude plan (Pro/Max)
-- macOS or Linux
+- macOS. On Linux, use the [Docker setup](https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/docker.md) instead
 
 ## Options
 
 ```
 --port <n>       Web UI port (default: 3000)
 --api-port <n>   API port (default: 8000)
+--host <addr>    Address the Web UI binds to (default: 127.0.0.1; for the Docker setup)
 --home <dir>     Data home (default: $BRIEF_LENS_HOME or ~/.brief-lens)
 --no-browser     Do not open the browser
 -v, --version    Print the version

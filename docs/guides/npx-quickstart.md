@@ -21,7 +21,7 @@ the Web UI and opens your browser. Later runs start in a few seconds.
 | [uv](https://docs.astral.sh/uv/) | creates the Python environment for the backend | `curl -LsSf https://astral.sh/uv/install.sh \| sh` or `brew install uv` |
 | Claude Code CLI, logged in | every agent call goes through it | `npm install -g @anthropic-ai/claude-code`, then run `claude` once |
 | A paid Claude plan (Pro/Max) | the CLI's OAuth session is what the app uses; the free plan cannot run it | — |
-| macOS or Linux | the launcher and backend scripts assume a POSIX environment | — |
+| macOS | developed and used on macOS. On Linux, use the [Docker setup](docker.md) instead | — |
 
 If anything is missing, the launcher lists each gap with its install command and exits
 with status 1 before touching your disk.
@@ -91,7 +91,7 @@ items created by another install, and the two never share secrets. As a fallback
 in `~/.brief-lens/.env` (same variable names as [`.env.example`](../../.env.example)) are
 read when the keychain has no entry.
 
-On a machine without a keychain backend (for example Linux without a Secret Service),
+On a machine without a keychain backend (for example inside the [Docker container](docker.md)),
 saving from the Web UI fails with a message saying so. Put the values in
 `~/.brief-lens/.env` instead and restart `brief-lens`.
 
