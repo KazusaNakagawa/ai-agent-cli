@@ -17,7 +17,7 @@ the Web UI and opens your browser. Later runs start in a few seconds.
 
 | Requirement | Why | Install |
 |---|---|---|
-| Node.js 18+ | runs the launcher and the Web UI | [nodejs.org](https://nodejs.org/) |
+| Node.js 18.18+ (19.x needs 19.8+) | runs the launcher and the Web UI | [nodejs.org](https://nodejs.org/) |
 | [uv](https://docs.astral.sh/uv/) | creates the Python environment for the backend | `curl -LsSf https://astral.sh/uv/install.sh \| sh` or `brew install uv` |
 | Claude Code CLI, logged in | every agent call goes through it | `npm install -g @anthropic-ai/claude-code`, then run `claude` once |
 | A paid Claude plan (Pro/Max) | the CLI's OAuth session is what the app uses; the free plan cannot run it | — |
