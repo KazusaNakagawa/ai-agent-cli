@@ -99,7 +99,7 @@ packages/brief-lens/              # `npx brief-lens` ランチャー — ~/.brie
 
 ### npx でクイックスタート
 
-Web UI だけなら clone 不要です。npm に [`brief-lens`](https://www.npmjs.com/package/brief-lens) として公開しています。macOS または Linux、Node.js 18 以上、[uv](https://github.com/astral-sh/uv)、有料の Claude プラン（Pro/Max）でログイン済みの [Claude Code CLI](https://claude.ai/code) が必要です。
+Web UI だけなら clone 不要です。npm に [`brief-lens`](https://www.npmjs.com/package/brief-lens) として公開しています。macOS または Linux、Node.js 18.18 以上（19.x は 19.8 以上）、[uv](https://github.com/astral-sh/uv)、有料の Claude プラン（Pro/Max）でログイン済みの [Claude Code CLI](https://claude.ai/code) が必要です。
 
 ```bash
 npx brief-lens            # 初回は ~/.brief-lens と Python バックエンドを自動セットアップ

@@ -1,7 +1,8 @@
 import { accessSync, constants, statSync } from "node:fs"
 import { delimiter, join } from "node:path"
 
-const MIN_NODE_MAJOR = 18
+// What the bundled Next.js accepts; keep in step with `engines` in package.json.
+const NODE_REQUIREMENT = "18.18 or newer (19.x needs 19.8+)"
 
 const TOOLS = [
   {
@@ -32,12 +33,18 @@ export function findOnPath(name, env) {
   return null
 }
 
+function isSupportedNode(version) {
+  const [major, minor] = version.replace(/^v/, "").split(".").map(Number)
+  if (major === 18) return minor >= 18
+  if (major === 19) return minor >= 8
+  return major >= 20
+}
+
 /** Check prerequisites; returns human-readable problems (empty = all good). */
 export function preflight({ env, nodeVersion }) {
   const problems = []
-  const major = Number(nodeVersion.replace(/^v/, "").split(".")[0])
-  if (!(major >= MIN_NODE_MAJOR)) {
-    problems.push(`Node.js ${MIN_NODE_MAJOR} or newer is required (found ${nodeVersion}).`)
+  if (!isSupportedNode(nodeVersion)) {
+    problems.push(`Node.js ${NODE_REQUIREMENT} is required (found ${nodeVersion}).`)
   }
   for (const tool of TOOLS) {
     if (!findOnPath(tool.name, env)) {

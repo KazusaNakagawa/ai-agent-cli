@@ -17,7 +17,7 @@ Options:
   -v, --version    Print the version and exit
   -h, --help       Show this help and exit
 
-Requires Node.js 18+, uv, and a logged-in claude CLI (paid Claude plan).
+Requires Node.js 18.18+ (19.x: 19.8+), uv, and a logged-in claude CLI (paid Claude plan).
 `
 
 function parsePort(name, raw) {

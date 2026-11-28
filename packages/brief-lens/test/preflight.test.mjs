@@ -47,10 +47,15 @@ test("preflight reports each missing tool with an install hint", () => {
   assert.match(problems[1], /claude-code/)
 })
 
-test("preflight rejects Node older than 18 and accepts exactly 18", () => {
+test("preflight enforces the Node range the bundled Next.js accepts", () => {
   const dir = mkdtempSync(join(tmpdir(), "bl-pf-"))
   fakeBin(dir, "uv")
   fakeBin(dir, "claude")
-  assert.match(preflight({ env: { PATH: dir }, nodeVersion: "v17.9.1" })[0], /Node\.js 18/)
-  assert.deepEqual(preflight({ env: { PATH: dir }, nodeVersion: "v18.0.0" }), [])
+  const check = (nodeVersion) => preflight({ env: { PATH: dir }, nodeVersion })
+  for (const v of ["v17.9.1", "v18.0.0", "v18.17.1", "v19.0.0", "v19.7.0"]) {
+    assert.match(check(v)[0] ?? "", /Node\.js 18\.18 or newer \(19\.x needs 19\.8\+\)/, v)
+  }
+  for (const v of ["v18.18.0", "v18.20.4", "v19.8.0", "v20.0.0", "v24.1.0"]) {
+    assert.deepEqual(check(v), [], v)
+  }
 })

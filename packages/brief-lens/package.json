@@ -8,7 +8,7 @@
     "brief-lens": "bin/brief-lens.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": "^18.18.0 || ^19.8.0 || >=20.0.0"
   },
   "os": [
     "darwin",

@@ -15,7 +15,7 @@ then starts the API and Web UI and opens your browser.
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 18.18+ (19.x needs 19.8+)
 - [uv](https://docs.astral.sh/uv/)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI, logged in, on a paid Claude plan (Pro/Max)
 - macOS or Linux
