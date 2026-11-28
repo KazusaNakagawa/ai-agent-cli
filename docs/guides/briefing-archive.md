@@ -105,9 +105,14 @@ Override via environment variables (e.g. in `.env`, which the root wrappers and
 ## Web UI
 
 The **Archive last month** button on the Briefing screen issues
-`POST /api/archive` (optional `?month=YYYY-MM&prune=true`). On success it shows
-the script stdout; on failure it shows a `500` with a stderr excerpt — the same
-rclone setup hint surfaces here.
+`POST /api/archive` (optional `?month=YYYY-MM&prune=true`). On success it shows a
+one-line summary such as `Archived 2026-10 (31 files)` (or `Nothing to archive for
+2026-09: no briefing files.`), built from the script's output by the API. The response
+also carries the structured fields (`status`, `month`, `file_count`, `pruned`) and the
+raw script output in `stdout`; the raw output is written to the server log too, so the
+per-file `adding: ...` lines and local paths stay out of the toast but remain available
+for debugging. On failure it shows a `500` with a stderr excerpt — the same rclone setup
+hint surfaces here.
 
 ## Scheduled execution (launchd)
 
