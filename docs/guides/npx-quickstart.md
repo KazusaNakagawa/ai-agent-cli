@@ -21,7 +21,7 @@ the Web UI and opens your browser. Later runs start in a few seconds.
 | [uv](https://docs.astral.sh/uv/) | creates the Python environment for the backend | `curl -LsSf https://astral.sh/uv/install.sh \| sh` or `brew install uv` |
 | Claude Code CLI, logged in | every agent call goes through it | `npm install -g @anthropic-ai/claude-code`, then run `claude` once |
 | A paid Claude plan (Pro/Max) | the CLI's OAuth session is what the app uses; the free plan cannot run it | — |
-| macOS or Linux | the launcher and backend scripts assume a POSIX environment | — |
+| macOS | developed and used on macOS. On Linux, use the [Docker setup](docker.md) instead | — |
 
 If anything is missing, the launcher lists each gap with its install command and exits
 with status 1 before touching your disk.
@@ -51,13 +51,17 @@ servers.
 ```
 --port <n>       Web UI port (default: 3000)
 --api-port <n>   API port (default: 8000)
+--host <addr>    Address the Web UI binds to (default: $BRIEF_LENS_HOST or 127.0.0.1)
 --home <dir>     Data home (default: $BRIEF_LENS_HOME or ~/.brief-lens)
 --no-browser     Do not open the browser (also skipped when $CI is set)
 -v, --version    Print the version and exit
 -h, --help       Show this help and exit
 ```
 
-Both servers listen on localhost only; they are not reachable from your LAN.
+Both servers listen on localhost only; they are not reachable from your LAN. `--host`
+exists for the [Docker setup](docker.md), which needs the Web UI bound inside the container;
+leave it at the default when running directly on your machine. The API always stays on
+`127.0.0.1`.
 
 ## Data home
 
@@ -87,7 +91,7 @@ items created by another install, and the two never share secrets. As a fallback
 in `~/.brief-lens/.env` (same variable names as [`.env.example`](../../.env.example)) are
 read when the keychain has no entry.
 
-On a machine without a keychain backend (for example Linux without a Secret Service),
+On a machine without a keychain backend (for example inside the [Docker container](docker.md)),
 saving from the Web UI fails with a message saying so. Put the values in
 `~/.brief-lens/.env` instead and restart `brief-lens`.
 

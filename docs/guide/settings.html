@@ -74,7 +74,7 @@
     <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Anthropic の API キー</td><td>Auth を API モードにする</td></tr>
   </tbody>
 </table></div>
-<p>キーチェーンに値がないときは、データの保存場所の <code>.env</code> にある同名の変数が使われます。キーチェーンが使えない環境（Secret Service のない Linux など）では保存がエラーになるので、<code>.env</code> に値を書いてアプリを再起動してください。</p>
+<p>キーチェーンに値がないときは、データの保存場所の <code>.env</code> にある同名の変数が使われます。キーチェーンが使えない環境（Docker コンテナなど）では保存がエラーになるので、<code>.env</code> に値を書いてアプリを再起動してください。</p>
 
 <h2 id="auth">Auth</h2>
 <p>Claude の呼び出し方を切り替えます。</p>

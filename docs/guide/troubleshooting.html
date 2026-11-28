@@ -35,6 +35,9 @@
     <tr><td><code>port 8000 is already in use</code></td><td>ほかのサーバー（clone した環境の <code>bin/serve.sh</code> など）がポートを使っています。<code>--api-port</code> / <code>--port</code> で別のポートを指定してください。</td></tr>
     <tr><td>初回の「Installing Python dependencies」から進まない</td><td>uv がパッケージをダウンロードしています。キャッシュが空だと数分かかります。</td></tr>
     <tr><td>初回のインストール中に <kbd>Ctrl</kbd> + <kbd>C</kbd> で止めてしまった</td><td>問題ありません。次に起動したときにインストールをやり直します。</td></tr>
+    <tr><td>Docker で <code>no Claude credentials</code> とログに出る</td><td>ホストで <code>docker/sync-claude-auth.sh</code> を実行してから、<code>docker compose restart</code> してください。</td></tr>
+    <tr><td>Docker で数時間後に認証エラーになる</td><td>書き出したトークンの期限が切れています。ホストで <code>claude</code> を起動してログインを更新し、<code>docker/sync-claude-auth.sh</code> をもう一度実行してから、コンテナを再起動してください。</td></tr>
+    <tr><td>Docker で <code>port is already allocated</code></td><td>3000 番を別のプロセスが使っています。<code>BRIEF_LENS_PORT=3100 docker compose up</code> のように別のポートを指定してください。</td></tr>
     <tr><td><code>session-token is a symlink</code></td><td>ランチャーはシンボリックリンク越しにトークンを書きません。リンクを削除してから起動してください。</td></tr>
   </tbody>
 </table></div>

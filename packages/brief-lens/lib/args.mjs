@@ -2,6 +2,10 @@ import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { parseArgs } from "node:util"
 
+import { normalizeHost } from "./host.mjs"
+
+export { isLoopbackHost } from "./host.mjs"
+
 export class UsageError extends Error {}
 
 export const HELP = `Usage: brief-lens [options]
@@ -12,6 +16,9 @@ The first run creates the data home and installs Python dependencies with uv.
 Options:
   --port <n>       Web UI port (default: 3000)
   --api-port <n>   API port (default: 8000)
+  --host <addr>    Address the Web UI binds to (default: $BRIEF_LENS_HOST or 127.0.0.1).
+                   The API always stays on 127.0.0.1. Anything other than a loopback
+                   address makes the Web UI reachable from other machines.
   --home <dir>     Data home (default: $BRIEF_LENS_HOME or ~/.brief-lens)
   --no-browser     Do not open the browser (also skipped when $CI is set)
   -v, --version    Print the version and exit
@@ -25,6 +32,15 @@ function parsePort(name, raw) {
   const n = Number(raw)
   if (n < 1 || n > 65535) throw new UsageError(`--${name} must be between 1 and 65535, got ${n}`)
   return n
+}
+
+const DEFAULT_HOST = "127.0.0.1"
+
+function parseHost(raw) {
+  // Brackets are URL syntax for IPv6 literals; the server wants the bare address.
+  const host = normalizeHost(raw)
+  if (!host || /\s/.test(host)) throw new UsageError(`--host must be an address, got ${JSON.stringify(raw)}`)
+  return host
 }
 
 function expandHome(p) {
@@ -44,6 +60,7 @@ export function parseCliArgs(argv, env) {
       options: {
         port: { type: "string" },
         "api-port": { type: "string" },
+        host: { type: "string" },
         home: { type: "string" },
         "no-browser": { type: "boolean", default: false },
         version: { type: "boolean", short: "v", default: false },
@@ -58,10 +75,13 @@ export function parseCliArgs(argv, env) {
   const apiPort = parsePort("api-port", v["api-port"] ?? "8000")
   if (port === apiPort) throw new UsageError(`--port and --api-port must differ (both ${port})`)
 
+  const host = parseHost(v.host ?? (env.BRIEF_LENS_HOST?.trim() || DEFAULT_HOST))
+
   const homeRaw = v.home ?? (env.BRIEF_LENS_HOME?.trim() || join(homedir(), ".brief-lens"))
   return {
     port,
     apiPort,
+    host,
     home: expandHome(homeRaw),
     browser: !v["no-browser"] && !env.CI,
     version: v.version,

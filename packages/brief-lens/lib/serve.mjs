@@ -2,6 +2,8 @@ import { spawn } from "node:child_process"
 import { join } from "node:path"
 import { createServer } from "node:net"
 
+import { displayHost, isLoopbackHost, probeHost, urlHost } from "./host.mjs"
+
 /** Run a command to completion with inherited stdio; reject on failure. */
 export function runCommand(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -14,13 +16,13 @@ export function runCommand(cmd, args, options = {}) {
   })
 }
 
-/** Resolve true when nothing is listening on 127.0.0.1:port. */
-export function isPortFree(port) {
+/** Resolve true when nothing is listening on host:port (default 127.0.0.1). */
+export function isPortFree(port, host = "127.0.0.1") {
   return new Promise((resolve) => {
     const srv = createServer()
     srv.once("error", () => resolve(false))
     srv.once("listening", () => srv.close(() => resolve(true)))
-    srv.listen(port, "127.0.0.1")
+    srv.listen(port, host)
   })
 }
 
@@ -60,14 +62,17 @@ function openBrowser(url) {
  * Resolves with the exit code the launcher should use.
  */
 export async function serve({ layout, opts, uvicorn, tokenPath, log }) {
-  for (const [flag, port] of [["--api-port", opts.apiPort], ["--port", opts.port]]) {
-    if (!(await isPortFree(port))) {
+  // The API always binds loopback; the Web UI binds where --host says.
+  for (const [flag, port, host] of [["--api-port", opts.apiPort, "127.0.0.1"], ["--port", opts.port, opts.host]]) {
+    if (!(await isPortFree(port, host))) {
       throw new Error(`port ${port} is already in use — pick another with ${flag} <n>`)
     }
   }
 
   const apiUrl = `http://127.0.0.1:${opts.apiPort}`
-  const webUrl = `http://localhost:${opts.port}`
+  const webUrl = `http://${displayHost(opts.host)}:${opts.port}`
+  // What the readiness probe connects to; a wildcard bind answers on loopback.
+  const webProbeUrl = `http://${urlHost(probeHost(opts.host))}:${opts.port}/`
 
   const api = spawn(uvicorn, ["web.app:app", "--host", "127.0.0.1", "--port", String(opts.apiPort)], {
     cwd: layout.pythonDir,
@@ -81,7 +86,7 @@ export async function serve({ layout, opts, uvicorn, tokenPath, log }) {
       ...process.env,
       NODE_ENV: "production",
       PORT: String(opts.port),
-      HOSTNAME: "127.0.0.1",
+      HOSTNAME: opts.host,
       API_BASE: apiUrl,
       AI_AGENT_TOKEN_PATH: tokenPath,
       AI_AGENT_INPUT_DIR: join(opts.home, "input"),
@@ -112,7 +117,7 @@ export async function serve({ layout, opts, uvicorn, tokenPath, log }) {
 
   try {
     await waitForHttp(`${apiUrl}/api/health`, api, "API server", 60_000)
-    await waitForHttp(`http://127.0.0.1:${opts.port}/`, web, "web server", 60_000)
+    await waitForHttp(webProbeUrl, web, "web server", 60_000)
   } catch (err) {
     stop()
     await exited
@@ -120,6 +125,9 @@ export async function serve({ layout, opts, uvicorn, tokenPath, log }) {
   }
 
   log(`\nbrief-lens is running:\n  Web UI:    ${webUrl}\n  API:       ${apiUrl}\n  Data home: ${opts.home}\nPress Ctrl-C to stop.\n`)
+  if (!isLoopbackHost(opts.host)) {
+    log(`Note: the Web UI is bound to ${opts.host}, so other machines can reach it unless the port is published to loopback only.\n`)
+  }
   if (opts.browser) openBrowser(webUrl)
 
   await exited
