@@ -4,7 +4,13 @@ import { Toast, ToastViewport } from "@/components/ui/toast"
 
 type Status = "idle" | "running" | "done" | "error"
 
-/** Triggers POST /api/archive (previous month) and surfaces the result inline. */
+/**
+ * Triggers POST /api/archive (previous month) and surfaces the result inline.
+ *
+ * The toast shows the API's short `message` ("Archived 2026-10 (31 files)").
+ * The raw script output is in the response's `stdout` and the server log, and
+ * is deliberately not rendered: it lists every zipped file and local paths.
+ */
 export function ArchiveButton() {
   const [status, setStatus] = useState<Status>("idle")
   const [message, setMessage] = useState<string>("")
@@ -21,7 +27,7 @@ export function ArchiveButton() {
         return
       }
       setStatus("done")
-      setMessage(String(data?.stdout ?? "").trim() || "Archive complete.")
+      setMessage(typeof data?.message === "string" && data.message.trim() ? data.message : "Archive complete.")
     } catch (e) {
       setStatus("error")
       setMessage(String(e))
