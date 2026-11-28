@@ -33,8 +33,13 @@ test("compose and Dockerfile do not carry an API key or a credentials file", { s
   }
 })
 
-test("the credentials mount is read-only", { skip }, () => {
-  assert.match(readFileSync(composePath, "utf8"), /:\/run\/claude-auth:ro\s*$/m)
+test("the credentials mount is read-only and never created by Docker", { skip }, () => {
+  const text = readFileSync(composePath, "utf8")
+  const block = text.match(/- type: bind\n(?:\s+.*\n)+?(?=\s*(?:#|-|\w+:\s*$)|$)/)?.[0] ?? text
+  assert.match(block, /target: \/run\/claude-auth\b/)
+  assert.match(block, /read_only: true/)
+  // A missing source must fail loudly, not become a root-owned directory.
+  assert.match(block, /create_host_path: false/)
 })
 
 test("the app runs as a non-root user without capabilities", { skip }, () => {

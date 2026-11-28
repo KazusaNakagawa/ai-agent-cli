@@ -77,3 +77,57 @@ test("fails with guidance when there is no login at all", { skip }, () => {
   assert.match(r.output, /Run `claude` once/)
   assert.equal(r.copied, false)
 })
+
+// --- paths that do not need a real Keychain or Linux ---------------------------------
+
+import { chmodSync } from "node:fs"
+
+const posix = existsSync(script) && process.platform !== "win32"
+
+test("macOS branch asks the Keychain for the account even when USER is unset", { skip: !posix }, () => {
+  const home = mkdtempSync(join(tmpdir(), "sync-auth-mac-"))
+  try {
+    const bin = join(home, "bin")
+    mkdirSync(bin)
+    writeFileSync(join(bin, "uname"), "#!/bin/sh\necho Darwin\n", { mode: 0o755 })
+    // Succeeds only when called with -a <the real account name>, like the real item.
+    const account = spawnSync("id", ["-un"], { encoding: "utf8" }).stdout.trim()
+    writeFileSync(
+      join(bin, "security"),
+      `#!/bin/sh\ncase " $* " in *" -a ${account} "*) printf '%s' '{"claudeAiOauth":{"accessToken":"a","refreshToken":"r"}}' ;; *) exit 44 ;; esac\n`,
+      { mode: 0o755 },
+    )
+    const out = join(home, "out")
+    const res = spawnSync("bash", [script], {
+      // No USER at all: under `set -u` an unguarded $USER aborts the script.
+      env: { PATH: `${bin}:${process.env.PATH}`, HOME: home, BRIEF_LENS_AUTH_DIR: out },
+      encoding: "utf8",
+    })
+    assert.equal(res.status, 0, res.stdout + res.stderr)
+    assert.ok(existsSync(join(out, ".credentials.json")))
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test("an output directory the user cannot write explains what to do", { skip: !posix || process.getuid?.() === 0 }, () => {
+  const home = mkdtempSync(join(tmpdir(), "sync-auth-ro-"))
+  try {
+    mkdirSync(join(home, ".claude"))
+    writeFileSync(join(home, ".claude", ".credentials.json"), login())
+    const out = join(home, "out")
+    mkdirSync(out)
+    chmodSync(out, 0o500)
+    const res = spawnSync("bash", [script], {
+      env: { PATH: process.env.PATH, HOME: home, BRIEF_LENS_AUTH_DIR: out },
+      encoding: "utf8",
+    })
+    assert.equal(res.status, 1)
+    assert.match(res.stderr, /cannot write/)
+    assert.match(res.stderr, /before docker compose/)
+    assert.ok(!res.stderr.includes(SECRET))
+  } finally {
+    chmodSync(join(home, "out"), 0o700)
+    rmSync(home, { recursive: true, force: true })
+  }
+})

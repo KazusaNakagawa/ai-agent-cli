@@ -16,7 +16,8 @@ read_credentials() {
     Darwin)
       # Claude Code stores the item under the OS user name; fall back to a
       # service-only lookup for installs that used another account name.
-      security find-generic-password -s "$SERVICE" -a "$USER" -w 2>/dev/null \
+      # $USER can be unset (launchd, cron, `env -i`); id -un always answers.
+      security find-generic-password -s "$SERVICE" -a "${USER:-$(id -un)}" -w 2>/dev/null \
         || security find-generic-password -s "$SERVICE" -w 2>/dev/null
       ;;
     *)
@@ -59,7 +60,16 @@ print("expired" if isinstance(exp, (int, float)) and exp / 1000 < time.time() el
 fi
 
 umask 077
-mkdir -p "$OUT_DIR"
+if [ -e "$OUT_DIR" ] && [ ! -w "$OUT_DIR" ]; then
+  echo "sync-claude-auth: $OUT_DIR exists but you cannot write to it." >&2
+  echo "  Docker creates a missing bind-mount source as root when compose starts first." >&2
+  echo "  Remove it (sudo rm -r \"$OUT_DIR\") and run this script before docker compose." >&2
+  exit 1
+fi
+if ! mkdir -p "$OUT_DIR" 2>/dev/null; then
+  echo "sync-claude-auth: cannot create $OUT_DIR (set BRIEF_LENS_AUTH_DIR to another place)." >&2
+  exit 1
+fi
 chmod 700 "$OUT_DIR"
 tmp="$(mktemp "$OUT_DIR/.credentials.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT

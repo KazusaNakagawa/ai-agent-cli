@@ -35,7 +35,8 @@ RUN npm install -g --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE
 
 COPY --from=build /src/packages/brief-lens /opt/brief-lens
 COPY docker/entrypoint.sh /usr/local/bin/brief-lens-entrypoint
-RUN chmod 0755 /usr/local/bin/brief-lens-entrypoint \
+COPY docker/install-claude-credentials.sh /usr/local/bin/brief-lens-install-credentials
+RUN chmod 0755 /usr/local/bin/brief-lens-entrypoint /usr/local/bin/brief-lens-install-credentials \
  && mkdir -p /data /home/node/.claude \
  && chown node:node /data /home/node/.claude
 

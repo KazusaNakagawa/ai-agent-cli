@@ -15,16 +15,11 @@ CLAUDE_HOME="$HOME/.claude"
 umask 077
 mkdir -p "$CLAUDE_HOME"
 
-if [ -s "$AUTH_SRC" ]; then
-  # Copy rather than mount the file itself: the host script replaces it with a
-  # rename, which a single-file bind mount would not follow. Done as root
-  # because the mount belongs to the host user (0700), whatever uid that is.
-  cp "$AUTH_SRC" "$CLAUDE_HOME/.credentials.json"
-  chmod 600 "$CLAUDE_HOME/.credentials.json"
-else
-  echo "brief-lens: no Claude credentials at $AUTH_SRC." >&2
-  echo "  Run docker/sync-claude-auth.sh on the host, then restart the container." >&2
-fi
+# Copy rather than mount the file itself: the host script replaces it with a
+# rename, which a single-file bind mount would not follow. Done as root because
+# the mount belongs to the host user (0700), whatever uid that is. A login the
+# container has already refreshed is kept unless the export is newer.
+brief-lens-install-credentials "$AUTH_SRC" "$CLAUDE_HOME/.credentials.json"
 
 # Without this the CLI may start its first-run wizard instead of answering.
 if [ ! -e "$HOME/.claude.json" ]; then

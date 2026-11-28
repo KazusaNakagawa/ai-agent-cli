@@ -110,7 +110,7 @@
 docker compose up --build</code></pre>
 <p>ブラウザで <code>http://localhost:3000</code> を開きます。初回は Python 環境をデータ用ボリュームに入れるため、数分かかります。ポートを変えるときは <code>BRIEF_LENS_PORT=3100 docker compose up</code> のように指定します。</p>
 <ul>
-  <li><strong>公開範囲</strong> — Web UI はホストの <code>127.0.0.1</code> にだけ公開します。LAN の他の端末からは届かず、API は公開しません。また Web UI は、<code>localhost</code> と <code>127.0.0.1</code> 以外の宛先へのリクエストを拒否するので、IP アドレスや <code>host.docker.internal</code> ではなく <code>localhost</code> で開いてください。</li>
+  <li><strong>公開範囲</strong> — Web UI はホストの <code>127.0.0.1</code> にだけ公開します。LAN の他の端末からは届かず、API は公開しません。また Web UI の API ルート（データの読み書き）は、<code>localhost</code> と <code>127.0.0.1</code> 以外の宛先（Host）へのリクエストを 403 で拒否します。画面の HTML 自体は返りますが、データは読み込めません。IP アドレスや <code>host.docker.internal</code> ではなく <code>localhost</code> で開いてください。</li>
   <li><strong>認証情報</strong> — Discord / Notion の認証情報はコンテナにキーチェーンがないため、データ用ボリュームの <code>/data/.env</code> に書きます（手順は <a href="https://github.com/KazusaNakagawa/ai-agent-cli/blob/main/docs/guides/docker.md#discord--notion-credentials">docker.md</a>）。</li>
   <li><strong>Monitor</strong> — コンテナ自身の Claude Code の利用分だけが表示され、ホストの利用分は含まれません。</li>
 </ul>

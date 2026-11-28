@@ -17,6 +17,10 @@ docker/sync-claude-auth.sh      # export the host's Claude login (once, and when
 docker compose up --build
 ```
 
+Run the script first. The credentials folder is mounted with `create_host_path: false`, so
+if it does not exist yet `docker compose` stops with "bind source path does not exist"
+instead of creating it as a root-owned directory the script could not then write to.
+
 Then open <http://localhost:3000>. Stop with Ctrl-C, or `docker compose down`.
 The first start installs the Python environment into the data volume and takes a few
 minutes; later starts are quick.
@@ -34,7 +38,11 @@ the Keychain, not in a file. So:
    0700, file 0600). The token is never printed.
 2. `compose.yaml` mounts that directory **read-only** at `/run/claude-auth`.
 3. The container entrypoint copies the file to `~/.claude/.credentials.json` for the
-   Linux `claude` CLI (pinned in the `Dockerfile`) and starts brief-lens.
+   Linux `claude` CLI (pinned in the `Dockerfile`) and starts brief-lens. That file lives
+   in a persistent volume, and the CLI may refresh the tokens in it, so a restart does not
+   blindly put the host export back: it replaces the installed login only when there is
+   none, or when the export's access token expires later. Re-running the sync script after
+   a host login change therefore takes effect on the next start.
 
 The same idea is used by [MulmoClaude](https://github.com/receptron/mulmoclaude), which
 exports the Keychain item at startup and mounts the result into its sandbox.
@@ -52,9 +60,11 @@ long-lived token to manage). API-key mode stays a fallback only; compose never p
   published port cannot reach a process bound to the container's loopback. That is only
   safe together with the loopback-only publish above — don't change the `ports` entry to
   `"3000:3000"`. A test (`packages/brief-lens/test/docker.test.mjs`) fails if it does.
-- The Web UI's own request guard (`apps/web/lib/request-guard.ts`) rejects any request whose
-  `Host` is not `localhost`, `127.0.0.1` or `[::1]`. Open `http://localhost:3000`; a LAN
-  address or `host.docker.internal` gets a 403 even if the port were published more widely.
+- The Web UI's own request guard (`apps/web/lib/request-guard.ts`) is called from the API
+  routes (`app/api/**`) and rejects a request whose `Host` is not `localhost`, `127.0.0.1`
+  or `[::1]`. The HTML shell of a page is still served, but every data call behind it gets a
+  403. Open `http://localhost:3000`; a LAN address or `host.docker.internal` does not work
+  even if the port were published more widely.
 - The entrypoint starts as root only to read the mounted login (its owner is the host
   user, which is not the image's `node` uid) and hand a copy to `node`; it then switches
   to `node` with `setpriv`, dropping every capability and setting no-new-privs, before
@@ -156,7 +166,10 @@ Still to prove on a macOS host with Docker Desktop:
 
 | Symptom | Cause / fix |
 |---|---|
+| `bind source path does not exist` from `docker compose` | The credentials folder is missing. Run `docker/sync-claude-auth.sh` first. |
+| `sync-claude-auth: ... exists but you cannot write to it` | Compose created the folder as root on an earlier run. `sudo rm -r` it, then run the script before `docker compose`. |
 | `no Claude credentials at /run/claude-auth/...` in the log | Run `docker/sync-claude-auth.sh`, then `docker compose restart`. |
+| `keeping the container's login (the host export is not newer)` after a host re-login | The container holds a login that expires later than the export. To force the export: `docker compose exec -u node brief-lens rm /home/node/.claude/.credentials.json`, then `docker compose restart`. |
 | Requests fail with an auth error after some hours | The exported token expired. Run `claude` on the host, re-run `docker/sync-claude-auth.sh`, restart the container. |
 | `port is already allocated` | Another process uses 3000: `BRIEF_LENS_PORT=3100 docker compose up`. |
 | Container stays "starting" for minutes on first run | The Python environment is being installed into `/data`; follow `docker compose logs -f`. |

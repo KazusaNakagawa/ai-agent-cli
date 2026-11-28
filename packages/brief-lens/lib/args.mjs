@@ -2,6 +2,10 @@ import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { parseArgs } from "node:util"
 
+import { normalizeHost } from "./host.mjs"
+
+export { isLoopbackHost } from "./host.mjs"
+
 export class UsageError extends Error {}
 
 export const HELP = `Usage: brief-lens [options]
@@ -33,14 +37,10 @@ function parsePort(name, raw) {
 const DEFAULT_HOST = "127.0.0.1"
 
 function parseHost(raw) {
-  const host = raw.trim()
+  // Brackets are URL syntax for IPv6 literals; the server wants the bare address.
+  const host = normalizeHost(raw)
   if (!host || /\s/.test(host)) throw new UsageError(`--host must be an address, got ${JSON.stringify(raw)}`)
   return host
-}
-
-/** True for addresses that only this machine can reach. */
-export function isLoopbackHost(host) {
-  return host === "localhost" || host === "::1" || /^127\./.test(host)
 }
 
 function expandHome(p) {
