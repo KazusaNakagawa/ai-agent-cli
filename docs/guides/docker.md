@@ -11,7 +11,7 @@ OAuth login (paid Claude plan) as the one on the host.
 
 ## Quick start
 
-Requires Docker (Docker Desktop on macOS) and a logged-in `claude` CLI on the host.
+Requires Docker (Docker Desktop or Rancher Desktop on macOS) and a logged-in `claude` CLI on the host.
 
 ```bash
 docker/sync-claude-auth.sh      # export the host's Claude login (once, and when it changes)
@@ -142,13 +142,13 @@ three substitutions, listed below; run with the capability set from `compose.yam
   `host.docker.internal`.
 - The Linux `claude` treats a `.credentials.json` in the Keychain's JSON shape as an OAuth
   login and tries to use it. With a fake token it ends in "OAuth session expired and could
-  not be refreshed", not "Not logged in". Whether a *real* login is accepted is not proven.
+  not be refreshed", not "Not logged in".
 
 The `docker` workflow (`.github/workflows/docker.yml`) repeats the build and boot on every
 relevant PR with the real `Dockerfile` and `compose.yaml` — including the `apt` and `uv`
 layers — and checks the published port, that the runner's LAN address is refused, the host
 guard, the privilege drop, the installed login, Python 3.11-3.13, the `claude` CLI and the CJK
-fonts. It never calls Claude, so a real login is still the part only a macOS host can prove.
+fonts. It never calls Claude; the real login was checked by hand on macOS (above).
 
 Not covered by the manual sandbox run, because of the sandbox: `apt-get` (the network policy blocked
 `deb.debian.org`) was replaced by copying Python 3.11 and its libraries from the official
