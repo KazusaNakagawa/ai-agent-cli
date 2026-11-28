@@ -87,6 +87,10 @@ items created by another install, and the two never share secrets. As a fallback
 in `~/.brief-lens/.env` (same variable names as [`.env.example`](../../.env.example)) are
 read when the keychain has no entry.
 
+On a machine without a keychain backend (for example Linux without a Secret Service),
+saving from the Web UI fails with a message saying so. Put the values in
+`~/.brief-lens/.env` instead and restart `brief-lens`.
+
 ## Running next to a repository checkout
 
 The npx install and a clone (`bin/serve.sh`) are fully separate: different data, different

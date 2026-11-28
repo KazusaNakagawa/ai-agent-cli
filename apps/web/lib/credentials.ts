@@ -13,3 +13,10 @@ export async function fetchCredentialSources(): Promise<Record<string, Credentia
   if (!res.ok) throw new Error(`GET /api/credentials/sources HTTP ${res.status}`)
   return (await res.json()) as Record<string, CredentialSource>
 }
+
+// The backend explains a failed write in `detail` (e.g. no keychain backend).
+export async function credentialError(res: Response, action: string): Promise<string> {
+  const body = (await res.json().catch(() => null)) as { detail?: unknown } | null
+  const fallback = `${action} failed (HTTP ${res.status})`
+  return typeof body?.detail === "string" ? `${fallback}: ${body.detail}` : fallback
+}

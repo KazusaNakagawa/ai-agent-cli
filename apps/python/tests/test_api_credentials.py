@@ -1,7 +1,8 @@
 """Tests for /api/credentials — Keychain CRUD endpoints."""
+import keyring.errors
 import pytest
 
-from src import credentials
+from src import credentials, paths
 
 pytestmark = pytest.mark.usefixtures("isolated_keyring", "clear_credential_env")
 
@@ -87,3 +88,39 @@ async def test_get_credential_sources_reports_where_each_value_comes_from(authed
 async def test_get_credential_sources_requires_bearer(async_client):
     response = await async_client.get("/api/credentials/sources")
     assert response.status_code == 401
+
+
+# --- keyring unavailable (#616) ---
+
+
+def _break_keyring(monkeypatch, error: Exception) -> None:
+    class Broken:
+        def get_password(self, *args):
+            raise error
+
+        set_password = delete_password = get_password
+
+    monkeypatch.setattr(credentials, "_backend", Broken())
+
+
+@pytest.mark.parametrize("method", ["put", "delete"])
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (keyring.errors.NoKeyringError("no backend"), "No OS keychain backend"),
+        (keyring.errors.KeyringLocked("locked"), "could not complete the request"),
+    ],
+)
+async def test_keyring_failure_returns_503_with_env_alternative(
+    authed_client, monkeypatch, method, error, reason
+):
+    _break_keyring(monkeypatch, error)
+    kwargs = {"json": {"value": "secret-value"}} if method == "put" else {}
+    response = await getattr(authed_client, method)("/api/credentials/NOTION_API_KEY", **kwargs)
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert reason in detail
+    assert "NOTION_API_KEY" in detail
+    assert str(paths.dotenv_paths()[0]) in detail
+    assert "restart" in detail
+    assert "secret-value" not in response.text

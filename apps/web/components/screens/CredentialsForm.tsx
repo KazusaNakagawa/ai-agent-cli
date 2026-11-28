@@ -14,7 +14,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { type CredentialSource, fetchCredentialSources } from "@/lib/credentials"
+import {
+  type CredentialSource,
+  credentialError,
+  fetchCredentialSources,
+} from "@/lib/credentials"
 
 type Props = { initial: Record<string, boolean> }
 
@@ -84,7 +88,7 @@ export function CredentialsForm({ initial }: Props) {
     )
     setBusy(null)
     if (!res.ok) {
-      setError(`PUT failed (HTTP ${res.status})`)
+      setError(await credentialError(res, "PUT"))
       return
     }
     setStatus((prev) => ({ ...prev, [editing.name]: true }))
@@ -101,7 +105,7 @@ export function CredentialsForm({ initial }: Props) {
     })
     setBusy(null)
     if (!res.ok) {
-      setError(`DELETE failed (HTTP ${res.status})`)
+      setError(await credentialError(res, "DELETE"))
       return
     }
     setStatus((prev) => ({ ...prev, [name]: false }))
