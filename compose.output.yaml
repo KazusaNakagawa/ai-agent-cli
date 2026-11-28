@@ -1,0 +1,17 @@
+# Optional: show the container's output folder (briefings, journal, charts) on
+# the host, so the Web UI's Workspace screen can open it.
+#
+#   mkdir -p ~/brief-lens-output
+#   docker compose -f compose.yaml -f compose.output.yaml up
+#
+# See docs/guides/docker.md, "Opening the output folder on the host".
+services:
+  brief-lens:
+    volumes:
+      # Only output/: the rest of /data holds the session token, .env and venv.
+      # Docker must not create a missing source as a root-owned folder.
+      - type: bind
+        source: ${BRIEF_LENS_OUTPUT_DIR:-${HOME}/brief-lens-output}
+        target: /data/output
+        bind:
+          create_host_path: false

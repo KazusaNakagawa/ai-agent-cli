@@ -90,6 +90,32 @@ long-lived token to manage). API-key mode stays a fallback only; compose never p
 Back up or inspect the data with `docker run --rm -v brief-lens_brief-lens-data:/data
 alpine ls /data`. `docker compose down -v` deletes both volumes.
 
+### Opening the output folder on the host
+
+The Workspace screen picks folders through the browser, so it only sees host folders. To
+browse and edit the container's briefings, journal and charts, add the
+`compose.output.yaml` override, which mounts `/data/output` (and nothing else of `/data`)
+from `~/brief-lens-output`, or from `BRIEF_LENS_OUTPUT_DIR`:
+
+```bash
+mkdir -p ~/brief-lens-output
+# Only if the container already has output you want to keep (it must be running):
+docker compose cp brief-lens:/data/output/. ~/brief-lens-output/
+docker compose -f compose.yaml -f compose.output.yaml up -d
+```
+
+Then press the folder button in Workspace and choose `~/brief-lens-output`.
+
+- The mount hides what the data volume holds under `output/`; it is not deleted, and
+  starting without the override shows it again. Copy first as above to carry it over.
+- Pass both `-f` options each time, or `export COMPOSE_FILE=compose.yaml:compose.output.yaml`.
+- Create the folder yourself first: compose stops rather than create it as root.
+- **macOS:** checked with Rancher Desktop, where the container and your user can read and
+  edit each other's files. A file created on the host may take a moment to appear in a
+  directory listing inside the container. Docker Desktop is not checked.
+- **Linux:** the app runs as uid 1000 and writes files as 0600, so this works as is only
+  if your uid is 1000. Other uids are not supported.
+
 ### Discord / Notion credentials
 
 There is no keyring in the container, so saving them from the Web UI is explained as

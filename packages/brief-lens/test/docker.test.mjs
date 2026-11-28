@@ -80,3 +80,13 @@ test("compose adds back only the capabilities the entrypoint needs", { skip }, (
 test("the image marks itself as a container for the Web UI badge", { skip }, () => {
   assert.match(readFileSync(dockerfilePath, "utf8"), /^(ENV|\s)[^#]*\bBRIEF_LENS_RUNTIME=docker\b/m)
 })
+
+const outputOverride = new URL("compose.output.yaml", root)
+
+test("the output override mounts only /data/output and never creates the host folder", { skip }, () => {
+  const text = readFileSync(outputOverride, "utf8")
+  const targets = [...text.matchAll(/^ +target: (\S+)$/gm)].map((m) => m[1])
+  // /data itself holds session-token, .env and the venv.
+  assert.deepEqual(targets, ["/data/output"])
+  assert.match(text, /^ +create_host_path: false$/m)
+})

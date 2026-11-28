@@ -36,7 +36,7 @@ jobs:
         id: changed
         uses: ./.github/actions/changed-paths
         with:
-          pattern: '^(apps/|packages/brief-lens/|Dockerfile$|compose\.yaml$|\.dockerignore$|docker/|\.github/(workflows/docker\.yml$|actions/changed-paths/))'
+          pattern: '^(apps/|packages/brief-lens/|Dockerfile$|compose(\.output)?\.yaml$|\.dockerignore$|docker/|\.github/(workflows/docker\.yml$|actions/changed-paths/))'
           base-sha: ${{ github.event.pull_request.base.sha }}
 
       # A fake login in the shape the Linux CLI keeps. Going through the real
@@ -118,6 +118,27 @@ jobs:
             claude --version
             /data/runtime/venv/bin/python -c "import sys; assert (3,11) <= sys.version_info[:2] <= (3,13), sys.version"
             ls /usr/share/fonts/opentype/noto/ | grep -q CJK'
+
+      # The runner's uid is not the image's, so the folder is given to uid 1000:
+      # that is the documented Linux requirement for this override.
+      - name: Output override shares only the output folder
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          out="$RUNNER_TEMP/output"
+          mkdir "$out"
+          sudo chown 1000:1000 "$out"
+          export BRIEF_LENS_OUTPUT_DIR="$out"
+          dc() { docker compose -f compose.yaml -f compose.output.yaml "$@"; }
+          dc up -d
+          for _ in $(seq 1 100); do
+            curl -fsS "http://127.0.0.1:${BRIEF_LENS_PORT}/api/health" >/dev/null 2>&1 && break
+            sleep 3
+          done
+          dc exec -T -u node brief-lens sh -c 'umask 077; echo from-container > /data/output/probe.md'
+          sudo grep -qx from-container "$out/probe.md"
+          echo from-host | sudo tee "$out/probe.md" >/dev/null
+          dc exec -T -u node brief-lens grep -qx from-host /data/output/probe.md
+          test -z "$(sudo find "$out" -name session-token -o -name .env)"
 
       - name: Logs on failure
         if: failure() && steps.changed.outputs.changed == 'true'
