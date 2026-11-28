@@ -138,6 +138,36 @@ class TestGenerateWeeklySummary:
         assert "content" in prompt_arg
         assert purpose_arg == "週次サマリー生成"
 
+    def test_log_names_the_model_that_answered(self, caplog):
+        """After a fallback switch the completion line names the answering model (#532)."""
+        from src import claude_runner
+
+        pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
+
+        def fake_run(*args, **kwargs):
+            # Stand in for run_claude noticing a CLI fallback inside the scope.
+            claude_runner._fallback_report.get().add_call(("claude-backup-1",))
+            return "summary"
+
+        with (
+            patch("src.generator.weekly_summary.run_claude", side_effect=fake_run),
+            patch("src.generator.weekly_summary.get_model", return_value="claude-primary-1"),
+            caplog.at_level("INFO"),
+        ):
+            generate_weekly_summary(pages)
+
+        assert "weekly summary generated (model=claude-backup-1 (fallback from claude-primary-1))" in caplog.text
+
+    def test_log_without_fallback_names_the_requested_model(self, caplog):
+        pages = [{"date": "2026-04-25", "title": "T", "text": "content"}]
+        with (
+            patch("src.generator.weekly_summary.run_claude", return_value="summary"),
+            patch("src.generator.weekly_summary.get_model", return_value="claude-primary-1"),
+            caplog.at_level("INFO"),
+        ):
+            generate_weekly_summary(pages)
+        assert "weekly summary generated (model=claude-primary-1)" in caplog.text
+
     def test_run_claude_receives_timeout(self):
         """run_claude に TIMEOUT_WEEKLY_SUMMARY が timeout キーワードで渡される。"""
         from src.constants import TIMEOUT_WEEKLY_SUMMARY

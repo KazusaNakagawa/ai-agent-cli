@@ -1,3 +1,4 @@
+import contextvars
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
@@ -6,7 +7,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from src.claude_runner import run_claude
+from src.claude_runner import run_claude, tentative_fallbacks
 from src.config import BriefingConfig
 from src.constants import (
     BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS,
@@ -268,22 +269,28 @@ def _generate_validated(prompt: str, label: str, timeout: int, schema: dict, par
     base_prompt = prompt
     last_error = ""
     for attempt in range(1, BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS + 1):
-        raw = run_claude(
-            prompt, label, timeout,
-            max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING, json_schema=schema,
+        # An attempt's fallbacks reach the enclosing report only once its
+        # output validates, so a rejected attempt leaves no model behind.
+        with tentative_fallbacks() as attempt_report:
+            raw = run_claude(
+                prompt, label, timeout,
+                max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING, json_schema=schema,
+            )
+            try:
+                parsed = parse(json.loads(raw))
+            except (json.JSONDecodeError, ValidationError) as e:
+                last_error = str(e)
+            else:
+                attempt_report.commit()
+                return parsed
+        logger.warning(
+            "%s BriefScript failed validation (attempt %d/%d): %s",
+            label, attempt, BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS, _truncate_error(last_error),
         )
-        try:
-            return parse(json.loads(raw))
-        except (json.JSONDecodeError, ValidationError) as e:
-            last_error = str(e)
-            logger.warning(
-                "%s BriefScript failed validation (attempt %d/%d): %s",
-                label, attempt, BRIEFSCRIPT_VALIDATION_MAX_ATTEMPTS, _truncate_error(last_error),
-            )
-            prompt = (
-                f"{base_prompt}\n\n## 前回の出力のエラー\n"
-                f"前回の出力は次の検証エラーで却下されました。直して出力し直してください。\n{last_error}"
-            )
+        prompt = (
+            f"{base_prompt}\n\n## 前回の出力のエラー\n"
+            f"前回の出力は次の検証エラーで却下されました。直して出力し直してください。\n{last_error}"
+        )
     raise BriefScriptError(f"{label} BriefScript invalid after retries: {_truncate_error(last_error)}")
 
 
@@ -348,6 +355,16 @@ def _sectors_block(section: SectorsSection, config: BriefingConfig) -> SectorsBl
     return SectorsBlock(sectors=_watch_sector_names(config), content=section)
 
 
+def _submit(executor: ThreadPoolExecutor, fn, /, *args, **kwargs):
+    """Submit ``fn`` to run in a copy of the caller's context.
+
+    ``ThreadPoolExecutor`` does not carry context variables into its workers, so
+    without this a ``record_fallbacks`` scope opened around the briefing would
+    miss every call made on the pool threads.
+    """
+    return executor.submit(contextvars.copy_context().run, fn, *args, **kwargs)
+
+
 def generate_briefing_document(
     stocks: str,
     config: BriefingConfig,
@@ -385,18 +402,18 @@ def generate_briefing_document(
     )
     with ThreadPoolExecutor(max_workers=3) as executor:
         if briefscript:
-            main = executor.submit(generate_main_section, render("briefing_main", **main_parts), config)
+            main = _submit(executor, generate_main_section, render("briefing_main", **main_parts), config)
         else:
-            main = executor.submit(
-                run_claude, render("briefing", **main_parts), "メイン分析", TIMEOUT_BRIEFING_MAIN,
+            main = _submit(
+                executor, run_claude, render("briefing", **main_parts), "メイン分析", TIMEOUT_BRIEFING_MAIN,
                 max_attempts=RETRY_MAX_ATTEMPTS_BRIEFING,
             )
         futures = {
             main: "main",
-            executor.submit(generate_sectors_section, stocks, config, today): "sectors",
+            _submit(executor, generate_sectors_section, stocks, config, today): "sectors",
         }
         if briefscript:
-            futures[executor.submit(generate_holdings, stocks, config)] = "holdings"
+            futures[_submit(executor, generate_holdings, stocks, config)] = "holdings"
         results: dict = {}
         errors: dict[str, str] = {}
         for future in as_completed(futures):

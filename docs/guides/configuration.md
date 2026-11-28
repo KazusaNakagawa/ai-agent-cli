@@ -49,6 +49,22 @@ per-model usage breakdown, is the evidence: the CLI also uses helper models
 internally, so a Haiku id in the usage breakdown does not mean a fallback
 happened.
 
+The briefing's Notion footer names the model that actually answered. A briefing is
+several `claude` calls (main analysis, sector sweep, holdings), so the wording depends
+on how many of them fell back:
+
+| What happened | Footer |
+|---|---|
+| no call fell back | `Model: <model>` |
+| every call fell back | `Model: <fallback> (fallback from <model>)` |
+| only some calls fell back | `Model: <model> (some calls fell back to <fallback>)` |
+
+Several fallbacks are listed in the order they were first used. Only calls whose response
+was accepted count: a BriefScript attempt that fails validation and is retried leaves no fallback
+behind. The wording is per run, not per call, so it does not say which section fell back. The weekly summary's `weekly summary generated (model=...)` log line
+uses the same wording. These are the only places that name the model; the Discord message
+and the saved Markdown do not.
+
 ## `prompts/briefing.md`
 
 Prompt template for the briefing agent. Variables: `{tickers}` `{themes}` `{geopolitical}` `{watch_sectors}` `{stocks}`. Edit this file to change Claude's output behavior.

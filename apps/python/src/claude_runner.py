@@ -4,6 +4,9 @@ import shutil
 import subprocess
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -293,6 +296,126 @@ def _warn_if_fell_back(result: _StreamResult, model: str, label: str) -> None:
         )
 
 
+class FallbackReport:
+    """What the claude CLI did about fallbacks while a ``record_fallbacks`` scope was open.
+
+    ``run_claude`` returns only text, so which model actually answered has no
+    other way out of it. Every successful call is counted, with the fallback
+    models it switched to (none for most calls), because a run made of several
+    calls can fall back on only some of them. Calls come from worker threads,
+    hence the lock.
+    """
+
+    def __init__(self, parent: "FallbackReport | None" = None, *, deferred: bool = False) -> None:
+        self._models: list[str] = []
+        self._calls = 0
+        self._fallback_calls = 0
+        self._lock = threading.Lock()
+        self._parent = parent
+        # A deferred report keeps its calls to itself until ``commit()``, for
+        # callers that may still reject a response after run_claude returned it.
+        self._deferred = deferred
+        self._log: list[tuple[str, ...]] = []
+
+    def add_call(self, models: tuple[str, ...]) -> None:
+        """Record one successful call and the fallback models it switched to."""
+        with self._lock:
+            self._calls += 1
+            if models:
+                self._fallback_calls += 1
+            for model in models:
+                if model not in self._models:
+                    self._models.append(model)
+            self._log.append(models)
+        if self._parent is not None and not self._deferred:
+            self._parent.add_call(models)
+
+    def commit(self) -> None:
+        """Hand the calls of a deferred report to the enclosing scope (no-op otherwise)."""
+        with self._lock:
+            if not self._deferred:
+                return
+            self._deferred = False
+            log = list(self._log)
+        if self._parent is not None:
+            for models in log:
+                self._parent.add_call(models)
+
+    @property
+    def models(self) -> tuple[str, ...]:
+        """Distinct fallback models in the order they were first used."""
+        with self._lock:
+            return tuple(self._models)
+
+    @property
+    def partial(self) -> bool:
+        """True when some, but not all, of the calls fell back."""
+        with self._lock:
+            return 0 < self._fallback_calls < self._calls
+
+
+# Context-local, so two runs in one process (a briefing and a chat answer in the
+# web server) never see each other's fallbacks. Threads started inside a scope
+# do not inherit it on their own; see ``generator.briefing._submit``.
+_fallback_report: ContextVar["FallbackReport | None"] = ContextVar("claude_fallback_report", default=None)
+
+
+@contextmanager
+def record_fallbacks() -> Iterator[FallbackReport]:
+    """Collect the fallback models used by every ``run_claude`` call made inside.
+
+    Scopes nest: an inner scope also reports to the one around it.
+    """
+    report = FallbackReport(parent=_fallback_report.get())
+    token = _fallback_report.set(report)
+    try:
+        yield report
+    finally:
+        _fallback_report.reset(token)
+
+
+@contextmanager
+def tentative_fallbacks() -> Iterator[FallbackReport]:
+    """Like ``record_fallbacks``, but the enclosing scope only sees the calls after ``commit()``.
+
+    Use it around a call whose response the caller may still reject (schema
+    validation, retry), so a discarded attempt leaves no fallback model behind.
+    """
+    report = FallbackReport(parent=_fallback_report.get(), deferred=True)
+    token = _fallback_report.set(report)
+    try:
+        yield report
+    finally:
+        _fallback_report.reset(token)
+
+
+def describe_model(
+    primary: str, fallbacks: tuple[str, ...] | list[str] = (), *, partial: bool = False,
+) -> str:
+    """Name the model(s) that answered, e.g. for a footer or a log line.
+
+    - no fallback: ``primary``
+    - every call fell back: ``claude-haiku-5-5 (fallback from <primary>)``
+    - only some calls fell back (``partial``): ``<primary> (some calls fell back
+      to claude-haiku-5-5)``, so a reader does not take the whole run, the main
+      analysis included, to have come from the fallback.
+    """
+    if not fallbacks:
+        return primary
+    names = ", ".join(fallbacks)
+    if partial:
+        return f"{primary} (some calls fell back to {names})"
+    return f"{names} (fallback from {primary})"
+
+
+def _record_call(result: _StreamResult) -> None:
+    """Count one successful call, with any fallback the CLI switched to, in the open scope."""
+    report = _fallback_report.get()
+    if report is not None:
+        # tuple() so a list (get_fallback_models() returns one) is not dropped.
+        report.add_call(tuple(getattr(result, "fallback_models", None) or ()))
+
+
 def _backoff_delay(attempt: int) -> float:
     """Return the seconds to wait before the ``attempt``-th retry (1-indexed)."""
     return RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** (attempt - 1))
@@ -396,7 +519,11 @@ def run_claude(
         if result.returncode == 0:
             logger.info("claude CLI done: %s (%d chars)", label, len(result.stdout))
             _warn_if_fell_back(result, model, label)
-            return _parse_and_log_usage(result.stdout, label, structured=json_schema is not None)
+            text = _parse_and_log_usage(result.stdout, label, structured=json_schema is not None)
+            # After parsing: a response that fails to parse is discarded and
+            # must not leave its fallback model in the report.
+            _record_call(result)
+            return text
 
         logger.error(
             "claude CLI error [%s] rc=%d attempt=%d/%d\nstdout=%s\nstderr=%s",

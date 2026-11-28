@@ -1,7 +1,7 @@
 """Generate the weekly briefing summary."""
 from datetime import date, timedelta
 
-from src.claude_runner import get_model, run_claude
+from src.claude_runner import describe_model, get_model, record_fallbacks, run_claude
 from src.constants import TIMEOUT_WEEKLY_SUMMARY
 from src.generator.prompt import render
 from src.logger import get_logger
@@ -39,4 +39,11 @@ def generate_weekly_summary(pages: list[dict]) -> str:
     prompt = render("weekly_summary", briefings=_format_briefings(pages), week_label=week_label())
 
     logger.info("generating weekly summary (model=%s, pages=%d)...", get_model(), len(pages))
-    return run_claude(prompt, "週次サマリー生成", TIMEOUT_WEEKLY_SUMMARY)
+    with record_fallbacks() as fallbacks:
+        summary = run_claude(prompt, "週次サマリー生成", TIMEOUT_WEEKLY_SUMMARY)
+    # The line above names the model asked for; this one names the model that answered.
+    logger.info(
+        "weekly summary generated (model=%s)",
+        describe_model(get_model(), fallbacks.models, partial=fallbacks.partial),
+    )
+    return summary

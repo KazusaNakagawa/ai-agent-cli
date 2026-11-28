@@ -704,6 +704,52 @@ class TestSectorsBriefScript:
         assert len(calls) == 1 and SECTORS_FAILED_NOTICE in out
 
 
+class TestFallbacksRecordedThroughThePool:
+    """generate_briefing_document runs its calls on pool threads; a scope opened around
+    it must still see them (#532)."""
+
+    @staticmethod
+    def _run(fell_back_labels):
+        from src import claude_runner
+        from src.generator.briefing import generate_briefing_document
+
+        def mock(prompt, label, timeout, **kwargs):
+            # Stand in for run_claude's bookkeeping after a successful call.
+            used = ("claude-backup-1",) if label in fell_back_labels else ()
+            claude_runner._record_call(
+                claude_runner._StreamResult(returncode=0, stdout="", stderr="", fallback_models=used),
+            )
+            if label == "セクタースイープ":
+                return _SECTORS_LONG
+            if label == "保有銘柄示唆":
+                return TestBriefScriptHoldings._payload()
+            return _MAIN_OK
+
+        with claude_runner.record_fallbacks() as report:
+            with patch("src.generator.briefing.run_claude", side_effect=mock):
+                generate_briefing_document(
+                    "x", TestBriefScriptHoldings()._config(), "",
+                    quotes=TestBriefScriptHoldings._quotes(), fx_change_pct=-0.9,
+                )
+        return report
+
+    def test_a_call_that_falls_back_on_a_pool_thread_is_recorded(self):
+        report = self._run({"セクタースイープ"})
+        assert report.models == ("claude-backup-1",)
+        # The main analysis and the holdings call did not fall back.
+        assert report.partial is True
+
+    def test_every_call_falling_back_is_not_partial(self):
+        report = self._run({"セクタースイープ", "保有銘柄示唆", "メイン分析"})
+        assert report.models == ("claude-backup-1",)
+        assert report.partial is False
+
+    def test_no_fallback_leaves_the_report_empty(self):
+        report = self._run(set())
+        assert report.models == ()
+        assert report.partial is False
+
+
 class TestMainBriefScript:
     """The main analysis as validated BriefScript when quotes exist (#515)."""
 

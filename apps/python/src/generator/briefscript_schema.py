@@ -24,6 +24,7 @@ from pydantic import (
     ConfigDict,
     Field,
     HttpUrl,
+    PrivateAttr,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -349,6 +350,25 @@ class BriefingDocument(BaseModel):
     date: dt.date
     market: MarketSnapshot = Field(default_factory=MarketSnapshot)
     sections: list[Section] = Field(default_factory=list)
+
+    # How this run was produced, not part of the briefing: kept out of the
+    # schema and the serialized form, and read by the deliveries for the footer.
+    _fallback_models: tuple[str, ...] = PrivateAttr(default=())
+    _fallback_partial: bool = PrivateAttr(default=False)
+
+    @property
+    def fallback_models(self) -> tuple[str, ...]:
+        """Models the claude CLI fell back to while generating this briefing."""
+        return self._fallback_models
+
+    @property
+    def fallback_partial(self) -> bool:
+        """True when only some of the generation calls fell back."""
+        return self._fallback_partial
+
+    def set_fallbacks(self, models: tuple[str, ...], partial: bool = False) -> None:
+        self._fallback_models = tuple(models)
+        self._fallback_partial = partial
 
 
 def _fold(name: str, *, upper: bool) -> str:
