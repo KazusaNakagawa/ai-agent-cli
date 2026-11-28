@@ -5,8 +5,9 @@ machine. No `ANTHROPIC_API_KEY` is involved: the container's `claude` CLI uses t
 OAuth login (paid Claude plan) as the one on the host.
 
 > **Status:** written for [#622](https://github.com/KazusaNakagawa/ai-agent-cli/issues/622).
-> The image has **not yet been built or run on a macOS host** (it has been built and booted in a Linux sandbox; see below) — see
-> [Verification status](#verification-status) for what is still unproven.
+> A briefing run and a Q&A chat work on a macOS host with Rancher Desktop. Docker Desktop
+> and token refresh are still unproven — see
+> [Verification status](#verification-status).
 
 ## Quick start
 
@@ -99,21 +100,34 @@ docker compose restart
 
 ## Parity with a macOS install
 
+"Yes" means seen working on macOS with Rancher Desktop (2026-11-28).
+
 | Item | Expected in the container | Verified |
 |---|---|---|
-| Briefing run (incl. WebSearch) | works with the exported login | not yet |
-| Q&A chat | works with the exported login | not yet |
-| Chat attachments | stored under `/data/input` | not yet |
+| Briefing run (incl. WebSearch) | works with the exported login | yes |
+| Q&A chat | works with the exported login | yes |
+| Chat attachments | stored under `/data/input` | yes (image) |
 | Journal | stored under `/data/output` | not yet |
 | Monitor | shows **only the container's own** usage: it reads `~/.claude/projects/` of the container, not the host's | limitation |
+| Cross-date briefing search, Obsidian vault context | not available: they need Ollama, which is not in the image. A chat with "search past briefings" ticked fails with HTTP 503; briefing indexing and vault retrieval only log a warning and are skipped | limitation |
 | Credentials without a keyring | `.env` route above | not yet |
 | Save to Notion from chat | needs the user-level `/notion-import` skill in `~/.claude/skills/`, which the container does not have; copy it in with `docker compose cp ~/.claude/skills/notion-import brief-lens:/home/node/.claude/skills/` | not yet |
-| Japanese text in charts | `fonts-noto-cjk` is installed | not yet |
+| Japanese text in charts | `fonts-noto-cjk` is installed | yes |
 | Scheduled runs | not supported: `power.py` and the `caffeinate` wrappers are macOS only, and the scheduling wrappers (`bin/*.sh`, launchd) are not in the image | limitation |
 
 ## Verification status
 
-Checked in a Linux sandbox with a Docker daemon (image built from this `Dockerfile` with
+Checked on macOS (arm64) with Rancher Desktop, using the real Keychain login:
+
+- `docker compose up --build` works as written and the Web UI opens from the host browser.
+- The port is published on `127.0.0.1` only; the Mac's own LAN address is refused, and an
+  API request with a foreign `Host` gets a 403.
+- The app runs as uid 1000 with no capabilities, and the credentials mount is read-only.
+  The init process (`docker-init`) stays root.
+- The Linux `claude` accepts the exported login. A briefing run and a Q&A chat with an
+  image attachment succeed.
+
+Checked earlier in a Linux sandbox with a Docker daemon (image built from this `Dockerfile` with
 three substitutions, listed below; run with the capability set from `compose.yaml`):
 
 - The build stage (`npm ci` + `scripts/build.mjs`), the pinned `claude` CLI install, and the
@@ -148,14 +162,10 @@ The `docker` workflow checks this on a Linux runner: the image builds as written
 packages and the `uv` image pull included), the Web UI answers on the published loopback
 port, and the runner's LAN address is refused.
 
-Still to prove on a macOS host with Docker Desktop:
+Still to prove:
 
-1. `docker compose up --build` and the Web UI opening from the host browser. Docker Desktop
-   publishes ports through its own VM, so a quick look from another device on the LAN
-   (`http://<host-ip>:3000` should be refused) is worth repeating there.
-2. The Linux `claude` accepts the exported Keychain login (a similar attempt is reported
-   not to work in [anthropics/claude-code#10039](https://github.com/anthropics/claude-code/issues/10039);
-   MulmoClaude's approach suggests it does). One real briefing run and one Q&A chat.
+1. Docker Desktop. It publishes ports through its own VM, so repeat the checks above there.
+2. A look from another device on the LAN (`http://<host-ip>:3000` should be refused).
 3. **Token refresh.** The access token expires after several hours, and the CLI renews
    it with the refresh token. If the refresh token rotates, a refresh inside the
    container could leave the host's Keychain copy stale. Watch whether the host `claude`
@@ -172,4 +182,5 @@ Still to prove on a macOS host with Docker Desktop:
 | `keeping the container's login (the host export is not newer)` after a host re-login | The container holds a login that expires later than the export. To force the export: `docker compose exec -u node brief-lens rm /home/node/.claude/.credentials.json`, then `docker compose restart`. |
 | Requests fail with an auth error after some hours | The exported token expired. Run `claude` on the host, re-run `docker/sync-claude-auth.sh`, restart the container. |
 | `port is already allocated` | Another process uses 3000: `BRIEF_LENS_PORT=3100 docker compose up`. |
+| The log says `localhost:3000` although you set `BRIEF_LENS_PORT` | The log shows the port inside the container. Open the host port you set. |
 | Container stays "starting" for minutes on first run | The Python environment is being installed into `/data`; follow `docker compose logs -f`. |
