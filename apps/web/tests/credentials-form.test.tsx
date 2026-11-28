@@ -173,4 +173,36 @@ describe("CredentialsForm", () => {
     // The server-rendered status stays as it was.
     expect(screen.getByTestId("status-DISCORD_TOKEN")).toHaveTextContent("Set")
   })
+
+  it.each([
+    ["PUT", "credential-error"],
+    ["DELETE", "generic-error"],
+  ])("shows the server's reason when %s fails", async (method, testId) => {
+    const detail = "No OS keychain backend is available. Add the line to /home/x/.env"
+    const user = userEvent.setup()
+    render(<CredentialsForm initial={initial} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    fetchMock.mockImplementationOnce(async () => Response.json({ detail }, { status: 503 }))
+
+    if (method === "PUT") {
+      await user.click(screen.getByTestId("update-CHANNEL_ID"))
+      await user.type(await screen.findByTestId("credential-draft"), "123")
+      await user.click(screen.getByTestId("credential-save"))
+    } else {
+      await user.click(screen.getByTestId("delete-DISCORD_TOKEN"))
+    }
+
+    expect(await screen.findByTestId(testId)).toHaveTextContent(detail)
+  })
+
+  it("falls back to the status code when the error body has no detail", async () => {
+    const user = userEvent.setup()
+    render(<CredentialsForm initial={initial} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    fetchMock.mockImplementationOnce(async () => new Response("boom", { status: 500 }))
+    await user.click(screen.getByTestId("delete-DISCORD_TOKEN"))
+    expect(await screen.findByTestId("generic-error")).toHaveTextContent(
+      "DELETE failed (HTTP 500)",
+    )
+  })
 })

@@ -55,6 +55,28 @@ describe("Wizard", () => {
     expect(screen.getByText(/Step 1 \/ 4/)).toBeInTheDocument()
   })
 
+  it("shows the server's reason when saving a credential fails in Step 3", async () => {
+    const detail = "No OS keychain backend is available. Add the line to /home/x/.env"
+    fetchMock.mockImplementation(async (url: string) =>
+      url.startsWith("/api/credentials/")
+        ? Response.json({ detail }, { status: 503 })
+        : new Response("{}", { status: 200 }),
+    )
+    const user = userEvent.setup()
+    render(<Wizard />)
+    await user.click(screen.getByTestId("wizard-primary"))
+    await user.type(await screen.findByTestId("tickers-input"), "AAA")
+    await user.click(screen.getByTestId("wizard-primary"))
+    await user.type(await screen.findByTestId("cred-NOTION_DATABASE_ID"), "abc")
+    await user.click(screen.getByTestId("wizard-primary"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("wizard-error")).toHaveTextContent(detail)
+    })
+    expect(screen.getByTestId("wizard-error")).not.toHaveTextContent('{"detail"')
+    expect(screen.getByText(/Step 3 \/ 4/)).toBeInTheDocument()
+  })
+
   it("does not load existing settings or offer cancel on a first run", () => {
     render(<Wizard />)
     expect(fetchMock).not.toHaveBeenCalled()
