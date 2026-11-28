@@ -109,6 +109,7 @@ jobs:
         if: steps.changed.outputs.changed == 'true'
         run: |
           docker compose exec -T -u node brief-lens sh -c '
+            set -e
             test -s /home/node/.claude/.credentials.json
             claude --version
             /data/runtime/venv/bin/python -c "import sys; assert (3,11) <= sys.version_info[:2] <= (3,13), sys.version"

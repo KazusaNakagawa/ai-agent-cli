@@ -134,9 +134,15 @@ used host networking, so the `127.0.0.1:3000:3000` publish was not exercised. Th
 `--host` option, the compose guards and the shell scripts are also covered by unit tests and
 by running them against a throwaway `HOME`.
 
+Confirmed by the `docker` workflow on a Linux runner (first green run on PR #623): the image
+builds as written (`apt` packages and the `uv` image pull included), the Web UI answers on the
+published loopback port, and the runner's LAN address is refused.
+
 Still to prove on a macOS host with Docker Desktop:
 
-1. `docker compose up --build` builds as written (apt packages, the `uv` image pull) and the Web UI opens from the host browser through the published port.
+1. `docker compose up --build` and the Web UI opening from the host browser. Docker Desktop
+   publishes ports through its own VM, so a quick look from another device on the LAN
+   (`http://<host-ip>:3000` should be refused) is worth repeating there.
 2. The Linux `claude` accepts the exported Keychain login (a similar attempt is reported
    not to work in [anthropics/claude-code#10039](https://github.com/anthropics/claude-code/issues/10039);
    MulmoClaude's approach suggests it does). One real briefing run and one Q&A chat.
@@ -145,7 +151,6 @@ Still to prove on a macOS host with Docker Desktop:
    container could leave the host's Keychain copy stale. Watch whether the host `claude`
    still works after the container has refreshed. If it does not, the fix is to keep
    refreshing on the host only and re-run the sync script.
-4. From another device on the LAN, `http://<host-ip>:3000` is refused (the port is not reachable, and the request guard above is a second layer).
 
 ## Troubleshooting
 
