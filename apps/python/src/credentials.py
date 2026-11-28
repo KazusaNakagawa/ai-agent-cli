@@ -124,6 +124,12 @@ def set_credential(name: str, value: str) -> None:
     _backend.set_password(service_name(), name, value)
 
 
+def has_keychain_entry(name: str) -> bool:
+    """True when the keychain holds ``name``; raises ``KeyringError`` if unreadable."""
+    _ensure_allowed(name)
+    return _backend.get_password(service_name(), name) is not None
+
+
 def delete_credential(name: str) -> None:
     _ensure_allowed(name)
     _backend.delete_password(service_name(), name)

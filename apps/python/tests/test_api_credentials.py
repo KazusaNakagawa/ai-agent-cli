@@ -93,34 +93,78 @@ async def test_get_credential_sources_requires_bearer(async_client):
 # --- keyring unavailable (#616) ---
 
 
-def _break_keyring(monkeypatch, error: Exception) -> None:
-    class Broken:
-        def get_password(self, *args):
-            raise error
+def _break_keyring(monkeypatch, **behaviour) -> None:
+    """Replace the backend; each kwarg is a value to return or an exception to raise."""
 
-        set_password = delete_password = get_password
+    def method(outcome):
+        def call(*args):
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
 
-    monkeypatch.setattr(credentials, "_backend", Broken())
+        return staticmethod(call)
+
+    broken = type("Broken", (), {name: method(outcome) for name, outcome in behaviour.items()})
+    monkeypatch.setattr(credentials, "_backend", broken())
 
 
-@pytest.mark.parametrize("method", ["put", "delete"])
-@pytest.mark.parametrize(
-    ("error", "reason"),
-    [
-        (keyring.errors.NoKeyringError("no backend"), "No OS keychain backend"),
-        (keyring.errors.KeyringLocked("locked"), "could not complete the request"),
-    ],
-)
-async def test_keyring_failure_returns_503_with_env_alternative(
-    authed_client, monkeypatch, method, error, reason
-):
-    _break_keyring(monkeypatch, error)
+async def _call(client, method):
     kwargs = {"json": {"value": "secret-value"}} if method == "put" else {}
-    response = await getattr(authed_client, method)("/api/credentials/NOTION_API_KEY", **kwargs)
+    return await getattr(client, method)("/api/credentials/NOTION_API_KEY", **kwargs)
+
+
+@pytest.mark.parametrize(("method", "verb"), [("put", "add"), ("delete", "remove")])
+async def test_no_keyring_backend_returns_503_with_env_alternative(
+    authed_client, monkeypatch, method, verb
+):
+    error = keyring.errors.NoKeyringError("no backend")
+    _break_keyring(monkeypatch, get_password=error, set_password=error, delete_password=error)
+    response = await _call(authed_client, method)
     assert response.status_code == 503
     detail = response.json()["detail"]
-    assert reason in detail
-    assert "NOTION_API_KEY" in detail
+    assert "No OS keychain backend" in detail
+    assert f"{verb} " in detail and "NOTION_API_KEY" in detail
     assert str(paths.dotenv_paths()[0]) in detail
     assert "restart" in detail
     assert "secret-value" not in response.text
+
+
+async def test_locked_keychain_on_put_does_not_suggest_env(authed_client, monkeypatch):
+    # An older keychain value would still win over .env.
+    _break_keyring(monkeypatch, set_password=keyring.errors.KeyringLocked("locked"))
+    response = await _call(authed_client, "put")
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert "could not save NOTION_API_KEY" in detail
+    assert ".env" not in detail
+    assert "secret-value" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("delete_error", "lookup"),
+    [
+        (keyring.errors.KeyringLocked("locked"), "still-stored"),
+        (keyring.errors.PasswordDeleteError("denied"), "still-stored"),
+        (keyring.errors.PasswordDeleteError("denied"), keyring.errors.KeyringLocked("locked")),
+    ],
+)
+async def test_failed_delete_says_the_entry_was_not_removed(
+    authed_client, monkeypatch, delete_error, lookup
+):
+    _break_keyring(monkeypatch, delete_password=delete_error, get_password=lookup)
+    response = await _call(authed_client, "delete")
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert "was not removed" in detail
+    assert ".env" not in detail
+    assert "still-stored" not in response.text
+
+
+async def test_delete_of_an_absent_entry_returns_204(authed_client, monkeypatch):
+    _break_keyring(
+        monkeypatch,
+        delete_password=keyring.errors.PasswordDeleteError("No such password!"),
+        get_password=None,
+    )
+    response = await _call(authed_client, "delete")
+    assert response.status_code == 204
