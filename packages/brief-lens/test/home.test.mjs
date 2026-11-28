@@ -90,3 +90,46 @@ test("a session-token symlink is refused and its target left untouched", () => {
   assert.equal(statSync(target).mode & 0o777, 0o644)
   assert.ok(lstatSync(join(home, "session-token")).isSymbolicLink())
 })
+
+const modeOf = (path) => statSync(path).mode & 0o777
+
+// Run `fn` under a given umask so the result does not depend on the shell's.
+function withUmask(mask, fn) {
+  const previous = process.umask(mask)
+  try {
+    return fn()
+  } finally {
+    process.umask(previous)
+  }
+}
+
+for (const umask of [0o022, 0o000]) {
+  test(`first run creates private input, output and briefing.json (umask ${umask.toString(8)})`, () => {
+    const home = join(mkdtempSync(join(tmpdir(), "bl-home-")), ".brief-lens")
+    const ex = examples()
+    chmodSync(join(ex, "briefing.json.example"), 0o644)
+    withUmask(umask, () => ensureHome(home, ex))
+
+    assert.equal(modeOf(join(home, "input")), 0o700)
+    assert.equal(modeOf(join(home, "output")), 0o700)
+    assert.equal(modeOf(join(home, "config", "briefing.json")), 0o600)
+  })
+}
+
+test("existing directories and config keep the modes their owner left", () => {
+  const home = mkdtempSync(join(tmpdir(), "bl-home-"))
+  const config = join(home, "config", "briefing.json")
+  mkdirSync(join(home, "config"))
+  writeFileSync(config, '{"mine": true}\n')
+  chmodSync(config, 0o644)
+  mkdirSync(join(home, "output"))
+  chmodSync(join(home, "output"), 0o755)
+
+  ensureHome(home, examples())
+
+  // The backend warns about these; the launcher must not change them silently.
+  assert.equal(modeOf(config), 0o644)
+  assert.equal(modeOf(join(home, "output")), 0o755)
+  // A directory missing from an existing home is still created private.
+  assert.equal(modeOf(join(home, "input")), 0o700)
+})
