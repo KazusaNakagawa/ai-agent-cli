@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 
 import { Input } from "@/components/ui/input"
+import { credentialError } from "@/lib/credentials"
 import { WizardData } from "./Wizard"
 import { WizardShell } from "./wizard-shell"
 
@@ -77,8 +78,7 @@ export function Step3Notifications({
           },
         )
         if (!res.ok) {
-          const text = await res.text()
-          setError(`PUT /api/credentials/${name} failed (HTTP ${res.status}): ${text}`)
+          setError(await credentialError(res, `PUT /api/credentials/${name}`))
           return
         }
       }
