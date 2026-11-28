@@ -46,8 +46,8 @@ ENV UV_PYTHON_PREFERENCE=only-system \
     BRIEF_LENS_HOME=/data \
     CLAUDE_CODE_DISABLE_AUTOUPDATE=1
 
-# The claude CLI refuses some modes as root, and nothing here needs it.
-USER node
+# The entrypoint starts as root only to read the mounted credentials (their owner
+# is the host user, not this image's `node`), then drops to `node` for good.
 WORKDIR /data
 VOLUME ["/data", "/home/node/.claude"]
 EXPOSE 3000

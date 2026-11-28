@@ -24,8 +24,16 @@ services:
       - ${BRIEF_LENS_AUTH_DIR:-${HOME}/.brief-lens-docker/claude-auth}:/run/claude-auth:ro
     # No ANTHROPIC_API_KEY is passed on purpose: in `cli` auth mode the claude
     # CLI must use the OAuth login above.
+    # Dropped to nothing, except what the entrypoint needs as root to read the
+    # mounted credentials, hand them to `node` and switch to that user. The app
+    # itself then runs with no capabilities.
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
     security_opt:
       - no-new-privileges:true
 

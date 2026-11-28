@@ -37,8 +37,17 @@ test("the credentials mount is read-only", { skip }, () => {
   assert.match(readFileSync(composePath, "utf8"), /:\/run\/claude-auth:ro\s*$/m)
 })
 
-test("the image runs as a non-root user", { skip }, () => {
-  const users = readFileSync(dockerfilePath, "utf8").match(/^USER\s+(\S+)/gm) ?? []
-  assert.ok(users.length > 0, "Dockerfile must set USER")
-  assert.doesNotMatch(users.at(-1), /root|\b0\b/)
+test("the app runs as a non-root user without capabilities", { skip }, () => {
+  const entrypoint = readFileSync(new URL("docker/entrypoint.sh", root), "utf8")
+  assert.match(entrypoint, /setpriv\s[^\n]*--reuid="\$APP_USER"/)
+  assert.match(entrypoint, /--bounding-set=-all/)
+  assert.match(entrypoint, /--no-new-privs/)
+  assert.match(entrypoint, /^APP_USER=node$/m)
+})
+
+test("compose adds back only the capabilities the entrypoint needs", { skip }, () => {
+  const text = readFileSync(composePath, "utf8")
+  assert.match(text, /cap_drop:\s*\n\s+- ALL/)
+  const added = [...text.matchAll(/^\s+cap_add:\s*\n((?:\s+- \w+\n)+)/gm)].flatMap((m) => m[1].match(/\w+/g))
+  assert.deepEqual(added.sort(), ["CHOWN", "DAC_OVERRIDE", "SETGID", "SETUID"])
 })

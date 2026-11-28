@@ -55,8 +55,11 @@ long-lived token to manage). API-key mode stays a fallback only; compose never p
 - The Web UI's own request guard (`apps/web/lib/request-guard.ts`) rejects any request whose
   `Host` is not `localhost`, `127.0.0.1` or `[::1]`. Open `http://localhost:3000`; a LAN
   address or `host.docker.internal` gets a 403 even if the port were published more widely.
-- Runs as the non-root `node` user, with all capabilities dropped and
-  `no-new-privileges`.
+- The entrypoint starts as root only to read the mounted login (its owner is the host
+  user, which is not the image's `node` uid) and hand a copy to `node`; it then switches
+  to `node` with `setpriv`, dropping every capability and setting no-new-privs, before
+  anything else runs. The container itself keeps just `CHOWN`, `DAC_OVERRIDE`, `SETUID`
+  and `SETGID` for that step, and `no-new-privileges` is set.
 - No secret is baked into the image; `.dockerignore` keeps personal config, `.env`,
   `input/` and `output/` out of the build context.
 - The exported login is a plaintext file on the host (mode 0600, like the CLI's own
